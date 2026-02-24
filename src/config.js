@@ -409,13 +409,14 @@ const config = {
   weeklyResetDay: (() => { const v = parseInt(process.env.WEEKLY_RESET_DAY, 10); return isNaN(v) ? 1 : v; })(), // day to reset weekly baseline (0=Sun … 6=Sat, default 1=Mon)
 };
 
-// Prepend FTP_BASE_PATH to all FTP file paths when set
+// Prepend FTP_BASE_PATH to all FTP file paths when set (only for relative paths)
 if (config.ftpBasePath) {
   const prefix = config.ftpBasePath;
   const ftpKeys = ['ftpLogPath', 'ftpConnectLogPath', 'ftpIdMapPath', 'ftpSavePath', 'ftpSettingsPath', 'ftpWelcomePath'];
   for (const key of ftpKeys) {
-    if (config[key] && !config[key].startsWith(prefix)) {
-      config[key] = prefix + (config[key].startsWith('/') ? '' : '/') + config[key];
+    // Only prepend if path doesn't start with / (relative path indicator)
+    if (config[key] && !config[key].startsWith('/')) {
+      config[key] = prefix + '/' + config[key];
     }
   }
   console.log(`[CONFIG] FTP base path: ${prefix}`);

@@ -68,6 +68,7 @@ const BTN = {
   MAP:          'panel_map',
   HEATMAP:      'panel_heatmap',
   DIAGNOSTICS:  'panel_diagnostics',
+  ENV_SYNC:     'panel_env_sync',
 };
 
 const SELECT = {
