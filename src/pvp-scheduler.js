@@ -2,6 +2,7 @@ const { EmbedBuilder } = require('discord.js');
 const SftpClient = require('ssh2-sftp-client');
 const _defaultConfig = require('./config');
 const _defaultRcon = require('./rcon');
+const { color } = require('./rcon-colors');
 
 const WARNINGS = [10, 5, 3, 2, 1]; // countdown warnings in minutes
 
@@ -309,8 +310,24 @@ class PvpScheduler {
     try {
       await sftp.connect(this._config.sftpConnectConfig());
 
+      // Ensure the file is writable (Bisect hosting defaults to 444)
+      const settingsPath = this._config.ftpSettingsPath;
+      let originalMode = null;
+      try {
+        const stat = await sftp.stat(settingsPath);
+        const mode = stat.mode & 0o777;
+        if (!(mode & 0o200)) {
+          // Owner-write bit is not set — temporarily make writable
+          originalMode = mode;
+          await sftp.chmod(settingsPath, mode | 0o220); // add group+owner write
+          console.log(`[${this._label}] Temporarily set ${settingsPath} writable (was ${mode.toString(8)})`);
+        }
+      } catch (err) {
+        console.warn(`[${this._label}] Could not check/set file permissions:`, err.message);
+      }
+
       // Download current ini
-      const content = (await sftp.get(this._config.ftpSettingsPath)).toString('utf8');
+      const content = (await sftp.get(settingsPath)).toString('utf8');
 
       // Toggle the PVP line
       if (!content.match(/^PVP\s*=\s*\d/m)) {
@@ -333,8 +350,18 @@ class PvpScheduler {
         // Still restart to ensure server is in sync
       } else {
         // Upload modified ini
-        await sftp.put(Buffer.from(updated, 'utf8'), this._config.ftpSettingsPath);
+        await sftp.put(Buffer.from(updated, 'utf8'), settingsPath);
         console.log(`[${this._label}] Uploaded settings with PVP=${targetValue}`);
+      }
+
+      // Restore original permissions if we changed them
+      if (originalMode !== null) {
+        try {
+          await sftp.chmod(settingsPath, originalMode);
+          console.log(`[${this._label}] Restored permissions to ${originalMode.toString(8)}`);
+        } catch (err) {
+          console.warn(`[${this._label}] Could not restore permissions:`, err.message);
+        }
       }
 
     } catch (err) {
@@ -346,6 +373,7 @@ class PvpScheduler {
     }
 
     // Announce and restart
+    const pvpColor = targetPvp ? 'red' : 'green';
     const restartMsg = `PvP is now ${targetLabel}! Server restarting...`;
     this._announce(restartMsg);
     await this._rcon.send(`admin ${restartMsg}`).catch(() => {});

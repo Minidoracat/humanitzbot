@@ -6,7 +6,7 @@ const _defaultConfig = require('./config');
 const _defaultPlaytime = require('./playtime-tracker');
 const _defaultPlayerStats = require('./player-stats');
 const playerMap = require('./player-map');
-const { parseSave, parseClanData, PERK_MAP, PERK_INDEX_MAP } = require('./save-parser');
+const { parseSave, parseClanData, PERK_MAP, PERK_INDEX_MAP } = require('./parsers/save-parser');
 const { buildWelcomeContent } = require('./auto-messages');
 const gameData = require('./game-data');
 const os = require('os');
@@ -1069,39 +1069,13 @@ class PlayerStatsChannel {
 
     this._saveKillData();
 
-    // Post feeds to activity thread (may be a previous day's thread on first poll after restart)
-    const feedTarget = targetDate;  // 'YYYY-MM-DD' — routed to correct thread
-    if (killDeltas.length > 0 && this._config.enableKillFeed && this._logWatcher) {
-      this._postKillFeed(killDeltas, feedTarget);
-    }
-    // Post survival feed to activity thread if enabled
-    if (survivalDeltas.length > 0 && this._config.enableKillFeed && this._logWatcher) {
-      this._postSurvivalFeed(survivalDeltas, feedTarget);
-    }
-    // Post activity feeds to activity thread if enabled
-    if (fishingDeltas.length > 0 && this._config.enableFishingFeed && this._logWatcher) {
-      this._postFishingFeed(fishingDeltas, feedTarget);
-    }
-    if (recipeDeltas.length > 0 && this._config.enableRecipeFeed && this._logWatcher) {
-      this._postRecipeFeed(recipeDeltas, feedTarget);
-    }
-    if (skillDeltas.length > 0 && this._config.enableSkillFeed && this._logWatcher) {
-      this._postSkillFeed(skillDeltas, feedTarget);
-    }
-    if (professionDeltas.length > 0 && this._config.enableProfessionFeed && this._logWatcher) {
-      this._postProfessionFeed(professionDeltas, feedTarget);
-    }
-    if (loreDeltas.length > 0 && this._config.enableLoreFeed && this._logWatcher) {
-      this._postLoreFeed(loreDeltas, feedTarget);
-    }
-    if (uniqueDeltas.length > 0 && this._config.enableUniqueFeed && this._logWatcher) {
-      this._postUniqueFeed(uniqueDeltas, feedTarget);
-    }
-    if (companionDeltas.length > 0 && this._config.enableCompanionFeed && this._logWatcher) {
-      this._postCompanionFeed(companionDeltas, feedTarget);
-    }
-    if (challengeDeltas.length > 0 && this._config.enableChallengeFeed && this._logWatcher) {
-      this._postChallengeFeed(challengeDeltas, feedTarget);
+    // Post consolidated activity summary to activity thread
+    if (this._logWatcher) {
+      this._postActivitySummary({
+        killDeltas, survivalDeltas, fishingDeltas, recipeDeltas,
+        skillDeltas, professionDeltas, loreDeltas, uniqueDeltas,
+        companionDeltas, challengeDeltas,
+      }, targetDate);
     }
   }
 
@@ -1118,226 +1092,166 @@ class PlayerStatsChannel {
     return this._logWatcher.sendToThread(embed);
   }
 
-  async _postKillFeed(deltas, targetDate) {
-    const lines = deltas.map(({ name, delta }) => {
-      const total = delta.zeeksKilled || 0;
-      const parts = [];
-      if (delta.headshots)     parts.push(`${delta.headshots} headshot${delta.headshots > 1 ? 's' : ''}`);
-      if (delta.meleeKills)    parts.push(`${delta.meleeKills} melee`);
-      if (delta.gunKills)      parts.push(`${delta.gunKills} gun`);
-      if (delta.blastKills)    parts.push(`${delta.blastKills} blast`);
-      if (delta.fistKills)     parts.push(`${delta.fistKills} fist`);
-      if (delta.takedownKills) parts.push(`${delta.takedownKills} takedown`);
-      if (delta.vehicleKills)  parts.push(`${delta.vehicleKills} vehicle`);
-      const detail = parts.length > 0 ? ` (${parts.join(', ')})` : '';
-      return `**${name}** killed **${total} zeek${total !== 1 ? 's' : ''}**${detail}`;
-    });
+  /**
+   * Build a consolidated activity summary embed from all delta types and post
+   * a single message to the daily activity thread. This replaces the previous
+   * approach of posting 1-10 individual embeds per save poll cycle.
+   */
+  async _postActivitySummary(deltas, targetDate) {
+    const sections = [];
 
-    const embed = new EmbedBuilder()
-      .setAuthor({ name: '🧟 Kill Activity' })
-      .setDescription(lines.join('\n'))
-      .setColor(0x1abc9c)
-      .setTimestamp();
-
-    try {
-      await this._sendFeedEmbed(embed, targetDate);
-    } catch (err) {
-      console.error(`[${this._label}] Failed to post kill feed to activity thread:`, err.message);
-    }
-  }
-
-  async _postSurvivalFeed(deltas, targetDate) {
-    const lines = deltas.map(({ name, delta }) => {
-      const parts = [];
-      if (delta.daysSurvived)  parts.push(`+${delta.daysSurvived} day${delta.daysSurvived > 1 ? 's' : ''} survived`);
-      return `**${name}** — ${parts.join(', ')}`;
-    });
-
-    const embed = new EmbedBuilder()
-      .setAuthor({ name: '🏕️ Survival Activity' })
-      .setDescription(lines.join('\n'))
-      .setColor(0x2ecc71)
-      .setTimestamp();
-
-    try {
-      await this._sendFeedEmbed(embed, targetDate);
-    } catch (err) {
-      console.error(`[${this._label}] Failed to post survival feed to activity thread:`, err.message);
-    }
-  }
-
-  async _postFishingFeed(deltas, targetDate) {
-    const lines = deltas.map(({ name, delta }) => {
-      const total = delta.fishCaught || 0;
-      const pike = delta.fishCaughtPike || 0;
-      const bitten = delta.timesBitten || 0;
-      const parts = [];
-      if (total > 0) {
-        const pikeNote = pike > 0 ? ` (${pike} pike)` : '';
-        parts.push(`caught **${total} fish**${pikeNote}`);
-      }
-      if (bitten > 0) parts.push(`was bitten **${bitten} time${bitten > 1 ? 's' : ''}**`);
-      return `**${name}** ${parts.join(', ')}`;
-    });
-
-    const embed = new EmbedBuilder()
-      .setAuthor({ name: '🎣 Fishing Activity' })
-      .setDescription(lines.join('\n'))
-      .setColor(0x3498db)
-      .setTimestamp();
-
-    try {
-      await this._sendFeedEmbed(embed, targetDate);
-    } catch (err) {
-      console.error(`[${this._label}] Failed to post fishing feed to activity thread:`, err.message);
-    }
-  }
-
-  async _postRecipeFeed(deltas, targetDate) {
-    const lines = deltas.map(({ name, type, items }) => {
-      const names = items.map(r => _cleanItemName(r)).filter(Boolean);
-      const display = names.length <= 5 ? names.join(', ') : `${names.slice(0, 5).join(', ')} +${names.length - 5} more`;
-      return `**${name}** learned ${type}: ${display}`;
-    });
-
-    const embed = new EmbedBuilder()
-      .setAuthor({ name: '📖 Recipe Unlocked' })
-      .setDescription(lines.join('\n'))
-      .setColor(0xe67e22)
-      .setTimestamp();
-
-    try {
-      await this._sendFeedEmbed(embed, targetDate);
-    } catch (err) {
-      console.error(`[${this._label}] Failed to post recipe feed to activity thread:`, err.message);
-    }
-  }
-
-  async _postSkillFeed(deltas, targetDate) {
-    const lines = deltas.map(({ name, items }) => {
-      const names = items.map(s => {
-        const clean = _cleanItemName(s).toUpperCase();
-        return clean;
+    // ── Kills ──
+    if (deltas.killDeltas.length > 0 && this._config.enableKillFeed) {
+      const lines = deltas.killDeltas.map(({ name, delta }) => {
+        const total = delta.zeeksKilled || 0;
+        const parts = [];
+        if (delta.headshots)     parts.push(`${delta.headshots} headshot${delta.headshots > 1 ? 's' : ''}`);
+        if (delta.meleeKills)    parts.push(`${delta.meleeKills} melee`);
+        if (delta.gunKills)      parts.push(`${delta.gunKills} gun`);
+        if (delta.blastKills)    parts.push(`${delta.blastKills} blast`);
+        if (delta.fistKills)     parts.push(`${delta.fistKills} fist`);
+        if (delta.takedownKills) parts.push(`${delta.takedownKills} takedown`);
+        if (delta.vehicleKills)  parts.push(`${delta.vehicleKills} vehicle`);
+        const detail = parts.length > 0 ? ` (${parts.join(', ')})` : '';
+        return `**${name}** killed **${total} zeek${total !== 1 ? 's' : ''}**${detail}`;
       });
-      return `**${name}** unlocked skill${names.length > 1 ? 's' : ''}: **${names.join(', ')}**`;
-    });
-
-    const embed = new EmbedBuilder()
-      .setAuthor({ name: '⚡ Skill Unlocked' })
-      .setDescription(lines.join('\n'))
-      .setColor(0x9b59b6)
-      .setTimestamp();
-
-    try {
-      await this._sendFeedEmbed(embed, targetDate);
-    } catch (err) {
-      console.error(`[${this._label}] Failed to post skill feed to activity thread:`, err.message);
+      sections.push({ header: '🧟 Kills', lines });
     }
-  }
 
-  async _postProfessionFeed(deltas, targetDate) {
-    const lines = deltas.map(({ name, items }) => {
-      const names = items.map(p => {
-        // Try to resolve enum → friendly name
-        if (typeof p === 'number') return PERK_INDEX_MAP[p] || `Profession #${p}`;
-        if (typeof p === 'string') return PERK_MAP[p] || _cleanItemName(p);
-        return String(p);
+    // ── Survival ──
+    if (deltas.survivalDeltas.length > 0 && this._config.enableKillFeed) {
+      const lines = deltas.survivalDeltas.map(({ name, delta }) => {
+        const parts = [];
+        if (delta.daysSurvived) parts.push(`+${delta.daysSurvived} day${delta.daysSurvived > 1 ? 's' : ''} survived`);
+        return `**${name}** — ${parts.join(', ')}`;
       });
-      return `**${name}** unlocked profession${names.length > 1 ? 's' : ''}: **${names.join(', ')}**`;
-    });
-
-    const embed = new EmbedBuilder()
-      .setAuthor({ name: '🎓 Profession Unlocked' })
-      .setDescription(lines.join('\n'))
-      .setColor(0xf1c40f)
-      .setTimestamp();
-
-    try {
-      await this._sendFeedEmbed(embed, targetDate);
-    } catch (err) {
-      console.error(`[${this._label}] Failed to post profession feed to activity thread:`, err.message);
+      sections.push({ header: '🏕️ Survival', lines });
     }
-  }
 
-  async _postLoreFeed(deltas, targetDate) {
-    const lines = deltas.map(({ name, items }) => {
-      const count = items.length;
-      const names = items.map(l => _cleanItemName(typeof l === 'object' ? (l.name || l.id || JSON.stringify(l)) : l)).filter(Boolean);
-      const display = names.length > 0 && names.length <= 3 ? `: ${names.join(', ')}` : '';
-      return `**${name}** discovered **${count} lore entr${count > 1 ? 'ies' : 'y'}**${display}`;
-    });
-
-    const embed = new EmbedBuilder()
-      .setAuthor({ name: '📜 Lore Discovered' })
-      .setDescription(lines.join('\n'))
-      .setColor(0x8e44ad)
-      .setTimestamp();
-
-    try {
-      await this._sendFeedEmbed(embed, targetDate);
-    } catch (err) {
-      console.error(`[${this._label}] Failed to post lore feed to activity thread:`, err.message);
+    // ── Fishing ──
+    if (deltas.fishingDeltas.length > 0 && this._config.enableFishingFeed) {
+      const lines = deltas.fishingDeltas.map(({ name, delta }) => {
+        const total = delta.fishCaught || 0;
+        const pike = delta.fishCaughtPike || 0;
+        const bitten = delta.timesBitten || 0;
+        const parts = [];
+        if (total > 0) {
+          const pikeNote = pike > 0 ? ` (${pike} pike)` : '';
+          parts.push(`caught **${total} fish**${pikeNote}`);
+        }
+        if (bitten > 0) parts.push(`was bitten **${bitten} time${bitten > 1 ? 's' : ''}**`);
+        return `**${name}** ${parts.join(', ')}`;
+      });
+      sections.push({ header: '🎣 Fishing', lines });
     }
-  }
 
-  async _postUniqueFeed(deltas, targetDate) {
-    const lines = deltas.map(({ name, type, items }) => {
-      const names = items.map(u => _cleanItemName(typeof u === 'object' ? (u.name || u.id || JSON.stringify(u)) : u)).filter(Boolean);
-      const display = names.length <= 5 ? names.join(', ') : `${names.slice(0, 5).join(', ')} +${names.length - 5} more`;
-      return `**${name}** ${type} unique item${items.length > 1 ? 's' : ''}: **${display}**`;
-    });
-
-    const embed = new EmbedBuilder()
-      .setAuthor({ name: '✨ Unique Item' })
-      .setDescription(lines.join('\n'))
-      .setColor(0xe74c3c)
-      .setTimestamp();
-
-    try {
-      await this._sendFeedEmbed(embed, targetDate);
-    } catch (err) {
-      console.error(`[${this._label}] Failed to post unique feed to activity thread:`, err.message);
+    // ── Recipes ──
+    if (deltas.recipeDeltas.length > 0 && this._config.enableRecipeFeed) {
+      const lines = deltas.recipeDeltas.map(({ name, type, items }) => {
+        const names = items.map(r => _cleanItemName(r)).filter(Boolean);
+        const display = names.length <= 5 ? names.join(', ') : `${names.slice(0, 5).join(', ')} +${names.length - 5} more`;
+        return `**${name}** learned ${type}: ${display}`;
+      });
+      sections.push({ header: '📖 Recipes', lines });
     }
-  }
 
-  async _postCompanionFeed(deltas, targetDate) {
-    const lines = deltas.map(({ name, type, items }) => {
-      const count = items.length;
-      const emoji = type === 'horse' ? '🐴' : '🐕';
-      const label = type === 'horse'
-        ? `${count} horse${count > 1 ? 's' : ''}`
-        : `${count} companion${count > 1 ? 's' : ''}`;
-      return `${emoji} **${name}** tamed **${label}**`;
-    });
-
-    const embed = new EmbedBuilder()
-      .setAuthor({ name: '🐾 Companion Tamed' })
-      .setDescription(lines.join('\n'))
-      .setColor(0x27ae60)
-      .setTimestamp();
-
-    try {
-      await this._sendFeedEmbed(embed, targetDate);
-    } catch (err) {
-      console.error(`[${this._label}] Failed to post companion feed to activity thread:`, err.message);
+    // ── Skills ──
+    if (deltas.skillDeltas.length > 0 && this._config.enableSkillFeed) {
+      const lines = deltas.skillDeltas.map(({ name, items }) => {
+        const names = items.map(s => _cleanItemName(s).toUpperCase());
+        return `**${name}** unlocked skill${names.length > 1 ? 's' : ''}: **${names.join(', ')}**`;
+      });
+      sections.push({ header: '⚡ Skills', lines });
     }
-  }
 
-  async _postChallengeFeed(deltas, targetDate) {
-    const lines = deltas.flatMap(({ name, completed }) =>
-      completed.map(c => `**${name}** completed **${c.name}** — *${c.desc}*`)
+    // ── Professions ──
+    if (deltas.professionDeltas.length > 0 && this._config.enableProfessionFeed) {
+      const lines = deltas.professionDeltas.map(({ name, items }) => {
+        const names = items.map(p => {
+          if (typeof p === 'number') return PERK_INDEX_MAP[p] || `Profession #${p}`;
+          if (typeof p === 'string') return PERK_MAP[p] || _cleanItemName(p);
+          return String(p);
+        });
+        return `**${name}** unlocked profession${names.length > 1 ? 's' : ''}: **${names.join(', ')}**`;
+      });
+      sections.push({ header: '🎓 Professions', lines });
+    }
+
+    // ── Lore ──
+    if (deltas.loreDeltas.length > 0 && this._config.enableLoreFeed) {
+      const lines = deltas.loreDeltas.map(({ name, items }) => {
+        const count = items.length;
+        const names = items.map(l => _cleanItemName(typeof l === 'object' ? (l.name || l.id || JSON.stringify(l)) : l)).filter(Boolean);
+        const display = names.length > 0 && names.length <= 3 ? `: ${names.join(', ')}` : '';
+        return `**${name}** discovered **${count} lore entr${count > 1 ? 'ies' : 'y'}**${display}`;
+      });
+      sections.push({ header: '📜 Lore', lines });
+    }
+
+    // ── Unique Items ──
+    if (deltas.uniqueDeltas.length > 0 && this._config.enableUniqueFeed) {
+      const lines = deltas.uniqueDeltas.map(({ name, type, items }) => {
+        const names = items.map(u => _cleanItemName(typeof u === 'object' ? (u.name || u.id || JSON.stringify(u)) : u)).filter(Boolean);
+        const display = names.length <= 5 ? names.join(', ') : `${names.slice(0, 5).join(', ')} +${names.length - 5} more`;
+        return `**${name}** ${type} unique item${items.length > 1 ? 's' : ''}: **${display}**`;
+      });
+      sections.push({ header: '✨ Unique Items', lines });
+    }
+
+    // ── Companions ──
+    if (deltas.companionDeltas.length > 0 && this._config.enableCompanionFeed) {
+      const lines = deltas.companionDeltas.map(({ name, type, items }) => {
+        const count = items.length;
+        const emoji = type === 'horse' ? '🐴' : '🐕';
+        const label = type === 'horse'
+          ? `${count} horse${count > 1 ? 's' : ''}`
+          : `${count} companion${count > 1 ? 's' : ''}`;
+        return `${emoji} **${name}** tamed **${label}**`;
+      });
+      sections.push({ header: '🐾 Companions', lines });
+    }
+
+    // ── Challenges ──
+    if (deltas.challengeDeltas.length > 0 && this._config.enableChallengeFeed) {
+      const lines = deltas.challengeDeltas.flatMap(({ name, completed }) =>
+        completed.map(c => `**${name}** completed **${c.name}** — *${c.desc}*`)
+      );
+      sections.push({ header: '🏆 Challenges', lines });
+    }
+
+    if (sections.length === 0) return;
+
+    // Build consolidated description with section headers, splitting across
+    // multiple embeds when the 4096-char description limit would be exceeded.
+    const LIMIT = 4000; // margin below Discord's 4096
+    const descParts = sections.map(s =>
+      `**${s.header}**\n${s.lines.join('\n')}`
     );
 
-    const embed = new EmbedBuilder()
-      .setAuthor({ name: '🏆 Challenge Completed' })
-      .setDescription(lines.join('\n'))
-      .setColor(0xf39c12)
-      .setTimestamp();
+    const chunks = [];
+    let current = '';
+    for (const part of descParts) {
+      const addition = current ? `\n\n${part}` : part;
+      if (current && (current.length + addition.length) > LIMIT) {
+        chunks.push(current);
+        current = part;
+      } else {
+        current += addition;
+      }
+    }
+    if (current) chunks.push(current);
 
     try {
-      await this._sendFeedEmbed(embed, targetDate);
+      for (let i = 0; i < chunks.length; i++) {
+        const embed = new EmbedBuilder()
+          .setDescription(chunks[i])
+          .setColor(0x5865F2);
+        if (i === 0) embed.setAuthor({ name: '📊 Activity Summary' });
+        if (i === chunks.length - 1) embed.setTimestamp();
+        await this._sendFeedEmbed(embed, targetDate);
+      }
     } catch (err) {
-      console.error(`[${this._label}] Failed to post challenge feed to activity thread:`, err.message);
+      console.error(`[${this._label}] Failed to post activity summary to thread:`, err.message);
     }
   }
 
@@ -2044,6 +1958,10 @@ class PlayerStatsChannel {
         }
       }
       if (pt) lines.push(`**Playtime:** ${pt.totalFormatted}  ·  **Sessions:** ${pt.sessions}`);
+      // XP
+      if (saveData?.exp != null && saveData.exp > 0) {
+        lines.push(`**XP:** ${Math.round(saveData.exp).toLocaleString()}`);
+      }
       if (resolved.firstSeen) {
         const fs = new Date(resolved.firstSeen);
         lines.push(`**First Seen:** ${fs.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: this._config.botTimezone })}`);
@@ -2168,6 +2086,15 @@ class PlayerStatsChannel {
         if (dmgEntries.length > 6) dmgLines.push(`_+${dmgEntries.length - 6} more_`);
         embed.addFields({ name: `Damage Taken (${dmgTotal} hits)`, value: dmgLines.join('\n'), inline: true });
       }
+
+      // ── Killed By ──
+      const killEntries = Object.entries(logData.killedBy || {});
+      if (killEntries.length > 0) {
+        const killSorted = killEntries.sort((a, b) => b[1] - a[1]);
+        const killLines = killSorted.slice(0, 6).map(([src, count]) => `${src}: **${count}**`);
+        if (killEntries.length > 6) killLines.push(`_+${killEntries.length - 6} more_`);
+        embed.addFields({ name: `Killed By (${logData.deaths} deaths)`, value: killLines.join('\n'), inline: true });
+      }
     }
 
     // ── Building ──
@@ -2236,7 +2163,7 @@ class PlayerStatsChannel {
     }
 
     // ── Unlocked Skills ──
-    if (saveData && saveData.unlockedSkills && saveData.unlockedSkills.length > 0) {
+    if (this._config.canShow('showSkills', isAdmin) && saveData && saveData.unlockedSkills && saveData.unlockedSkills.length > 0) {
       const skillLines = saveData.unlockedSkills.filter(s => typeof s === 'string').map(s => {
         const clean = s.replace(/^skills\./i, '').replace(/([a-z])([A-Z])/g, '$1 $2').toUpperCase();
         const effect = gameData.SKILL_EFFECTS[clean];
@@ -2316,6 +2243,46 @@ class PlayerStatsChannel {
         ? ` | Facing: ${saveData.rotationYaw}°`
         : '';
       embed.addFields({ name: '📍 Location', value: `X: **${Math.round(saveData.x)}** · Y: **${Math.round(saveData.y)}** · Z: **${Math.round(saveData.z)}**${dir}`, inline: true });
+    }
+
+    // ── Horses ──
+    if (this._config.canShow('showHorses', isAdmin) && saveData?.horses?.length > 0) {
+      const horseLines = saveData.horses.map(h => {
+        const hName = h.displayName || h.name || _cleanItemName(h.class || 'Horse');
+        const parts = [];
+        // Health with max
+        if (h.health != null) {
+          const hpStr = h.maxHealth > 0
+            ? `${Math.round(h.health)}/${Math.round(h.maxHealth)}`
+            : `${Math.round(h.health)}`;
+          parts.push(`HP: **${hpStr}**`);
+        }
+        if (h.energy != null) parts.push(`Energy: **${Math.round(h.energy)}**`);
+        if (h.stamina != null && h.stamina > 0) parts.push(`Stamina: **${Math.round(h.stamina)}**`);
+        const line = parts.length > 0 ? `🐴 ${hName} · ${parts.join(' · ')}` : `🐴 ${hName}`;
+
+        // Saddle / horse inventory
+        const allInv = [...(h.saddleInventory || []), ...(h.inventory || [])];
+        const invItems = allInv.filter(i => i && i.item).map(i => {
+          const name = _cleanItemName(i.item);
+          return i.amount > 1 ? `${name} x${i.amount}` : name;
+        });
+        if (invItems.length > 0) {
+          return `${line}\n> Carrying: ${invItems.slice(0, 10).join(', ')}${invItems.length > 10 ? ` +${invItems.length - 10} more` : ''}`;
+        }
+        return line;
+      });
+      embed.addFields({ name: `Horses (${saveData.horses.length})`, value: horseLines.join('\n').substring(0, 1024) });
+    }
+
+    // ── Companions ──
+    if (this._config.canShow('showHorses', isAdmin) && saveData?.companionData?.length > 0) {
+      const compLines = saveData.companionData.map(c => {
+        const cName = c.displayName || c.name || _cleanItemName(c.class || 'Companion');
+        const hp = c.health != null ? ` · HP: **${Math.round(c.health)}**` : '';
+        return `🐕 ${cName}${hp}`;
+      });
+      embed.addFields({ name: `Companions (${saveData.companionData.length})`, value: compLines.join('\n').substring(0, 1024) });
     }
 
     // ── Anti-Cheat Flags (admin only) ──

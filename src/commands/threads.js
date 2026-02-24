@@ -227,6 +227,7 @@ async function _fetchThreadMessages(thread) {
     if (m.embeds.length !== 1 || m.content) return false;
     const title = m.embeds[0].data?.title || '';
     const desc  = m.embeds[0].data?.description || '';
+    if (title.startsWith('Daily Summary')) return true;
     if (title.startsWith('📋 Activity Log')) return true;
     if (desc.includes('Log watcher connected')) return true;
     return false;
@@ -245,13 +246,17 @@ async function _findMatchingThreads(channel, threadName, { dateLabel, serverSuff
   // Build a set of name variants to match (current + legacy formats)
   const names = new Set([threadName]);
   if (dateLabel) {
+    // Current format
+    names.add(`Daily Summary — ${dateLabel}${serverSuffix}`);
+    names.add(`Daily Summary — ${dateLabel}`);
+    // Legacy formats with emoji prefix
+    names.add(`📋 Activity Log — ${dateLabel}${serverSuffix}`);
+    names.add(`📋 Activity Log — ${dateLabel}`);
     // Legacy format without emoji prefix
     names.add(`Activity Log — ${dateLabel}${serverSuffix}`);
+    names.add(`Activity Log — ${dateLabel}`);
     // Very old format
     names.add(`Activity Log - ${dateLabel}${serverSuffix}`);
-    // Pre-label formats (before server names were added)
-    names.add(`📋 Activity Log — ${dateLabel}`);
-    names.add(`Activity Log — ${dateLabel}`);
     names.add(`Activity Log - ${dateLabel}`);
   }
 
@@ -385,7 +390,7 @@ async function rebuildThreads(discordClient, daysBack = null, configOverride = n
 
   for (const dateStr of dates) {
     const label = _dateLabel(dateStr);
-    const threadName = `📋 Activity Log — ${label}${serverSuffix}`;
+    const threadName = `Daily Summary — ${label}${serverSuffix}`;
 
     // 1. Find existing threads and harvest their messages before deletion
     const existingThreads = await _findMatchingThreads(channel, threadName, { dateLabel: label, serverSuffix });

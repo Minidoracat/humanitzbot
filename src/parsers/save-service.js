@@ -31,6 +31,7 @@ const EventEmitter = require('events');
 const fs = require('fs');
 const path = require('path');
 const { parseSave, parseClanData } = require('./save-parser');
+const { diffSaveState } = require('../db/diff-engine');
 
 class SaveService extends EventEmitter {
   /**
@@ -442,23 +443,17 @@ class SaveService extends EventEmitter {
     }
 
     // ── 'auto' — probe in priority order ──
+    // Auto mode does NOT auto-select panel — it must be explicitly set via AGENT_TRIGGER=panel.
 
-    // 1. Try panel command if Panel API is available
-    if (this._checkPanelAvailable()) {
-      console.log(`[${this._label}] Panel API available — using panel command trigger ("${this._agentPanelCommand}")`);
-      this._resolvedTrigger = 'panel';
-      return 'panel';
-    }
-
-    // 2. Try SSH
+    // 1. Try SSH
     if (this._agentCapable === null) await this.checkNodeAvailable();
     if (this._agentCapable) {
       this._resolvedTrigger = 'ssh';
       return 'ssh';
     }
 
-    // 3. Neither available — just check for cache (host-managed)
-    console.log(`[${this._label}] No panel or SSH available — will check for host-managed cache only`);
+    // 2. Neither available — just check for cache (host-managed)
+    console.log(`[${this._label}] No SSH available — will check for host-managed cache only`);
     this._resolvedTrigger = 'none';
     return 'none';
   }
@@ -481,8 +476,7 @@ class SaveService extends EventEmitter {
 
   /**
    * Trigger the agent via a Pterodactyl panel console command.
-   * NOTE: Requires host-side support (not yet implemented — pending Bisect partnership).
-   * The host wrapper would intercept this command and run the parser.
+   * The host wrapper intercepts this command and runs the parser.
    * We wait a configurable delay for the host to finish writing the cache.
    */
   async _triggerViaPanel() {
@@ -641,6 +635,7 @@ class SaveService extends EventEmitter {
       containers: cache.containers || [],
       lootActors: cache.lootActors || [],
       quests: cache.quests || [],
+      horses: cache.horses || [],
     };
 
     await this._syncParsedData(parsed, []);
@@ -649,6 +644,9 @@ class SaveService extends EventEmitter {
   /**
    * Core sync: write parsed data into the database and emit events.
    * Shared by both direct mode (after parseSave) and agent mode (after cache read).
+   *
+   * Runs the diff engine to detect changes (item movements, horse changes,
+   * world events) and writes activity_log entries before replacing the data.
    */
   async _syncParsedData(parsed, clans) {
     const startTime = Date.now();
@@ -659,6 +657,30 @@ class SaveService extends EventEmitter {
         data.name = this._idMap[steamId];
       }
     }
+
+    // ── Diff engine: compare old state with new, generate activity log ──
+    let diffEvents = [];
+    try {
+      const oldState = this._readOldStateForDiff();
+      if (oldState) {
+        const newState = {
+          containers: parsed.containers || [],
+          horses: parsed.horses || [],
+          players: parsed.players,
+          worldState: parsed.worldState || {},
+          vehicles: parsed.vehicles || [],
+        };
+        const nameResolver = (steamId) => {
+          const p = parsed.players.get(steamId);
+          return p?.name || this._idMap[steamId] || steamId;
+        };
+        diffEvents = diffSaveState(oldState, newState, nameResolver);
+      }
+    } catch (err) {
+      console.warn(`[${this._label}] Diff engine error (non-fatal):`, err.message);
+    }
+
+    // ── Write all data to DB ──
 
     // Sync everything into the database in one transaction
     this._db.syncFromSave({
@@ -675,7 +697,7 @@ class SaveService extends EventEmitter {
       this._db.replaceDeadBodies(parsed.deadBodies);
     }
 
-    // Sync containers
+    // Sync containers (with enriched metadata)
     if (parsed.containers && parsed.containers.length > 0) {
       this._db.replaceContainers(parsed.containers);
     }
@@ -690,13 +712,34 @@ class SaveService extends EventEmitter {
       this._db.replaceQuests(parsed.quests);
     }
 
+    // Sync world horses (new in v4)
+    if (parsed.horses && parsed.horses.length > 0) {
+      this._db.replaceWorldHorses(parsed.horses);
+    }
+
+    // ── Write activity log entries from diff ──
+    if (diffEvents.length > 0) {
+      try {
+        this._db.insertActivities(diffEvents);
+        console.log(`[${this._label}] Activity log: ${diffEvents.length} events recorded`);
+      } catch (err) {
+        console.warn(`[${this._label}] Failed to write activity log:`, err.message);
+      }
+    }
+
+    // Purge old activity entries (keep 30 days)
+    try { this._db.purgeOldActivity('-30 days'); } catch { /* ignore */ }
+
     // Update meta timestamps
     this._db.setMeta('last_save_sync', new Date().toISOString());
     this._db.setMeta('last_save_players', String(parsed.players.size));
 
     const elapsed = Date.now() - startTime;
     const mode = this._mode || this._agentMode;
-    console.log(`[${this._label}] Sync complete (${mode}): ${parsed.players.size} players, ${parsed.structures.length} structures, ${parsed.vehicles.length} vehicles, ${clans.length} clans (${elapsed}ms)`);
+    const horsesLabel = parsed.horses?.length ? `, ${parsed.horses.length} horses` : '';
+    const containersLabel = parsed.containers?.length ? `, ${parsed.containers.length} containers` : '';
+    const activityLabel = diffEvents.length ? `, ${diffEvents.length} activity events` : '';
+    console.log(`[${this._label}] Sync complete (${mode}): ${parsed.players.size} players, ${parsed.structures.length} structures, ${parsed.vehicles.length} vehicles, ${clans.length} clans${horsesLabel}${containersLabel}${activityLabel} (${elapsed}ms)`);
 
     // Emit event with summary so other modules can react
     const result = {
@@ -705,14 +748,45 @@ class SaveService extends EventEmitter {
       vehicleCount: parsed.vehicles.length,
       companionCount: parsed.companions.length,
       clanCount: clans.length,
+      horseCount: parsed.horses?.length || 0,
+      containerCount: parsed.containers?.length || 0,
+      activityEvents: diffEvents.length,
       worldState: parsed.worldState,
       elapsed,
       steamIds: [...parsed.players.keys()],
       mode,
+      diffEvents, // pass to listeners for real-time Discord updates
     };
 
     this.emit('sync', result);
     return result;
+  }
+
+  /**
+   * Read previous state from DB for diff comparison.
+   * Returns null on first sync (no previous data).
+   */
+  _readOldStateForDiff() {
+    // Only diff after first successful sync
+    if (this._syncCount === 0) return null;
+
+    try {
+      const containers = this._db.getAllContainers ? this._db.getAllContainers() : [];
+      const horses = this._db.getAllWorldHorses ? this._db.getAllWorldHorses() : [];
+      const worldState = this._db.getAllWorldState ? this._db.getAllWorldState() : {};
+      const vehicles = this._db.getAllVehicles ? this._db.getAllVehicles() : [];
+
+      // Read player inventories (only the columns we need for diff)
+      let players = [];
+      try {
+        players = this._db.getAllPlayers ? this._db.getAllPlayers() : [];
+      } catch { /* empty */ }
+
+      return { containers, horses, players, worldState, vehicles };
+    } catch (err) {
+      console.warn(`[${this._label}] Could not read old state for diff:`, err.message);
+      return null;
+    }
   }
 }
 

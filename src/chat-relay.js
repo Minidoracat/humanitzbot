@@ -5,6 +5,7 @@ const _defaultRcon = require('./rcon');
 
 // ── Chat line parsers ────────────────────────────────────────
 // Player chat:   <PN>PlayerName:</>Message text
+// Admin chat:    [Admin]<PN>PlayerName:</>Message text (admin players get this prefix)
 const CHAT_RE = /^<PN>(.+?):<\/>(.+)$/;
 // Player joined: Player Joined (<PN>PlayerName</>)
 const JOIN_RE = /^Player Joined \(<PN>(.+?)<\/>\)$/;
@@ -12,8 +13,15 @@ const JOIN_RE = /^Player Joined \(<PN>(.+?)<\/>\)$/;
 const LEFT_RE = /^Player Left \(<PN>(.+?)<\/>\)$/;
 // Player died:   Player Died (<PN>PlayerName</>)
 const DIED_RE = /^Player Died \(<PN>(.+?)<\/>\)$/;
-// Admin message — skip echoing these back (we sent them)
-const ADMIN_RE = /^\[Admin\]/;
+// Bot-generated admin broadcasts are prefixed with [Bot].
+// Admin *player* messages have no [Bot] prefix (just "[Admin] Name: text" or "[Admin]<PN>Name:</>text").
+const BOT_ADMIN_RE = /^\[Admin\]\s*\[Bot\]/;
+// Plain chat fallback — admin player lines may lack <PN> tags
+const PLAIN_CHAT_RE = /^([^:<>\n]{1,32}):\s*(.+)$/;
+// Strip [Admin] prefix from admin player lines so the other regexes can match
+function stripAdminPrefix(line) {
+  return line.startsWith('[Admin]') ? line.replace(/^\[Admin\]\s*/, '') : line;
+}
 
 class ChatRelay {
   constructor(client, deps = {}) {
@@ -318,7 +326,10 @@ class ChatRelay {
   // ── !admin command detection ────────────────────────────────
 
   async _checkAdminCall(line) {
-    const m = CHAT_RE.exec(line);
+    // Strip [Admin] prefix so admin players' !admin commands are detected
+    const cleaned = stripAdminPrefix(line);
+    let m = CHAT_RE.exec(cleaned);
+    if (!m) m = PLAIN_CHAT_RE.exec(cleaned);
     if (!m) return;
 
     const name = m[1].trim();
@@ -370,34 +381,40 @@ class ChatRelay {
       }
     }
 
-    // Acknowledge in-game
+    // Acknowledge in-game (plain text — no color needed for acknowledgements)
     try {
       await this._rcon.send(`admin [Bot] ${name}, your request has been sent to the admins. Join our Discord for faster help: ${this._config.discordInviteLink}`);
     } catch (_) {}
   }
 
   _formatLine(line) {
-    // Skip admin message echo
-    if (ADMIN_RE.test(line)) return null;
+    // Skip bot-generated admin broadcasts (no <PN> tag = sent by us, not a player)
+    if (BOT_ADMIN_RE.test(line)) return null;
 
-    // Player chat
-    let m = CHAT_RE.exec(line);
+    // Strip [Admin] prefix so admin players' messages match the regular regexes
+    const cleaned = stripAdminPrefix(line);
+    const isAdmin = cleaned !== line;
+
+    // Player chat (game uses <PN> tags in fetchChat output)
+    let m = CHAT_RE.exec(cleaned);
+    if (!m) m = PLAIN_CHAT_RE.exec(cleaned); // admin players may lack <PN> tags
     if (m) {
       const name = m[1].trim();
       const text = this._sanitize(m[2].trim());
-      return `💬 **${name}:** ${text}`;
+      const badge = isAdmin ? ' 🛡️' : '';
+      return `💬 **${name}${badge}:** ${text}`;
     }
 
     // Player joined
-    m = JOIN_RE.exec(line);
+    m = JOIN_RE.exec(cleaned);
     if (m) return `📥 **${m[1]}** joined the server`;
 
     // Player left
-    m = LEFT_RE.exec(line);
+    m = LEFT_RE.exec(cleaned);
     if (m) return `📤 **${m[1]}** left the server`;
 
     // Player died
-    m = DIED_RE.exec(line);
+    m = DIED_RE.exec(cleaned);
     if (m) return `💀 **${m[1]}** died`;
 
     // Unknown format — skip silently
@@ -424,7 +441,10 @@ class ChatRelay {
 
   async _onMessage(message) {
     if (message.author.bot) return;
-    if (message.channelId !== this.adminChannel.id) return;
+    // Accept messages in the admin channel OR any of its threads (e.g. the chat thread)
+    const isInChannel = message.channelId === this.adminChannel.id;
+    const isInThread = message.channel.isThread?.() && message.channel.parentId === this.adminChannel.id;
+    if (!isInChannel && !isInThread) return;
     if (!message.content || message.content.trim() === '') return;
 
     try {
@@ -436,7 +456,7 @@ class ChatRelay {
       let displayName = message.member?.displayName || message.author.displayName || message.author.username;
       displayName = this._sanitizeRcon(displayName).replace(/[^a-zA-Z0-9 _\-.']/g, '').slice(0, 32) || 'User';
       text = this._sanitizeRcon(text);
-      await this._rcon.send(`admin [Discord] ${displayName}: ${text}`);
+      await this._rcon.send(`admin [Bot] [Discord] ${displayName}: ${text}`);
       await message.react('✅');
     } catch (err) {
       console.error(`[${this._label}] Failed to relay admin message:`, err.message);

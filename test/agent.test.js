@@ -385,11 +385,12 @@ describe('SaveService agent mode', () => {
     assert.equal(svc._panelCapable, false);
   });
 
-  it('_resolveTrigger auto prefers panel when available', async () => {
+  it('_resolveTrigger auto does NOT auto-select panel', async () => {
     const fakePanelApi = { available: true, sendCommand: async () => {} };
     const svc = new SaveService(db, { agentTrigger: 'auto', panelApi: fakePanelApi });
     const trigger = await svc._resolveTrigger();
-    assert.equal(trigger, 'panel');
+    // Panel must be explicitly set — auto skips it
+    assert.equal(trigger, 'none');
   });
 
   it('_resolveTrigger auto falls to none when nothing available', async () => {

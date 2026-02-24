@@ -4,11 +4,12 @@
  *
  *
  * Modes:
- *   node setup.js               Full first-run: auto-discover paths, download logs via SFTP, import all data
+ *   node setup.js               Full first-run: auto-discover paths, download logs via SFTP, import all data + backfill activity log
  *   node setup.js --find        Auto-discover file paths on server & update .env
  *   node setup.js --validate    Download logs via SFTP, compare against existing data
  *   node setup.js --fix         Same as default — download and rebuild all data files
  *   node setup.js --local       Use previously downloaded files in data/ (skip SFTP)
+ *   node setup.js --backfill    Replay historical log events into activity_log DB table only
  *
  * Auto-discovery: On first run, the bot connects via SFTP and searches for
  * HMZLog.log, PlayerConnectedLog.txt, PlayerIDMapped.txt, and the save file.
@@ -17,6 +18,16 @@
  */
 
 require('dotenv').config();
+
+// ── Timestamped console logging ──────────────────────────────
+const _origLog   = console.log;
+const _origError = console.error;
+const _origWarn  = console.warn;
+function _ts() { return new Date().toLocaleTimeString('en-GB', { hour12: false }); }
+console.log   = (...args) => _origLog(`[${_ts()}]`, ...args);
+console.error = (...args) => _origError(`[${_ts()}]`, ...args);
+console.warn  = (...args) => _origWarn(`[${_ts()}]`, ...args);
+
 const fs = require('fs');
 const path = require('path');
 const SftpClient = require('ssh2-sftp-client');
@@ -46,6 +57,7 @@ const args = process.argv.slice(2);
 const MODE_FIND = args.includes('--find');
 const MODE_VALIDATE = args.includes('--validate');
 const MODE_LOCAL = args.includes('--local');
+const MODE_BACKFILL = args.includes('--backfill');
 
 // ── Shared Helpers ────────────────────────────────────────────
 
@@ -870,6 +882,130 @@ function validateData(parsed) {
   return discrepancies;
 }
 
+// ── Activity Log Backfill ─────────────────────────────────────
+
+/**
+ * Parse HMZLog.log + PlayerConnectedLog.txt into activity_log entries with original timestamps.
+ * Returns an array of { type, category, actor, actorName, item, amount, details, createdAt }.
+ * Skips damage events (too numerous — would bloat the DB with millions of low-value rows).
+ */
+function buildActivityEntries(hmzLog, connectedLog) {
+  const entries = [];
+
+  // ── HMZLog events ──
+  const tsRegex = /^\((\d{1,2})[/\-.](\d{1,2})[/\-.](\d{1,2},?\d{3})\s+(\d{1,2}):(\d{1,2})(?::\d{1,2})?\)\s+(.+)$/;
+
+  if (hmzLog) {
+    for (const rawLine of hmzLog.split('\n')) {
+      const line = rawLine.replace(/^\uFEFF/, '').trim();
+      if (!line) continue;
+      const lm = line.match(tsRegex);
+      if (!lm) continue;
+      const [, day, month, rawYear, hour, min, body] = lm;
+      const year = rawYear.replace(',', '');
+      const ts = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${min.padStart(2, '0')}:00.000Z`;
+      let m;
+
+      // Player death
+      m = body.match(/^Player died \((.+)\)$/);
+      if (m) { entries.push({ type: 'player_death', category: 'death', actorName: m[1].trim(), item: 'Unknown', createdAt: ts }); continue; }
+
+      // Build
+      m = body.match(/^(.+?)\((\d{17})[^)]*\)\s*finished building\s+(.+)$/);
+      if (m) { entries.push({ type: 'player_build', category: 'build', actor: m[2], actorName: m[1].trim(), item: simplifyBlueprintName(m[3].trim()), createdAt: ts }); continue; }
+
+      // Container looted (skip self-loot)
+      m = body.match(/^(.+?)\s*\((\d{17})[^)]*\)\s*looted a container\s*\(([^)]+)\)\s*owner by\s*(\d{17})/);
+      if (m && m[2] !== m[4]) { entries.push({ type: 'container_looted', category: 'loot', actor: m[2], actorName: m[1].trim(), item: m[3], details: { owner: m[4] }, createdAt: ts }); continue; }
+
+      // Raid
+      m = body.match(/^Building \(([^)]+)\) owned by \((\d{17}[^)]*)\) damaged \([\d.]+\) by (.+?)(?:\((\d{17})[^)]*\))?(\s*\(Destroyed\))?$/);
+      if (m) {
+        const ownerId = m[2].match(/^(\d{17})/)?.[1];
+        const atkRaw = m[3].trim();
+        const atkId = m[4];
+        const destroyed = !!m[5];
+        if (atkRaw !== 'Decayfalse' && atkRaw !== 'Zeek' && ownerId && !(atkId && atkId === ownerId)) {
+          entries.push({ type: destroyed ? 'raid_destroy' : 'raid_hit', category: 'raid', actor: atkId || '', actorName: atkRaw, item: simplifyBlueprintName(m[1]), details: { owner: ownerId }, createdAt: ts });
+        }
+        continue;
+      }
+
+      // Admin access
+      m = body.match(/^(.+?)\s+gained admin access!$/);
+      if (m) { entries.push({ type: 'admin_access', category: 'admin', actorName: m[1].trim(), createdAt: ts }); continue; }
+
+      // Anti-cheat
+      m = body.match(/^(Stack limit detected in drop function|Odd behavior.*?Cheat)\s*\((.+?)\s*-\s*(\d{17})/);
+      if (m) { entries.push({ type: 'cheat_flag', category: 'admin', actor: m[3], actorName: m[2].trim(), item: m[1].trim(), createdAt: ts }); continue; }
+    }
+  }
+
+  // ── Connected log events ──
+  if (connectedLog) {
+    const connectRegex = /^Player (Connected|Disconnected)\s+(.+?)\s+NetID\((\d{17})[^)]*\)\s*\((\d{1,2})[/\-.](\d{1,2})[/\-.](\d{1,2},?\d{3})\s+(\d{1,2}):(\d{1,2})(?::\d{1,2})?\)/;
+    for (const rawLine of connectedLog.split('\n')) {
+      const line = rawLine.replace(/^\uFEFF/, '').trim();
+      if (!line) continue;
+      const cm = line.match(connectRegex);
+      if (!cm) continue;
+      const [, action, name, steamId, day, month, rawYear, hour, min] = cm;
+      const year = rawYear.replace(',', '');
+      const ts = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${min.padStart(2, '0')}:00.000Z`;
+      entries.push({
+        type: action === 'Connected' ? 'player_connect' : 'player_disconnect',
+        category: 'player',
+        actor: steamId,
+        actorName: name.trim(),
+        createdAt: ts,
+      });
+    }
+  }
+
+  // Sort chronologically
+  entries.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return entries;
+}
+
+/**
+ * Backfill activity_log table from parsed log files.
+ * Opens the DB, clears existing activity entries, inserts all historical events.
+ */
+function backfillActivityLog(hmzLog, connectedLog) {
+  const HumanitZDB = require('./src/db/database');
+  const db = new HumanitZDB();
+  db.init();
+
+  try {
+    const entries = buildActivityEntries(hmzLog, connectedLog);
+    console.log(`\n--- Backfilling Activity Log ---\n`);
+    console.log(`  Events to insert: ${entries.length}`);
+
+    // Count by category
+    const cats = {};
+    for (const e of entries) { cats[e.category] = (cats[e.category] || 0) + 1; }
+    for (const [cat, count] of Object.entries(cats)) {
+      console.log(`    ${cat}: ${count}`);
+    }
+
+    // Clear existing and insert
+    db.clearActivityLog();
+    console.log('  Cleared existing activity log entries');
+
+    // Insert in batches of 500
+    const BATCH = 500;
+    for (let i = 0; i < entries.length; i += BATCH) {
+      db.insertActivitiesAt(entries.slice(i, i + BATCH));
+    }
+
+    const count = db.getActivityCount();
+    console.log(`  Inserted: ${count} activity log entries`);
+    console.log('  Activity log backfill complete!');
+  } finally {
+    db.close();
+  }
+}
+
 // ── Main ──────────────────────────────────────────────────────
 
 async function main() {
@@ -1034,10 +1170,32 @@ async function main() {
     console.log(`  Data since:         ${new Date(parsed.earliestEvent).toLocaleDateString('en-GB')}`);
   }
   console.log(`\n  Start the bot with: npm start`);
+
+  // Step 8: Backfill activity log (always runs during setup/nuke — historical data is free)
+  if (hmzLog || connectedLog) {
+    try {
+      backfillActivityLog(hmzLog, connectedLog);
+    } catch (err) {
+      console.warn('  Activity log backfill failed (non-critical):', err.message);
+    }
+  }
 }
 
-// Allow import from index.js OR direct execution
-if (require.main === module) {
+// --backfill standalone mode: just replay logs into activity_log
+if (MODE_BACKFILL && require.main === module) {
+  (async () => {
+    console.log('=== Activity Log Backfill ===\n');
+    if (!fs.existsSync(DATA_DIR)) { console.error('data/ directory not found.'); process.exit(1); }
+    let hmzLog, connectedLog;
+    if (MODE_LOCAL) {
+      ({ hmzLog, connectedLog } = loadLocalFiles());
+    } else {
+      ({ hmzLog, connectedLog } = await downloadFiles());
+    }
+    if (!hmzLog && !connectedLog) { console.error('No log files available.'); process.exit(1); }
+    backfillActivityLog(hmzLog, connectedLog);
+  })().catch(err => { console.error('Fatal error:', err); process.exit(1); });
+} else if (require.main === module) {
   main().catch(err => {
     console.error('Fatal error:', err);
     process.exit(1);

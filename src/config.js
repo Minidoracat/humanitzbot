@@ -220,6 +220,17 @@ const config = {
 
   // PvP scheduler
   enablePvpScheduler: envBool('ENABLE_PVP_SCHEDULER', false),
+
+  // Activity log — tracks item movements, horse changes, world events from save diffs
+  enableActivityLog: envBool('ENABLE_ACTIVITY_LOG', true),
+  activityLogChannelId: process.env.ACTIVITY_LOG_CHANNEL_ID || '',
+
+  // Activity log sub-toggles
+  enableContainerLog: envBool('ENABLE_CONTAINER_LOG', true),     // container item add/remove
+  enableHorseLog: envBool('ENABLE_HORSE_LOG', true),             // horse appeared/disappeared/health
+  enableVehicleLog: envBool('ENABLE_VEHICLE_LOG', true),         // vehicle trunk changes
+  showInventoryLog: envBool('SHOW_INVENTORY_LOG', false),        // player inventory changes (off by default — sensitive)
+  showInventoryLogAdminOnly: envBool('SHOW_INVENTORY_LOG_ADMIN_ONLY', true), // restrict inventory log to admins
   pvpStartMinutes: envTime('PVP_START_TIME'),   // total minutes from midnight (supports "HH" or "HH:MM")
   pvpEndMinutes: envTime('PVP_END_TIME'),       // total minutes from midnight (supports "HH" or "HH:MM")
   pvpRestartDelay: parseInt(process.env.PVP_RESTART_DELAY, 10) || 10,
@@ -306,6 +317,7 @@ const config = {
   showInventory: envBool('SHOW_INVENTORY', true),          // default: on
   showRecipes: envBool('SHOW_RECIPES', true),              // default: on
   showLore: envBool('SHOW_LORE', true),                    // default: on
+  showSkills: envBool('SHOW_SKILLS', true),                // default: on
   showConnections: envBool('SHOW_CONNECTIONS', true),      // default: on
 
   // Fine-grained sub-toggles (parent section must also be enabled)
@@ -339,6 +351,12 @@ const config = {
   showCoordinates: envBool('SHOW_COORDINATES', false),    // default: off (sensitive)
   showCoordinatesAdminOnly: envBool('SHOW_COORDINATES_ADMIN_ONLY', true), // admin-only when shown
 
+  // Container / horse display flags (for embeds and web map)
+  showContainers: envBool('SHOW_CONTAINERS', true),              // show container info on player/world stats
+  showContainersAdminOnly: envBool('SHOW_CONTAINERS_ADMIN_ONLY', true), // restrict to admins
+  showHorses: envBool('SHOW_HORSES', true),                      // show horse info in world stats
+  showHorsesAdminOnly: envBool('SHOW_HORSES_ADMIN_ONLY', false), // horse info is public by default
+
   // Admin-only flags — when true, that section is only shown to Discord users
   // with the Administrator permission. Auto-detected from the server, no role config needed.
   showVitalsAdminOnly: envBool('SHOW_VITALS_ADMIN_ONLY', false),
@@ -346,6 +364,7 @@ const config = {
   showInventoryAdminOnly: envBool('SHOW_INVENTORY_ADMIN_ONLY', false),
   showRecipesAdminOnly: envBool('SHOW_RECIPES_ADMIN_ONLY', false),
   showLoreAdminOnly: envBool('SHOW_LORE_ADMIN_ONLY', false),
+  showSkillsAdminOnly: envBool('SHOW_SKILLS_ADMIN_ONLY', false),
   showConnectionsAdminOnly: envBool('SHOW_CONNECTIONS_ADMIN_ONLY', false),
   showRaidStatsAdminOnly: envBool('SHOW_RAID_STATS_ADMIN_ONLY', false),
   showChallengeDescriptionsAdminOnly: envBool('SHOW_CHALLENGE_DESCRIPTIONS_ADMIN_ONLY', false),

@@ -9,7 +9,7 @@
  * Schema is applied via database.js on first run and auto-migrated on updates.
  */
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 5;
 
 // ─── Player data ────────────────────────────────────────────────────────────
 
@@ -91,6 +91,10 @@ CREATE TABLE IF NOT EXISTS players (
   respawn_x       REAL,
   respawn_y       REAL,
   respawn_z       REAL,
+
+  -- Day / infection timers
+  day_incremented   INTEGER DEFAULT 0,        -- boolean: day counter incremented this life
+  infection_timer   REAL DEFAULT 0,            -- current infection timer value
 
   -- CB Radio
   cb_radio_cooldown REAL DEFAULT 0,
@@ -204,6 +208,23 @@ CREATE TABLE IF NOT EXISTS clan_members (
 );
 `;
 
+// ─── Player aliases (unified identity resolution) ───────────────────────────
+
+const PLAYER_ALIASES = `
+CREATE TABLE IF NOT EXISTS player_aliases (
+  steam_id    TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  name_lower  TEXT NOT NULL,               -- pre-lowercased for fast lookup
+  source      TEXT NOT NULL DEFAULT '',    -- 'idmap', 'save', 'connect_log', 'log', 'playtime', 'manual'
+  first_seen  TEXT DEFAULT (datetime('now')),
+  last_seen   TEXT DEFAULT (datetime('now')),
+  is_current  INTEGER DEFAULT 1,           -- 1 = this is the player's current name from this source
+  PRIMARY KEY (steam_id, name_lower)
+);
+CREATE INDEX IF NOT EXISTS idx_aliases_name_lower ON player_aliases(name_lower);
+CREATE INDEX IF NOT EXISTS idx_aliases_steam ON player_aliases(steam_id);
+`;
+
 // ─── World state ────────────────────────────────────────────────────────────
 
 const WORLD_STATE = `
@@ -275,6 +296,30 @@ CREATE TABLE IF NOT EXISTS companions (
 );
 `;
 
+// ─── World horses (global horse entities with full state) ───────────────────
+
+const WORLD_HORSES = `
+CREATE TABLE IF NOT EXISTS world_horses (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor_name      TEXT NOT NULL DEFAULT '',     -- unique horse actor name
+  class           TEXT DEFAULT '',              -- blueprint class
+  display_name    TEXT DEFAULT '',              -- human-readable horse name
+  horse_name      TEXT DEFAULT '',              -- player-given name
+  owner_steam_id  TEXT DEFAULT '',
+  pos_x           REAL,
+  pos_y           REAL,
+  pos_z           REAL,
+  health          REAL DEFAULT 0,
+  max_health      REAL DEFAULT 0,
+  energy          REAL DEFAULT 0,
+  stamina         REAL DEFAULT 0,
+  saddle_inventory TEXT DEFAULT '[]',           -- JSON: saddle items
+  inventory       TEXT DEFAULT '[]',            -- JSON: horse inventory items
+  extra           TEXT DEFAULT '{}',            -- JSON: any additional properties
+  updated_at      TEXT DEFAULT (datetime('now'))
+);
+`;
+
 // ─── Dead bodies / loot drops ───────────────────────────────────────────────
 
 const DEAD_BODIES = `
@@ -293,9 +338,15 @@ const CONTAINERS = `
 CREATE TABLE IF NOT EXISTS containers (
   actor_name TEXT PRIMARY KEY,
   items      TEXT DEFAULT '[]',                -- JSON array of inventory items
+  quick_slots TEXT DEFAULT '[]',               -- JSON array of quick slot items
+  locked     INTEGER DEFAULT 0,                -- container is locked
+  does_spawn_loot INTEGER DEFAULT 0,           -- container spawns loot naturally
+  alarm_off  INTEGER DEFAULT 0,                -- alarm disabled
+  crafting_content TEXT DEFAULT '[]',           -- JSON: items being crafted
   pos_x      REAL,
   pos_y      REAL,
   pos_z      REAL,
+  extra      TEXT DEFAULT '{}',                -- JSON: hackCoolDown, destroyTime, etc.
   updated_at TEXT DEFAULT (datetime('now'))
 );
 `;
@@ -468,6 +519,92 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_type_steam ON snapshots(type, steam_id)
 CREATE INDEX IF NOT EXISTS idx_snapshots_created ON snapshots(created_at);
 `;
 
+// ─── Activity log (item movements, world events, state changes) ─────────────
+
+const ACTIVITY_LOG = `
+CREATE TABLE IF NOT EXISTS activity_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  type        TEXT NOT NULL,                   -- event type (see below)
+  category    TEXT DEFAULT '',                 -- 'container', 'inventory', 'horse', 'vehicle', 'world', 'structure', 'session', 'death', 'build', 'loot', 'raid', 'combat', 'admin'
+  actor       TEXT DEFAULT '',                 -- container actor_name, player steam_id, or entity id
+  actor_name  TEXT DEFAULT '',                 -- human-readable label (player name, container name)
+  steam_id    TEXT DEFAULT '',                 -- player steam ID (when available)
+  target_name TEXT DEFAULT '',                 -- secondary actor (victim, owner, etc.)
+  target_steam_id TEXT DEFAULT '',             -- secondary actor steam ID
+  item        TEXT DEFAULT '',                 -- item name (for inventory changes)
+  amount      INTEGER DEFAULT 0,              -- quantity changed
+  details     TEXT DEFAULT '{}',              -- JSON: extra context (durability, ammo, etc.)
+  source      TEXT DEFAULT 'save',            -- 'save' (diff engine), 'log' (SFTP logs), 'chat' (RCON chat)
+  pos_x       REAL,
+  pos_y       REAL,
+  pos_z       REAL,
+  created_at  TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_activity_type ON activity_log(type);
+CREATE INDEX IF NOT EXISTS idx_activity_category ON activity_log(category);
+CREATE INDEX IF NOT EXISTS idx_activity_actor ON activity_log(actor);
+CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_activity_item ON activity_log(item);
+CREATE INDEX IF NOT EXISTS idx_activity_steam_id ON activity_log(steam_id);
+CREATE INDEX IF NOT EXISTS idx_activity_source ON activity_log(source);
+`;
+
+// Activity log event types:
+//
+// ─── Save-diff events (source: 'save') ───
+// container_item_added      — item appeared in a container
+// container_item_removed    — item disappeared from a container
+// container_locked          — container was locked
+// container_unlocked        — container was unlocked
+// container_destroyed       — container destroyed (items lost)
+// inventory_item_added      — item appeared in player inventory/equipment/backpack
+// inventory_item_removed    — item disappeared from player inventory/equipment/backpack
+// horse_appeared            — new horse in the world
+// horse_disappeared         — horse removed from the world
+// horse_health_changed      — horse took damage or healed
+// horse_owner_changed       — horse ownership transferred
+// vehicle_item_added        — item placed in vehicle trunk
+// vehicle_item_removed      — item removed from vehicle trunk
+// vehicle_health_changed    — vehicle damaged or repaired
+// airdrop_spawned           — airdrop entered the world
+// airdrop_despawned         — airdrop removed
+// world_day_advanced        — in-game day counter increased
+// world_season_changed      — season transition
+//
+// ─── Log-based events (source: 'log') ───
+// player_connect            — player joined the server
+// player_disconnect         — player left the server
+// player_death              — player died (PvE or unknown)
+// player_death_pvp          — player killed by another player
+// death_loop                — rapid respawn deaths (summary)
+// player_build              — player placed a building
+// container_loot            — player opened another player's container
+// raid_damage               — player damaged/destroyed another player's building
+// building_destroyed        — unowned building destroyed
+// damage_taken              — player took damage from a source
+// admin_access              — player granted admin access
+// anticheat_flag            — anti-cheat system flagged a player
+
+// ─── Chat log ───────────────────────────────────────────────────────────────
+
+const CHAT_LOG = `
+CREATE TABLE IF NOT EXISTS chat_log (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  type         TEXT NOT NULL,                  -- 'player', 'admin_request', 'discord_to_game', 'join', 'leave', 'death'
+  player_name  TEXT DEFAULT '',
+  steam_id     TEXT DEFAULT '',
+  message      TEXT DEFAULT '',
+  direction    TEXT DEFAULT 'game',            -- 'game' (in-game→discord), 'discord' (discord→game)
+  discord_user TEXT DEFAULT '',                -- for discord→game messages
+  is_admin     INTEGER DEFAULT 0,             -- 1 if player has admin badge
+  created_at   TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_chat_created ON chat_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_chat_type ON chat_log(type);
+CREATE INDEX IF NOT EXISTS idx_chat_steam ON chat_log(steam_id);
+CREATE INDEX IF NOT EXISTS idx_chat_player ON chat_log(player_name);
+`;
+
 // ─── Meta ───────────────────────────────────────────────────────────────────
 
 const META = `
@@ -493,12 +630,14 @@ CREATE INDEX IF NOT EXISTS idx_clan_members_steam ON clan_members(steam_id);
 const ALL_TABLES = [
   META,
   PLAYERS,
+  PLAYER_ALIASES,
   CLANS,
   CLAN_MEMBERS,
   WORLD_STATE,
   STRUCTURES,
   VEHICLES,
   COMPANIONS,
+  WORLD_HORSES,
   DEAD_BODIES,
   CONTAINERS,
   LOOT_ACTORS,
@@ -516,6 +655,8 @@ const ALL_TABLES = [
   GAME_SPAWN_LOCATIONS,
   GAME_SERVER_SETTINGS,
   SNAPSHOTS,
+  ACTIVITY_LOG,
+  CHAT_LOG,
   INDEXES,
 ];
 

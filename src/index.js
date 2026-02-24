@@ -1,4 +1,15 @@
 const { Client, GatewayIntentBits, Collection, Events, REST, Routes, EmbedBuilder } = require('discord.js');
+
+// ── Timestamped console logging ──────────────────────────────
+// Patches console globally so every module gets [HH:MM:SS] prefixes
+const _origLog   = console.log;
+const _origError = console.error;
+const _origWarn  = console.warn;
+function _ts() { return new Date().toLocaleTimeString('en-GB', { hour12: false }); }
+console.log   = (...args) => _origLog(`[${_ts()}]`, ...args);
+console.error = (...args) => _origError(`[${_ts()}]`, ...args);
+console.warn  = (...args) => _origWarn(`[${_ts()}]`, ...args);
+
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
@@ -16,6 +27,7 @@ const PvpScheduler = require('./pvp-scheduler');
 const panelApi = require('./panel-api');
 const PanelChannel = require('./panel-channel');
 const MultiServerManager = require('./multi-server');
+const ActivityLog = require('./activity-log');
 const HumanitZDB = require('./db/database');
 const SaveService = require('./parsers/save-service');
 const gameReference = require('./parsers/game-reference');
@@ -128,6 +140,7 @@ let panelChannel;
 let multiServerManager;
 let db;           // HumanitZDB instance
 let saveService;  // SaveService instance
+let activityLog;  // ActivityLog instance
 let adminChannel; // cached for online/offline notifications
 const startedAt = new Date();
 
@@ -244,6 +257,10 @@ client.once(Events.ClientReady, async (readyClient) => {
   gameReference.seed(db);
   console.log('[BOT] SQLite database initialised');
 
+  // Wire DB into singletons for unified identity + stats syncing
+  playerStats.setDb(db);
+  playtime.setDb(db);
+
   // Generate/update the standalone agent script so it's always fresh
   try {
     writeAgent();
@@ -301,6 +318,8 @@ client.once(Events.ClientReady, async (readyClient) => {
     if (config.serverStatusChannelId)  channelsToClean.add(config.serverStatusChannelId);
     if (config.playerStatsChannelId)   channelsToClean.add(config.playerStatsChannelId);
     if (config.panelChannelId)         channelsToClean.add(config.panelChannelId);
+    if (config.activityLogChannelId)    channelsToClean.add(config.activityLogChannelId);
+    if (config.mapChannelId)            channelsToClean.add(config.mapChannelId);
     // Additional server channels (including any from removed servers still in servers.json)
     const { loadServers } = require('./multi-server');
     const servers = loadServers();
@@ -357,7 +376,7 @@ client.once(Events.ClientReady, async (readyClient) => {
       setStatus('Log Watcher', '🟡 Skipped (LOG_CHANNEL_ID not set)');
       console.log('[BOT] Log watcher skipped — LOG_CHANNEL_ID not configured');
     } else {
-      logWatcher = new LogWatcher(readyClient);
+      logWatcher = new LogWatcher(readyClient, { db });
       await logWatcher.start();
       setStatus('Log Watcher', '🟢 Active');
     }
@@ -456,6 +475,19 @@ client.once(Events.ClientReady, async (readyClient) => {
     setStatus('Save Service', '🟡 Skipped (FTP credentials not set)');
   }
 
+  // Activity Log — save-file change tracking feed
+  if (config.enableActivityLog) {
+    if (!saveService) {
+      setStatus('Activity Log', '🟡 Skipped (requires Save Service)');
+    } else {
+      activityLog = new ActivityLog(readyClient, { db, saveService, logWatcher });
+      await activityLog.start();
+      setStatus('Activity Log', '🟢 Active');
+    }
+  } else {
+    setStatus('Activity Log', '⚫ Disabled');
+  }
+
   // Player Stats — save-file parsing with full stats embed
   if (config.enablePlayerStats) {
     if (!hasFtp()) {
@@ -505,7 +537,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     await multiServerManager.startAll();
 
     if (config.panelChannelId) {
-      panelChannel = new PanelChannel(readyClient, { moduleStatus, startedAt, multiServerManager });
+      panelChannel = new PanelChannel(readyClient, { moduleStatus, startedAt, multiServerManager, db, saveService, logWatcher });
       await panelChannel.start();
     }
     if (panelApi.available) {
@@ -638,7 +670,7 @@ client.once(Events.ClientReady, async (readyClient) => {
       const thread = await logWatcher._getOrCreateDailyThread();
       const { EmbedBuilder } = require('discord.js');
       const startEmbed = new EmbedBuilder()
-        .setDescription('📋 Log watcher connected. Monitoring game server activity.')
+        .setDescription('Log watcher connected. Monitoring game server activity.')
         .setColor(0x3498db)
         .setTimestamp();
       await thread.send({ embeds: [startEmbed] }).catch(() => {});
@@ -749,6 +781,7 @@ async function shutdown(reason = 'Manual shutdown') {
   if (panelChannel) panelChannel.stop();
   if (logWatcher) logWatcher.stop();
   if (playerStatsChannel) playerStatsChannel.stop();
+  if (activityLog) activityLog.stop();
   if (saveService) saveService.stop();
   if (multiServerManager) await multiServerManager.stopAll();
   playerStats.stop();
@@ -779,12 +812,38 @@ process.on('SIGINT', () => shutdown('SIGINT received'));
 process.on('SIGTERM', () => shutdown('SIGTERM received'));
 process.on('uncaughtException', (err) => {
   console.error('[BOT] Uncaught exception:', err);
-  shutdown(`Uncaught exception: ${err.message}`).catch(() => process.exit(1));
+  // Post to admin channel before shutting down
+  _postErrorEmbed('Uncaught Exception', err).finally(() => {
+    shutdown(`Uncaught exception: ${err.message}`).catch(() => process.exit(1));
+  });
 });
 process.on('unhandledRejection', (reason) => {
   console.error('[BOT] Unhandled rejection:', reason);
+  _postErrorEmbed('Unhandled Rejection', reason);
   // Log but don't crash — unhandled rejections are often recoverable
 });
+
+/**
+ * Post a hard-error embed to the admin channel for visibility.
+ * Silently ignores failures (admin channel may not be initialised yet).
+ */
+async function _postErrorEmbed(title, err) {
+  if (!adminChannel) return;
+  try {
+    const raw = err instanceof Error
+      ? (err.stack?.slice(0, 1000) || err.message)
+      : String(err).slice(0, 1000);
+    const embed = new EmbedBuilder()
+      .setTitle(`🔥 ${title}`)
+      .setDescription(`\`\`\`\n${raw}\n\`\`\``)
+      .setColor(0xff0000)
+      .setTimestamp();
+    await Promise.race([
+      adminChannel.send({ embeds: [embed] }),
+      new Promise(resolve => setTimeout(resolve, 3000)),
+    ]);
+  } catch (_) { /* best-effort */ }
+}
 
 // ── Login ───────────────────────────────────────────────────
 
@@ -798,33 +857,19 @@ async function _nukeChannel(client, channelId, botId) {
     if (!ch) return;
 
     // Handle bot-authored threads (active + archived)
-    // Chat log threads are preserved (archived with prefix); activity threads are deleted
-    // since they get rebuilt from log history in nuke phase 2.
+    // Delete ALL bot threads for a clean slate during nuke.
     if (ch.threads) {
       const active = await ch.threads.fetchActive().catch(() => ({ threads: new Map() }));
       const archived = await ch.threads.fetchArchived({ limit: 100 }).catch(() => ({ threads: new Map() }));
       const allThreads = [...active.threads.values(), ...archived.threads.values()];
       for (const thread of allThreads) {
         if (thread.ownerId !== botId) continue;
-        // Preserve chat log threads — rename + archive them so history isn't lost
-        if (thread.name.includes('Chat Log')) {
-          try {
-            const newName = thread.name.replace(/^💬\s*/, '📁 ');
-            await thread.setName(newName).catch(() => {});
-            if (!thread.archived) await thread.setArchived(true).catch(() => {});
-            console.log(`[NUKE] Archived chat thread "${thread.name}" → "${newName}" in #${ch.name || channelId}`);
-          } catch (e) {
-            console.warn(`[NUKE] Could not archive chat thread "${thread.name}":`, e.message);
-          }
-        } else {
-          await thread.delete('NUKE_BOT factory reset').catch(() => {});
-          console.log(`[NUKE] Deleted thread "${thread.name}" from #${ch.name || channelId}`);
-        }
+        await thread.delete('NUKE_BOT factory reset').catch(() => {});
+        console.log(`[NUKE] Deleted thread "${thread.name}" from #${ch.name || channelId}`);
       }
     }
 
     // Delete bot-authored messages (scan up to 1000)
-    // Skip messages that have a preserved (archived) thread attached
     let lastId;
     let deleted = 0;
     for (let page = 0; page < 10; page++) {
@@ -835,13 +880,6 @@ async function _nukeChannel(client, channelId, botId) {
       lastId = batch.last().id;
       for (const [, msg] of batch) {
         if (msg.author?.id !== botId) continue;
-        // Don't delete starter messages for preserved chat threads
-        if (msg.hasThread) {
-          try {
-            const thread = await msg.thread?.fetch().catch(() => null);
-            if (thread && thread.name.includes('Chat Log')) continue;
-          } catch { /* thread already gone — safe to delete message */ }
-        }
         await msg.delete().catch(() => {});
         deleted++;
       }
@@ -858,12 +896,13 @@ async function _nukeChannel(client, channelId, botId) {
   if (config.nukeBot) {
     console.log('[NUKE] NUKE_BOT=true — factory reset starting...');
     const dataDir = path.join(__dirname, '..', 'data');
-    // Wipe all transient data files (preserves game reference data like dt-*.txt)
+    // Wipe all transient data files (preserves map-calibration.json)
     const filesToWipe = [
       'message-ids.json', 'player-stats.json', 'playtime.json',
       'welcome-stats.json', 'server-settings.json', 'bot-running.flag',
       'log-offsets.json', 'day-counts.json', 'pvp-kills.json',
       'humanitz.db', 'humanitz.db-wal', 'humanitz.db-shm',
+      'kill-tracker.json', 'player-locations.json', 'map-image.png',
     ];
     for (const f of filesToWipe) {
       const fp = path.join(dataDir, f);

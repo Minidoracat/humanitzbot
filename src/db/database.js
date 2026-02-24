@@ -89,8 +89,146 @@ class HumanitZDB {
       this._db.exec('COMMIT');
       console.log(`[${this._label}] Schema created (v${SCHEMA_VERSION})`);
     } else if (parseInt(currentVersion, 10) < SCHEMA_VERSION) {
-      // Future: run migration scripts here
+      this._db.exec('BEGIN');
+      const fromVersion = parseInt(currentVersion, 10);
+
+      // v1 → v2: Add player_aliases table
+      if (fromVersion < 2) {
+        this._db.exec(`
+          CREATE TABLE IF NOT EXISTS player_aliases (
+            steam_id    TEXT NOT NULL,
+            name        TEXT NOT NULL,
+            name_lower  TEXT NOT NULL,
+            source      TEXT NOT NULL DEFAULT '',
+            first_seen  TEXT DEFAULT (datetime('now')),
+            last_seen   TEXT DEFAULT (datetime('now')),
+            is_current  INTEGER DEFAULT 1,
+            PRIMARY KEY (steam_id, name_lower)
+          );
+          CREATE INDEX IF NOT EXISTS idx_aliases_name_lower ON player_aliases(name_lower);
+          CREATE INDEX IF NOT EXISTS idx_aliases_steam ON player_aliases(steam_id);
+        `);
+        // Seed aliases from existing players table
+        const players = this._db.prepare('SELECT steam_id, name, name_history FROM players WHERE name != \'\'').all();
+        const insertAlias = this._db.prepare(`
+          INSERT OR IGNORE INTO player_aliases (steam_id, name, name_lower, source, first_seen, last_seen, is_current)
+          VALUES (?, ?, ?, 'save', datetime('now'), datetime('now'), ?)
+        `);
+        for (const p of players) {
+          if (p.name) insertAlias.run(p.steam_id, p.name, p.name.toLowerCase(), 1);
+          // Also import name history
+          try {
+            const history = JSON.parse(p.name_history || '[]');
+            for (const h of history) {
+              if (h.name) insertAlias.run(p.steam_id, h.name, h.name.toLowerCase(), 0);
+            }
+          } catch { /* ignore bad JSON */ }
+        }
+        console.log(`[${this._label}] Migration v1→v2: created player_aliases (seeded ${players.length} players)`);
+      }
+
+      // v2 → v3: Add day_incremented + infection_timer columns to players
+      if (fromVersion < 3) {
+        // Use try/catch per column so migration is safe if columns already exist
+        try { this._db.exec('ALTER TABLE players ADD COLUMN day_incremented INTEGER DEFAULT 0'); } catch { /* already exists */ }
+        try { this._db.exec('ALTER TABLE players ADD COLUMN infection_timer REAL DEFAULT 0'); } catch { /* already exists */ }
+        console.log(`[${this._label}] Migration v2→v3: added day_incremented + infection_timer columns`);
+      }
+
+      // v3 → v4: Add world_horses table, enrich containers, add activity_log
+      if (fromVersion < 4) {
+        // World horses table
+        this._db.exec(`
+          CREATE TABLE IF NOT EXISTS world_horses (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            actor_name      TEXT NOT NULL DEFAULT '',
+            class           TEXT DEFAULT '',
+            display_name    TEXT DEFAULT '',
+            horse_name      TEXT DEFAULT '',
+            owner_steam_id  TEXT DEFAULT '',
+            pos_x           REAL,
+            pos_y           REAL,
+            pos_z           REAL,
+            health          REAL DEFAULT 0,
+            max_health      REAL DEFAULT 0,
+            energy          REAL DEFAULT 0,
+            stamina         REAL DEFAULT 0,
+            saddle_inventory TEXT DEFAULT '[]',
+            inventory       TEXT DEFAULT '[]',
+            extra           TEXT DEFAULT '{}',
+            updated_at      TEXT DEFAULT (datetime('now'))
+          );
+        `);
+
+        // Enrich containers table with new columns
+        try { this._db.exec('ALTER TABLE containers ADD COLUMN quick_slots TEXT DEFAULT \'[]\''); } catch { /* already exists */ }
+        try { this._db.exec('ALTER TABLE containers ADD COLUMN locked INTEGER DEFAULT 0'); } catch { /* already exists */ }
+        try { this._db.exec('ALTER TABLE containers ADD COLUMN does_spawn_loot INTEGER DEFAULT 0'); } catch { /* already exists */ }
+        try { this._db.exec('ALTER TABLE containers ADD COLUMN alarm_off INTEGER DEFAULT 0'); } catch { /* already exists */ }
+        try { this._db.exec('ALTER TABLE containers ADD COLUMN crafting_content TEXT DEFAULT \'[]\''); } catch { /* already exists */ }
+        try { this._db.exec('ALTER TABLE containers ADD COLUMN extra TEXT DEFAULT \'{}\''); } catch { /* already exists */ }
+
+        // Activity log table
+        this._db.exec(`
+          CREATE TABLE IF NOT EXISTS activity_log (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            type        TEXT NOT NULL,
+            category    TEXT DEFAULT '',
+            actor       TEXT DEFAULT '',
+            actor_name  TEXT DEFAULT '',
+            item        TEXT DEFAULT '',
+            amount      INTEGER DEFAULT 0,
+            details     TEXT DEFAULT '{}',
+            pos_x       REAL,
+            pos_y       REAL,
+            pos_z       REAL,
+            created_at  TEXT DEFAULT (datetime('now'))
+          );
+          CREATE INDEX IF NOT EXISTS idx_activity_type ON activity_log(type);
+          CREATE INDEX IF NOT EXISTS idx_activity_category ON activity_log(category);
+          CREATE INDEX IF NOT EXISTS idx_activity_actor ON activity_log(actor);
+          CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log(created_at);
+          CREATE INDEX IF NOT EXISTS idx_activity_item ON activity_log(item);
+        `);
+
+        console.log(`[${this._label}] Migration v3→v4: added world_horses, enriched containers, added activity_log`);
+      }
+
+      // v4 → v5: Add steam_id + source + target columns to activity_log, create chat_log
+      if (fromVersion < 5) {
+        // New columns on activity_log
+        try { this._db.exec('ALTER TABLE activity_log ADD COLUMN steam_id TEXT DEFAULT \'\''); } catch { /* already exists */ }
+        try { this._db.exec('ALTER TABLE activity_log ADD COLUMN source TEXT DEFAULT \'save\''); } catch { /* already exists */ }
+        try { this._db.exec('ALTER TABLE activity_log ADD COLUMN target_name TEXT DEFAULT \'\''); } catch { /* already exists */ }
+        try { this._db.exec('ALTER TABLE activity_log ADD COLUMN target_steam_id TEXT DEFAULT \'\''); } catch { /* already exists */ }
+        // New indexes
+        try { this._db.exec('CREATE INDEX IF NOT EXISTS idx_activity_steam_id ON activity_log(steam_id)'); } catch { /* */ }
+        try { this._db.exec('CREATE INDEX IF NOT EXISTS idx_activity_source ON activity_log(source)'); } catch { /* */ }
+
+        // Chat log table
+        this._db.exec(`
+          CREATE TABLE IF NOT EXISTS chat_log (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            type         TEXT NOT NULL,
+            player_name  TEXT DEFAULT '',
+            steam_id     TEXT DEFAULT '',
+            message      TEXT DEFAULT '',
+            direction    TEXT DEFAULT 'game',
+            discord_user TEXT DEFAULT '',
+            is_admin     INTEGER DEFAULT 0,
+            created_at   TEXT DEFAULT (datetime('now'))
+          );
+          CREATE INDEX IF NOT EXISTS idx_chat_created ON chat_log(created_at);
+          CREATE INDEX IF NOT EXISTS idx_chat_type ON chat_log(type);
+          CREATE INDEX IF NOT EXISTS idx_chat_steam ON chat_log(steam_id);
+          CREATE INDEX IF NOT EXISTS idx_chat_player ON chat_log(player_name);
+        `);
+
+        console.log(`[${this._label}] Migration v4→v5: enriched activity_log, added chat_log`);
+      }
+
       this._setMeta('schema_version', String(SCHEMA_VERSION));
+      this._db.exec('COMMIT');
       console.log(`[${this._label}] Schema migrated to v${SCHEMA_VERSION}`);
     }
   }
@@ -142,7 +280,7 @@ class HumanitZDB {
         exp,
         pos_x, pos_y, pos_z, rotation_yaw,
         respawn_x, respawn_y, respawn_z,
-        cb_radio_cooldown,
+        cb_radio_cooldown, day_incremented, infection_timer,
         player_states, body_conditions,
         crafting_recipes, building_recipes,
         unlocked_professions, unlocked_skills, skills_data,
@@ -172,7 +310,7 @@ class HumanitZDB {
         @exp,
         @pos_x, @pos_y, @pos_z, @rotation_yaw,
         @respawn_x, @respawn_y, @respawn_z,
-        @cb_radio_cooldown,
+        @cb_radio_cooldown, @day_incremented, @infection_timer,
         @player_states, @body_conditions,
         @crafting_recipes, @building_recipes,
         @unlocked_professions, @unlocked_skills, @skills_data,
@@ -243,6 +381,8 @@ class HumanitZDB {
         respawn_y = excluded.respawn_y,
         respawn_z = excluded.respawn_z,
         cb_radio_cooldown = excluded.cb_radio_cooldown,
+        day_incremented = excluded.day_incremented,
+        infection_timer = excluded.infection_timer,
         player_states = excluded.player_states,
         body_conditions = excluded.body_conditions,
         crafting_recipes = excluded.crafting_recipes,
@@ -343,13 +483,26 @@ class HumanitZDB {
     `);
     this._stmts.getAllCompanions = this._db.prepare('SELECT * FROM companions');
 
+    // World horses
+    this._stmts.clearWorldHorses = this._db.prepare('DELETE FROM world_horses');
+    this._stmts.insertWorldHorse = this._db.prepare(`
+      INSERT INTO world_horses (actor_name, class, display_name, horse_name, owner_steam_id, pos_x, pos_y, pos_z, health, max_health, energy, stamina, saddle_inventory, inventory, extra, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
+    this._stmts.getAllWorldHorses = this._db.prepare('SELECT * FROM world_horses');
+
     // Dead bodies
     this._stmts.clearDeadBodies = this._db.prepare('DELETE FROM dead_bodies');
     this._stmts.insertDeadBody = this._db.prepare('INSERT OR REPLACE INTO dead_bodies (actor_name, pos_x, pos_y, pos_z, updated_at) VALUES (?, ?, ?, ?, datetime(\'now\'))');
 
     // Containers
     this._stmts.clearContainers = this._db.prepare('DELETE FROM containers');
-    this._stmts.insertContainer = this._db.prepare('INSERT OR REPLACE INTO containers (actor_name, items, pos_x, pos_y, pos_z, updated_at) VALUES (?, ?, ?, ?, ?, datetime(\'now\'))');
+    this._stmts.insertContainer = this._db.prepare(`
+      INSERT OR REPLACE INTO containers (actor_name, items, quick_slots, locked, does_spawn_loot, alarm_off, crafting_content, pos_x, pos_y, pos_z, extra, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
+    this._stmts.getAllContainers = this._db.prepare('SELECT * FROM containers ORDER BY actor_name');
+    this._stmts.getContainersWithItems = this._db.prepare('SELECT * FROM containers WHERE items != \'[]\' ORDER BY actor_name');
 
     // Loot actors
     this._stmts.clearLootActors = this._db.prepare('DELETE FROM loot_actors');
@@ -374,9 +527,99 @@ class HumanitZDB {
     this._stmts.getLatestSnapshot = this._db.prepare('SELECT * FROM snapshots WHERE type = ? AND steam_id = ? ORDER BY created_at DESC LIMIT 1');
     this._stmts.purgeOldSnapshots = this._db.prepare('DELETE FROM snapshots WHERE created_at < datetime(\'now\', ?)');
 
+    // Activity log
+    this._stmts.insertActivity = this._db.prepare(`
+      INSERT INTO activity_log (type, category, actor, actor_name, item, amount, details, pos_x, pos_y, pos_z, steam_id, source, target_name, target_steam_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    this._stmts.insertActivityAt = this._db.prepare(`
+      INSERT INTO activity_log (type, category, actor, actor_name, item, amount, details, pos_x, pos_y, pos_z, created_at, steam_id, source, target_name, target_steam_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    this._stmts.clearActivityLog = this._db.prepare('DELETE FROM activity_log');
+    this._stmts.getRecentActivity = this._db.prepare(
+      'SELECT * FROM activity_log ORDER BY created_at DESC, id DESC LIMIT ?'
+    );
+    this._stmts.getActivityByCategory = this._db.prepare(
+      'SELECT * FROM activity_log WHERE category = ? ORDER BY created_at DESC, id DESC LIMIT ?'
+    );
+    this._stmts.getActivityByActor = this._db.prepare(
+      'SELECT * FROM activity_log WHERE actor = ? ORDER BY created_at DESC, id DESC LIMIT ?'
+    );
+    this._stmts.getActivitySince = this._db.prepare(
+      'SELECT * FROM activity_log WHERE created_at >= ? ORDER BY created_at ASC, id ASC'
+    );
+    this._stmts.getActivitySinceBySource = this._db.prepare(
+      'SELECT * FROM activity_log WHERE created_at >= ? AND source = ? ORDER BY created_at ASC, id ASC'
+    );
+    this._stmts.purgeOldActivity = this._db.prepare(
+      'DELETE FROM activity_log WHERE created_at < datetime(\'now\', ?)'
+    );
+    this._stmts.countActivity = this._db.prepare(
+      'SELECT COUNT(*) as count FROM activity_log'
+    );
+    this._stmts.countActivityBySource = this._db.prepare(
+      'SELECT source, COUNT(*) as count FROM activity_log GROUP BY source'
+    );
+
+    // Chat log
+    this._stmts.insertChat = this._db.prepare(`
+      INSERT INTO chat_log (type, player_name, steam_id, message, direction, discord_user, is_admin)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    this._stmts.insertChatAt = this._db.prepare(`
+      INSERT INTO chat_log (type, player_name, steam_id, message, direction, discord_user, is_admin, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    this._stmts.getRecentChat = this._db.prepare(
+      'SELECT * FROM chat_log ORDER BY created_at DESC, id DESC LIMIT ?'
+    );
+    this._stmts.getChatSince = this._db.prepare(
+      'SELECT * FROM chat_log WHERE created_at >= ? ORDER BY created_at ASC, id ASC'
+    );
+    this._stmts.clearChatLog = this._db.prepare('DELETE FROM chat_log');
+    this._stmts.purgeOldChat = this._db.prepare(
+      'DELETE FROM chat_log WHERE created_at < datetime(\'now\', ?)'
+    );
+    this._stmts.countChat = this._db.prepare(
+      'SELECT COUNT(*) as count FROM chat_log'
+    );
+
     // Meta
     this._stmts.getMeta = this._db.prepare('SELECT value FROM meta WHERE key = ?');
     this._stmts.setMeta = this._db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)');
+
+    // ── Player aliases (identity resolution) ──
+    this._stmts.upsertAlias = this._db.prepare(`
+      INSERT INTO player_aliases (steam_id, name, name_lower, source, first_seen, last_seen, is_current)
+      VALUES (?, ?, ?, ?, datetime('now'), datetime('now'), 1)
+      ON CONFLICT(steam_id, name_lower) DO UPDATE SET
+        name = excluded.name,
+        last_seen = datetime('now'),
+        source = CASE
+          WHEN excluded.source IN ('idmap', 'connect_log') THEN excluded.source
+          ELSE player_aliases.source
+        END,
+        is_current = excluded.is_current
+    `);
+    this._stmts.clearCurrentAlias = this._db.prepare(
+      'UPDATE player_aliases SET is_current = 0 WHERE steam_id = ? AND source = ?'
+    );
+    this._stmts.lookupBySteamId = this._db.prepare(
+      'SELECT * FROM player_aliases WHERE steam_id = ? ORDER BY is_current DESC, last_seen DESC'
+    );
+    this._stmts.lookupByName = this._db.prepare(
+      'SELECT * FROM player_aliases WHERE name_lower = ? ORDER BY is_current DESC, last_seen DESC'
+    );
+    this._stmts.lookupByNameLike = this._db.prepare(
+      'SELECT * FROM player_aliases WHERE name_lower LIKE ? ORDER BY is_current DESC, last_seen DESC LIMIT 10'
+    );
+    this._stmts.getAllAliases = this._db.prepare(
+      'SELECT * FROM player_aliases ORDER BY steam_id, last_seen DESC'
+    );
+    this._stmts.getAliasStats = this._db.prepare(
+      'SELECT COUNT(DISTINCT steam_id) as unique_players, COUNT(*) as total_aliases FROM player_aliases'
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -445,6 +688,8 @@ class HumanitZDB {
       respawn_y: data.respawnY ?? null,
       respawn_z: data.respawnZ ?? null,
       cb_radio_cooldown: data.cbRadioCooldown || 0,
+      day_incremented: data.dayIncremented ? 1 : 0,
+      infection_timer: data.infectionTimer || 0,
       player_states: _json(data.playerStates),
       body_conditions: _json(data.bodyConditions),
       crafting_recipes: _json(data.craftingRecipes),
@@ -491,6 +736,11 @@ class HumanitZDB {
     };
 
     this._stmts.upsertPlayer.run(params);
+
+    // Auto-register alias when a name is available
+    if (data.name && /^\d{17}$/.test(steamId)) {
+      this.registerAlias(steamId, data.name, 'save');
+    }
   }
 
   getPlayer(steamId) {
@@ -552,6 +802,164 @@ class HumanitZDB {
   updatePlayerName(steamId, name, nameHistory) {
     this._db.prepare('UPDATE players SET name = ?, name_history = ?, updated_at = datetime(\'now\') WHERE steam_id = ?')
       .run(name, JSON.stringify(nameHistory || []), steamId);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  Player identity / alias resolution
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Register a name ↔ SteamID association from any data source.
+   * This is the single entry point for building the identity graph.
+   *
+   * @param {string} steamId - 17-digit SteamID64
+   * @param {string} name    - Player display name
+   * @param {string} source  - Origin: 'idmap', 'save', 'connect_log', 'log', 'playtime', 'manual'
+   */
+  registerAlias(steamId, name, source = '') {
+    if (!steamId || !name || !/^\d{17}$/.test(steamId)) return;
+    const nameLower = name.toLowerCase().trim();
+    if (!nameLower) return;
+
+    // Mark previous aliases from this source as non-current
+    this._stmts.clearCurrentAlias.run(steamId, source);
+    // Upsert the new alias
+    this._stmts.upsertAlias.run(steamId, name.trim(), nameLower, source);
+  }
+
+  /**
+   * Bulk-register aliases from a parsed PlayerIDMapped.txt.
+   * @param {Array<{steamId: string, name: string}>} entries
+   */
+  importIdMap(entries) {
+    const tx = this._db.transaction((list) => {
+      for (const { steamId, name } of list) {
+        this.registerAlias(steamId, name, 'idmap');
+      }
+    });
+    tx(entries);
+  }
+
+  /**
+   * Bulk-register aliases from parsed PlayerConnectedLog.txt.
+   * @param {Array<{steamId: string, name: string}>} entries
+   */
+  importConnectLog(entries) {
+    const tx = this._db.transaction((list) => {
+      for (const { steamId, name } of list) {
+        this.registerAlias(steamId, name, 'connect_log');
+      }
+    });
+    tx(entries);
+  }
+
+  /**
+   * Register aliases from save parser output (keyed by SteamID, name from idMap).
+   * @param {Map<string, object>} players - steamId → playerData (with .name if injected)
+   */
+  importFromSave(players) {
+    const tx = this._db.transaction(() => {
+      for (const [steamId, data] of players) {
+        if (data.name) this.registerAlias(steamId, data.name, 'save');
+      }
+    });
+    tx();
+  }
+
+  /**
+   * Resolve a player name to a SteamID64.
+   * Returns the best match: most recent, highest-priority source.
+   *
+   * @param {string} name - Player name (case-insensitive)
+   * @returns {{ steamId: string, name: string, source: string, isCurrent: boolean } | null}
+   */
+  resolveNameToSteamId(name) {
+    if (!name) return null;
+    const nameLower = name.toLowerCase().trim();
+
+    // If it's already a SteamID, return directly
+    if (/^\d{17}$/.test(name)) return { steamId: name, name, source: 'direct', isCurrent: true };
+
+    const rows = this._stmts.lookupByName.all(nameLower);
+    if (rows.length === 0) return null;
+
+    // Prefer is_current=1 entries, then most recently seen
+    return {
+      steamId: rows[0].steam_id,
+      name: rows[0].name,
+      source: rows[0].source,
+      isCurrent: !!rows[0].is_current,
+    };
+  }
+
+  /**
+   * Resolve a SteamID to the best current display name.
+   *
+   * Priority: idmap > connect_log > save > playtime > log
+   *
+   * @param {string} steamId
+   * @returns {string} Display name, or the steamId itself as fallback
+   */
+  resolveSteamIdToName(steamId) {
+    if (!steamId) return steamId;
+
+    const rows = this._stmts.lookupBySteamId.all(steamId);
+    if (rows.length === 0) return steamId;
+
+    // Source priority for "best name"
+    const priority = { idmap: 5, connect_log: 4, save: 3, playtime: 2, log: 1, manual: 0 };
+
+    // Among is_current=1 entries, pick the highest-priority source
+    const current = rows.filter(r => r.is_current);
+    if (current.length > 0) {
+      current.sort((a, b) => (priority[b.source] || 0) - (priority[a.source] || 0));
+      return current[0].name;
+    }
+
+    // Fallback: most recently seen alias
+    return rows[0].name;
+  }
+
+  /**
+   * Get all known aliases for a SteamID.
+   * @param {string} steamId
+   * @returns {Array<{ name: string, source: string, firstSeen: string, lastSeen: string, isCurrent: boolean }>}
+   */
+  getPlayerAliases(steamId) {
+    return this._stmts.lookupBySteamId.all(steamId).map(r => ({
+      name: r.name,
+      source: r.source,
+      firstSeen: r.first_seen,
+      lastSeen: r.last_seen,
+      isCurrent: !!r.is_current,
+    }));
+  }
+
+  /**
+   * Search for players by partial name match.
+   * @param {string} query - Partial name (case-insensitive)
+   * @returns {Array<{ steamId: string, name: string, source: string }>}
+   */
+  searchPlayersByName(query) {
+    if (!query) return [];
+    const rows = this._stmts.lookupByNameLike.all(`%${query.toLowerCase().trim()}%`);
+    // Deduplicate by steamId, keeping the best for each
+    const seen = new Map();
+    for (const r of rows) {
+      if (!seen.has(r.steam_id) || r.is_current) {
+        seen.set(r.steam_id, { steamId: r.steam_id, name: r.name, source: r.source });
+      }
+    }
+    return [...seen.values()];
+  }
+
+  /**
+   * Get summary stats about the alias table.
+   * @returns {{ uniquePlayers: number, totalAliases: number }}
+   */
+  getAliasStats() {
+    const row = this._stmts.getAliasStats.get();
+    return { uniquePlayers: row?.unique_players || 0, totalAliases: row?.total_aliases || 0 };
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -684,6 +1092,28 @@ class HumanitZDB {
   getAllCompanions() { return this._stmts.getAllCompanions.all(); }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  //  World horses
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  replaceWorldHorses(horses) {
+    const insert = this._db.transaction((items) => {
+      this._stmts.clearWorldHorses.run();
+      for (const h of items) {
+        this._stmts.insertWorldHorse.run(
+          h.actorName || h.class || '', h.class || '', h.displayName || '', h.name || '',
+          h.ownerSteamId || '',
+          h.x ?? null, h.y ?? null, h.z ?? null,
+          h.health || 0, h.maxHealth || 0, h.energy || 0, h.stamina || 0,
+          _json(h.saddleInventory), _json(h.inventory), _json(h.extra)
+        );
+      }
+    });
+    insert(horses);
+  }
+
+  getAllWorldHorses() { return this._stmts.getAllWorldHorses.all(); }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   //  Dead bodies
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -707,13 +1137,29 @@ class HumanitZDB {
     const insert = this._db.transaction((items) => {
       this._stmts.clearContainers.run();
       for (const c of items) {
+        const extra = {};
+        if (c.hackCoolDown != null) extra.hackCoolDown = c.hackCoolDown;
+        if (c.destroyTime != null) extra.destroyTime = c.destroyTime;
+        if (c.extraFloats) extra.extraFloats = c.extraFloats;
+        if (c.extraBools) extra.extraBools = c.extraBools;
         this._stmts.insertContainer.run(
-          c.actorName, JSON.stringify(c.items), c.x ?? null, c.y ?? null, c.z ?? null
+          c.actorName,
+          JSON.stringify(c.items || []),
+          JSON.stringify(c.quickSlots || []),
+          c.locked ? 1 : 0,
+          c.doesSpawnLoot ? 1 : 0,
+          c.alarmOff ? 1 : 0,
+          JSON.stringify(c.craftingContent || []),
+          c.x ?? null, c.y ?? null, c.z ?? null,
+          JSON.stringify(extra)
         );
       }
     });
     insert(containers);
   }
+
+  getAllContainers() { return this._stmts.getAllContainers.all(); }
+  getContainersWithItems() { return this._stmts.getContainersWithItems.all(); }
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  Loot actors
@@ -783,6 +1229,164 @@ class HumanitZDB {
 
   purgeSnapshots(olderThan) {
     this._stmts.purgeOldSnapshots.run(olderThan);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  Activity log
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Insert a single activity log entry.
+   * @param {object} entry - { type, category, actor, actorName, item, amount, details, x, y, z, steamId, source, targetName, targetSteamId }
+   */
+  insertActivity(entry) {
+    this._stmts.insertActivity.run(
+      entry.type, entry.category || '', entry.actor || '', entry.actorName || '',
+      entry.item || '', entry.amount || 0, JSON.stringify(entry.details || {}),
+      entry.x ?? null, entry.y ?? null, entry.z ?? null,
+      entry.steamId || '', entry.source || 'save', entry.targetName || '', entry.targetSteamId || ''
+    );
+  }
+
+  /**
+   * Insert multiple activity entries in a single transaction.
+   * @param {Array<object>} entries
+   */
+  insertActivities(entries) {
+    if (!entries || entries.length === 0) return;
+    const tx = this._db.transaction((list) => {
+      for (const entry of list) {
+        this._stmts.insertActivity.run(
+          entry.type, entry.category || '', entry.actor || '', entry.actorName || '',
+          entry.item || '', entry.amount || 0, JSON.stringify(entry.details || {}),
+          entry.x ?? null, entry.y ?? null, entry.z ?? null,
+          entry.steamId || '', entry.source || 'save', entry.targetName || '', entry.targetSteamId || ''
+        );
+      }
+    });
+    tx(entries);
+  }
+
+  /**
+   * Insert multiple activity entries with explicit timestamps (for backfill).
+   * Each entry must have a `createdAt` ISO string.
+   * @param {Array<object>} entries
+   */
+  insertActivitiesAt(entries) {
+    if (!entries || entries.length === 0) return;
+    const tx = this._db.transaction((list) => {
+      for (const entry of list) {
+        this._stmts.insertActivityAt.run(
+          entry.type, entry.category || '', entry.actor || '', entry.actorName || '',
+          entry.item || '', entry.amount || 0, JSON.stringify(entry.details || {}),
+          entry.x ?? null, entry.y ?? null, entry.z ?? null,
+          entry.createdAt,
+          entry.steamId || '', entry.source || 'save', entry.targetName || '', entry.targetSteamId || ''
+        );
+      }
+    });
+    tx(entries);
+  }
+
+  /** Delete all activity log entries (used by setup --fix/--backfill). */
+  clearActivityLog() {
+    this._stmts.clearActivityLog.run();
+  }
+
+  /** Get the most recent N activity entries. */
+  getRecentActivity(limit = 50) {
+    return this._stmts.getRecentActivity.all(limit).map(_parseActivityRow);
+  }
+
+  /** Get recent activity for a specific category. */
+  getActivityByCategory(category, limit = 50) {
+    return this._stmts.getActivityByCategory.all(category, limit).map(_parseActivityRow);
+  }
+
+  /** Get recent activity for a specific actor (container name, steam ID, etc.). */
+  getActivityByActor(actor, limit = 50) {
+    return this._stmts.getActivityByActor.all(actor, limit).map(_parseActivityRow);
+  }
+
+  /** Get all activity since a given ISO timestamp. */
+  getActivitySince(isoTimestamp) {
+    return this._stmts.getActivitySince.all(isoTimestamp).map(_parseActivityRow);
+  }
+
+  /** Purge old activity entries (e.g. '-30 days'). */
+  purgeOldActivity(olderThan) {
+    this._stmts.purgeOldActivity.run(olderThan);
+  }
+
+  /** Count total activity entries. */
+  getActivityCount() {
+    const row = this._stmts.countActivity.get();
+    return row?.count || 0;
+  }
+
+  /** Get activity counts grouped by source. */
+  getActivityCountBySource() {
+    return this._stmts.countActivityBySource.all();
+  }
+
+  /** Get all activity since a given ISO timestamp, filtered by source. */
+  getActivitySinceBySource(isoTimestamp, source) {
+    return this._stmts.getActivitySinceBySource.all(isoTimestamp, source).map(_parseActivityRow);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  Chat log
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Insert a single chat log entry.
+   * @param {object} entry - { type, playerName, steamId, message, direction, discordUser, isAdmin }
+   */
+  insertChat(entry) {
+    this._stmts.insertChat.run(
+      entry.type, entry.playerName || '', entry.steamId || '',
+      entry.message || '', entry.direction || 'game',
+      entry.discordUser || '', entry.isAdmin ? 1 : 0
+    );
+  }
+
+  /**
+   * Insert a chat entry with explicit timestamp (for backfill).
+   * @param {object} entry - includes createdAt ISO string
+   */
+  insertChatAt(entry) {
+    this._stmts.insertChatAt.run(
+      entry.type, entry.playerName || '', entry.steamId || '',
+      entry.message || '', entry.direction || 'game',
+      entry.discordUser || '', entry.isAdmin ? 1 : 0,
+      entry.createdAt
+    );
+  }
+
+  /** Get the most recent N chat entries. */
+  getRecentChat(limit = 50) {
+    return this._stmts.getRecentChat.all(limit);
+  }
+
+  /** Get all chat since a given ISO timestamp. */
+  getChatSince(isoTimestamp) {
+    return this._stmts.getChatSince.all(isoTimestamp);
+  }
+
+  /** Delete all chat log entries. */
+  clearChatLog() {
+    this._stmts.clearChatLog.run();
+  }
+
+  /** Purge old chat entries (e.g. '-30 days'). */
+  purgeOldChat(olderThan) {
+    this._stmts.purgeOldChat.run(olderThan);
+  }
+
+  /** Count total chat entries. */
+  getChatCount() {
+    const row = this._stmts.countChat.get();
+    return row?.count || 0;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -988,6 +1592,15 @@ function _parsePlayerRow(row) {
   parsed.male = !!parsed.male;
   parsed.online = !!parsed.online;
   parsed.has_extended_stats = !!parsed.has_extended_stats;
+  return parsed;
+}
+
+function _parseActivityRow(row) {
+  if (!row) return null;
+  const parsed = { ...row };
+  if (parsed.details && typeof parsed.details === 'string') {
+    try { parsed.details = JSON.parse(parsed.details); } catch { /* leave as string */ }
+  }
   return parsed;
 }
 

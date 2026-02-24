@@ -56,6 +56,15 @@ function buildPlayerEmbed(stats, { isAdmin = false, playtime, config } = {}) {
     embed.addFields({ name: 'Damage Breakdown', value: dmgLines.join('\n') });
   }
 
+  // ── Killed By breakdown ──
+  const killEntries = Object.entries(stats.killedBy || {});
+  if (killEntries.length > 0) {
+    const killSorted = killEntries.sort((a, b) => b[1] - a[1]);
+    const killLines = killSorted.slice(0, 8).map(([src, count]) => `${src}: **${count}**`);
+    if (killEntries.length > 8) killLines.push(`_+${killEntries.length - 8} more_`);
+    embed.addFields({ name: 'Killed By', value: killLines.join('\n') });
+  }
+
   // ── Building Stats ──
   const buildEntries = Object.entries(stats.buildItems);
   if (buildEntries.length > 0) {

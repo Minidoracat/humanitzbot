@@ -4,7 +4,8 @@
  */
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { parseSave, parseClanData, PERK_MAP, CLAN_RANK_MAP, createReader, readProperty } = require('../src/save-parser');
+const { parseSave, parseClanData, PERK_MAP, CLAN_RANK_MAP } = require('../src/parsers/save-parser');
+const { createReader, readProperty } = require('../src/parsers/gvas-reader');
 
 // ── Helper: build a minimal GVAS buffer ──
 

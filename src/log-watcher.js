@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const _defaultConfig = require('./config');
 const { addAdminMembers } = require('./config');
+const { cleanName } = require('./ue4-names');
 const _defaultPlaytime = require('./playtime-tracker');
 const _defaultPlayerStats = require('./player-stats');
 
@@ -16,6 +17,7 @@ class LogWatcher {
     this._config = deps.config || _defaultConfig;
     this._playtime = deps.playtime || _defaultPlaytime;
     this._playerStats = deps.playerStats || _defaultPlayerStats;
+    this._db = deps.db || null;
     this._label = deps.label || 'LOGS';
     this._dataDir = deps.dataDir || path.join(__dirname, '..', 'data');
 
@@ -76,6 +78,57 @@ class LogWatcher {
 
     // Death loop detection: Map<playerNameLower, { count, firstTimestamp, lastTimestamp, suppressed }>
     this._deathLoopTracker = new Map();
+
+    // Container access tracker: tracks who opened which container type recently.
+    // Used by ActivityLog to attribute container item changes to players.
+    // Map<containerTypeNorm, { player, steamId, ownerSteamId, timestamp }>
+    this._recentContainerAccess = new Map();
+  }
+
+  // ── DB event logging ───────────────────────────────────────
+
+  /**
+   * Insert a log-parsed event into the activity_log DB table.
+   * This makes the DB the primary store — Discord embeds are a view layer.
+   * Safe to call without a DB (silently skips).
+   *
+   * @param {object} event
+   * @param {string} event.type - Event type (player_connect, player_death, etc.)
+   * @param {string} event.category - Category grouping (session, death, build, loot, raid, combat, admin)
+   * @param {string} [event.actor] - Primary actor (steam ID or entity)
+   * @param {string} [event.actorName] - Human-readable name
+   * @param {string} [event.steamId] - Player steam ID
+   * @param {string} [event.targetName] - Secondary actor name
+   * @param {string} [event.targetSteamId] - Secondary actor steam ID
+   * @param {string} [event.item] - Item/building name
+   * @param {number} [event.amount] - Quantity
+   * @param {object} [event.details] - Extra JSON context
+   * @param {Date}   [event.timestamp] - Event timestamp (for createdAt)
+   */
+  _logEvent(event) {
+    if (!this._db) return;
+    try {
+      const entry = {
+        ...event,
+        source: 'log',
+      };
+      // Use insertActivitiesAt if we have a timestamp, otherwise insertActivities
+      if (event.timestamp) {
+        entry.createdAt = event.timestamp instanceof Date
+          ? event.timestamp.toISOString()
+          : String(event.timestamp);
+        delete entry.timestamp;
+        this._db.insertActivitiesAt([entry]);
+      } else {
+        this._db.insertActivities([entry]);
+      }
+    } catch (err) {
+      // Don't let DB errors break log processing
+      if (!this._logEventWarnShown) {
+        console.warn(`[${this._label}] Failed to log event to DB:`, err.message);
+        this._logEventWarnShown = true;
+      }
+    }
   }
 
   // ── Day Counts Persistence ─────────────────────────────────
@@ -241,7 +294,7 @@ class LogWatcher {
     if (!this._nukeActive) {
       const thread = await this._getOrCreateDailyThread();
       const embed = new EmbedBuilder()
-        .setDescription('📋 Log watcher connected. Monitoring game server activity.')
+        .setDescription('Log watcher connected. Monitoring game server activity.')
         .setColor(0x3498db)
         .setTimestamp();
       await thread.send({ embeds: [embed] }).catch(() => {});
@@ -539,12 +592,14 @@ class LogWatcher {
     const dateLabel = this._config.getDateLabel();
     const serverLabel = this._getServerLabel();
     const serverSuffix = serverLabel ? ` [${serverLabel}]` : '';
-    const threadName = `📋 Activity Log — ${dateLabel}${serverSuffix}`;
+    const threadName = `Daily Summary — ${dateLabel}${serverSuffix}`;
+    const legacyThreadName = `📋 Activity Log — ${dateLabel}${serverSuffix}`;
 
     try {
-      // Check active threads
+      // Check active threads (search new name first, then legacy)
       const active = await this.logChannel.threads.fetchActive();
-      const existing = active.threads.find(t => t.name === threadName);
+      const existing = active.threads.find(t => t.name === threadName)
+        || active.threads.find(t => t.name === legacyThreadName);
       if (existing) {
         this._dailyThread = existing;
         this._dailyDate = today;
@@ -556,7 +611,8 @@ class LogWatcher {
 
       // Check archived threads (in case bot restarted mid-day)
       const archived = await this.logChannel.threads.fetchArchived({ limit: 5 });
-      const archivedMatch = archived.threads.find(t => t.name === threadName);
+      const archivedMatch = archived.threads.find(t => t.name === threadName)
+        || archived.threads.find(t => t.name === legacyThreadName);
       if (archivedMatch) {
         // Unarchive it
         await archivedMatch.setArchived(false);
@@ -575,8 +631,8 @@ class LogWatcher {
       const starterMsg = await this.logChannel.send({
         embeds: [
           new EmbedBuilder()
-            .setTitle(`📋 Activity Log — ${dateLabel}${serverSuffix}`)
-            .setDescription('All server events for today are logged in this thread.')
+            .setTitle(`Daily Summary — ${dateLabel}${serverSuffix}`)
+            .setDescription('Server activity, kills, building, and container changes for today.')
             .setColor(0x3498db)
             .setTimestamp(),
         ],
@@ -584,7 +640,7 @@ class LogWatcher {
       this._dailyThread = await starterMsg.startThread({
         name: threadName,
         autoArchiveDuration: 1440, // keep alive 24h
-        reason: 'Daily activity log thread',
+        reason: 'Daily summary thread',
       });
       this._dailyDate = today;
       console.log(`[${this._label}] Created daily thread: ${threadName}`);
@@ -610,27 +666,78 @@ class LogWatcher {
 
   async _postDailySummary() {
     const c = this._dayCounts;
-    const total = c.connects + c.disconnects + c.deaths + c.builds + c.damage + c.loots + c.raidHits + c.destroyed + c.cheat + c.admin + c.pvpKills;
-    if (total === 0) return; // nothing happened
+    const logTotal = c.connects + c.disconnects + c.deaths + c.builds + c.damage + c.loots + c.raidHits + c.destroyed + c.cheat + c.admin + c.pvpKills;
 
     const dateLabel = this._dailyDate
       ? this._config.getDateLabel(new Date(this._dailyDate + 'T12:00:00Z'))
       : 'Unknown';
 
+    // ── Log-based stats ──────────────────────────────
     const lines = [];
-    if (c.connects > 0)    lines.push(['Connections', c.connects]);
-    if (c.disconnects > 0) lines.push(['Disconnections', c.disconnects]);
-    if (c.deaths > 0)      lines.push(['Deaths', c.deaths]);
-    if (c.builds > 0)      lines.push(['Items Built', c.builds]);
-    if (c.damage > 0)      lines.push(['Damage Hits', c.damage]);
-    if (c.loots > 0)       lines.push(['Containers Looted', c.loots]);
-    if (c.raidHits > 0)    lines.push(['Raid Hits', c.raidHits]);
-    if (c.destroyed > 0)   lines.push(['Structures Destroyed', c.destroyed]);
-    if (c.admin > 0)       lines.push(['Admin Access', c.admin]);
-    if (c.cheat > 0)       lines.push(['Anti-Cheat Flags', c.cheat]);
-    if (c.pvpKills > 0)    lines.push(['PvP Kills', c.pvpKills]);
+    if (c.connects > 0)    lines.push(`**Connections:** ${c.connects}`);
+    if (c.disconnects > 0) lines.push(`**Disconnections:** ${c.disconnects}`);
+    if (c.deaths > 0)      lines.push(`**Deaths:** ${c.deaths}`);
+    if (c.builds > 0)      lines.push(`**Items Built:** ${c.builds}`);
+    if (c.damage > 0)      lines.push(`**Damage Hits:** ${c.damage}`);
+    if (c.loots > 0)       lines.push(`**Containers Looted:** ${c.loots}`);
+    if (c.raidHits > 0)    lines.push(`**Raid Hits:** ${c.raidHits}`);
+    if (c.destroyed > 0)   lines.push(`**Structures Destroyed:** ${c.destroyed}`);
+    if (c.admin > 0)       lines.push(`**Admin Access:** ${c.admin}`);
+    if (c.cheat > 0)       lines.push(`**Anti-Cheat Flags:** ${c.cheat}`);
+    if (c.pvpKills > 0)    lines.push(`**PvP Kills:** ${c.pvpKills}`);
 
-    const summaryLines = lines.map(([label, val]) => `**${label}:** ${val}`);
+    // ── Save-derived stats (from activity_log DB) ────
+    let dbTotal = 0;
+    if (this._db && this._dailyDate) {
+      try {
+        const startOfDay = `${this._dailyDate}T00:00:00.000Z`;
+        const events = this._db.getActivitySince(startOfDay);
+        if (events.length > 0) {
+          const counts = {};
+          for (const e of events) {
+            counts[e.type] = (counts[e.type] || 0) + 1;
+          }
+          dbTotal = events.length;
+
+          // Container activity
+          const containerAdded = counts.container_item_added || 0;
+          const containerRemoved = counts.container_item_removed || 0;
+          const containerMoves = containerAdded + containerRemoved;
+          if (containerMoves > 0) lines.push(`**Container Items Moved:** ${containerMoves}`);
+          if (counts.container_locked)    lines.push(`**Containers Locked:** ${counts.container_locked}`);
+          if (counts.container_unlocked)  lines.push(`**Containers Unlocked:** ${counts.container_unlocked}`);
+          if (counts.container_destroyed) lines.push(`**Containers Destroyed:** ${counts.container_destroyed}`);
+
+          // Inventory activity
+          const invAdded = counts.inventory_item_added || 0;
+          const invRemoved = counts.inventory_item_removed || 0;
+          const invMoves = invAdded + invRemoved;
+          if (invMoves > 0) lines.push(`**Inventory Changes:** ${invMoves}`);
+
+          // Vehicle activity
+          const vehAdded = counts.vehicle_item_added || 0;
+          const vehRemoved = counts.vehicle_item_removed || 0;
+          const vehMoves = vehAdded + vehRemoved;
+          if (vehMoves > 0) lines.push(`**Vehicle Items Moved:** ${vehMoves}`);
+
+          // Horse activity
+          const horseEvents = (counts.horse_appeared || 0) + (counts.horse_disappeared || 0) +
+            (counts.horse_health_changed || 0) + (counts.horse_owner_changed || 0);
+          if (horseEvents > 0) lines.push(`**Horse Events:** ${horseEvents}`);
+
+          // World events
+          if (counts.world_day_advanced)  lines.push(`**Day Advanced:** ${counts.world_day_advanced}`);
+          if (counts.world_season_changed) lines.push(`**Season Changes:** ${counts.world_season_changed}`);
+          const airdrops = (counts.airdrop_spawned || 0) + (counts.airdrop_despawned || 0);
+          if (airdrops > 0) lines.push(`**Airdrop Events:** ${airdrops}`);
+        }
+      } catch (err) {
+        console.warn(`[${this._label}] Could not query DB for daily summary:`, err.message);
+      }
+    }
+
+    const total = logTotal + dbTotal;
+    if (total === 0) return; // nothing happened
 
     // Count unique players from playtime tracker for the daily footer.
     // Use yesterdayUnique (snapshotted before day-rollover reset) to avoid
@@ -644,13 +751,14 @@ class LogWatcher {
     const serverSuffix = serverLabel ? ` [${serverLabel}]` : '';
     const embed = new EmbedBuilder()
       .setTitle(`Daily Summary — ${dateLabel}${serverSuffix}`)
-      .setDescription(summaryLines.join('\n'))
+      .setDescription(lines.join('\n'))
       .setColor(0x3498db)
       .setFooter({ text: footerParts.join(' · ') })
       .setTimestamp();
 
     try {
-      await this.logChannel.send({ embeds: [embed] });
+      const target = this._dailyThread || this.logChannel;
+      await target.send({ embeds: [embed] });
     } catch (err) {
       console.error(`[${this._label}] Failed to post daily summary:`, err.message);
     }
@@ -658,6 +766,28 @@ class LogWatcher {
 
   sendToThread(embed) {
     return this._sendToThread(embed);
+  }
+
+  /**
+   * Look up who recently accessed a container type (for attribution).
+   * Returns { player, steamId, ownerSteamId } or null if no recent access.
+   * @param {string} actorName - Raw UE4 actor name of the container
+   * @returns {object|null}
+   */
+  getRecentContainerAccess(actorName) {
+    if (!actorName || this._recentContainerAccess.size === 0) return null;
+    const clean = cleanName(actorName).toLowerCase();
+    // Check exact match first
+    if (this._recentContainerAccess.has(clean)) {
+      const entry = this._recentContainerAccess.get(clean);
+      if (Date.now() - entry.timestamp < 5 * 60 * 1000) return entry;
+    }
+    // Fuzzy match: check if any tracked type is a substring
+    for (const [key, entry] of this._recentContainerAccess) {
+      if (Date.now() - entry.timestamp > 5 * 60 * 1000) continue;
+      if (clean.includes(key) || key.includes(clean)) return entry;
+    }
+    return null;
   }
 
   /**
@@ -680,19 +810,22 @@ class LogWatcher {
     const dateLabel = this._config.getDateLabel(targetDate);
     const serverLabel = this._getServerLabel();
     const serverSuffix = serverLabel ? ` [${serverLabel}]` : '';
-    const threadName = `📋 Activity Log — ${dateLabel}${serverSuffix}`;
+    const threadName = `Daily Summary — ${dateLabel}${serverSuffix}`;
+    const legacyThreadName = `📋 Activity Log — ${dateLabel}${serverSuffix}`;
 
     try {
-      // Check active threads
+      // Check active threads (search new name first, then legacy)
       const active = await this.logChannel.threads.fetchActive();
-      const match = active.threads.find(t => t.name === threadName);
+      const match = active.threads.find(t => t.name === threadName)
+        || active.threads.find(t => t.name === legacyThreadName);
       if (match) {
         return await match.send({ embeds: [embed] });
       }
 
       // Check recently archived threads
       const archived = await this.logChannel.threads.fetchArchived({ limit: 10 });
-      const archiveMatch = archived.threads.find(t => t.name === threadName);
+      const archiveMatch = archived.threads.find(t => t.name === threadName)
+        || archived.threads.find(t => t.name === legacyThreadName);
       if (archiveMatch) {
         await archiveMatch.setArchived(false);
         const result = await archiveMatch.send({ embeds: [embed] });
@@ -803,6 +936,9 @@ class LogWatcher {
         this._playerStats.recordDamageTaken(dmgVictim, dmgSource, timestamp);
         this._incDayCount('damage');
 
+        // DB: log damage event
+        this._logEvent({ type: 'damage_taken', category: 'combat', actorName: dmgVictim, item: dmgSource, amount: Math.round(dmgAmount), timestamp });
+
         // Track PvP damage for kill attribution (source is a player name if no BP_ prefix)
         if (this._config.enablePvpKillFeed && !dmgSource.startsWith('BP_') && !(/Zombie|Wolf|Bear|Deer|Snake|Spider|Human|KaiHuman|Mutant|Runner|Brute|Pudge|Dogzombie|Police|Cop|Military|Hazmat|Camo/i.test(dmgSource))) {
           this._recordPvpDamage(dmgVictim, dmgSource, dmgAmount, timestamp);
@@ -822,6 +958,24 @@ class LogWatcher {
       this._playerStats.recordLoot(looterName, looterId, ownerSteamId, timestamp);
       this._incDayCount('loots');
       this._batchLoot(looterName, looterId, containerType, ownerSteamId, timestamp);
+
+      // DB: log container loot event
+      this._logEvent({ type: 'container_loot', category: 'loot', actorName: looterName, steamId: looterId, item: this._simplifyContainerName(containerType), targetSteamId: ownerSteamId, timestamp });
+
+      // Track container access for attribution in activity log
+      const cleanType = this._simplifyContainerName(containerType).toLowerCase();
+      this._recentContainerAccess.set(cleanType, {
+        player: looterName,
+        steamId: looterId,
+        ownerSteamId,
+        rawType: containerType,
+        timestamp: Date.now(),
+      });
+      // Expire old entries (older than 5 min)
+      const cutoff = Date.now() - 5 * 60 * 1000;
+      for (const [k, v] of this._recentContainerAccess) {
+        if (v.timestamp < cutoff) this._recentContainerAccess.delete(k);
+      }
       return true;
     }
 
@@ -861,6 +1015,10 @@ class LogWatcher {
       if (attackerRaw !== 'Zeek' && attackerRaw !== 'Decayfalse' && destroyed) {
         this._incDayCount('destroyed');
         const cleanBuilding = this._simplifyBlueprintName(buildingType);
+
+        // DB: log building destroyed event
+        this._logEvent({ type: 'building_destroyed', category: 'raid', actorName: attackerRaw, item: cleanBuilding, timestamp });
+
         const embed = new EmbedBuilder()
           .setAuthor({ name: '🏠 Building Destroyed' })
           .setDescription(`**${attackerRaw}** destroyed **${cleanBuilding}**`)
@@ -878,6 +1036,9 @@ class LogWatcher {
       const playerName = adminMatch[1].trim();
       this._playerStats.recordAdminAccess(playerName, timestamp);
       this._incDayCount('admin');
+
+      // DB: log admin access event
+      this._logEvent({ type: 'admin_access', category: 'admin', actorName: playerName, timestamp });
 
       const embed = new EmbedBuilder()
         .setAuthor({ name: '🔑 Admin Access' })
@@ -898,6 +1059,9 @@ class LogWatcher {
       const steamId = cheatMatch[3];
       this._playerStats.recordCheatFlag(playerName, steamId, type, timestamp);
       this._incDayCount('cheat');
+
+      // DB: log anticheat event
+      this._logEvent({ type: 'anticheat_flag', category: 'admin', actorName: playerName, steamId, item: type, timestamp });
 
       const embed = new EmbedBuilder()
         .setAuthor({ name: '🚨 Anti-Cheat Alert' })
@@ -927,6 +1091,9 @@ class LogWatcher {
       this._playtime.playerJoin(steamId, name, timestamp);
       this._incDayCount('connects');
 
+      // DB: log connect event
+      this._logEvent({ type: 'player_connect', category: 'session', actorName: name, steamId, timestamp });
+
       // Track online players for peak stats
       this._onlinePlayers.add(steamId);
       this._playtime.recordPlayerCount(this._onlinePlayers.size);
@@ -943,6 +1110,9 @@ class LogWatcher {
       this._playtime.playerLeave(steamId, timestamp);
       this._incDayCount('disconnects');
 
+      // DB: log disconnect event
+      this._logEvent({ type: 'player_disconnect', category: 'session', actorName: name, steamId, timestamp });
+
       // Update online tracking
       this._onlinePlayers.delete(steamId);
 
@@ -957,6 +1127,52 @@ class LogWatcher {
     return true;
   }
 
+  // ─── DB EVENT LOGGING ─────────────────────────────────────
+
+  /**
+   * Log an event to the activity_log database table.
+   * Silently no-ops if no DB is available.
+   * @param {object} entry - { type, category, actorName, steamId, item, amount, details, targetName, targetSteamId, timestamp }
+   */
+  _logEvent(entry) {
+    if (!this._db) return;
+    try {
+      if (entry.timestamp) {
+        this._db.insertActivitiesAt([{
+          type: entry.type,
+          category: entry.category || '',
+          actor: entry.steamId || entry.actorName || '',
+          actorName: entry.actorName || '',
+          steamId: entry.steamId || '',
+          item: entry.item || '',
+          amount: entry.amount || 0,
+          details: entry.details || {},
+          source: 'log',
+          targetName: entry.targetName || '',
+          targetSteamId: entry.targetSteamId || '',
+          createdAt: entry.timestamp instanceof Date ? entry.timestamp.toISOString() : entry.timestamp,
+        }]);
+      } else {
+        this._db.insertActivity({
+          type: entry.type,
+          category: entry.category || '',
+          actor: entry.steamId || entry.actorName || '',
+          actorName: entry.actorName || '',
+          steamId: entry.steamId || '',
+          item: entry.item || '',
+          amount: entry.amount || 0,
+          details: entry.details || {},
+          source: 'log',
+          targetName: entry.targetName || '',
+          targetSteamId: entry.targetSteamId || '',
+        });
+      }
+    } catch (err) {
+      // DB errors should never disrupt event processing
+      console.warn(`[${this._label}] Failed to log event ${entry.type}:`, err.message);
+    }
+  }
+
   // ─── EVENT HANDLERS ───────────────────────────────────────
 
   _onBuild(playerName, steamId, itemName, timestamp) {
@@ -966,6 +1182,9 @@ class LogWatcher {
     // Record stats
     this._playerStats.recordBuild(playerName, steamId, cleanItem, timestamp);
     this._incDayCount('builds');
+
+    // DB: log build event
+    this._logEvent({ type: 'player_build', category: 'build', actorName: playerName, steamId, item: cleanItem, timestamp });
 
     // Batch builds to reduce spam
     if (!this._buildBatch[steamId]) {
@@ -996,6 +1215,9 @@ class LogWatcher {
     if (pvpKill) {
       // PvP kill confirmed
       this._incDayCount('pvpKills');
+
+      // DB: log PvP death event
+      this._logEvent({ type: 'player_death_pvp', category: 'death', actorName: playerName, targetName: pvpKill.attacker, details: { damage: pvpKill.totalDamage }, timestamp });
 
       const killEntry = {
         killer: pvpKill.attacker,
@@ -1054,6 +1276,9 @@ class LogWatcher {
       }
     }
 
+    // DB: log PvE death event
+    this._logEvent({ type: 'player_death', category: 'death', actorName: playerName, timestamp });
+
     // Normal death embed (no loop, or under threshold)
     const embed = new EmbedBuilder()
       .setAuthor({ name: '💀 Player Death' })
@@ -1088,6 +1313,9 @@ class LogWatcher {
     // Record stats
     this._playerStats.recordRaid(attacker, attackerSteamId, ownerSteamId, destroyed, timestamp);
     this._incDayCount('raidHits');
+
+    // DB: log raid event
+    this._logEvent({ type: 'raid_damage', category: 'raid', actorName: attacker, steamId: attackerSteamId, targetSteamId: ownerSteamId, item: cleanBuilding, amount: destroyed ? 1 : 0, details: { destroyed }, timestamp });
 
     // Batch raid events to reduce spam — group by attacker|owner pair
     const key = `${attackerSteamId}|${ownerSteamId}`;
@@ -1246,21 +1474,11 @@ class LogWatcher {
   }
 
   _simplifyContainerName(rawName) {
-    if (rawName.includes('VehicleStorage')) return 'Vehicle Storage';
-    if (rawName.includes('CupboardContainer')) return 'Cupboard';
-    if (rawName.includes('StorageContainer')) return 'Storage Container';
-    if (rawName.includes('Fridge')) return 'Fridge';
-    if (rawName.includes('Barrel')) return 'Barrel';
-    return rawName.replace(/^(ChildActor_GEN_VARIABLE_|Storage_GEN_VARIABLE_)?BP_/, '').replace(/_C_\w+$/, '').replace(/_C_CAT_\w+$/, '').replace(/_/g, ' ').trim();
+    return cleanName(rawName);
   }
 
   _simplifyBlueprintName(rawName) {
-    return rawName
-      .replace(/^BP_/, '')
-      .replace(/_C_\d+.*$/, '')
-      .replace(/_C$/, '')
-      .replace(/_/g, ' ')
-      .trim();
+    return cleanName(rawName);
   }
 
   _formatTime(date) {

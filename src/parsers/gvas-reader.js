@@ -121,7 +121,7 @@ function parseHeader(r) {
 
 const MAP_CAPTURE = new Set([
   'GameStats', 'FloatData', 'CustomData', 'LODHouseData',
-  'RandQuestConfig', 'SGlobalContainerSave',
+  'RandQuestConfig', 'SGlobalContainerSave', 'LodModularLootActor',
 ]);
 
 // ─── Read a single UProperty ───────────────────────────────────────────────
@@ -436,6 +436,7 @@ function _parseInventorySlots(r, count) {
     while ((child = readProperty(r)) !== null) slotProps.push(child);
 
     let itemName = null, amount = 0, durability = 0;
+    let ammo = 0, attachments = [];
     for (const sp of slotProps) {
       if (sp.name === 'Item' && sp.children) {
         for (const c of sp.children) {
@@ -444,14 +445,19 @@ function _parseInventorySlots(r, count) {
       }
       if (sp.name === 'Amount') amount = sp.value || 0;
       if (sp.name === 'Durability') durability = sp.value || 0;
+      if (sp.name === 'Ammo') ammo = sp.value || 0;
+      if (sp.name === 'Attachments' && Array.isArray(sp.value)) attachments = sp.value;
     }
 
-    if (itemName && itemName !== 'None') {
-      items.push({
+    if (itemName && itemName !== 'None' && itemName !== 'Empty') {
+      const slot = {
         item: itemName,
         amount,
         durability: Math.round(durability * 10) / 10,
-      });
+      };
+      if (ammo) slot.ammo = ammo;
+      if (attachments.length) slot.attachments = attachments;
+      items.push(slot);
     }
   }
   return items;
@@ -470,6 +476,38 @@ function _readMapProperty(r, prop, dataSize, cname) {
   if (MAP_CAPTURE.has(cname)) {
     r.readI32(); // removedCount
     const count = r.readI32();
+
+    // StructProperty values require recursive parsing
+    if (valType === 'StructProperty' || keyType === 'StructProperty') {
+      const entries = [];
+      for (let i = 0; i < count; i++) {
+        const entry = {};
+        // Read key
+        if (keyType === 'StrProperty' || keyType === 'NameProperty') entry.key = r.readFString();
+        else if (keyType === 'IntProperty') entry.key = r.readI32();
+        else if (keyType === 'EnumProperty') entry.key = r.readFString();
+        else if (keyType === 'StructProperty') {
+          const keyProps = [];
+          let kp;
+          while ((kp = readProperty(r)) !== null) keyProps.push(kp);
+          entry.key = keyProps;
+        }
+        // Read value
+        if (valType === 'StructProperty') {
+          const valProps = [];
+          let vp;
+          while ((vp = readProperty(r)) !== null) valProps.push(vp);
+          entry.value = valProps;
+        } else if (valType === 'FloatProperty') entry.value = r.readF32();
+        else if (valType === 'IntProperty') entry.value = r.readI32();
+        else if (valType === 'StrProperty') entry.value = r.readFString();
+        else if (valType === 'BoolProperty') entry.value = r.readBool();
+        entries.push(entry);
+      }
+      prop.value = entries;
+      return;
+    }
+
     const entries = {};
     for (let i = 0; i < count; i++) {
       let key;

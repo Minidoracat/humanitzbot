@@ -272,6 +272,7 @@ function parseSave(buf) {
   const containers = [];
   const lootActors = [];
   const quests = [];
+  const horses = [];
 
   // ── Parallel arrays that get assembled after parsing ──
   let buildActorClasses = [];      // ObjectProperty array
@@ -334,6 +335,9 @@ function parseSave(buf) {
           for (const ep of elemProps) handleProp(ep);
         }
       }
+      // After processing multi-player arrays (DropInSaves), clear stale
+      // player context so downstream world-level handlers aren't suppressed.
+      if (n === 'DropInSaves') currentSteamID = null;
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -393,7 +397,7 @@ function parseSave(buf) {
     }
 
     // Dogs in world
-    if (n === 'Dogs' && Array.isArray(prop.value) && !currentSteamID) {
+    if (n === 'Dogs' && Array.isArray(prop.value)) {
       for (const name of prop.value) {
         if (name && typeof name === 'string') {
           companions.push({ type: 'dog', actorName: name, ownerSteamId: '', x: null, y: null, z: null, health: 0, extra: {} });
@@ -403,7 +407,7 @@ function parseSave(buf) {
     }
 
     // Dead bodies
-    if (n === 'DeadBodies' && Array.isArray(prop.value) && !currentSteamID) {
+    if (n === 'DeadBodies' && Array.isArray(prop.value)) {
       for (const name of prop.value) {
         if (name && typeof name === 'string') {
           deadBodies.push({ actorName: name, x: null, y: null, z: null });
@@ -413,43 +417,95 @@ function parseSave(buf) {
     }
 
     // Explodable barrels (world objects)
-    if (n === 'ExplodableBarrels' && Array.isArray(prop.value) && !currentSteamID) {
+    if (n === 'ExplodableBarrels' && Array.isArray(prop.value)) {
       worldState.explodableBarrels = prop.value;
       return;
     }
 
     // Generators
-    if (n === 'GennyPowerLevel' && Array.isArray(prop.value) && !currentSteamID) {
+    if (n === 'GennyPowerLevel' && Array.isArray(prop.value)) {
       worldState.generatorPowerLevels = prop.value;
       return;
     }
 
+    // World horses
+    if (n === 'HorseData' && Array.isArray(prop.value)) {
+      _extractHorses(prop.value, horses);
+      return;
+    }
+
+    // LOD Pickups (world loot items)
+    if (n === 'LODPickups' && Array.isArray(prop.value)) {
+      worldState.lodPickups = prop.value;
+      return;
+    }
+
+    // Helicopter crash (spawned)
+    if (n === 'SpawnedHeliCrash' && Array.isArray(prop.value)) {
+      worldState.heliCrashData = prop.value;
+      return;
+    }
+    if (n === 'HeliCrashSpawnDay' && typeof prop.value === 'number') {
+      worldState.heliCrashSpawnDay = prop.value;
+      return;
+    }
+
+    // SavedActors (special world actors)
+    if (n === 'SavedActors' && Array.isArray(prop.value)) {
+      worldState.savedActors = prop.value;
+      return;
+    }
+
+    // Node save data (resource nodes)
+    if (n === 'NodeSaveData' && Array.isArray(prop.value)) {
+      worldState.nodeSaveDataCount = Array.isArray(prop.value) ? prop.value.length : 0;
+      return;
+    }
+
+    // Destroyed sleepers/cars
+    if (n === 'DestroyedSleepers' && Array.isArray(prop.value)) {
+      worldState.destroyedSleepers = prop.value.length;
+      return;
+    }
+    if (n === 'DestroyedRandCars') {
+      worldState.destroyedRandCars = Array.isArray(prop.value) ? prop.value.length :
+        (typeof prop.value === 'string' && prop.value.startsWith('<skipped') ?
+          parseInt(prop.value.match(/\d+/)?.[0] || '0', 10) : 0);
+      return;
+    }
+
+    // Save file ID
+    if (n === 'SaveID' && typeof prop.value === 'number') {
+      worldState.saveId = prop.value;
+      return;
+    }
+
     // Container data (global storage)
-    if (n === 'ContainerData' && !currentSteamID) {
+    if (n === 'ContainerData') {
       _extractContainers(prop, containers);
       return;
     }
 
     // Modular loot actors
-    if (n === 'ModularLootActor' && !currentSteamID) {
+    if (n === 'ModularLootActor') {
       _extractLootActors(prop, lootActors);
       return;
     }
 
     // Stone cutting stations
-    if (n === 'StoneCutting' && !currentSteamID) {
+    if (n === 'StoneCutting') {
       worldState.stoneCuttingStations = Array.isArray(prop.value) ? prop.value.length : 0;
       return;
     }
 
     // Pre-build actors (like campfires that exist before player build)
-    if (n === 'PreBuildActors' && !currentSteamID) {
+    if (n === 'PreBuildActors') {
       worldState.preBuildActorCount = Array.isArray(prop.value) ? prop.value.length : 0;
       return;
     }
 
     // World quest data
-    if (n === 'QuestSavedData' && !currentSteamID) {
+    if (n === 'QuestSavedData') {
       _extractWorldQuests(prop, quests);
       return;
     }
@@ -460,14 +516,28 @@ function parseSave(buf) {
       return;
     }
 
-    // Airdrop
+    // Airdrop (capture full data including position)
     if (n === 'Airdrop') {
       worldState.airdropActive = true;
+      if (prop.children) {
+        const airdrop = {};
+        for (const c of prop.children) {
+          if (c.name === 'Loc' && c.value?.translation) {
+            airdrop.x = _round2(c.value.translation.x);
+            airdrop.y = _round2(c.value.translation.y);
+            airdrop.z = _round2(c.value.translation.z);
+          }
+          if (c.name === 'LifeSpan' && typeof c.value === 'number') airdrop.lifeSpan = _round(c.value);
+          if (c.name === 'AIAlive' && typeof c.value === 'number') airdrop.aiAlive = c.value;
+          if (c.name === 'UID') airdrop.uid = c.value;
+        }
+        worldState.airdrop = airdrop;
+      }
       return;
     }
 
     // Drop-in saves (players who connected then disconnected)
-    if (n === 'DropInSaves' && Array.isArray(prop.value) && !currentSteamID) {
+    if (n === 'DropInSaves' && Array.isArray(prop.value)) {
       // Extract Steam IDs from each drop-in entry
       const dropIns = [];
       for (const elemProps of prop.value) {
@@ -734,23 +804,41 @@ function parseSave(buf) {
     }
   }
 
-  // Assign inventories to structures
-  for (const invProps of buildActorInventories) {
+  // Assign inventories from BuildActorInventory to structures/containers
+  for (let idx = 0; idx < buildActorInventories.length; idx++) {
+    const invProps = buildActorInventories[idx];
     if (!Array.isArray(invProps)) continue;
     let actorName = '';
     let items = [];
+    let quickSlots = [];
+    let locked = false;
+    let craftingContent = [];
+    let doesSpawnLoot = false;
+
     for (const ip of invProps) {
-      if (ip.name === 'ContainerActor') actorName = ip.value;
-      if (ip.name === 'ContainerSlots' && Array.isArray(ip.value)) items = ip.value;
+      if (ip.name === 'ContainerActor') actorName = ip.value || '';
+      if (ip.name === 'ContainerInventoryArray' && Array.isArray(ip.value)) items = ip.value;
+      if (ip.name === 'ContainerQuickSlotArray' && Array.isArray(ip.value)) quickSlots = ip.value;
+      if (ip.name === 'Locked?') locked = !!ip.value;
+      if (ip.name === 'DoesSpawnLoot') doesSpawnLoot = !!ip.value;
+      if (ip.name === 'CraftingContent' && Array.isArray(ip.value)) craftingContent = ip.value;
     }
+
+    // Skip empty containers (no inventory, no quick slots, no crafting)
+    if (items.length === 0 && quickSlots.length === 0 && craftingContent.length === 0) continue;
+
     if (actorName) {
-      // Find the container or add as standalone
       const existingContainer = containers.find(c => c.actorName === actorName);
       if (existingContainer) {
         existingContainer.items = items;
+        existingContainer.quickSlots = quickSlots;
+        existingContainer.locked = locked;
       } else {
-        containers.push({ actorName, items, x: null, y: null, z: null });
+        containers.push({ actorName, items, quickSlots, x: null, y: null, z: null, locked, doesSpawnLoot, buildIndex: idx });
       }
+    } else {
+      // No actor name — building-attached container (positional)
+      containers.push({ actorName: `BuildContainer_${idx}`, items, quickSlots, x: null, y: null, z: null, locked, doesSpawnLoot, craftingContent, buildIndex: idx });
     }
   }
 
@@ -759,6 +847,8 @@ function parseSave(buf) {
   worldState.totalVehicles = vehicles.length;
   worldState.totalCompanions = companions.length;
   worldState.totalDeadBodies = deadBodies.length;
+  worldState.totalHorses = horses.length;
+  worldState.totalContainers = containers.length;
   worldState.totalPlayers = players.size;
 
   return {
@@ -771,6 +861,7 @@ function parseSave(buf) {
     containers,
     lootActors,
     quests,
+    horses,
     header,
   };
 }
@@ -861,12 +952,65 @@ function _extractContainers(prop, containers) {
   if (!Array.isArray(prop.value)) return;
   for (const elemProps of prop.value) {
     if (!Array.isArray(elemProps)) continue;
-    const container = { actorName: '', items: [], x: null, y: null, z: null };
+    const container = { actorName: '', items: [], quickSlots: [], x: null, y: null, z: null, locked: false, doesSpawnLoot: false, alarmOff: false };
     for (const cp of elemProps) {
       if (cp.name === 'ContainerActor') container.actorName = cp.value || '';
-      if (cp.name === 'ContainerSlots' && Array.isArray(cp.value)) container.items = cp.value;
+      if (cp.name === 'ContainerInventoryArray' && Array.isArray(cp.value)) container.items = cp.value;
+      if (cp.name === 'ContainerQuickSlotArray' && Array.isArray(cp.value)) container.quickSlots = cp.value;
+      if (cp.name === 'DoesSpawnLoot') container.doesSpawnLoot = !!cp.value;
+      if (cp.name === 'AlarmOff') container.alarmOff = !!cp.value;
+      if (cp.name === 'Locked?') container.locked = !!cp.value;
+      if (cp.name === 'HackCoolDown' && typeof cp.value === 'number') container.hackCoolDown = cp.value;
+      if (cp.name === 'CraftingContent' && Array.isArray(cp.value)) container.craftingContent = cp.value;
+      if (cp.name === 'DestroyTime' && typeof cp.value === 'number') container.destroyTime = cp.value;
+      if (cp.name === 'Extra_Float_Params' && cp.value) container.extraFloats = cp.value;
+      if (cp.name === 'Extra_Bool_Params' && cp.value) container.extraBools = cp.value;
     }
     if (container.actorName) containers.push(container);
+  }
+}
+
+function _extractHorses(horseArray, horses) {
+  for (const horseProps of horseArray) {
+    if (!Array.isArray(horseProps)) continue;
+    const horse = {
+      class: '', displayName: '',
+      x: null, y: null, z: null,
+      health: 0, maxHealth: 0,
+      energy: 0, stamina: 0,
+      ownerSteamId: '', name: '',
+      saddleInventory: [], inventory: [],
+      extra: {},
+    };
+
+    for (const hp of horseProps) {
+      if (hp.name === 'Class') {
+        horse.class = hp.value || '';
+        horse.displayName = simplifyBlueprint(hp.value || '');
+      }
+      if (hp.name === 'HorseName' && typeof hp.value === 'string') horse.name = hp.value;
+      if (hp.name === 'Health' && typeof hp.value === 'number') horse.health = _round(hp.value);
+      if (hp.name === 'MaxHealth' && typeof hp.value === 'number') horse.maxHealth = _round(hp.value);
+      if (hp.name === 'Energy' && typeof hp.value === 'number') horse.energy = _round(hp.value);
+      if (hp.name === 'Stamina' && typeof hp.value === 'number') horse.stamina = _round(hp.value);
+      if (hp.name === 'Transform' && hp.value?.translation) {
+        horse.x = _round2(hp.value.translation.x);
+        horse.y = _round2(hp.value.translation.y);
+        horse.z = _round2(hp.value.translation.z);
+      }
+      if (hp.name === 'Owner' && typeof hp.value === 'string') {
+        const m = hp.value.match(/(7656\d+)/);
+        if (m) horse.ownerSteamId = m[1];
+      }
+      if (hp.name === 'SaddleInventory' && Array.isArray(hp.value)) horse.saddleInventory = hp.value;
+      if (hp.name === 'Inventory' && Array.isArray(hp.value)) horse.inventory = hp.value;
+      // Capture any unlisted props
+      if (!['Class', 'HorseName', 'Health', 'MaxHealth', 'Energy', 'Stamina', 'Transform', 'Owner', 'SaddleInventory', 'Inventory'].includes(hp.name)) {
+        horse.extra[hp.name] = hp.value;
+      }
+    }
+
+    horses.push(horse);
   }
 }
 

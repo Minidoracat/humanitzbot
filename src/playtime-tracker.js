@@ -18,6 +18,7 @@ class PlaytimeTracker {
     this._saveTimer = null;
     this._dirty = false;
     this._currentOnlineCount = 0;
+    this._db = options.db || null; // optional HumanitZDB for playtime syncing
     // Per-instance overrides (for multi-server support)
     this._dataDir = options.dataDir || DEFAULT_DATA_DIR;
     this._dataFile = path.join(this._dataDir, 'playtime.json');
@@ -47,6 +48,9 @@ class PlaytimeTracker {
     if (this._saveTimer) clearInterval(this._saveTimer);
     console.log(`[${this._label}] Saved and stopped.`);
   }
+
+  /** Attach a HumanitZDB instance for unified playtime + alias syncing. */
+  setDb(db) { this._db = db; }
 
   playerJoin(id, name, timestamp) {
     // Only accept SteamID keys — reject name-based keys
@@ -83,6 +87,11 @@ class PlaytimeTracker {
       this._data.players[id].sessions += 1;
     }
     this._dirty = true;
+
+    // Register alias in unified identity DB
+    if (this._db) {
+      try { this._db.registerAlias(id, name, 'playtime'); } catch (_) {}
+    }
 
     console.log(`[${this._label}] ${name} (${id}) session started`);
   }
@@ -365,6 +374,14 @@ class PlaytimeTracker {
     this._data.players[id].totalMs += durationMs;
     this._data.players[id].lastSeen = (timestamp || new Date()).toISOString();
     this._dirty = true;
+
+    // Sync cumulative playtime to DB
+    if (this._db) {
+      try {
+        const p = this._data.players[id];
+        this._db.updatePlayerPlaytime(id, Math.floor(p.totalMs / 1000), p.sessions || 0);
+      } catch (_) { /* non-critical */ }
+    }
   }
 
   _formatDuration(ms) {

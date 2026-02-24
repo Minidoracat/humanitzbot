@@ -1,8 +1,7 @@
 /**
  * Game reference module — seeds static game data into SQLite.
  *
- * Uses the curated data from game-data.js (high quality, hand-verified)
- * and supplements with parsed pak datatable files where useful.
+ * Uses the curated data from game-data.js (high quality, hand-verified).
  *
  * Run once at startup via db.seedGameReference() or manually via
  *   node -e "require('./src/parsers/game-reference').seed(db)"
@@ -13,15 +12,9 @@
  *   - game_skills         (from SKILL_EFFECTS)
  *   - game_challenges     (from CHALLENGES + CHALLENGE_DESCRIPTIONS)
  *   - game_loading_tips   (from LOADING_TIPS)
- *   - game_items          (from dt-itemdatabase.txt if available)
- *   - game_lore           (from dt-loredata.txt if available)
- *   - game_quests         (from dt-miniquest.txt if available)
- *   - game_spawn_locations (from dt-spawnlocationdemo.txt if available)
  *   - game_server_setting_defs (from SERVER_SETTING_DESCRIPTIONS)
  */
 
-const fs = require('fs');
-const path = require('path');
 const {
   AFFLICTION_MAP,
   PROFESSION_DETAILS,
@@ -31,8 +24,6 @@ const {
   SKILL_EFFECTS,
   SERVER_SETTING_DESCRIPTIONS,
 } = require('../game-data');
-
-const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 
 // ─── Seed all game reference data ──────────────────────────────────────────
 
@@ -49,12 +40,6 @@ function seed(db) {
   seedChallenges(db);
   seedLoadingTips(db);
   seedServerSettingDefs(db);
-
-  // Optional pak-derived data (may not exist)
-  seedItemsFromPak(db);
-  seedLoreFromPak(db);
-  seedQuestsFromPak(db);
-  seedSpawnLocationsFromPak(db);
 
   db._setMeta('game_ref_seeded', new Date().toISOString());
   console.log('[GameRef] All game reference data seeded');
@@ -208,156 +193,6 @@ function _inferSettingType(key) {
   if (/mode|level/i.test(key)) return 'enum';
   if (/name/i.test(key)) return 'string';
   return 'string';
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  Pak-derived data (optional — from dt-*.txt files in data/)
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Parse a dt-*.txt file.
- * Format: rows separated by blank lines, each row has lines like "Key: Value" or RowName headers.
- */
-function _parseDtFile(filename) {
-  const filePath = path.join(DATA_DIR, filename);
-  if (!fs.existsSync(filePath)) return [];
-
-  const content = fs.readFileSync(filePath, 'utf-8');
-  const blocks = content.split(/\n\s*\n/).filter(b => b.trim());
-
-  return blocks.map(block => {
-    const lines = block.trim().split('\n');
-    const entry = {};
-
-    for (const line of lines) {
-      const colonIdx = line.indexOf(':');
-      if (colonIdx === -1) {
-        // Could be a header/row name
-        if (line.startsWith('---')) continue;
-        entry._header = line.trim();
-        continue;
-      }
-      const key = line.substring(0, colonIdx).trim();
-      const value = line.substring(colonIdx + 1).trim();
-      entry[key] = value;
-    }
-    return entry;
-  }).filter(e => Object.keys(e).length > 0);
-}
-
-function seedItemsFromPak(db) {
-  const entries = _parseDtFile('dt-itemdatabase.txt');
-  if (entries.length === 0) return;
-
-  const items = [];
-  for (const entry of entries) {
-    const name = entry.ItemName || entry.Name || entry._header || '';
-    const id = entry.RowName || entry._header || name;
-    if (!name && !id) continue;
-
-    items.push({
-      id: _cleanId(id),
-      name: _cleanName(name),
-      description: entry.Description || '',
-      category: entry.Category || entry.Type || '',
-      icon: entry.Icon || '',
-      blueprint: entry.Blueprint || entry.Class || '',
-      stackSize: parseInt(entry.StackSize || entry.MaxStack || '1', 10) || 1,
-      extra: {},
-    });
-  }
-
-  if (items.length > 0) {
-    db.seedGameItems(items);
-    console.log(`[GameRef] Seeded ${items.length} items from dt-itemdatabase.txt`);
-  }
-}
-
-function seedLoreFromPak(db) {
-  const entries = _parseDtFile('dt-loredata.txt');
-  if (entries.length === 0) return;
-
-  const stmt = db.db.prepare(
-    'INSERT OR REPLACE INTO game_lore (id, title, text, location) VALUES (?, ?, ?, ?)'
-  );
-
-  const tx = db.db.transaction(() => {
-    for (const entry of entries) {
-      const id = entry.RowName || entry._header || '';
-      if (!id) continue;
-      stmt.run(
-        _cleanId(id),
-        entry.Title || entry.Name || '',
-        entry.Text || entry.Description || entry.Content || '',
-        entry.Location || ''
-      );
-    }
-  });
-  tx();
-}
-
-function seedQuestsFromPak(db) {
-  const entries = _parseDtFile('dt-miniquest.txt');
-  if (entries.length === 0) return;
-
-  const stmt = db.db.prepare(
-    'INSERT OR REPLACE INTO game_quests (id, name, description, objectives, rewards, extra) VALUES (?, ?, ?, ?, ?, ?)'
-  );
-
-  const tx = db.db.transaction(() => {
-    for (const entry of entries) {
-      const id = entry.RowName || entry._header || '';
-      if (!id) continue;
-      stmt.run(
-        _cleanId(id),
-        entry.QuestName || entry.Name || id,
-        entry.Description || '',
-        JSON.stringify([]),  // would need structured parsing
-        JSON.stringify([]),
-        JSON.stringify(entry)
-      );
-    }
-  });
-  tx();
-}
-
-function seedSpawnLocationsFromPak(db) {
-  const entries = _parseDtFile('dt-spawnlocationdemo.txt');
-  if (entries.length === 0) return;
-
-  const stmt = db.db.prepare(
-    'INSERT OR REPLACE INTO game_spawn_locations (id, name, description, type, image) VALUES (?, ?, ?, ?, ?)'
-  );
-
-  const tx = db.db.transaction(() => {
-    for (const entry of entries) {
-      const id = entry.RowName || entry._header || '';
-      if (!id) continue;
-      stmt.run(
-        _cleanId(id),
-        entry.Name || entry.DisplayName || id,
-        entry.Description || '',
-        entry.Type || '',
-        entry.Image || entry.Icon || ''
-      );
-    }
-  });
-  tx();
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-function _cleanId(raw) {
-  return raw.replace(/['"]/g, '').trim();
-}
-
-function _cleanName(raw) {
-  return raw
-    .replace(/['"]/g, '')
-    .replace(/^BP_/, '')
-    .replace(/_C$/, '')
-    .replace(/_/g, ' ')
-    .trim();
 }
 
 module.exports = { seed };

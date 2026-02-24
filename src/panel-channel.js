@@ -67,6 +67,7 @@ const BTN = {
   BROADCASTS:   'panel_broadcasts',
   MAP:          'panel_map',
   HEATMAP:      'panel_heatmap',
+  DIAGNOSTICS:  'panel_diagnostics',
 };
 
 const SELECT = {
@@ -449,6 +450,18 @@ const ENV_CATEGORIES = [
     ],
   },
   {
+    id: 'activity_log', label: 'Activity Log', emoji: '📋', group: 2,
+    description: 'Save-diff activity log toggles (restart required)',
+    restart: true,
+    fields: [
+      { env: 'ENABLE_ACTIVITY_LOG', label: 'Enable Activity Log (true/false)', cfg: 'enableActivityLog', type: 'bool' },
+      { env: 'ENABLE_CONTAINER_LOG', label: 'Container Log (true/false)', cfg: 'enableContainerLog', type: 'bool' },
+      { env: 'ENABLE_HORSE_LOG', label: 'Horse Log (true/false)', cfg: 'enableHorseLog', type: 'bool' },
+      { env: 'ENABLE_VEHICLE_LOG', label: 'Vehicle Log (true/false)', cfg: 'enableVehicleLog', type: 'bool' },
+      { env: 'SHOW_INVENTORY_LOG', label: 'Inventory Log (true/false)', cfg: 'showInventoryLog', type: 'bool' },
+    ],
+  },
+  {
     id: 'pvp', label: 'PvP Schedule', emoji: '⚔️', group: 2,
     description: 'PvP times, delay, server name (restart required)',
     restart: true,
@@ -758,7 +771,7 @@ class PanelChannel {
    * @param {object} opts.moduleStatus - reference to the moduleStatus object from index.js
    * @param {Date}   opts.startedAt    - bot startup timestamp
    */
-  constructor(client, { moduleStatus = {}, startedAt = new Date(), multiServerManager = null } = {}) {
+  constructor(client, { moduleStatus = {}, startedAt = new Date(), multiServerManager = null, db = null, saveService = null, logWatcher = null } = {}) {
     this.client = client;
     this.channel = null;
     this.botMessage = null;    // first message — bot controls (top)
@@ -774,6 +787,9 @@ class PanelChannel {
     this.moduleStatus = moduleStatus;
     this.startedAt = startedAt;
     this.multiServerManager = multiServerManager;
+    this._db = db;
+    this._saveService = saveService;
+    this._logWatcher = logWatcher;
     this._pendingServers = new Map(); // userId → { ...partial server config, _createdAt }
     // Clean up stale pending entries every 5 minutes
     this._pendingCleanupTimer = setInterval(() => {
@@ -952,6 +968,9 @@ class PanelChannel {
       }
       if (id === BTN.REIMPORT) {
         return this._handleReimportButton(interaction);
+      }
+      if (id === BTN.DIAGNOSTICS) {
+        return this._handleDiagnosticsButton(interaction);
       }
       if (id === BTN.WELCOME_EDIT) {
         return this._handleWelcomeEditButton(interaction);
@@ -1167,6 +1186,428 @@ class PanelChannel {
     });
 
     setTimeout(() => process.exit(0), 1500);
+    return true;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Diagnostics — live health probes + module status + suggestions
+  // ═══════════════════════════════════════════════════════════
+
+  async _handleDiagnosticsButton(interaction) {
+    if (!await this._requireAdmin(interaction, 'view diagnostics')) return true;
+    // Defer — probes can take a few seconds
+    await interaction.deferReply({ ephemeral: true });
+
+    const rcon = require('./rcon');
+    const playerStats = require('./player-stats');
+    const playtime = require('./playtime-tracker');
+    const upMs = Date.now() - this.startedAt.getTime();
+
+    const results = { rcon: null, sftp: null, db: null, channels: [], save: null, panel: null };
+
+    // ── Run probes in parallel ──
+    const probes = [];
+
+    // RCON probe — send a real command
+    probes.push((async () => {
+      if (!config.rconHost || !config.rconPassword) {
+        results.rcon = { status: 'unconfigured' };
+        return;
+      }
+      const start = Date.now();
+      try {
+        const resp = await Promise.race([
+          rcon.send('info'),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
+        ]);
+        results.rcon = { status: 'ok', latency: Date.now() - start, response: (resp || '').slice(0, 60) };
+      } catch (err) {
+        results.rcon = {
+          status: rcon.connected ? 'error' : 'disconnected',
+          latency: Date.now() - start,
+          error: err.message,
+        };
+      }
+    })());
+
+    // SFTP probe — real connection test
+    if (this._hasSftp) {
+      probes.push((async () => {
+        const SftpClient = require('ssh2-sftp-client');
+        const sftp = new SftpClient();
+        const start = Date.now();
+        try {
+          const connectOpts = {
+            host: config.ftpHost,
+            port: config.ftpPort || 2022,
+            username: config.ftpUser,
+            password: config.ftpPassword,
+            readyTimeout: 8000,
+            retries: 0,
+          };
+          if (config.ftpPrivateKeyPath) {
+            try { connectOpts.privateKey = fs.readFileSync(config.ftpPrivateKeyPath); } catch { /* ignore */ }
+          }
+          await sftp.connect(connectOpts);
+          // Probe actual configured file paths (not just base dir listing)
+          let hasSave = false;
+          let hasLog = false;
+          try { await sftp.stat(config.ftpSavePath); hasSave = true; } catch { /* missing */ }
+          try { await sftp.stat(config.ftpLogPath); hasLog = true; } catch { /* missing */ }
+          await sftp.end();
+          results.sftp = { status: 'ok', latency: Date.now() - start, hasSave, hasLog };
+        } catch (err) {
+          try { await sftp.end(); } catch { /* ignore */ }
+          results.sftp = { status: 'error', latency: Date.now() - start, error: err.message };
+        }
+      })());
+    } else {
+      results.sftp = { status: 'unconfigured' };
+    }
+
+    // DB health check
+    probes.push((async () => {
+      if (!this._db || !this._db.db) {
+        results.db = { status: 'unavailable' };
+        return;
+      }
+      try {
+        const integrity = this._db.db.pragma('integrity_check');
+        const ok = integrity?.[0]?.integrity_check === 'ok';
+        const totals = this._db.getServerTotals();
+        const aliases = this._db.getAliasStats();
+        const version = this._db.getMeta('schema_version');
+        let fileSize = 0;
+        try { fileSize = fs.statSync(this._db._dbPath).size; } catch { /* in-memory */ }
+        results.db = {
+          status: ok ? 'ok' : 'degraded',
+          integrity: ok,
+          version,
+          players: totals?.total_players || 0,
+          online: totals?.online_players || 0,
+          totalKills: totals?.total_kills || 0,
+          aliases: aliases?.totalAliases || 0,
+          uniquePlayers: aliases?.uniquePlayers || 0,
+          fileSize,
+        };
+      } catch (err) {
+        results.db = { status: 'error', error: err.message };
+      }
+    })());
+
+    // Panel API probe
+    if (panelApi.available) {
+      probes.push((async () => {
+        const start = Date.now();
+        try {
+          const res = await Promise.race([
+            panelApi.getResources(),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
+          ]);
+          results.panel = { status: 'ok', latency: Date.now() - start, state: res?.state || 'unknown' };
+        } catch (err) {
+          results.panel = { status: 'error', latency: Date.now() - start, error: err.message };
+        }
+      })());
+    } else {
+      results.panel = { status: 'unconfigured' };
+    }
+
+    await Promise.allSettled(probes);
+
+    // ── Channel verification (sequential to avoid rate limits) ──
+    const channelDefs = [
+      { name: 'Admin', key: 'adminChannelId' },
+      { name: 'Chat', key: 'chatChannelId' },
+      { name: 'Server Status', key: 'serverStatusChannelId' },
+      { name: 'Log (threads)', key: 'logChannelId' },
+      { name: 'Activity Log', key: 'activityLogChannelId' },
+      { name: 'Player Stats', key: 'playerStatsChannelId' },
+      { name: 'Map', key: 'mapChannelId' },
+      { name: 'Panel', key: 'panelChannelId' },
+    ];
+    for (const { name, key } of channelDefs) {
+      const id = config[key];
+      if (!id) {
+        results.channels.push({ name, status: 'not set' });
+        continue;
+      }
+      try {
+        const ch = await this.client.channels.fetch(id);
+        results.channels.push({ name, status: 'ok', channelName: ch?.name || id });
+      } catch {
+        results.channels.push({ name, status: 'error', id });
+      }
+    }
+
+    // ── Save service health ──
+    if (this._saveService) {
+      const st = this._saveService.stats;
+      results.save = {
+        status: st.lastError ? 'error' : st.syncCount > 0 ? 'ok' : 'waiting',
+        syncCount: st.syncCount,
+        lastMtime: st.lastMtime,
+        lastError: st.lastError,
+        mode: st.mode,
+        syncing: st.syncing,
+      };
+    }
+
+    // ── Build module status lines ──
+    const moduleLines = [];
+    for (const [name, status] of Object.entries(this.moduleStatus)) {
+      const icon = status.startsWith('🟢') ? '🟢' : status.startsWith('⚫') ? '⚫' : '🟡';
+      const detail = status.replace(/^[🟢⚫🟡]\s*/, '');
+      if (icon === '🟢') {
+        moduleLines.push(`${icon} **${name}** — ${detail}`);
+      } else if (icon === '⚫') {
+        moduleLines.push(`${icon} **${name}** — Disabled in config`);
+      } else {
+        const reason = detail.replace(/^Skipped\s*/, '').replace(/^\(/, '').replace(/\)$/, '');
+        moduleLines.push(`${icon} **${name}** — ${reason || 'Skipped'}`);
+      }
+    }
+
+    // Enrich with live data where available
+    if (this._logWatcher) {
+      const lwActive = !!this._logWatcher.interval;
+      const lwInit = this._logWatcher.initialised;
+      if (lwActive && lwInit) {
+        // already shown via moduleStatus
+      } else if (lwActive && !lwInit) {
+        moduleLines.push('-# Log Watcher is polling but hasn\'t received data yet');
+      }
+    }
+    const psCount = playerStats._data ? Object.keys(playerStats._data.players || {}).length : 0;
+    const ptCount = playtime._data ? Object.keys(playtime._data.players || {}).length : 0;
+    const ptActive = playtime._activeSessions?.size || 0;
+
+    // ── Build connectivity lines ──
+    const connLines = [];
+
+    // RCON
+    if (results.rcon.status === 'ok') {
+      connLines.push(`🟢 **RCON** — ${results.rcon.latency}ms · \`${results.rcon.response}\``);
+    } else if (results.rcon.status === 'disconnected') {
+      connLines.push(`🔴 **RCON** — Disconnected (${results.rcon.error})`);
+    } else if (results.rcon.status === 'error') {
+      connLines.push(`🟡 **RCON** — Error: ${results.rcon.error} (${results.rcon.latency}ms)`);
+    } else {
+      connLines.push('⚫ **RCON** — Not configured');
+    }
+
+    // SFTP
+    if (results.sftp.status === 'ok') {
+      const extras = [];
+      if (results.sftp.hasSave) extras.push('save ✓');
+      if (results.sftp.hasLog) extras.push('log ✓');
+      connLines.push(`🟢 **SFTP** — ${results.sftp.latency}ms · ${extras.join(', ') || '⚠️ game files not found at configured paths'}`);
+    } else if (results.sftp.status === 'error') {
+      connLines.push(`🔴 **SFTP** — ${results.sftp.error} (${results.sftp.latency}ms)`);
+    } else {
+      connLines.push('⚫ **SFTP** — Not configured');
+    }
+
+    // Panel API
+    if (results.panel.status === 'ok') {
+      connLines.push(`🟢 **Panel API** — ${results.panel.latency}ms · Server: ${results.panel.state}`);
+    } else if (results.panel.status === 'error') {
+      connLines.push(`🔴 **Panel API** — ${results.panel.error} (${results.panel.latency}ms)`);
+    } else {
+      connLines.push('⚫ **Panel API** — Not configured');
+    }
+
+    // Database
+    if (results.db.status === 'ok') {
+      const sizeMB = (results.db.fileSize / 1024 / 1024).toFixed(1);
+      connLines.push(`🟢 **Database** — v${results.db.version} · ${results.db.players} players · ${results.db.aliases} aliases · ${sizeMB} MB`);
+    } else if (results.db.status === 'degraded') {
+      connLines.push('🟡 **Database** — Integrity check failed');
+    } else if (results.db.status === 'error') {
+      connLines.push(`🔴 **Database** — ${results.db.error}`);
+    } else {
+      connLines.push('⚫ **Database** — Not initialised');
+    }
+
+    // Save service
+    if (results.save) {
+      if (results.save.status === 'ok') {
+        const ago = results.save.lastMtime
+          ? _formatBotUptime(Date.now() - new Date(results.save.lastMtime).getTime()) + ' ago'
+          : 'unknown';
+        connLines.push(`🟢 **Save Service** — ${results.save.syncCount} syncs · Last: ${ago} · Mode: ${results.save.mode}`);
+      } else if (results.save.status === 'error') {
+        connLines.push(`🔴 **Save Service** — ${results.save.lastError}`);
+      } else {
+        connLines.push('🟡 **Save Service** — Waiting for first sync');
+      }
+    }
+
+    // ── Channel verification lines ──
+    const chLines = results.channels.map(ch => {
+      if (ch.status === 'ok') return `🟢 ${ch.name} → #${ch.channelName}`;
+      if (ch.status === 'not set') return `⚫ ${ch.name} — not configured`;
+      return `🔴 ${ch.name} — channel ${ch.id} not found or inaccessible`;
+    });
+
+    // ── Data summary ──
+    const dataLines = [];
+    if (results.db.status === 'ok' && results.db.players > 0) {
+      dataLines.push(`👥 **${results.db.players}** players in database (${results.db.online} online)`);
+      dataLines.push(`🪦 **${results.db.totalKills?.toLocaleString() || 0}** lifetime kills tracked`);
+    }
+    if (psCount > 0) dataLines.push(`📊 **${psCount}** players in log stats`);
+    if (ptCount > 0) dataLines.push(`⏱️ **${ptCount}** players with playtime (${ptActive} active session${ptActive !== 1 ? 's' : ''})`);
+    if (dataLines.length === 0) dataLines.push('No player data loaded yet');
+
+    // ── Smart suggestions ──
+    const tips = [];
+    const skippedModules = Object.entries(this.moduleStatus).filter(([, s]) => s.startsWith('🟡'));
+    const disabledModules = Object.entries(this.moduleStatus).filter(([, s]) => s.startsWith('⚫'));
+
+    // RCON issues
+    if (results.rcon.status === 'disconnected') {
+      tips.push(
+        '🔌 **RCON disconnected** — The bot auto-reconnects every 15 seconds. ' +
+        'If your game server restarted (e.g. Bisect 8h schedule), just wait for it to finish booting. ' +
+        'The bot will automatically reconnect — no manual action needed. ' +
+        'Chat relay and server status will resume once RCON is back.'
+      );
+    } else if (results.rcon.status === 'error') {
+      tips.push(
+        '⚠️ **RCON issues** — Connected but commands are failing. Check that `RCON_HOST`, `RCON_PORT`, and `RCON_PASSWORD` match your server\'s RCON settings.'
+      );
+    } else if (results.rcon.status === 'ok' && results.rcon.latency > 2000) {
+      tips.push(
+        '🐢 **RCON slow** — Response took ' + results.rcon.latency + 'ms. ' +
+        'This may cause delayed chat relay and status updates. ' +
+        'Check server load or network latency to the game server.'
+      );
+    }
+
+    // SFTP issues
+    if (results.sftp.status === 'error') {
+      tips.push(
+        '🔴 **SFTP connection failed** — `' + results.sftp.error + '`. ' +
+        'Verify `FTP_HOST`, `FTP_PORT`, `FTP_USER`, `FTP_PASSWORD` are correct. ' +
+        'Common causes: wrong port (game SFTP is usually 2022), firewall blocking, incorrect credentials.'
+      );
+    } else if (results.sftp.status === 'ok' && !results.sftp.hasSave) {
+      tips.push(
+        '📁 **Save file not found** — SFTP connected but `FTP_SAVE_PATH` does not exist on the server. ' +
+        'Check that `FTP_SAVE_PATH` points to the correct `.sav` file (default: `/HumanitZServer/Saved/SaveGames/SaveList/Default/Save_DedicatedSaveMP.sav`).'
+      );
+    } else if (results.sftp.status === 'ok' && !results.sftp.hasLog) {
+      tips.push(
+        '📁 **Log file not found** — `FTP_LOG_PATH` does not exist on the server. ' +
+        'Log Watcher needs this file. Check that `FTP_LOG_PATH` points to `HMZLog.log` (default: `/HumanitZServer/HMZLog.log`).'
+      );
+    } else if (results.sftp.status === 'unconfigured' && skippedModules.some(([n]) => /log|save|stats|pvp/i.test(n))) {
+      tips.push(
+        '📡 **No SFTP configured** — Several modules need SFTP to read server files. ' +
+        'Set `FTP_HOST`, `FTP_USER`, and `FTP_PASSWORD` to enable log watching, player stats, and save syncing. ' +
+        'The bot will work for chat relay and server status without SFTP, but advanced features require it.'
+      );
+    }
+
+    // Save issues
+    if (results.save?.status === 'error') {
+      tips.push('💾 **Save sync error** — `' + results.save.lastError + '`. Check SFTP/agent configuration.');
+    } else if (results.save?.status === 'waiting') {
+      tips.push('💾 **Save service waiting** — No sync has completed yet. This is normal on fresh startup; data will appear after the first poll cycle.');
+    }
+
+    // DB issues
+    if (results.db.status === 'degraded') {
+      tips.push('🗄️ **DB integrity issue** — The database failed SQLite integrity_check. Consider using "Factory Reset" to rebuild.');
+    }
+    if (results.db.status === 'ok' && results.db.players === 0 && results.save?.syncCount > 0) {
+      tips.push('🗄️ **DB empty despite save syncs** — Save data was synced but no players in DB. The save file may be empty or corrupted.');
+    }
+
+    // Panel API
+    if (results.panel.status === 'error') {
+      tips.push('🎛️ **Panel API error** — `' + results.panel.error + '`. Verify `PANEL_SERVER_URL` and `PANEL_API_KEY`.');
+    }
+
+    // Channel issues
+    const brokenChannels = results.channels.filter(c => c.status === 'error');
+    if (brokenChannels.length > 0) {
+      tips.push(
+        '📺 **Invalid channel ID(s):** ' + brokenChannels.map(c => c.name).join(', ') + '. ' +
+        'The channel may have been deleted or the bot lacks access. Update in the Channels config category.'
+      );
+    }
+
+    // Missing channel suggestions for skipped modules
+    const missingChannels = skippedModules.filter(([, s]) => /CHANNEL_ID/i.test(s));
+    if (missingChannels.length > 0) {
+      const names = missingChannels.map(([n]) => n).join(', ');
+      tips.push(
+        '📺 **Missing channel IDs for:** ' + names + '. ' +
+        'Set the corresponding channel IDs in the Channels config above to activate these modules.'
+      );
+    }
+
+    // Data staleness
+    if (results.db.status === 'ok' && results.db.players > 0 && psCount === 0) {
+      tips.push('📊 **Log stats empty** — DB has players but log-based stats (deaths, builds, loots) are empty. Enable Log Watcher with SFTP to track player activity.');
+    }
+    if (results.db.status === 'ok' && results.db.players > 0 && ptCount === 0) {
+      tips.push('⏱️ **No playtime data** — Enable playtime tracking (`ENABLE_PLAYTIME=true`) and ensure RCON is connected to track player sessions.');
+    }
+
+    // Disabled module suggestions
+    if (disabledModules.length > 0) {
+      const names = disabledModules.map(([n]) => n).join(', ');
+      tips.push('⚫ **Disabled modules:** ' + names + '. These can be enabled via `ENABLE_*=true` in config if needed.');
+    }
+
+    // All-good
+    if (tips.length === 0) {
+      tips.push('✅ All systems operational — no issues detected.');
+    }
+
+    // ── Build embeds ──
+    const embed = new EmbedBuilder()
+      .setTitle('🔍 System Diagnostics')
+      .setColor(
+        results.rcon.status === 'disconnected' || results.sftp.status === 'error' || results.db.status === 'error'
+          ? 0xe74c3c
+          : skippedModules.length > 0
+            ? 0xf1c40f
+            : 0x2ecc71
+      )
+      .setDescription(`Uptime: **${_formatBotUptime(upMs)}** · Modules: **${Object.keys(this.moduleStatus).length}**`)
+      .addFields(
+        { name: '🔌 Live Connectivity', value: connLines.join('\n') },
+        { name: '📺 Channels', value: chLines.join('\n') || 'None configured' },
+        { name: '📦 Modules', value: moduleLines.join('\n') || 'None registered' },
+      )
+      .setTimestamp()
+      .setFooter({ text: 'This information is only visible to you' });
+
+    if (dataLines.length > 0) {
+      embed.addFields({ name: '📈 Data Summary', value: dataLines.join('\n') });
+    }
+
+    // Tips may be long — split into a second embed if needed
+    const tipsText = tips.join('\n\n');
+    const embeds = [embed];
+    if (tipsText.length > 0) {
+      if (tipsText.length <= 1024) {
+        embed.addFields({ name: '💡 Suggestions & Guidance', value: tipsText });
+      } else {
+        // Overflow to a second embed
+        const tipsEmbed = new EmbedBuilder()
+          .setTitle('💡 Suggestions & Guidance')
+          .setColor(0xf1c40f)
+          .setDescription(tipsText.slice(0, 4096));
+        embeds.push(tipsEmbed);
+      }
+    }
+
+    await interaction.editReply({ embeds });
     return true;
   }
 
@@ -3108,13 +3549,30 @@ class PanelChannel {
 
     // ── Module status ──
     const statusLines = [];
+    let skippedCount = 0;
     for (const [name, status] of Object.entries(this.moduleStatus)) {
       const icon = status.startsWith('🟢') ? '🟢' : status.startsWith('⚫') ? '⚫' : '🟡';
       statusLines.push(`${icon} ${name}`);
+      if (icon === '🟡') skippedCount++;
     }
     if (statusLines.length > 0) {
-      embed.addFields({ name: '📦 Modules', value: statusLines.join('\n') });
+      let value = statusLines.join('\n');
+      if (skippedCount > 0) {
+        value += `\n-# ⚠️ ${skippedCount} module(s) need attention — tap **Diagnostics** below`;
+      }
+      embed.addFields({ name: '📦 Modules', value });
     }
+
+    // Button descriptions (Discord buttons don't support hover tooltips)
+    embed.addFields({
+      name: '\u200b',
+      value: [
+        '-# 🔄 **Restart Bot** — Restart the bot process (brief downtime)',
+        '-# 🗑️ **Factory Reset** — Wipe all data and re-build from scratch',
+        '-# 📥 **Re-Import** — Re-download server files and rebuild stats',
+        '-# 🔍 **System Diagnostics** — Live connectivity probes, module health, suggestions',
+      ].join('\n'),
+    });
 
     return embed;
   }
@@ -3164,7 +3622,12 @@ class PanelChannel {
       .setLabel('Re-Import Data')
       .setStyle(ButtonStyle.Secondary);
 
-    const buttonRow = new ActionRowBuilder().addComponents(restartBtn, nukeBtn, reimportBtn);
+    const diagBtn = new ButtonBuilder()
+      .setCustomId(BTN.DIAGNOSTICS)
+      .setLabel('System Diagnostics')
+      .setStyle(ButtonStyle.Secondary);
+
+    const buttonRow = new ActionRowBuilder().addComponents(restartBtn, nukeBtn, reimportBtn, diagBtn);
 
     // Add server management button if multi-server manager is available
     if (this.multiServerManager) {

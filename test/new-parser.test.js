@@ -507,7 +507,12 @@ describe('HumanitZDB', () => {
 
     it('sets schema version', () => {
       const version = db._getMeta('schema_version');
-      assert.equal(version, '1');
+      assert.equal(version, '4');
+    });
+
+    it('creates player_aliases table', () => {
+      const tables = db.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+      assert.ok(tables.map(t => t.name).includes('player_aliases'));
     });
   });
 
@@ -723,6 +728,173 @@ describe('HumanitZDB', () => {
       const totals = db.getServerTotals();
       assert.ok(totals.total_players > 0);
       assert.ok(typeof totals.total_kills === 'number');
+    });
+  });
+
+  // ── Player identity / alias resolution ──
+
+  describe('registerAlias', () => {
+    it('registers a name↔steamId association', () => {
+      db.registerAlias('76561198000000099', 'AliasTestPlayer', 'idmap');
+      const result = db.resolveNameToSteamId('AliasTestPlayer');
+      assert.ok(result);
+      assert.equal(result.steamId, '76561198000000099');
+      assert.equal(result.name, 'AliasTestPlayer');
+      assert.equal(result.source, 'idmap');
+    });
+
+    it('is case-insensitive', () => {
+      const result = db.resolveNameToSteamId('aliastestplayer');
+      assert.ok(result);
+      assert.equal(result.steamId, '76561198000000099');
+    });
+
+    it('rejects invalid steamIds', () => {
+      db.registerAlias('name:BadKey', 'Ghost', 'log');
+      const result = db.resolveNameToSteamId('Ghost');
+      assert.equal(result, null);
+    });
+
+    it('rejects empty names', () => {
+      db.registerAlias('76561198000000099', '', 'log');
+      // Should not create a blank alias
+      const aliases = db.getPlayerAliases('76561198000000099');
+      assert.ok(!aliases.some(a => a.name === ''));
+    });
+  });
+
+  describe('resolveNameToSteamId', () => {
+    it('resolves exact match', () => {
+      db.registerAlias('76561198000000050', 'ExactMatch', 'connect_log');
+      const r = db.resolveNameToSteamId('ExactMatch');
+      assert.equal(r.steamId, '76561198000000050');
+    });
+
+    it('returns null for unknown name', () => {
+      assert.equal(db.resolveNameToSteamId('TotallyUnknown'), null);
+    });
+
+    it('treats 17-digit numbers as direct SteamIDs', () => {
+      const r = db.resolveNameToSteamId('76561198000000001');
+      assert.equal(r.steamId, '76561198000000001');
+      assert.equal(r.source, 'direct');
+    });
+  });
+
+  describe('resolveSteamIdToName', () => {
+    it('returns best current name', () => {
+      db.registerAlias('76561198000000051', 'OldName', 'log');
+      db.registerAlias('76561198000000051', 'CurrentName', 'idmap');
+      const name = db.resolveSteamIdToName('76561198000000051');
+      assert.equal(name, 'CurrentName');
+    });
+
+    it('returns steamId when no aliases exist', () => {
+      const name = db.resolveSteamIdToName('76561198999999999');
+      assert.equal(name, '76561198999999999');
+    });
+
+    it('prefers higher-priority sources', () => {
+      db.registerAlias('76561198000000052', 'LogName', 'log');
+      db.registerAlias('76561198000000052', 'IdmapName', 'idmap');
+      db.registerAlias('76561198000000052', 'ConnLogName', 'connect_log');
+      const name = db.resolveSteamIdToName('76561198000000052');
+      assert.equal(name, 'IdmapName');
+    });
+  });
+
+  describe('getPlayerAliases', () => {
+    it('returns all names for a player', () => {
+      db.registerAlias('76561198000000060', 'Name1', 'log');
+      db.registerAlias('76561198000000060', 'Name2', 'connect_log');
+      db.registerAlias('76561198000000060', 'Name3', 'idmap');
+      const aliases = db.getPlayerAliases('76561198000000060');
+      assert.ok(aliases.length >= 3);
+      const names = aliases.map(a => a.name);
+      assert.ok(names.includes('Name1'));
+      assert.ok(names.includes('Name2'));
+      assert.ok(names.includes('Name3'));
+    });
+  });
+
+  describe('importIdMap', () => {
+    it('bulk imports id map entries', () => {
+      db.importIdMap([
+        { steamId: '76561198000000070', name: 'MapPlayer1' },
+        { steamId: '76561198000000071', name: 'MapPlayer2' },
+        { steamId: '76561198000000072', name: 'MapPlayer3' },
+      ]);
+      assert.equal(db.resolveNameToSteamId('MapPlayer1').steamId, '76561198000000070');
+      assert.equal(db.resolveNameToSteamId('MapPlayer2').steamId, '76561198000000071');
+      assert.equal(db.resolveNameToSteamId('MapPlayer3').steamId, '76561198000000072');
+    });
+  });
+
+  describe('importConnectLog', () => {
+    it('bulk imports connect log entries', () => {
+      db.importConnectLog([
+        { steamId: '76561198000000080', name: 'ConnPlayer1' },
+        { steamId: '76561198000000081', name: 'ConnPlayer2' },
+      ]);
+      assert.equal(db.resolveNameToSteamId('ConnPlayer1').steamId, '76561198000000080');
+      assert.equal(db.resolveSteamIdToName('76561198000000081'), 'ConnPlayer2');
+    });
+  });
+
+  describe('searchPlayersByName', () => {
+    it('finds players by partial name', () => {
+      db.registerAlias('76561198000000090', 'SearchableJohn', 'idmap');
+      const results = db.searchPlayersByName('searchable');
+      assert.ok(results.length > 0);
+      assert.equal(results[0].steamId, '76561198000000090');
+    });
+
+    it('returns empty for no match', () => {
+      const results = db.searchPlayersByName('xyzzynonexistent');
+      assert.equal(results.length, 0);
+    });
+  });
+
+  describe('getAliasStats', () => {
+    it('returns counts', () => {
+      const stats = db.getAliasStats();
+      assert.ok(stats.uniquePlayers > 0);
+      assert.ok(stats.totalAliases > 0);
+      assert.ok(stats.totalAliases >= stats.uniquePlayers);
+    });
+  });
+
+  describe('upsertPlayer auto-registers alias', () => {
+    it('creates alias on player upsert with name', () => {
+      db.upsertPlayer('76561198000000095', {
+        name: 'AutoAliasPlayer',
+        male: true,
+        health: 100,
+      });
+      const r = db.resolveNameToSteamId('AutoAliasPlayer');
+      assert.ok(r);
+      assert.equal(r.steamId, '76561198000000095');
+    });
+  });
+
+  describe('name change tracking via aliases', () => {
+    it('tracks old and new names for the same player', () => {
+      db.registerAlias('76561198000000085', 'OriginalName', 'connect_log');
+      db.registerAlias('76561198000000085', 'NewerName', 'connect_log');
+
+      // Both names should resolve to the same SteamID
+      assert.equal(db.resolveNameToSteamId('OriginalName').steamId, '76561198000000085');
+      assert.equal(db.resolveNameToSteamId('NewerName').steamId, '76561198000000085');
+
+      // Current name should be the newer one
+      const name = db.resolveSteamIdToName('76561198000000085');
+      assert.equal(name, 'NewerName');
+
+      // Both should appear in aliases
+      const aliases = db.getPlayerAliases('76561198000000085');
+      const names = aliases.map(a => a.name);
+      assert.ok(names.includes('OriginalName'));
+      assert.ok(names.includes('NewerName'));
     });
   });
 });

@@ -25,16 +25,15 @@ function spawnLabel(val) {
 }
 
 // ── Color tag helpers for WelcomeMessage.txt ──────────────────
-// Game supports: <PN> dark red, <PR> green, <SP> ember, <FO> gray, <CL> blue
-const COLOR = {
-  red: 'PN',
-  green: 'PR',
-  ember: 'SP',
-  gray: 'FO',
-  blue: 'CL',
-};
-function color(tag, text) {
-  return `<${COLOR[tag] || tag}>${text}</>`;
+const { COLOR, color } = require('./rcon-colors');
+
+/**
+ * Colorize a Discord invite link: "Discord" → blue, rest stays white.
+ * e.g. "Discord.gg/CODE" → "<CL>Discord</>.gg/CODE"
+ */
+function _colorLink(link) {
+  if (!link) return '';
+  return link.replace(/discord/i, (m) => color('blue', m));
 }
 
 // ── Standalone helpers (used by buildWelcomeContent and class) ──
@@ -231,9 +230,9 @@ async function buildWelcomeContent(deps = {}) {
   const updateInfo = color('gray', 'Updated each restart');
 
   if (cfg.discordInviteLink) {
-    parts.push(`${color('gray', '!admin for help')}  |  ${color('green', cfg.discordInviteLink)}  |  ${updateInfo}`);
+    parts.push(`Type ${color('red', '!admin')} for help  |  Join our ${color('blue', 'Discord:')} ${_colorLink(cfg.discordInviteLink)}  |  ${updateInfo}`);
   } else {
-    parts.push(`${color('gray', '!admin in chat for help')}  |  ${updateInfo}`);
+    parts.push(`Type ${color('red', '!admin')} in chat for help  |  ${updateInfo}`);
   }
 
   return parts.join('\n');
@@ -342,13 +341,16 @@ class AutoMessages {
     }
   }
 
+  /** Colorize a Discord invite link (instance wrapper). */
+  _colorLink(link) { return _colorLink(link); }
+
   async _sendDiscordLink() {
     if (!this.discordLink) return;
     try {
       const custom = this._config.autoMsgLinkText;
       const msg = custom
         ? await this._resolveMessagePlaceholders(custom)
-        : `Join our Discord! ${this.discordLink}`;
+        : `Join our ${color('blue', 'Discord!')} ${this._colorLink(this.discordLink)}`;
       await this._sendAdminMessage(msg);
       console.log(`[${this._label}] Sent Discord link to game chat`);
     } catch (err) {
@@ -361,7 +363,7 @@ class AutoMessages {
       const custom = this._config.autoMsgPromoText;
       const msg = custom
         ? await this._resolveMessagePlaceholders(custom)
-        : `Have any issues, suggestions or just want to keep in contact with other players? Join our Discord: ${this.discordLink}`;
+        : `${color('gray', 'Have any issues, suggestions or just want to keep in contact with other players?')} Join our ${color('blue', 'Discord:')} ${this._colorLink(this.discordLink)}`;
       await this._sendAdminMessage(msg);
       console.log(`[${this._label}] Sent promo message to game chat`);
     } catch (err) {
@@ -426,8 +428,8 @@ class AutoMessages {
     try {
       const pt = joiner.steamId ? this._playtime.getPlaytime(joiner.steamId) : null;
       const pvpInfo = this._pvpScheduleText();
-      const discordPart = this.discordLink ? ` Join our Discord: ${this.discordLink}` : '';
-      const adminTip = ' Type !admin in chat if you need help from an admin.';
+      const discordPart = this.discordLink ? ` Join our ${color('blue', 'Discord:')} ${this._colorLink(this.discordLink)}` : '';
+      const adminTip = ` Type ${color('red', '!admin')} in chat if you need help from an admin.`;
 
       let msg;
       if (pt && pt.isReturning) {
@@ -436,10 +438,10 @@ class AutoMessages {
           ? new Date(pt.firstSeen).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
           : null;
         const sincePart = firstDate ? ` since ${firstDate}` : '';
-        msg = `Welcome back, ${joiner.name}! Your total playtime${sincePart} is ${pt.totalFormatted}.${pvpInfo}${adminTip}${discordPart}`;
+        msg = `${color('ember', `Welcome back, ${joiner.name}!`)} ${color('gray', `Your total playtime${sincePart} is ${pt.totalFormatted}.`)}${pvpInfo}${adminTip}${discordPart}`;
       } else {
         // First-time player
-        msg = `Welcome to the server, ${joiner.name}!${pvpInfo}${adminTip}${discordPart}`;
+        msg = `${color('ember', `Welcome to the server, ${joiner.name}!`)}${pvpInfo}${adminTip}${discordPart}`;
       }
 
       await this._sendAdminMessage(msg);

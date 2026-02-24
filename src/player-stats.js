@@ -18,6 +18,7 @@ class PlayerStats {
     this._dirty = false;
     this._idMap = null; // Map<lowerName, steamId> from PlayerIDMapped.txt
     this._nameIndex = new Map(); // lowerName → id for O(1) lookups
+    this._db = options.db || null; // optional HumanitZDB for alias registration
     // Per-instance overrides (for multi-server support)
     this._dataDir = options.dataDir || DEFAULT_DATA_DIR;
     this._dataFile = path.join(this._dataDir, 'player-stats.json');
@@ -40,6 +41,9 @@ class PlayerStats {
     if (this._saveTimer) clearInterval(this._saveTimer);
     console.log(`[${this._label}] Saved and stopped.`);
   }
+
+  /** Attach a HumanitZDB instance for unified alias registration. */
+  setDb(db) { this._db = db; }
 
   _ensureInit() {
     if (!this._data) this.init();
@@ -65,6 +69,12 @@ class PlayerStats {
         }
       }
     }
+
+    // Bulk-register in unified identity DB
+    if (this._db) {
+      try { this._db.importIdMap(entries); }
+      catch (_) { /* non-critical */ }
+    }
   }
 
   _loadLocalIdMap() {
@@ -88,10 +98,14 @@ class PlayerStats {
 
   // ─── Recording methods (called by LogWatcher) ────────────
 
-  recordDeath(playerName, timestamp) {
+  recordDeath(playerName, timestamp, cause) {
     this._ensureInit();
     const record = this._getOrCreateByName(playerName);
     record.deaths++;
+    if (cause) {
+      if (!record.killedBy) record.killedBy = {};
+      record.killedBy[cause] = (record.killedBy[cause] || 0) + 1;
+    }
     record.lastEvent = (timestamp || new Date()).toISOString();
     this._dirty = true;
   }
@@ -245,6 +259,13 @@ class PlayerStats {
       const pt = this._playtime.getPlaytime(steamId);
       if (pt?.name && !/^\d{17}$/.test(pt.name)) return pt.name;
     } catch (_) {}
+    // 4. Unified identity DB
+    if (this._db) {
+      try {
+        const name = this._db.resolveSteamIdToName(steamId);
+        if (name && name !== steamId) return name;
+      } catch (_) {}
+    }
     return steamId;
   }
 
@@ -303,6 +324,13 @@ class PlayerStats {
       record.name = name;
       this._nameIndex.set(name.toLowerCase(), steamId);
     }
+
+    // Register in unified identity DB
+    if (this._db) {
+      try { this._db.registerAlias(steamId, name, 'log'); }
+      catch (_) { /* non-critical */ }
+    }
+
     return this._data.players[steamId];
   }
 
@@ -349,7 +377,17 @@ class PlayerStats {
       return this._getOrCreate(steamId, name);
     }
 
-    // 4. Fallback: create with name as key
+    // 4. Cross-reference unified identity DB
+    if (this._db) {
+      try {
+        const resolved = this._db.resolveNameToSteamId(name);
+        if (resolved && /^\d{17}$/.test(resolved.steamId)) {
+          return this._getOrCreate(resolved.steamId, name);
+        }
+      } catch (_) { /* non-critical */ }
+    }
+
+    // 5. Fallback: create with name as key
     if (!this._data.players[`name:${name}`]) {
       this._data.players[`name:${name}`] = this._newRecord(name);
     }
@@ -440,6 +478,7 @@ class PlayerStats {
       destroyedIn: 0,
       containersLooted: 0,
       damageTaken: {},
+      killedBy: {},
       pvpKills: 0,
       pvpDeaths: 0,
       connects: 0,
@@ -559,7 +598,34 @@ class PlayerStats {
     // Every 15 minutes, do a backup
     const now = Date.now();
     const doBackup = (now % (15 * 60 * 1000)) < SAVE_INTERVAL;
-    if (this._dirty) this._save(doBackup);
+    if (this._dirty) {
+      this._save(doBackup);
+      this._syncAllLogStatsToDb();
+    }
+  }
+
+  /** Batch-sync all player log stats to the DB (called during _autoSave). */
+  _syncAllLogStatsToDb() {
+    if (!this._db || !this._data) return;
+    try {
+      for (const [id, record] of Object.entries(this._data.players)) {
+        // Skip orphaned name: records (no real steam ID)
+        if (!id || id.startsWith('name:') || !/^\d{17}$/.test(id)) continue;
+        this._db.updatePlayerLogStats(id, {
+          deaths: record.deaths || 0,
+          pvpKills: record.pvpKills || 0,
+          pvpDeaths: record.pvpDeaths || 0,
+          builds: record.builds || 0,
+          loots: record.containersLooted || 0,
+          damageTaken: Object.values(record.damageTaken || {}).reduce((a, b) => a + b, 0),
+          raidsOut: record.raidsOut || 0,
+          raidsIn: record.raidsIn || 0,
+          lastEvent: record.lastEvent || null,
+        });
+      }
+    } catch (err) {
+      console.warn(`[${this._label}] DB log sync failed:`, err.message);
+    }
   }
 }
 
