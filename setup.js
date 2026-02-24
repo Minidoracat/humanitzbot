@@ -62,13 +62,17 @@ let ftpLogPath = process.env.FTP_LOG_PATH || '/HumanitZServer/HMZLog.log';
 let ftpConnectLogPath = process.env.FTP_CONNECT_LOG_PATH || '/HumanitZServer/PlayerConnectedLog.txt';
 let ftpIdMapPath = process.env.FTP_ID_MAP_PATH || '/HumanitZServer/PlayerIDMapped.txt';
 let ftpSavePath = process.env.FTP_SAVE_PATH || '/HumanitZServer/Saved/SaveGames/SaveList/Default/Save_DedicatedSaveMP.sav';
+let ftpSettingsPath = process.env.FTP_SETTINGS_PATH || '/HumanitZServer/GameServerSettings.ini';
+let ftpWelcomePath = process.env.FTP_WELCOME_PATH || '/HumanitZServer/WelcomeMessage.txt';
 
-// Prepend base path if configured and paths are relative
+// Prepend base path if configured and paths are relative (don't start with /)
 if (ftpBasePath) {
-  if (ftpLogPath && !ftpLogPath.startsWith(ftpBasePath)) ftpLogPath = ftpBasePath + ftpLogPath;
-  if (ftpConnectLogPath && !ftpConnectLogPath.startsWith(ftpBasePath)) ftpConnectLogPath = ftpBasePath + ftpConnectLogPath;
-  if (ftpIdMapPath && !ftpIdMapPath.startsWith(ftpBasePath)) ftpIdMapPath = ftpBasePath + ftpIdMapPath;
-  if (ftpSavePath && !ftpSavePath.startsWith(ftpBasePath)) ftpSavePath = ftpBasePath + ftpSavePath;
+  if (ftpLogPath && !ftpLogPath.startsWith('/')) ftpLogPath = ftpBasePath + '/' + ftpLogPath;
+  if (ftpConnectLogPath && !ftpConnectLogPath.startsWith('/')) ftpConnectLogPath = ftpBasePath + '/' + ftpConnectLogPath;
+  if (ftpIdMapPath && !ftpIdMapPath.startsWith('/')) ftpIdMapPath = ftpBasePath + '/' + ftpIdMapPath;
+  if (ftpSavePath && !ftpSavePath.startsWith('/')) ftpSavePath = ftpBasePath + '/' + ftpSavePath;
+  if (ftpSettingsPath && !ftpSettingsPath.startsWith('/')) ftpSettingsPath = ftpBasePath + '/' + ftpSettingsPath;
+  if (ftpWelcomePath && !ftpWelcomePath.startsWith('/')) ftpWelcomePath = ftpBasePath + '/' + ftpWelcomePath;
 }
 
 // ── CLI Args ──────────────────────────────────────────────────
@@ -162,6 +166,8 @@ const DISCOVERY_TARGETS = {
   'PlayerConnectedLog.txt':  'FTP_CONNECT_LOG_PATH',
   'PlayerIDMapped.txt':      'FTP_ID_MAP_PATH',
   'Save_DedicatedSaveMP.sav':'FTP_SAVE_PATH',
+  'GameServerSettings.ini':  'FTP_SETTINGS_PATH',
+  'WelcomeMessage.txt':      'FTP_WELCOME_PATH',
 };
 
 /**
@@ -201,6 +207,8 @@ async function autoDiscoverPaths(sftp) {
     { name: 'PlayerConnectedLog.txt',  path: ftpConnectLogPath },
     { name: 'PlayerIDMapped.txt',      path: ftpIdMapPath },
     { name: 'Save_DedicatedSaveMP.sav', path: ftpSavePath },
+    { name: 'GameServerSettings.ini',  path: ftpSettingsPath },
+    { name: 'WelcomeMessage.txt',      path: ftpWelcomePath },
   ];
   for (const { name, path: p } of quickChecks) {
     try {
@@ -225,6 +233,8 @@ async function autoDiscoverPaths(sftp) {
     ftpConnectLogPath: found.get('PlayerConnectedLog.txt')  || ftpConnectLogPath,
     ftpIdMapPath:      found.get('PlayerIDMapped.txt')      || ftpIdMapPath,
     ftpSavePath:       found.get('Save_DedicatedSaveMP.sav') || ftpSavePath,
+    ftpSettingsPath:   found.get('GameServerSettings.ini')  || ftpSettingsPath,
+    ftpWelcomePath:    found.get('WelcomeMessage.txt')      || ftpWelcomePath,
   };
 
   const notFound = Object.keys(DISCOVERY_TARGETS).filter(n => !found.has(n));
@@ -243,6 +253,8 @@ async function autoDiscoverPaths(sftp) {
   ftpConnectLogPath = results.ftpConnectLogPath;
   ftpIdMapPath = results.ftpIdMapPath;
   ftpSavePath = results.ftpSavePath;
+  ftpSettingsPath = results.ftpSettingsPath;
+  ftpWelcomePath = results.ftpWelcomePath;
 
   return results;
 }
@@ -266,6 +278,8 @@ function updateEnvFile(paths) {
     FTP_CONNECT_LOG_PATH: paths.ftpConnectLogPath,
     FTP_ID_MAP_PATH:      paths.ftpIdMapPath,
     FTP_SAVE_PATH:        paths.ftpSavePath,
+    FTP_SETTINGS_PATH:    paths.ftpSettingsPath,
+    FTP_WELCOME_PATH:     paths.ftpWelcomePath,
   };
 
   for (const [key, value] of Object.entries(mapping)) {

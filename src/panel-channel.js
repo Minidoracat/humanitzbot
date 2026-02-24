@@ -1399,9 +1399,16 @@ class PanelChannel {
     // SFTP
     if (results.sftp.status === 'ok') {
       const extras = [];
+      const missing = [];
       if (results.sftp.hasSave) extras.push('save ✓');
+      else missing.push('save');
       if (results.sftp.hasLog) extras.push('log ✓');
-      connLines.push(`🟢 **SFTP** — ${results.sftp.latency}ms · ${extras.join(', ') || '⚠️ game files not found at configured paths'}`);
+      else missing.push('log');
+      
+      let statusLine = `🟢 **SFTP** — ${results.sftp.latency}ms`;
+      if (extras.length > 0) statusLine += ` · ${extras.join(', ')}`;
+      if (missing.length > 0) statusLine += ` · ⚠️ **Missing:** ${missing.join(', ')}`;
+      connLines.push(statusLine);
     } else if (results.sftp.status === 'error') {
       connLines.push(`🔴 **SFTP** — ${results.sftp.error} (${results.sftp.latency}ms)`);
     } else {
