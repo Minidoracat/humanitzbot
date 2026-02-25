@@ -244,8 +244,8 @@ describe('PlayerMapTracker', () => {
   describe('_worldToPixel()', () => {
     it('should convert world coordinates to pixel coordinates', () => {
       // Test center of map
-      const centerX = (-60000 + 380000) / 2; // 160000
-      const centerY = (-400000 + 50000) / 2; // -175000
+      const centerX = (3076 + 398076) / 2; // 200576
+      const centerY = (-397582 + -2582) / 2; // -200082
       const result = tracker._worldToPixel(centerX, centerY, 1000, 1000);
       // Should be roughly center of image
       assert.ok(result.px >= 400 && result.px <= 600, `px ${result.px} should be ~500`);
@@ -254,11 +254,11 @@ describe('PlayerMapTracker', () => {
 
     it('should handle min/max world bounds', () => {
       // Top-left of world → left edge of image
-      const topLeft = tracker._worldToPixel(-60000, 50000, 1000, 1000);
+      const topLeft = tracker._worldToPixel(3076, -2582, 1000, 1000);
       assert.equal(topLeft.px, 0);
 
       // Bottom-right of world → right edge of image  
-      const bottomRight = tracker._worldToPixel(380000, -400000, 1000, 1000);
+      const bottomRight = tracker._worldToPixel(398076, -397582, 1000, 1000);
       assert.equal(bottomRight.px, 1000);
     });
   });

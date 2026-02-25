@@ -179,13 +179,30 @@ function syncEnv() {
   }
   
   // Handle deprecated keys (in .env but not in .example)
+  // Keep dynamic keys that match known prefixes (e.g. RESTART_PROFILE_CALM, RESTART_PROFILE_HORDE)
+  const DYNAMIC_PREFIXES = ['RESTART_PROFILE_', 'PVP_HOURS_', 'MULTI_SERVER_'];
   const deprecatedKeys = [];
+  const dynamicKeys = [];
   for (const key of env.entries.keys()) {
-    if (!example.entries.has(key) && key !== ENV_VERSION_KEY) {
+    if (example.entries.has(key) || key === ENV_VERSION_KEY) continue;
+    const isDynamic = DYNAMIC_PREFIXES.some(p => key.startsWith(p));
+    if (isDynamic) {
+      dynamicKeys.push(key);
+    } else {
       deprecatedKeys.push(key);
     }
   }
   
+  // Preserve dynamic keys (user-defined profiles, per-day overrides, etc.)
+  if (dynamicKeys.length > 0) {
+    for (const key of dynamicKeys) {
+      const entry = env.entries.get(key);
+      if (entry.comment) output.push(entry.comment);
+      output.push(`${key}=${entry.value}`);
+      output.push('');
+    }
+  }
+
   if (deprecatedKeys.length > 0) {
     output.push('# ── Deprecated Keys (no longer used) ──────────────────────────');
     output.push('# These keys are from an older version and can be safely removed.');

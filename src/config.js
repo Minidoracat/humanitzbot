@@ -230,6 +230,7 @@ const config = {
   restartTimes: process.env.RESTART_TIMES || '',          // comma-separated HH:MM times in BOT_TIMEZONE
   restartProfiles: process.env.RESTART_PROFILES || '',    // comma-separated profile names (cycle order)
   restartDelay: parseInt(process.env.RESTART_DELAY, 10) || 10, // countdown minutes before restart
+  restartRotateDaily: envBool('RESTART_ROTATE_DAILY', true), // shift profile order each day
 
   // Activity log — tracks item movements, horse changes, world events from save diffs
   enableActivityLog: envBool('ENABLE_ACTIVITY_LOG', true),

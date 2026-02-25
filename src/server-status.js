@@ -7,6 +7,7 @@ const _defaultPlaytime = require('./playtime-tracker');
 const _defaultPlayerStats = require('./player-stats');
 const _defaultServerResources = require('./server-resources');
 const { formatBytes } = require('./server-resources');
+const { getDayOffset, getRotatedProfileIndex } = require('./schedule-utils');
 
 const _DEFAULT_DATA_DIR = path.join(__dirname, '..', 'data');
 
@@ -56,6 +57,59 @@ function _timeEmoji(timeStr) {
   if (hour >= 8 && hour < 17)  return '☀️ ';  // day
   if (hour >= 17 && hour < 19) return '🌇 ';  // dusk
   return '🌙 ';                                // night
+}
+
+/**
+ * Build a schedule field for the server status embed.
+ * Reads scheduler config from env to show the rotating difficulty windows.
+ * When RESTART_ROTATE_DAILY is on, profile↔slot mapping shifts each day.
+ */
+function _buildScheduleField(cfg) {
+  if (!cfg.enableServerScheduler) return null;
+  const timesStr = cfg.restartTimes || process.env.RESTART_TIMES || '';
+  const profilesStr = cfg.restartProfiles || process.env.RESTART_PROFILES || '';
+  const times = timesStr.split(',').map(s => s.trim()).filter(Boolean);
+  const profiles = profilesStr.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  if (times.length === 0 || profiles.length === 0) return null;
+
+  // Daily rotation offset
+  const dayOffset = getDayOffset(cfg.botTimezone, profiles.length, cfg.restartRotateDaily);
+
+  // Determine active time slot
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit', hour12: false,
+    timeZone: cfg.botTimezone,
+  });
+  const [h, m] = timeStr.split(':').map(Number);
+  const nowMin = h * 60 + m;
+  const timeMins = times.map(t => { const [th, tm] = t.split(':').map(Number); return th * 60 + (tm || 0); });
+  let activeSlot = 0;
+  for (let i = timeMins.length - 1; i >= 0; i--) {
+    if (nowMin >= timeMins[i]) { activeSlot = i; break; }
+  }
+
+  // Build schedule lines — iterate by time slot, resolve profile via rotation
+  const lines = times.map((startTime, slotIdx) => {
+    const profileIdx = getRotatedProfileIndex(slotIdx, profiles.length, dayOffset);
+    const name = profiles[profileIdx];
+    const envKey = `RESTART_PROFILE_${name.toUpperCase()}`;
+    let settings = {};
+    try { settings = JSON.parse(process.env[envKey] || '{}'); } catch {}
+    const endTime = times[(slotIdx + 1) % times.length] || times[0];
+    const desc = [];
+    const zombieAmt = parseFloat(settings.ZombieAmountMulti);
+    const xp = parseFloat(settings.XpMultiplier);
+    if (!isNaN(zombieAmt)) desc.push(`${zombieAmt}x zombies`);
+    if (!isNaN(xp) && xp > 1) desc.push(`${xp}x XP`);
+    const loot = parseInt(settings.RarityMelee || settings.RarityFood, 10);
+    if (!isNaN(loot) && loot > 2) desc.push('better loot');
+    const displayName = name.charAt(0).toUpperCase() + name.slice(1);
+    const marker = slotIdx === activeSlot ? ' ◀' : '';
+    return `${startTime}–${endTime} · **${displayName}**${desc.length ? ' — ' + desc.join(', ') : ''}${marker}`;
+  });
+
+  return { name: '🔄 Difficulty Schedule', value: lines.join('\n') };
 }
 
 class ServerStatus {
@@ -522,6 +576,12 @@ class ServerStatus {
         parts.push(`⚔️ Raids: **${totalRaids}**`);
       }
       embed.addFields({ name: `📊 Activity (${allTracked.length} players)`, value: parts.join('  ·  ') });
+    }
+
+    // ── Dynamic Difficulty Schedule ──
+    const schedField = _buildScheduleField(this._config);
+    if (schedField) {
+      embed.addFields(schedField);
     }
 
     // ── Server Statistics ──

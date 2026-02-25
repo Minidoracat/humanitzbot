@@ -224,7 +224,24 @@ class ActivityLog {
           attributedSteamId: event.attributedSteamId,
         });
       } else {
-        lines.push(_formatEvent(event, timeStr));
+        // Collapse duplicate non-item events (e.g. 30x "Barb Defence was destroyed")
+        const dedupeKey = `${event.type}::${_cleanActorName(event.actorName || event.actor || '')}`;
+        if (!batchedItems.has(dedupeKey)) {
+          batchedItems.set(dedupeKey, { event, count: 1, isCollapsed: true });
+        } else if (batchedItems.get(dedupeKey).isCollapsed) {
+          batchedItems.get(dedupeKey).count++;
+        }
+      }
+    }
+
+    // Format collapsed non-item events
+    for (const [, batch] of batchedItems) {
+      if (!batch.isCollapsed) continue;
+      const formatted = _formatEvent(batch.event, timeStr);
+      if (batch.count > 1) {
+        lines.push(formatted + ` ×${batch.count}`);
+      } else {
+        lines.push(formatted);
       }
     }
 

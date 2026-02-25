@@ -5,6 +5,7 @@ const { sendAdminMessage, getPlayerList, getServerInfo } = require('./server-inf
 const _defaultPlaytime = require('./playtime-tracker');
 const _defaultPlayerStats = require('./player-stats');
 const SftpClient = require('ssh2-sftp-client');
+const { getDayOffset, getRotatedProfileIndex } = require('./schedule-utils');
 
 const DEFAULT_DATA_DIR = path.join(__dirname, '..', 'data');
 
@@ -90,6 +91,77 @@ function pvpScheduleLabel() {
 }
 
 /**
+ * Build dynamic difficulty schedule lines for WelcomeMessage.txt.
+ * Reads RESTART_TIMES + RESTART_PROFILES from env to show the rotating windows.
+ * Highlights the currently active profile based on time.
+ * When RESTART_ROTATE_DAILY is on, profile↔slot mapping shifts each day.
+ */
+function difficultyScheduleLines(cfg) {
+  if (!cfg.enableServerScheduler) return [];
+  const timesStr = cfg.restartTimes || process.env.RESTART_TIMES || '';
+  const profilesStr = cfg.restartProfiles || process.env.RESTART_PROFILES || '';
+  const times = timesStr.split(',').map(s => s.trim()).filter(Boolean);
+  const profiles = profilesStr.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  if (times.length === 0 || profiles.length === 0) return [];
+
+  // Daily rotation offset
+  const dayOffset = getDayOffset(cfg.botTimezone, profiles.length, cfg.restartRotateDaily);
+
+  // Determine active time slot
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit', hour12: false,
+    timeZone: cfg.botTimezone,
+  });
+  const [h, m] = timeStr.split(':').map(Number);
+  const nowMin = h * 60 + m;
+  const timeMins = times.map(t => {
+    const [th, tm] = t.split(':').map(Number);
+    return th * 60 + (tm || 0);
+  });
+  let activeSlot = 0;
+  for (let i = timeMins.length - 1; i >= 0; i--) {
+    if (nowMin >= timeMins[i]) { activeSlot = i; break; }
+  }
+
+  // Build lines — iterate by time slot, resolve profile via rotation
+  const lines = [];
+  lines.push(color('ember', '--- Difficulty Schedule ---'));
+  for (let slotIdx = 0; slotIdx < times.length; slotIdx++) {
+    const profileIdx = getRotatedProfileIndex(slotIdx, profiles.length, dayOffset);
+    const name = profiles[profileIdx];
+    const envKey = `RESTART_PROFILE_${name.toUpperCase()}`;
+    let settings = {};
+    try { settings = JSON.parse(process.env[envKey] || '{}'); } catch {}
+    const startTime = times[slotIdx];
+    const endTime = times[(slotIdx + 1) % times.length] || times[0];
+    // Build a short description
+    const zombieAmt = parseFloat(settings.ZombieAmountMulti);
+    const xp = parseFloat(settings.XpMultiplier);
+    const desc = [];
+    if (!isNaN(zombieAmt)) {
+      if (zombieAmt <= 0.6) desc.push('Few Zombies');
+      else if (zombieAmt <= 1.2) desc.push('More Zombies');
+      else desc.push(`${zombieAmt}x Zombies`);
+    }
+    if (!isNaN(xp) && xp > 1) desc.push(`${xp}x XP`);
+    const lootLevel = parseInt(settings.RarityMelee || settings.RarityFood, 10);
+    if (!isNaN(lootLevel) && lootLevel > 2) desc.push('Better Loot');
+    const descStr = desc.join(', ') || name;
+    const label = `${startTime}\u2013${endTime}`;
+    const isActive = slotIdx === activeSlot;
+    const marker = isActive ? ' \u25c0 NOW' : '';
+    const nameDisplay = name.charAt(0).toUpperCase() + name.slice(1);
+    if (isActive) {
+      lines.push(`${color('green', nameDisplay)} ${color('gray', label)} ${color('gray', descStr)}${color('ember', marker)}`);
+    } else {
+      lines.push(`${color('gray', nameDisplay)} ${color('gray', label)} ${color('gray', descStr)}`);
+    }
+  }
+  return lines;
+}
+
+/**
  * Build the WelcomeMessage.txt content using cached data files.
  * Exported so player-stats-channel can call it after save polls.
  * No RCON required — uses cached server-settings.json for server name.
@@ -129,6 +201,13 @@ async function buildWelcomeContent(deps = {}) {
   // ── PvP schedule ──
   const pvpLabel = pvpScheduleLabel();
   if (pvpLabel) parts.push(color('ember', pvpLabel));
+
+  // ── Dynamic difficulty schedule ──
+  const scheduleLines = difficultyScheduleLines(cfg);
+  if (scheduleLines.length > 0) {
+    parts.push('');
+    parts.push(...scheduleLines);
+  }
 
   // ── Helper: build an inline row of top entries ──
   // e.g. "<PR>1st</> Zuq 21h  |  <PR>2nd</> Bob 11h  |  <PR>3rd</> Cat 7h"
@@ -428,6 +507,7 @@ class AutoMessages {
     try {
       const pt = joiner.steamId ? this._playtime.getPlaytime(joiner.steamId) : null;
       const pvpInfo = this._pvpScheduleText();
+      const diffInfo = this._difficultyText();
       const discordPart = this.discordLink ? ` Join our ${color('blue', 'Discord:')} ${this._colorLink(this.discordLink)}` : '';
       const adminTip = ` Type ${color('red', '!admin')} in chat if you need help from an admin.`;
 
@@ -438,10 +518,10 @@ class AutoMessages {
           ? new Date(pt.firstSeen).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
           : null;
         const sincePart = firstDate ? ` since ${firstDate}` : '';
-        msg = `${color('ember', `Welcome back, ${joiner.name}!`)} ${color('gray', `Your total playtime${sincePart} is ${pt.totalFormatted}.`)}${pvpInfo}${adminTip}${discordPart}`;
+        msg = `${color('ember', `Welcome back, ${joiner.name}!`)} ${color('gray', `Your total playtime${sincePart} is ${pt.totalFormatted}.`)}${diffInfo}${pvpInfo}${adminTip}${discordPart}`;
       } else {
         // First-time player
-        msg = `${color('ember', `Welcome to the server, ${joiner.name}!`)}${pvpInfo}${adminTip}${discordPart}`;
+        msg = `${color('ember', `Welcome to the server, ${joiner.name}!`)} ${color('gray', 'Settings rotate every 8h — check the welcome screen for the current window.')}${diffInfo}${pvpInfo}${adminTip}${discordPart}`;
       }
 
       await this._sendAdminMessage(msg);
@@ -450,6 +530,48 @@ class AutoMessages {
     } catch (err) {
       console.error(`[${this._label}] Failed to send welcome to ${joiner.name}:`, err.message);
     }
+  }
+
+  /** Short inline text about current difficulty profile for RCON welcome. */
+  _difficultyText() {
+    const cfg = this._config;
+    if (!cfg.enableServerScheduler) return '';
+    const profilesStr = cfg.restartProfiles || process.env.RESTART_PROFILES || '';
+    const timesStr = cfg.restartTimes || process.env.RESTART_TIMES || '';
+    const profiles = profilesStr.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    const times = timesStr.split(',').map(s => s.trim()).filter(Boolean);
+    if (profiles.length === 0 || times.length === 0) return '';
+
+    // Daily rotation offset
+    const dayOffset = getDayOffset(cfg.botTimezone, profiles.length, cfg.restartRotateDaily);
+
+    // Determine active time slot
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('en-GB', {
+      hour: '2-digit', minute: '2-digit', hour12: false,
+      timeZone: cfg.botTimezone,
+    });
+    const [h, m] = timeStr.split(':').map(Number);
+    const nowMin = h * 60 + m;
+    const timeMins = times.map(t => { const [th, tm] = t.split(':').map(Number); return th * 60 + (tm || 0); });
+    let activeSlot = 0;
+    for (let i = timeMins.length - 1; i >= 0; i--) {
+      if (nowMin >= timeMins[i]) { activeSlot = i; break; }
+    }
+
+    // Resolve profile for this slot via rotation
+    const profileIdx = getRotatedProfileIndex(activeSlot, profiles.length, dayOffset);
+    const name = profiles[profileIdx];
+    const displayName = name.charAt(0).toUpperCase() + name.slice(1);
+    // Find next restart
+    let nextTime = null;
+    for (const t of timeMins) { if (t > nowMin) { nextTime = t; break; } }
+    if (nextTime === null) nextTime = timeMins[0] + 1440; // tomorrow
+    const minsLeft = nextTime - nowMin;
+    const hrs = Math.floor(minsLeft / 60);
+    const mins = minsLeft % 60;
+    const timeLeft = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+    return ` ${color('ember', `Current: ${displayName}`)} ${color('gray', `(${timeLeft} left)`)}`;
   }
 
   _pvpScheduleText() {

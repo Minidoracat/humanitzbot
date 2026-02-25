@@ -69,10 +69,10 @@ class WebMapServer {
     // xMin = world X at the BOTTOM of the map, xMax = world X at the TOP
     // yMin = world Y at the LEFT of the map, yMax = world Y at the RIGHT
     return {
-      xMin: -60000,    // south edge (bottom of map)
-      xMax: 380000,    // north edge (top of map)
-      yMin: -400000,   // west edge (left of map)
-      yMax: 50000,     // east edge (right of map)
+      xMin: 3076,      // south edge (bottom of map)
+      xMax: 398076,    // north edge (top of map)
+      yMin: -397582,   // west edge (left of map)
+      yMax: -2582,     // east edge (right of map)
     };
   }
 
@@ -317,6 +317,11 @@ class WebMapServer {
     const authMiddleware = setupAuth(app);
     app.use(authMiddleware);
 
+    // ── Root page → panel.html (must come before static middleware) ──
+    app.get('/', (req, res) => {
+      res.sendFile(path.join(PUBLIC_DIR, 'panel.html'));
+    });
+
     // Serve static files (HTML, JS, CSS, map images)
     app.use(express.static(PUBLIC_DIR));
     app.use(express.json());
@@ -332,8 +337,84 @@ class WebMapServer {
       res.json({ servers, multiServer: additional.length > 0 });
     });
 
+    // ── API: Calibration data — all entity positions for map alignment ──
+    app.get('/api/calibration-data', requireTier('admin'), (req, res) => {
+      try {
+        const cachePath = path.join(DATA_DIR, 'save-cache.json');
+        if (!fs.existsSync(cachePath)) return res.json([]);
+        const data = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+
+        const points = [];
+        const add = (arr, type) => {
+          if (!arr) return;
+          for (const item of arr) {
+            const x = item.x ?? item.worldX ?? null;
+            const y = item.y ?? item.worldY ?? null;
+            if (x !== null && y !== null && !(x === 0 && y === 0)) points.push([x, y, type]);
+          }
+        };
+
+        // Players
+        for (const [, p] of Object.entries(data.players || {})) {
+          if (p.x != null && !(p.x === 0 && p.y === 0)) points.push([p.x, p.y, 'P']);
+        }
+
+        // World entities
+        const ws = data.worldState || {};
+        add(ws.preBuildActors, 'p');
+        add(ws.droppedBackpacks, 'b');
+        add(ws.explodableBarrelPositions, 'e');
+        add(ws.destroyedRandCarPositions, 'd');
+        add(ws.savedActors, 'A');
+        add(ws.aiSpawns, 'a');
+
+        // LOD pickups (positions extracted)
+        if (ws.lodPickups) {
+          for (const p of ws.lodPickups) {
+            if (p.x != null && !(p.x === 0 && p.y === 0)) points.push([p.x, p.y, 'l']);
+          }
+        }
+
+        // Houses
+        if (ws.houses) {
+          for (const h of ws.houses) {
+            if (h.x != null && !(h.x === 0 && h.y === 0)) points.push([h.x, h.y, 'H']);
+          }
+        }
+
+        // Global containers
+        if (ws.globalContainers) {
+          for (const c of ws.globalContainers) {
+            if (c.x != null && !(c.x === 0 && c.y === 0)) points.push([c.x, c.y, 'c']);
+          }
+        }
+
+        console.log(`[WEB MAP] Calibration data: ${points.length} positions`);
+        res.json(points);
+      } catch (err) {
+        console.error('[WEB MAP] Calibration data error:', err.message);
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // ── API: Save calibration bounds ──
+    app.post('/api/calibration', requireTier('admin'), express.json(), (req, res) => {
+      try {
+        const { xMin, xMax, yMin, yMax } = req.body;
+        if ([xMin, xMax, yMin, yMax].some(v => typeof v !== 'number')) {
+          return res.status(400).json({ error: 'All bounds must be numbers' });
+        }
+        const calibPath = path.join(DATA_DIR, 'map-calibration.json');
+        fs.writeFileSync(calibPath, JSON.stringify({ xMin, xMax, yMin, yMax }, null, 2));
+        console.log(`[WEB MAP] Saved calibration: X=[${xMin}..${xMax}] Y=[${yMin}..${yMax}]`);
+        res.json({ ok: true });
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
     // ── API: Get all player positions ──
-    app.get('/api/players', async (req, res) => {
+    app.get('/api/players', requireTier('survivor'), async (req, res) => {
       const serverId = req.query.server || 'primary';
       const isPrimary = !serverId || serverId === 'primary';
 
@@ -499,7 +580,7 @@ class WebMapServer {
     });
 
     // ── API: Get single player detail ──
-    app.get('/api/players/:steamId', (req, res) => {
+    app.get('/api/players/:steamId', requireTier('survivor'), (req, res) => {
       const players = this._parseSaveData();
       const data = players.get(req.params.steamId);
       if (!data) return res.status(404).json({ error: 'Player not found' });
@@ -546,12 +627,12 @@ class WebMapServer {
     });
 
     // ── API: Get world bounds / calibration ──
-    app.get('/api/calibration', (req, res) => {
+    app.get('/api/calibration', requireTier('admin'), (req, res) => {
       res.json(this._worldBounds);
     });
 
     // ── API: Save calibration ──
-    app.post('/api/calibration', (req, res) => {
+    app.post('/api/calibration', requireTier('admin'), (req, res) => {
       const { xMin, xMax, yMin, yMax } = req.body;
       if ([xMin, xMax, yMin, yMax].some(v => typeof v !== 'number' || isNaN(v))) {
         return res.status(400).json({ error: 'Invalid bounds — need xMin, xMax, yMin, yMax as numbers' });
@@ -561,7 +642,7 @@ class WebMapServer {
     });
 
     // ── API: Calibrate from two reference points ──
-    app.post('/api/calibrate-from-points', (req, res) => {
+    app.post('/api/calibrate-from-points', requireTier('admin'), (req, res) => {
       // Each point: { worldX, worldY, pixelX, pixelY } where pixel is 0-4096
       const { point1, point2 } = req.body;
       if (!point1 || !point2) {
@@ -645,7 +726,7 @@ class WebMapServer {
     });
 
     // ── API: Get RCON player list (online status) ──
-    app.get('/api/online', async (req, res) => {
+    app.get('/api/online', requireTier('survivor'), async (req, res) => {
       try {
         const { getPlayerList } = require('../server-info');
         const list = await getPlayerList();
@@ -758,7 +839,7 @@ class WebMapServer {
     // ═══════════════════════════════════════════════════════
 
     // ── Panel: Server status (RCON info + resources) ──
-    app.get('/api/panel/status', async (req, res) => {
+    app.get('/api/panel/status', requireTier('survivor'), async (req, res) => {
       const result = { serverState: 'unknown', uptime: null, playerCount: null, onlineCount: 0, fps: null, gameDay: null, season: null, resources: null };
 
       // RCON server info
@@ -812,7 +893,7 @@ class WebMapServer {
     });
 
     // ── Panel: Quick stats ──
-    app.get('/api/panel/stats', async (req, res) => {
+    app.get('/api/panel/stats', requireTier('survivor'), async (req, res) => {
       const result = { totalPlayers: 0, onlinePlayers: 0, eventsToday: 0, chatsToday: 0 };
 
       // Player count from save data
@@ -844,7 +925,7 @@ class WebMapServer {
     });
 
     // ── Panel: Activity feed from DB ──
-    app.get('/api/panel/activity', (req, res) => {
+    app.get('/api/panel/activity', requireTier('survivor'), (req, res) => {
       if (!this._db) return res.json({ events: [] });
 
       const limit = Math.min(parseInt(req.query.limit, 10) || 50, 500);
@@ -867,7 +948,7 @@ class WebMapServer {
     });
 
     // ── Panel: Chat log from DB ──
-    app.get('/api/panel/chat', (req, res) => {
+    app.get('/api/panel/chat', requireTier('survivor'), (req, res) => {
       if (!this._db) return res.json({ messages: [] });
 
       const limit = Math.min(parseInt(req.query.limit, 10) || 100, 1000);
@@ -945,7 +1026,7 @@ class WebMapServer {
     });
 
     // ── Panel: Game server settings (read) ──
-    app.get('/api/panel/settings', async (req, res) => {
+    app.get('/api/panel/settings', requireTier('admin'), async (req, res) => {
       // Try loading from cached file first
       const settingsFile = path.join(DATA_DIR, 'server-settings.json');
       try {
@@ -1037,11 +1118,6 @@ class WebMapServer {
       } catch (err) {
         res.status(500).json({ error: `Failed to save settings: ${err.message}` });
       }
-    });
-
-    // ── Serve panel.html as default page ──
-    app.get('/', (req, res) => {
-      res.sendFile(path.join(PUBLIC_DIR, 'panel.html'));
     });
 
     // ── API: Server scheduler status ──

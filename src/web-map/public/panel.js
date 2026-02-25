@@ -102,10 +102,41 @@
       if (data && data.schedule && data.schedule.active) {
         const sched = data.schedule;
         document.getElementById('landing-schedule').style.display = '';
-        setText('ls-profile', `Current: ${sched.currentProfileDisplay || sched.currentProfile || '-'}`);
+        setText('ls-profile', `Currently active: ${sched.currentProfileDisplay || sched.currentProfile || '-'}`);
+
+        // Build schedule list showing all profiles with time windows
+        // Uses todaySchedule (rotation-aware) if available, falls back to static order
+        const listEl = document.getElementById('ls-schedule-list');
+        if (listEl && sched.restartTimes) {
+          const schedule = sched.todaySchedule || sched.restartTimes.map((t, i) => ({
+            startTime: t,
+            endTime: sched.restartTimes[(i + 1) % sched.restartTimes.length] || sched.restartTimes[0],
+            profileName: (sched.profiles || [])[i] || 'default',
+          }));
+          const items = schedule.map(slot => {
+            const isActive = slot.profileName === sched.currentProfile;
+            const display = slot.profileName.charAt(0).toUpperCase() + slot.profileName.slice(1);
+            return `<div class="schedule-item${isActive ? ' active' : ''}">
+              <span class="schedule-time">${esc(slot.startTime)}–${esc(slot.endTime)}</span>
+              <span class="schedule-name">${esc(display)}</span>
+              ${isActive ? '<span class="schedule-marker">◀ NOW</span>' : ''}
+            </div>`;
+          });
+          listEl.innerHTML = items.join('');
+          if (sched.rotateDaily) {
+            listEl.insertAdjacentHTML('afterend',
+              '<div class="schedule-next" style="margin-top:0.3em;opacity:0.5;font-size:0.85em;">🔄 Schedule rotates daily</div>');
+          }
+        }
+
         const next = sched.nextRestart;
         const mins = sched.minutesUntilRestart;
-        setText('ls-next-restart', next ? `Next restart: ${next} (${mins} min)` : 'No upcoming restarts');
+        if (next && mins != null) {
+          const hrs = Math.floor(mins / 60);
+          const m = mins % 60;
+          const timeLeft = hrs > 0 ? `${hrs}h ${m}m` : `${m}m`;
+          setText('ls-next-restart', `Next restart at ${next} (${timeLeft})`);
+        }
       }
     } catch { /* landing stats failed — non-critical */ }
   }
@@ -252,9 +283,18 @@
         if (sched.nextRestart) {
           lines.push(`<div class="resource-row"><span class="resource-label">Next Restart</span><span class="resource-value">${sched.nextRestart} (${sched.minutesUntilRestart} min)</span></div>`);
         }
-        lines.push(`<div class="resource-row"><span class="resource-label">Schedule</span><span class="resource-value">${sched.restartTimes.join(', ')}</span></div>`);
-        if (sched.profiles.length > 1) {
-          lines.push(`<div class="resource-row"><span class="resource-label">Profiles</span><span class="resource-value">${sched.profiles.join(' → ')}</span></div>`);
+        // Show today's schedule (rotation-aware) instead of static profile order
+        if (sched.todaySchedule && sched.todaySchedule.length > 0) {
+          const schedText = sched.todaySchedule.map(s => {
+            const name = s.profileName.charAt(0).toUpperCase() + s.profileName.slice(1);
+            return `${s.startTime}–${s.endTime} ${name}`;
+          }).join('<br>');
+          lines.push(`<div class="resource-row"><span class="resource-label">Today</span><span class="resource-value">${schedText}</span></div>`);
+        } else {
+          lines.push(`<div class="resource-row"><span class="resource-label">Schedule</span><span class="resource-value">${sched.restartTimes.join(', ')}</span></div>`);
+        }
+        if (sched.rotateDaily) {
+          lines.push(`<div class="resource-row"><span class="resource-label">Rotation</span><span class="resource-value">Daily (shifts each day)</span></div>`);
         }
         info.innerHTML = lines.join('');
       }

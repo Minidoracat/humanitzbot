@@ -24,6 +24,7 @@ const { EmbedBuilder } = require('discord.js');
 const SftpClient = require('ssh2-sftp-client');
 const _defaultConfig = require('./config');
 const _defaultRcon = require('./rcon');
+const { getDayOffset, getRotatedProfileIndex, getTodaySchedule } = require('./schedule-utils');
 
 const WARNINGS = [10, 5, 3, 2, 1]; // countdown warnings in minutes
 
@@ -137,18 +138,19 @@ class ServerScheduler {
     if (this._restartTimes.length === 0) return 0;
 
     const { totalMinutes } = this._getCurrentTime();
+    const dayOffset = getDayOffset(this._config.botTimezone, this._profiles.length, this._config.restartRotateDaily);
 
     // Find which restart window we're in:
-    // If we're past restart[i] but before restart[i+1], profile[i] should be active
-    let idx = 0;
+    // If we're past restart[i] but before restart[i+1], time slot i should be active
+    let slotIndex = 0;
     for (let i = this._restartTimes.length - 1; i >= 0; i--) {
       if (totalMinutes >= this._restartTimes[i].totalMinutes) {
-        idx = i;
+        slotIndex = i;
         break;
       }
     }
 
-    return idx % this._profiles.length;
+    return getRotatedProfileIndex(slotIndex, this._profiles.length, dayOffset);
   }
 
   _getCurrentTime() {
@@ -179,12 +181,14 @@ class ServerScheduler {
 
       // Start countdown when within the delay window
       if (minutesUntil <= delay && minutesUntil >= 0) {
-        // Calculate next profile
-        const nextIdx = (this._currentProfileIndex + 1) % this._profiles.length;
-        const nextProfile = this._profiles[nextIdx];
+        // Calculate next profile using day-aware rotation
+        const dayOffset = getDayOffset(this._config.botTimezone, this._profiles.length, this._config.restartRotateDaily);
+        const nextSlotIndex = this._restartTimes.indexOf(restartTime);
+        const nextProfileIdx = getRotatedProfileIndex(nextSlotIndex, this._profiles.length, dayOffset);
+        const nextProfile = this._profiles[nextProfileIdx];
         console.log(`[${this._label}] Restart in ${minutesUntil} min — switching to profile: ${nextProfile}`);
         this._lastRestartMinute = restartTime.totalMinutes;
-        this._startCountdown(nextProfile, nextIdx, minutesUntil);
+        this._startCountdown(nextProfile, nextProfileIdx, minutesUntil);
         return;
       }
     }
@@ -423,6 +427,11 @@ class ServerScheduler {
     }
   }
 
+  /** Whether the scheduler has active restart times configured. */
+  isActive() {
+    return this._restartTimes.length > 0;
+  }
+
   /** Get current profile info for external consumers (web panel, status embed). */
   getStatus() {
     const { totalMinutes } = this._getCurrentTime();
@@ -444,6 +453,11 @@ class ServerScheduler {
       minutesUntilNext = (1440 - totalMinutes) + nextRestart.totalMinutes;
     }
 
+    // Build today's schedule with rotation
+    const dayOffset = getDayOffset(this._config.botTimezone, this._profiles.length, this._config.restartRotateDaily);
+    const timeStrs = this._restartTimes.map(fmt);
+    const todaySchedule = getTodaySchedule(timeStrs, this._profiles, dayOffset);
+
     return {
       active: this._restartTimes.length > 0,
       currentProfile: this._currentProfileName,
@@ -451,8 +465,10 @@ class ServerScheduler {
         ? this._getProfileDisplayName(this._currentProfileName) : null,
       nextRestart: nextRestart ? fmt(nextRestart) : null,
       minutesUntilRestart: minutesUntilNext === Infinity ? null : minutesUntilNext,
-      restartTimes: this._restartTimes.map(fmt),
+      restartTimes: timeStrs,
       profiles: this._profiles,
+      todaySchedule,
+      rotateDaily: this._config.restartRotateDaily,
       transitioning: this._transitioning,
     };
   }

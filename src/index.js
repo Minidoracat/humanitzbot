@@ -622,8 +622,11 @@ client.once(Events.ClientReady, async (readyClient) => {
 
   // ── Web map server ──────────────────────────────────────────
   const webMapPort = parseInt(process.env.WEB_MAP_PORT, 10);
-  if (webMapPort && config.discordClientSecret) {
+  if (webMapPort) {
     try {
+      if (!config.discordClientSecret) {
+        console.warn('[BOT] Web map starting WITHOUT Discord OAuth — all routes unprotected');
+      }
       webMapServer = new WebMapServer(readyClient, { db, scheduler: serverScheduler });
       await webMapServer.start();
       setStatus('WebMap', `🟢 Running on http://localhost:${webMapPort}`);
@@ -632,12 +635,9 @@ client.once(Events.ClientReady, async (readyClient) => {
       setStatus('WebMap', `⚠️ Failed to start: ${err.message}`);
       console.error('[BOT] Web map server failed to start:', err.message);
     }
-  } else if (!webMapPort) {
+  } else {
     setStatus('WebMap', '⚫ Disabled (no WEB_MAP_PORT)');
     console.log('[BOT] Web map disabled — set WEB_MAP_PORT in .env to enable');
-  } else if (!config.discordClientSecret) {
-    setStatus('WebMap', '⚠️ Disabled (missing DISCORD_OAUTH_SECRET for OAuth)');
-    console.log('[BOT] Web map disabled — DISCORD_OAUTH_SECRET required for Discord OAuth');
   }
 
   // ── Post online notification to admin channel ──
