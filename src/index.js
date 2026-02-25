@@ -594,8 +594,8 @@ client.once(Events.ClientReady, async (readyClient) => {
     setStatus('WebMap', '⚫ Disabled (no WEB_MAP_PORT)');
     console.log('[BOT] Web map disabled — set WEB_MAP_PORT in .env to enable');
   } else if (!config.discordClientSecret) {
-    setStatus('WebMap', '⚠️ Disabled (missing DISCORD_CLIENT_SECRET for OAuth)');
-    console.log('[BOT] Web map disabled — DISCORD_CLIENT_SECRET required for Discord OAuth');
+    setStatus('WebMap', '⚠️ Disabled (missing DISCORD_OAUTH_SECRET for OAuth)');
+    console.log('[BOT] Web map disabled — DISCORD_OAUTH_SECRET required for Discord OAuth');
   }
 
   // ── Post online notification to admin channel ──

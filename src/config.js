@@ -82,6 +82,7 @@ const config = {
   // Discord
   discordToken: process.env.DISCORD_TOKEN,
   clientId: process.env.DISCORD_CLIENT_ID,
+  discordClientSecret: process.env.DISCORD_OAUTH_SECRET || '',
   guildId: process.env.DISCORD_GUILD_ID,
   adminChannelId: process.env.ADMIN_CHANNEL_ID,
   chatChannelId: process.env.CHAT_CHANNEL_ID || '',  // defaults to adminChannelId if empty
