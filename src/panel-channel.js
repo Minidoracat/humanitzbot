@@ -21,6 +21,7 @@ const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
   PermissionFlagsBits,
+  MessageFlags,
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -822,7 +823,7 @@ class PanelChannel {
    */
   async _requireAdmin(interaction, action) {
     if (!interaction.member?.permissions?.has(PermissionFlagsBits.Administrator)) {
-      await interaction.reply({ content: `❌ Only administrators can ${action}.`, ephemeral: true });
+      await interaction.reply({ content: `❌ Only administrators can ${action}.`, flags: MessageFlags.Ephemeral });
       return false;
     }
     return true;
@@ -1092,7 +1093,7 @@ class PanelChannel {
 
   async _handlePowerButton(interaction, id) {
     // Defer immediately to prevent token expiry
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     if (!this._isAdmin(interaction)) {
       await interaction.editReply('❌ Only administrators can use panel controls.');
@@ -1140,7 +1141,7 @@ class PanelChannel {
 
     await interaction.reply({
       content: '🔄 Restarting bot... The process will exit and your process manager should restart it.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
 
     // Let Discord deliver the reply before exiting
@@ -1178,7 +1179,7 @@ class PanelChannel {
 
     const confirm = interaction.fields.getTextInputValue('confirm').trim().toUpperCase();
     if (confirm !== 'NUKE') {
-      await interaction.reply({ content: '❌ Factory reset cancelled — you must type `NUKE` exactly.', ephemeral: true });
+      await interaction.reply({ content: '❌ Factory reset cancelled — you must type `NUKE` exactly.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
@@ -1186,7 +1187,7 @@ class PanelChannel {
     _writeEnvValues({ NUKE_BOT: 'true' });
     await interaction.reply({
       content: '💣 **Factory Reset initiated.** The bot will restart, wipe all Discord messages and local data, then rebuild from server logs.\n\nThis may take a minute...',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
 
     setTimeout(() => process.exit(0), 1500);
@@ -1200,7 +1201,7 @@ class PanelChannel {
     _writeEnvValues({ FIRST_RUN: 'true' });
     await interaction.reply({
       content: '📥 **Re-Import started.** The bot will restart and re-download server logs to rebuild player stats and playtime data.\n\nExisting Discord messages are preserved — only local data is refreshed.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
 
     setTimeout(() => process.exit(0), 1500);
@@ -1213,7 +1214,7 @@ class PanelChannel {
 
   async _handleDiagnosticsButton(interaction) {
     // Defer — probes can take a few seconds
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     
     if (!this._isAdmin(interaction)) {
       await interaction.editReply('❌ Only administrators can view diagnostics.');
@@ -1645,7 +1646,7 @@ class PanelChannel {
   // ═══════════════════════════════════════════════════════════
 
   async _handleMapButton(interaction, type) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     
     if (!this._isAdmin(interaction)) {
       await interaction.editReply('❌ Only administrators can use panel controls.');
@@ -1714,7 +1715,7 @@ class PanelChannel {
     const categoryId = interaction.values[0];
     const category = ENV_CATEGORIES.find(c => c.id === categoryId);
     if (!category) {
-      await interaction.reply({ content: '❌ Unknown category.', ephemeral: true });
+      await interaction.reply({ content: '❌ Unknown category.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
@@ -1750,14 +1751,14 @@ class PanelChannel {
     if (!await this._requireAdmin(interaction, 'edit server settings')) return true;
 
     if (!this._hasSftp) {
-      await interaction.reply({ content: '❌ SFTP credentials not configured. Game settings require FTP_HOST, FTP_USER, and FTP_PASSWORD.', ephemeral: true });
+      await interaction.reply({ content: '❌ SFTP credentials not configured. Game settings require FTP_HOST, FTP_USER, and FTP_PASSWORD.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
     const categoryId = interaction.values[0];
     const category = GAME_SETTINGS_CATEGORIES.find(c => c.id === categoryId);
     if (!category) {
-      await interaction.reply({ content: '❌ Unknown category.', ephemeral: true });
+      await interaction.reply({ content: '❌ Unknown category.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
@@ -1787,7 +1788,7 @@ class PanelChannel {
   // ═══════════════════════════════════════════════════════════
 
   async _handleEnvModal(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     
     if (!this._isAdmin(interaction)) {
       await interaction.editReply('❌ Only administrators can edit bot config.');
@@ -1857,18 +1858,18 @@ class PanelChannel {
     if (!await this._requireAdmin(interaction, 'edit server settings')) return true;
 
     if (!this._hasSftp) {
-      await interaction.reply({ content: '❌ SFTP credentials not configured.', ephemeral: true });
+      await interaction.reply({ content: '❌ SFTP credentials not configured.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
     const categoryId = interaction.customId.replace('panel_game_modal:', '');
     const category = GAME_SETTINGS_CATEGORIES.find(c => c.id === categoryId);
     if (!category) {
-      await interaction.reply({ content: '❌ Unknown category.', ephemeral: true });
+      await interaction.reply({ content: '❌ Unknown category.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
       // Read fresh INI content via SFTP (panel file API is blocked on some hosts)
@@ -1974,7 +1975,7 @@ class PanelChannel {
     const gamePort = parseInt(interaction.fields.getTextInputValue('game_port'), 10) || 14242;
 
     if (!name || !rconHost || !rconPassword) {
-      await interaction.reply({ content: '❌ Name, RCON Host, and RCON Password are required.', ephemeral: true });
+      await interaction.reply({ content: '❌ Name, RCON Host, and RCON Password are required.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
@@ -2008,7 +2009,7 @@ class PanelChannel {
         `Or skip SFTP to inherit the primary server's connection.\n` +
         `You can also configure channels or save now.`,
       components: [new ActionRowBuilder().addComponents(sftpBtn, continueBtn, skipBtn)],
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return true;
   }
@@ -2019,7 +2020,7 @@ class PanelChannel {
     const userId = customId.replace('panel_add_sftp:', '');
     const pending = this._pendingServers.get(userId);
     if (!pending) {
-      await interaction.reply({ content: '❌ Session expired. Please start over with "Add Server".', ephemeral: true });
+      await interaction.reply({ content: '❌ Session expired. Please start over with "Add Server".', flags: MessageFlags.Ephemeral });
       return true;
     }
 
@@ -2052,7 +2053,7 @@ class PanelChannel {
     const userId = interaction.customId.replace('panel_add_sftp_modal:', '');
     const pending = this._pendingServers.get(userId);
     if (!pending) {
-      await interaction.reply({ content: '❌ Session expired. Please start over with "Add Server".', ephemeral: true });
+      await interaction.reply({ content: '❌ Session expired. Please start over with "Add Server".', flags: MessageFlags.Ephemeral });
       return true;
     }
 
@@ -2062,7 +2063,7 @@ class PanelChannel {
     const password = interaction.fields.getTextInputValue('sftp_password').trim();
 
     if (!host || !user || !password) {
-      await interaction.reply({ content: '❌ SFTP host, username, and password are required.', ephemeral: true });
+      await interaction.reply({ content: '❌ SFTP host, username, and password are required.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
@@ -2085,7 +2086,7 @@ class PanelChannel {
         `File paths will auto-discover when the server starts.\n\n` +
         `**Next:** Configure channels or save now.`,
       components: [new ActionRowBuilder().addComponents(continueBtn, skipBtn)],
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return true;
   }
@@ -2096,7 +2097,7 @@ class PanelChannel {
     const userId = customId.replace('panel_add_step2:', '');
     const pending = this._pendingServers.get(userId);
     if (!pending) {
-      await interaction.reply({ content: '❌ Session expired. Please start over with "Add Server".', ephemeral: true });
+      await interaction.reply({ content: '❌ Session expired. Please start over with "Add Server".', flags: MessageFlags.Ephemeral });
       return true;
     }
 
@@ -2127,7 +2128,7 @@ class PanelChannel {
   }
 
   async _handleAddServerStep2Modal(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     
     if (!this._isAdmin(interaction)) {
       await interaction.editReply('❌ Only administrators can manage servers.');
@@ -2141,7 +2142,7 @@ class PanelChannel {
       return true;
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const channels = {};
     const chStatus = interaction.fields.getTextInputValue('ch_status').trim();
@@ -2204,7 +2205,7 @@ class PanelChannel {
     const servers = this.multiServerManager?.getAllServers() || [];
     const server = servers.find(s => s.id === serverId);
     if (!server) {
-      await interaction.reply({ content: '❌ Server not found.', ephemeral: true });
+      await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
@@ -2266,7 +2267,7 @@ class PanelChannel {
         `• Modules: ${moduleList}`,
       ].join('\n'),
       components: [row1, row2],
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return true;
   }
@@ -2279,11 +2280,11 @@ class PanelChannel {
       const userId = customId.replace('panel_srv_skip_channels:', '');
       const pending = this._pendingServers.get(userId);
       if (!pending) {
-        await interaction.reply({ content: '❌ Session expired. Please start over.', ephemeral: true });
+        await interaction.reply({ content: '❌ Session expired. Please start over.', flags: MessageFlags.Ephemeral });
         return true;
       }
 
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const serverDef = { ...pending, channels: {}, enabled: true };
       this._pendingServers.delete(userId);
 
@@ -2319,7 +2320,7 @@ class PanelChannel {
 
     switch (action) {
       case 'start': {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         try {
           await this.multiServerManager.startServer(serverId);
           await interaction.editReply('✅ Server started.');
@@ -2331,7 +2332,7 @@ class PanelChannel {
       }
 
       case 'stop': {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         try {
           await this.multiServerManager.stopServer(serverId);
           await interaction.editReply('✅ Server stopped.');
@@ -2343,7 +2344,7 @@ class PanelChannel {
       }
 
       case 'restart': {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         try {
           await this.multiServerManager.stopServer(serverId);
           await this.multiServerManager.startServer(serverId);
@@ -2356,7 +2357,7 @@ class PanelChannel {
       }
 
       case 'remove': {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         try {
           const servers = this.multiServerManager.getAllServers();
           const server = servers.find(s => s.id === serverId);
@@ -2383,7 +2384,7 @@ class PanelChannel {
         const servers = this.multiServerManager.getAllServers();
         const server = servers.find(s => s.id === serverId);
         if (!server) {
-          await interaction.reply({ content: '❌ Server not found.', ephemeral: true });
+          await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
           return true;
         }
 
@@ -2417,7 +2418,7 @@ class PanelChannel {
         const servers = this.multiServerManager.getAllServers();
         const server = servers.find(s => s.id === serverId);
         if (!server) {
-          await interaction.reply({ content: '❌ Server not found.', ephemeral: true });
+          await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
           return true;
         }
 
@@ -2452,7 +2453,7 @@ class PanelChannel {
         const servers = this.multiServerManager.getAllServers();
         const server = servers.find(s => s.id === serverId);
         if (!server) {
-          await interaction.reply({ content: '❌ Server not found.', ephemeral: true });
+          await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
           return true;
         }
 
@@ -2485,17 +2486,17 @@ class PanelChannel {
         const servers = this.multiServerManager.getAllServers();
         const server = servers.find(s => s.id === serverId);
         if (!server) {
-          await interaction.reply({ content: '❌ Server not found.', ephemeral: true });
+          await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
           return true;
         }
 
         const srvConfig = createServerConfig(server);
         if (!srvConfig.ftpHost || !srvConfig.ftpUser || (!srvConfig.ftpPassword && !srvConfig.ftpPrivateKeyPath)) {
-          await interaction.reply({ content: '❌ No SFTP credentials configured for this server.', ephemeral: true });
+          await interaction.reply({ content: '❌ No SFTP credentials configured for this server.', flags: MessageFlags.Ephemeral });
           return true;
         }
 
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         let currentContent = '';
         try {
@@ -2539,7 +2540,7 @@ class PanelChannel {
         const servers = this.multiServerManager.getAllServers();
         const server = servers.find(s => s.id === serverId);
         if (!server) {
-          await interaction.reply({ content: '❌ Server not found.', ephemeral: true });
+          await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
           return true;
         }
 
@@ -2606,7 +2607,7 @@ class PanelChannel {
   }
 
   async _handleEditServerModal(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     
     if (!this._isAdmin(interaction)) {
       await interaction.editReply('❌ Only administrators can manage servers.');
@@ -2638,7 +2639,7 @@ class PanelChannel {
   }
 
   async _handleEditChannelsModal(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     
     if (!this._isAdmin(interaction)) {
       await interaction.editReply('❌ Only administrators can manage servers.');
@@ -2671,7 +2672,7 @@ class PanelChannel {
   }
 
   async _handleEditSftpModal(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     
     if (!this._isAdmin(interaction)) {
       await interaction.editReply('❌ Only administrators can manage servers.');
@@ -2736,20 +2737,20 @@ class PanelChannel {
     const categoryId = interaction.values[0];
     const category = GAME_SETTINGS_CATEGORIES.find(c => c.id === categoryId);
     if (!category) {
-      await interaction.reply({ content: '❌ Unknown category.', ephemeral: true });
+      await interaction.reply({ content: '❌ Unknown category.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
     const servers = this.multiServerManager?.getAllServers() || [];
     const serverDef = servers.find(s => s.id === serverId);
     if (!serverDef) {
-      await interaction.reply({ content: '❌ Server not found.', ephemeral: true });
+      await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
     const sftpCfg = this._getSrvSftpConfig(serverDef);
     if (!sftpCfg) {
-      await interaction.reply({ content: '❌ No SFTP credentials for this server.', ephemeral: true });
+      await interaction.reply({ content: '❌ No SFTP credentials for this server.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
@@ -2787,24 +2788,24 @@ class PanelChannel {
     const categoryId = parts[1];
     const category = GAME_SETTINGS_CATEGORIES.find(c => c.id === categoryId);
     if (!category) {
-      await interaction.reply({ content: '❌ Unknown category.', ephemeral: true });
+      await interaction.reply({ content: '❌ Unknown category.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
     const servers = this.multiServerManager?.getAllServers() || [];
     const serverDef = servers.find(s => s.id === serverId);
     if (!serverDef) {
-      await interaction.reply({ content: '❌ Server not found.', ephemeral: true });
+      await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
     const sftpCfg = this._getSrvSftpConfig(serverDef);
     if (!sftpCfg) {
-      await interaction.reply({ content: '❌ No SFTP credentials for this server.', ephemeral: true });
+      await interaction.reply({ content: '❌ No SFTP credentials for this server.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
       const sftp = new SftpClient();
@@ -2869,17 +2870,17 @@ class PanelChannel {
     const servers = this.multiServerManager?.getAllServers() || [];
     const serverDef = servers.find(s => s.id === serverId);
     if (!serverDef) {
-      await interaction.reply({ content: '❌ Server not found.', ephemeral: true });
+      await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
     const sftpCfg = this._getSrvSftpConfig(serverDef);
     if (!sftpCfg) {
-      await interaction.reply({ content: '❌ No SFTP credentials for this server.', ephemeral: true });
+      await interaction.reply({ content: '❌ No SFTP credentials for this server.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
       const newContent = interaction.fields.getTextInputValue('welcome_content');
@@ -2903,11 +2904,11 @@ class PanelChannel {
     const servers = this.multiServerManager?.getAllServers() || [];
     const idx = servers.findIndex(s => s.id === serverId);
     if (idx === -1) {
-      await interaction.reply({ content: '❌ Server not found.', ephemeral: true });
+      await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
       const togglesRaw = interaction.fields.getTextInputValue('toggles').trim();
@@ -2972,7 +2973,7 @@ class PanelChannel {
   // ═══════════════════════════════════════════════════════════
 
   async _handleEnvSyncButton(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     
     if (!this._isAdmin(interaction)) {
       await interaction.editReply('❌ Only administrators can sync .env configuration.');
@@ -3017,7 +3018,7 @@ class PanelChannel {
   // ═══════════════════════════════════════════════════════════
 
   async _handleWelcomeEditButton(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     
     if (!this._isAdmin(interaction)) {
       await interaction.editReply('❌ Only administrators can edit the welcome message.');
@@ -3116,7 +3117,7 @@ class PanelChannel {
   }
 
   async _handleWelcomeModal(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     
     if (!this._isAdmin(interaction)) {
       await interaction.editReply('❌ Only administrators can edit the welcome message.');
@@ -3221,7 +3222,7 @@ class PanelChannel {
     await interaction.reply({
       content: helpText,
       components: [new ActionRowBuilder().addComponents(openBtn)],
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return true;
   }
@@ -3265,7 +3266,7 @@ class PanelChannel {
   }
 
   async _handleBroadcastsModal(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     
     if (!this._isAdmin(interaction)) {
       await interaction.editReply('❌ Only administrators can edit broadcasts.');
@@ -3742,20 +3743,21 @@ class PanelChannel {
 
     const buttonRow = new ActionRowBuilder().addComponents(restartBtn, nukeBtn, reimportBtn, diagBtn, envSyncBtn);
 
-    // Add server management button if multi-server manager is available
-    if (this.multiServerManager) {
-      const addServerBtn = new ButtonBuilder()
-        .setCustomId(BTN.ADD_SERVER)
-        .setLabel('Add Server')
-        .setStyle(ButtonStyle.Success);
-      buttonRow.addComponents(addServerBtn);
-    }
-
     const rows = [
       new ActionRowBuilder().addComponents(coreSelect),
       new ActionRowBuilder().addComponents(displaySelect),
       buttonRow,
     ];
+
+    // Add server management button row if multi-server manager is available (separate row to avoid 5-button limit)
+    if (this.multiServerManager) {
+      const addServerBtn = new ButtonBuilder()
+        .setCustomId(BTN.ADD_SERVER)
+        .setLabel('Add Server')
+        .setStyle(ButtonStyle.Success);
+      const serverMgmtRow = new ActionRowBuilder().addComponents(addServerBtn);
+      rows.push(serverMgmtRow);
+    }
 
     // Add map row when player map is enabled
     if (config.enablePlayerMap) {
