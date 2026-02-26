@@ -56,7 +56,7 @@ const {
   FURNITURE_DROPS,
   TRAPS,
   SPRAYS,
-} = require('../game-data');
+} = require('./game-data');
 
 // ─── Seed all game reference data ──────────────────────────────────────────
 

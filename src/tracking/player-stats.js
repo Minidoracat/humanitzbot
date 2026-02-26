@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const _defaultPlaytime = require('./playtime-tracker');
 
-const DEFAULT_DATA_DIR = path.join(__dirname, '..', 'data');
+const DEFAULT_DATA_DIR = path.join(__dirname, '..', '..', 'data');
 
 class PlayerStats {
   /**

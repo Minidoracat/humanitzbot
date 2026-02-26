@@ -1,6 +1,6 @@
 const { ChannelType, PermissionFlagsBits } = require('discord.js');
-const _defaultConfig = require('./config');
-const { getPlayerList } = require('./server-info');
+const _defaultConfig = require('../config');
+const { getPlayerList } = require('../rcon/server-info');
 
 const STATUS_CHANNELS = [
   { key: 'players', template: '\u{1F465} Players: {value}', fallback: '\u{1F465} Players: --' },

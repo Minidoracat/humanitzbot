@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const rcon = require('../rcon');
+const rcon = require('../rcon/rcon');
 
 // Commands that could disrupt the server — blocked from Discord execution
 const BLOCKED_COMMANDS = new Set([

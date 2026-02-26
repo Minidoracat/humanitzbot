@@ -5,7 +5,7 @@
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const HumanitZDB = require('../src/db/database');
-const SnapshotService = require('../src/snapshot-service');
+const SnapshotService = require('../src/tracking/snapshot-service');
 const { SCHEMA_VERSION, ALL_TABLES } = require('../src/db/schema');
 
 let db;

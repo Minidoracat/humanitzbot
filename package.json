@@ -12,8 +12,9 @@
     "deploy-commands": "node src/deploy-commands.js",
     "dev": "node --watch src/index.js",
     "test": "node --test test/*.test.js",
-    "changelog": "node scripts/generate-changelog.js --output README.md",
-    "changelog:json": "node scripts/generate-changelog.js --output CHANGELOG.json --format json"
+    "build:template": "node src/db/build-template-db.js",
+    "changelog": "node tools/generate-changelog.js --output README.md",
+    "changelog:json": "node tools/generate-changelog.js --output CHANGELOG.json --format json"
   },
   "dependencies": {
     "better-sqlite3": "^12.6.2",

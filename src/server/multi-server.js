@@ -14,25 +14,25 @@
 const fs = require('fs');
 const path = require('path');
 const SftpClient = require('ssh2-sftp-client');
-const _defaultConfig = require('./config');
-const { RconManager } = require('./rcon');
-const { PlayerStats } = require('./player-stats');
-const { PlaytimeTracker } = require('./playtime-tracker');
-const { getServerInfo, getPlayerList, sendAdminMessage } = require('./server-info');
+const _defaultConfig = require('../config');
+const { RconManager } = require('../rcon/rcon');
+const { PlayerStats } = require('../tracking/player-stats');
+const { PlaytimeTracker } = require('../tracking/playtime-tracker');
+const { getServerInfo, getPlayerList, sendAdminMessage } = require('../rcon/server-info');
 
 // Module classes
-const HumanitZDB = require('./db/database');
-const gameReference = require('./parsers/game-reference');
-const ServerStatus = require('./server-status');
-const StatusChannels = require('./status-channels');
-const ChatRelay = require('./chat-relay');
-const AutoMessages = require('./auto-messages');
-const LogWatcher = require('./log-watcher');
-const PlayerStatsChannel = require('./player-stats-channel');
-const PvpScheduler = require('./pvp-scheduler');
+const HumanitZDB = require('../db/database');
+const gameReference = require('../parsers/game-reference');
+const ServerStatus = require('../modules/server-status');
+const StatusChannels = require('../modules/status-channels');
+const ChatRelay = require('../modules/chat-relay');
+const AutoMessages = require('../modules/auto-messages');
+const LogWatcher = require('../modules/log-watcher');
+const PlayerStatsChannel = require('../modules/player-stats-channel');
+const PvpScheduler = require('../modules/pvp-scheduler');
 
-const SERVERS_FILE = path.join(__dirname, '..', 'data', 'servers.json');
-const SERVERS_DIR = path.join(__dirname, '..', 'data', 'servers');
+const SERVERS_FILE = path.join(__dirname, '..', '..', 'data', 'servers.json');
+const SERVERS_DIR = path.join(__dirname, '..', '..', 'data', 'servers');
 
 // ═════════════════════════════════════════════════════════════
 // Server config persistence

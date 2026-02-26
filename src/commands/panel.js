@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const panelApi = require('../panel-api');
-const { formatBytes, formatUptime } = require('../server-resources');
+const panelApi = require('../server/panel-api');
+const { formatBytes, formatUptime } = require('../server/server-resources');
 
 // ── State colour map ────────────────────────────────────────
 const STATE_DISPLAY = {

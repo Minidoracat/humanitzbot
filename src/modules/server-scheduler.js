@@ -22,8 +22,8 @@
 
 const { EmbedBuilder } = require('discord.js');
 const SftpClient = require('ssh2-sftp-client');
-const _defaultConfig = require('./config');
-const _defaultRcon = require('./rcon');
+const _defaultConfig = require('../config');
+const _defaultRcon = require('../rcon/rcon');
 const { getDayOffset, getRotatedProfileIndex, getTodaySchedule } = require('./schedule-utils');
 const { buildWelcomeContent } = require('./auto-messages');
 

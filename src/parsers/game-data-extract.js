@@ -14,7 +14,7 @@ const path = require('path');
 
 // ── Load raw data ──────────────────────────────────────────────────────────
 
-const RAW_PATH = path.join(__dirname, '..', 'data', 'game-tables-raw.json');
+const RAW_PATH = path.join(__dirname, '..', '..', 'data', 'game-tables-raw.json');
 
 let RAW;
 try {

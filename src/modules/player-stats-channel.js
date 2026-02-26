@@ -2,16 +2,16 @@ const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('dis
 const SftpClient = require('ssh2-sftp-client');
 const fs = require('fs');
 const path = require('path');
-const _defaultConfig = require('./config');
-const _defaultPlaytime = require('./playtime-tracker');
-const _defaultPlayerStats = require('./player-stats');
-const { parseSave, parseClanData, PERK_MAP, PERK_INDEX_MAP } = require('./parsers/save-parser');
+const _defaultConfig = require('../config');
+const _defaultPlaytime = require('../tracking/playtime-tracker');
+const _defaultPlayerStats = require('../tracking/player-stats');
+const { parseSave, parseClanData, PERK_MAP, PERK_INDEX_MAP } = require('../parsers/save-parser');
 const { buildWelcomeContent } = require('./auto-messages');
-const gameData = require('./game-data');
-const { cleanItemName: _sharedCleanItemName, cleanItemArray, isHexGuid } = require('./ue4-names');
+const gameData = require('../parsers/game-data');
+const { cleanItemName: _sharedCleanItemName, cleanItemArray, isHexGuid } = require('../parsers/ue4-names');
 const os = require('os');
 
-const _DEFAULT_DATA_DIR = path.join(__dirname, '..', 'data');
+const _DEFAULT_DATA_DIR = path.join(__dirname, '..', '..', 'data');
 
 class PlayerStatsChannel {
   constructor(client, logWatcher, deps = {}) {
@@ -701,7 +701,7 @@ class PlayerStatsChannel {
       if (entries.length > 0) {
         this._playerStats.loadIdMap(entries);
         // Cache locally for fast startup next time
-        try { fs.writeFileSync(path.join(this._dataDir, 'PlayerIDMapped.txt'), text); } catch (_) {}
+        try { fs.mkdirSync(path.join(this._dataDir, 'logs'), { recursive: true }); fs.writeFileSync(path.join(this._dataDir, 'logs', 'PlayerIDMapped.txt'), text); } catch (_) {}
         console.log(`[${this._label}] Loaded ${entries.length} name(s) from PlayerIDMapped.txt`);
       }
     } catch (err) {

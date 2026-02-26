@@ -1,13 +1,13 @@
 const fs = require('fs');
 const path = require('path');
-const _defaultConfig = require('./config');
-const { sendAdminMessage, getPlayerList, getServerInfo } = require('./server-info');
-const _defaultPlaytime = require('./playtime-tracker');
-const _defaultPlayerStats = require('./player-stats');
+const _defaultConfig = require('../config');
+const { sendAdminMessage, getPlayerList, getServerInfo } = require('../rcon/server-info');
+const _defaultPlaytime = require('../tracking/playtime-tracker');
+const _defaultPlayerStats = require('../tracking/player-stats');
 const SftpClient = require('ssh2-sftp-client');
 const { getDayOffset, getRotatedProfileIndex } = require('./schedule-utils');
 
-const DEFAULT_DATA_DIR = path.join(__dirname, '..', 'data');
+const DEFAULT_DATA_DIR = path.join(__dirname, '..', '..', 'data');
 
 // Difficulty index → label (same as server-status.js)
 const DIFFICULTY_LABELS = ['Very Easy', 'Easy', 'Default', 'Hard', 'Very Hard', 'Nightmare'];
@@ -26,7 +26,7 @@ function spawnLabel(val) {
 }
 
 // ── Color tag helpers for RCON messages ──────────────────
-const { COLOR, color, rconColor, colorOpen, white } = require('./rcon-colors');
+const { COLOR, color, rconColor, colorOpen, white } = require('../rcon/rcon-colors');
 
 /**
  * Color helper for WelcomeMessage.txt file context.

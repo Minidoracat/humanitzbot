@@ -20,7 +20,7 @@
  *              then treats as 'none' (just checks for existing cache).
  *
  * Usage:
- *   const SaveService = require('./parsers/save-service');
+ *   const SaveService = require('./save-service');
  *   const service = new SaveService(db, { sftpConfig, remotePath, agentMode: 'auto' });
  *   service.on('sync', (result) => { ... });
  *   service.start();
@@ -149,7 +149,7 @@ class SaveService extends EventEmitter {
    */
   _loadLocalIdMap() {
     try {
-      const filePath = path.join(__dirname, '..', '..', 'data', 'PlayerIDMapped.txt');
+      const filePath = path.join(__dirname, '..', '..', 'data', 'logs', 'PlayerIDMapped.txt');
       if (!fs.existsSync(filePath)) return;
       const raw = fs.readFileSync(filePath, 'utf8');
       const map = {};
@@ -538,7 +538,7 @@ class SaveService extends EventEmitter {
 
     // Lazy-load panel-api if not injected
     if (!this._panelApi) {
-      try { this._panelApi = require('../panel-api'); }
+      try { this._panelApi = require('../server/panel-api'); }
       catch { this._panelCapable = false; return false; }
     }
 

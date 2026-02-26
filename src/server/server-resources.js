@@ -9,7 +9,7 @@
  * Values are null when unavailable. Cached for `RESOURCE_CACHE_TTL` ms (default 30 s).
  */
 
-const config = require('./config');
+const config = require('../config');
 const panelApi = require('./panel-api');
 
 // ── Result shape ────────────────────────────────────────────

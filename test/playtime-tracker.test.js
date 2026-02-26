@@ -5,7 +5,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const playtime = require('../src/playtime-tracker');
+const playtime = require('../src/tracking/playtime-tracker');
 
 describe('_formatDuration', () => {
   it('returns "0m" for zero ms', () => {
@@ -67,7 +67,7 @@ const path = require('path');
  */
 function freshTracker(today = '2026-02-20') {
   // Clear the module cache so we get a fresh singleton
-  const modPath = require.resolve('../src/playtime-tracker');
+  const modPath = require.resolve('../src/tracking/playtime-tracker');
   delete require.cache[modPath];
   const tracker = require(modPath);
 

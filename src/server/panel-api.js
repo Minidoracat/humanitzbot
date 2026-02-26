@@ -15,7 +15,7 @@
  * Exports a singleton. All methods return null/throw when panel is not configured.
  */
 
-const config = require('./config');
+const config = require('../config');
 
 // ── URL parsing ─────────────────────────────────────────────
 // PANEL_SERVER_URL is the full browser URL, e.g.:

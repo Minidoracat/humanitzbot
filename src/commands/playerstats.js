@@ -6,9 +6,9 @@ const {
   ComponentType,
   MessageFlags,
 } = require('discord.js');
-const playerStats = require('../player-stats');
-const playtime = require('../playtime-tracker');
-const { buildPlayerEmbed } = require('../player-embed');
+const playerStats = require('../tracking/player-stats');
+const playtime = require('../tracking/playtime-tracker');
+const { buildPlayerEmbed } = require('../modules/player-embed');
 
 module.exports = {
   data: new SlashCommandBuilder()

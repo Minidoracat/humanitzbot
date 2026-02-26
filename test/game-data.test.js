@@ -4,7 +4,7 @@
  */
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const gameData = require('../src/game-data');
+const gameData = require('../src/parsers/game-data');
 
 describe('AFFLICTION_MAP', () => {
   it('is an array', () => {

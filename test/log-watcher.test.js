@@ -250,8 +250,8 @@ describe('simplifyBlueprintName', () => {
 // ══════════════════════════════════════════════════════════
 
 describe('_nukeActive thread suppression', () => {
-  const LogWatcher = require('../src/log-watcher');
-  const ChatRelay = require('../src/chat-relay');
+  const LogWatcher = require('../src/modules/log-watcher');
+  const ChatRelay = require('../src/modules/chat-relay');
 
   const mockClient = { channels: { fetch: async () => null }, on: () => {}, user: { id: '1' } };
   const mockChannel = { id: '123', name: 'test', threads: { fetchActive: async () => ({ threads: new Map() }), fetchArchived: async () => ({ threads: new Map() }) }, send: async () => ({ startThread: async () => ({ send: async () => {} }) }), messages: { fetch: async () => new Map() } };
@@ -297,7 +297,7 @@ describe('_nukeActive thread suppression', () => {
 // ══════════════════════════════════════════════════════════
 
 describe('PvP NPC source detection', () => {
-  const LogWatcher = require('../src/log-watcher');
+  const LogWatcher = require('../src/modules/log-watcher');
 
   function createWatcher() {
     return new LogWatcher({ on: () => {}, channels: { fetch: async () => null }, user: { id: '1' } }, {
@@ -369,7 +369,7 @@ describe('PvP NPC source detection', () => {
 });
 
 describe('PvP damage → death correlation', () => {
-  const LogWatcher = require('../src/log-watcher');
+  const LogWatcher = require('../src/modules/log-watcher');
 
   function createWatcher() {
     const lw = new LogWatcher({ on: () => {}, channels: { fetch: async () => null }, user: { id: '1' } }, {

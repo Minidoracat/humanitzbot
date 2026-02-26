@@ -14,27 +14,27 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const { isAdminView } = require('./config');
-const rcon = require('./rcon');
-const ChatRelay = require('./chat-relay');
-const StatusChannels = require('./status-channels');
-const ServerStatus = require('./server-status');
-const AutoMessages = require('./auto-messages');
-const LogWatcher = require('./log-watcher');
-const playtime = require('./playtime-tracker');
-const playerStats = require('./player-stats');
-const PlayerStatsChannel = require('./player-stats-channel');
-const PvpScheduler = require('./pvp-scheduler');
-const ServerScheduler = require('./server-scheduler');
-const panelApi = require('./panel-api');
-const PanelChannel = require('./panel-channel');
-const MultiServerManager = require('./multi-server');
-const ActivityLog = require('./activity-log');
+const rcon = require('./rcon/rcon');
+const ChatRelay = require('./modules/chat-relay');
+const StatusChannels = require('./modules/status-channels');
+const ServerStatus = require('./modules/server-status');
+const AutoMessages = require('./modules/auto-messages');
+const LogWatcher = require('./modules/log-watcher');
+const playtime = require('./tracking/playtime-tracker');
+const playerStats = require('./tracking/player-stats');
+const PlayerStatsChannel = require('./modules/player-stats-channel');
+const PvpScheduler = require('./modules/pvp-scheduler');
+const ServerScheduler = require('./modules/server-scheduler');
+const panelApi = require('./server/panel-api');
+const PanelChannel = require('./modules/panel-channel');
+const MultiServerManager = require('./server/multi-server');
+const ActivityLog = require('./modules/activity-log');
 const HumanitZDB = require('./db/database');
 const SaveService = require('./parsers/save-service');
 const gameReference = require('./parsers/game-reference');
 const { writeAgent } = require('./parsers/agent-builder');
 const WebMapServer = require('./web-map/server');
-const SnapshotService = require('./snapshot-service');
+const SnapshotService = require('./tracking/snapshot-service');
 
 // ── Create Discord client ───────────────────────────────────
 const intents = [
@@ -349,7 +349,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     // Also clear per-server message IDs and orphaned server data directories
     const serversDir = path.join(dataDir, 'servers');
     if (fs.existsSync(serversDir)) {
-      const { loadServers } = require('./multi-server');
+      const { loadServers } = require('./server/multi-server');
       const knownIds = new Set(loadServers().map(s => s.id));
       for (const entry of fs.readdirSync(serversDir)) {
         const dir = path.join(serversDir, entry);
@@ -397,7 +397,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     if (config.panelChannelId)         channelsToClean.add(config.panelChannelId);
     if (config.activityLogChannelId)    channelsToClean.add(config.activityLogChannelId);
     // Additional server channels (including any from removed servers still in servers.json)
-    const { loadServers } = require('./multi-server');
+    const { loadServers } = require('./server/multi-server');
     const servers = loadServers();
     for (const sd of servers) {
       if (sd.channels?.log)    channelsToClean.add(sd.channels.log);
@@ -562,7 +562,7 @@ client.once(Events.ClientReady, async (readyClient) => {
         // Build online player set from RCON if available
         let onlinePlayers = new Set();
         try {
-          const { getPlayerList } = require('./server-info');
+          const { getPlayerList } = require('./rcon/server-info');
           const list = await getPlayerList();
           const arr = list?.players || (Array.isArray(list) ? list : []);
           for (const p of arr) {
@@ -790,7 +790,7 @@ client.once(Events.ClientReady, async (readyClient) => {
         console.log(`[NUKE] Thread rebuild: ${result.created} created, ${result.deleted} replaced, ${result.preserved} preserved, ${result.cleaned} cleaned`);
       }
       // Additional servers
-      const { loadServers, createServerConfig } = require('./multi-server');
+      const { loadServers, createServerConfig } = require('./server/multi-server');
       const servers = loadServers();
       for (const serverDef of servers) {
         const label = serverDef.name || serverDef.id;

@@ -1,15 +1,15 @@
 const { EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const _defaultConfig = require('./config');
-const { getServerInfo, getPlayerList } = require('./server-info');
-const _defaultPlaytime = require('./playtime-tracker');
-const _defaultPlayerStats = require('./player-stats');
-const _defaultServerResources = require('./server-resources');
-const { formatBytes } = require('./server-resources');
+const _defaultConfig = require('../config');
+const { getServerInfo, getPlayerList } = require('../rcon/server-info');
+const _defaultPlaytime = require('../tracking/playtime-tracker');
+const _defaultPlayerStats = require('../tracking/player-stats');
+const _defaultServerResources = require('../server/server-resources');
+const { formatBytes } = require('../server/server-resources');
 const { getDayOffset, getRotatedProfileIndex } = require('./schedule-utils');
 
-const _DEFAULT_DATA_DIR = path.join(__dirname, '..', 'data');
+const _DEFAULT_DATA_DIR = path.join(__dirname, '..', '..', 'data');
 
 function _formatTime(timeStr) {
   if (!timeStr) return null;
@@ -118,9 +118,9 @@ class ServerStatus {
     this._playtime = deps.playtime || _defaultPlaytime;
     this._playerStats = deps.playerStats || _defaultPlayerStats;
     this._serverResources = deps.serverResources || _defaultServerResources;
-    this._getServerInfo = deps.getServerInfo || require('./server-info').getServerInfo;
-    this._getPlayerList = deps.getPlayerList || require('./server-info').getPlayerList;
-    this._sendAdminMessage = deps.sendAdminMessage || require('./server-info').sendAdminMessage;
+    this._getServerInfo = deps.getServerInfo || require('../rcon/server-info').getServerInfo;
+    this._getPlayerList = deps.getPlayerList || require('../rcon/server-info').getPlayerList;
+    this._sendAdminMessage = deps.sendAdminMessage || require('../rcon/server-info').sendAdminMessage;
     this._db = deps.db || null;
     this._label = deps.label || 'STATUS';
     this._dataDir = deps.dataDir || _DEFAULT_DATA_DIR;
@@ -424,7 +424,7 @@ class ServerStatus {
     let uptimeStr = '';
     // Prefer panel API container uptime (actual server process) over bot tracking
     if (resources?.uptime != null) {
-      const { formatUptime: fmtUp } = require('./server-resources');
+      const { formatUptime: fmtUp } = require('../server/server-resources');
       const up = fmtUp(resources.uptime);
       if (up) uptimeStr = ` · Uptime: ${up}`;
     } else if (this._onlineSince) {

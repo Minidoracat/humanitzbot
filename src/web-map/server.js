@@ -16,14 +16,14 @@ const path = require('path');
 const fs = require('fs');
 const config = require('../config');
 const { parseSave, PERK_MAP } = require('../parsers/save-parser');
-const { AFFLICTION_MAP } = require('../game-data');
-const { cleanName: cleanActorName, cleanItemName, cleanItemArray, isHexGuid } = require('../ue4-names');
-const playerStats = require('../player-stats');
-const playtime = require('../playtime-tracker');
-const rcon = require('../rcon');
+const { AFFLICTION_MAP } = require('../parsers/game-data');
+const { cleanName: cleanActorName, cleanItemName, cleanItemArray, isHexGuid } = require('../parsers/ue4-names');
+const playerStats = require('../tracking/player-stats');
+const playtime = require('../tracking/playtime-tracker');
+const rcon = require('../rcon/rcon');
 const { setupAuth, requireTier } = require('./auth');
-const serverResources = require('../server-resources');
-const { formatBytes, formatUptime } = require('../server-resources');
+const serverResources = require('../server/server-resources');
+const { formatBytes, formatUptime } = require('../server/server-resources');
 
 // ── Rate limiter (simple in-memory, per-IP) ──
 const _rateBuckets = new Map();
@@ -137,7 +137,7 @@ class WebMapServer {
   /** Load player ID map from file. */
   _loadIdMap() {
     try {
-      const raw = fs.readFileSync(path.join(DATA_DIR, 'PlayerIDMapped.txt'), 'utf8');
+      const raw = fs.readFileSync(path.join(DATA_DIR, 'logs', 'PlayerIDMapped.txt'), 'utf8');
       const map = {};
       for (const line of raw.split('\n')) {
         const m = line.trim().match(/^(\d{17})_\+_\|[^@]+@(.+)$/);
@@ -176,7 +176,7 @@ class WebMapServer {
   _loadIdMapFrom(dataDir) {
     const map = {};
     try {
-      const raw = fs.readFileSync(path.join(dataDir, 'PlayerIDMapped.txt'), 'utf8');
+      const raw = fs.readFileSync(path.join(dataDir, 'logs', 'PlayerIDMapped.txt'), 'utf8');
       for (const line of raw.split('\n')) {
         const m = line.trim().match(/^(\d{17})_\+_\|[^@]+@(.+)$/);
         if (m) map[m[1]] = m[2].trim();
@@ -469,7 +469,7 @@ class WebMapServer {
       let onlineSteamIds = new Set();
       if (isPrimary) {
         try {
-          const { getPlayerList } = require('../server-info');
+          const { getPlayerList } = require('../rcon/server-info');
           const list = await getPlayerList();
           const playerArr = list?.players || (Array.isArray(list) ? list : []);
           for (const p of playerArr) {
@@ -784,7 +784,7 @@ class WebMapServer {
     // ── API: Get RCON player list (online status) ──
     app.get('/api/online', requireTier('survivor'), async (req, res) => {
       try {
-        const { getPlayerList } = require('../server-info');
+        const { getPlayerList } = require('../rcon/server-info');
         const list = await getPlayerList();
         res.json({ players: list });
       } catch (err) {
@@ -821,7 +821,7 @@ class WebMapServer {
 
       // Primary server status via RCON
       try {
-        const { getServerInfo, getPlayerList } = require('../server-info');
+        const { getServerInfo, getPlayerList } = require('../rcon/server-info');
         const info = await getServerInfo();
         if (info) {
           result.primary.status = 'online';
@@ -921,7 +921,7 @@ class WebMapServer {
 
       // RCON server info
       try {
-        const { getServerInfo, getPlayerList } = require('../server-info');
+        const { getServerInfo, getPlayerList } = require('../rcon/server-info');
         const info = await getServerInfo();
         if (info) {
           result.serverState = 'running';
@@ -994,7 +994,7 @@ class WebMapServer {
 
       // Online count from RCON
       try {
-        const { getPlayerList } = require('../server-info');
+        const { getPlayerList } = require('../rcon/server-info');
         const list = await getPlayerList();
         const playerArr = list?.players || (Array.isArray(list) ? list : []);
         result.onlinePlayers = playerArr.length;
@@ -1478,7 +1478,7 @@ class WebMapServer {
       if (!valid.includes(action)) return res.status(400).json({ error: `Invalid action: ${action}` });
 
       // Try Pterodactyl API first
-      const panelApi = require('../panel-api');
+      const panelApi = require('../server/panel-api');
       if (panelApi.available) {
         try {
           if (action === 'backup') {

@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { cleanName, cleanItemName, cleanItemArray, isHexGuid } = require('../src/ue4-names');
+const { cleanName, cleanItemName, cleanItemArray, isHexGuid } = require('../src/parsers/ue4-names');
 
 describe('cleanName', () => {
   it('handles Door_GEN_VARIABLE_BP_ pattern', () => {

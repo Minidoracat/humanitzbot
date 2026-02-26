@@ -1,6 +1,6 @@
 const net = require('net');
 const { EventEmitter } = require('events');
-const _defaultConfig = require('./config');
+const _defaultConfig = require('../config');
 
 const SERVERDATA_AUTH = 3;
 const SERVERDATA_EXECCOMMAND = 2;

@@ -21,8 +21,8 @@
  */
 
 const { EmbedBuilder } = require('discord.js');
-const config = require('./config');
-const { cleanName, cleanItemName } = require('./ue4-names');
+const config = require('../config');
+const { cleanName, cleanItemName } = require('../parsers/ue4-names');
 
 // ─── Category colours ───────────────────────────────────────────────────────
 

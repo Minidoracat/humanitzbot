@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { getDayOfYear, getDayOffset, getRotatedProfileIndex, getTodaySchedule, getActiveProfileIndex } = require('../src/schedule-utils');
+const { getDayOfYear, getDayOffset, getRotatedProfileIndex, getTodaySchedule, getActiveProfileIndex } = require('../src/modules/schedule-utils');
 
 describe('schedule-utils', () => {
   describe('getDayOfYear', () => {

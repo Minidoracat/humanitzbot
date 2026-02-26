@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
-const { getServerInfo, getPlayerList } = require('../server-info');
-const gameData = require('../game-data');
+const { getServerInfo, getPlayerList } = require('../rcon/server-info');
+const gameData = require('../parsers/game-data');
 const fs = require('fs');
 const path = require('path');
 

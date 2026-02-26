@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { getPlayerList } = require('../server-info');
-const playtime = require('../playtime-tracker');
+const { getPlayerList } = require('../rcon/server-info');
+const playtime = require('../tracking/playtime-tracker');
 
 module.exports = {
   data: new SlashCommandBuilder()

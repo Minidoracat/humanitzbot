@@ -37,9 +37,10 @@ const config = require('./src/config');
 const DATA_DIR = path.join(__dirname, 'data');
 const STATS_FILE = path.join(DATA_DIR, 'player-stats.json');
 const PLAYTIME_FILE = path.join(DATA_DIR, 'playtime.json');
-const LOG_CACHE = path.join(DATA_DIR, 'HMZLog-downloaded.log');
-const CONNECTED_LOG_CACHE = path.join(DATA_DIR, 'PlayerConnectedLog.txt');
-const ID_MAP_CACHE = path.join(DATA_DIR, 'PlayerIDMapped.txt');
+const LOG_DIR = path.join(DATA_DIR, 'logs');
+const LOG_CACHE = path.join(LOG_DIR, 'HMZLog-downloaded.log');
+const CONNECTED_LOG_CACHE = path.join(LOG_DIR, 'PlayerConnectedLog.txt');
+const ID_MAP_CACHE = path.join(LOG_DIR, 'PlayerIDMapped.txt');
 
 const ftpConfig = {
   host: process.env.FTP_HOST,
@@ -150,9 +151,12 @@ function newRecord(name) {
 
 function backupAndSave(filePath, data, label) {
   if (fs.existsSync(filePath)) {
-    const backup = filePath.replace('.json', `-backup-${Date.now()}.json`);
+    const backupDir = path.join(DATA_DIR, 'backups');
+    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+    const basename = path.basename(filePath, '.json');
+    const backup = path.join(backupDir, `${basename}-backup-${Date.now()}.json`);
     fs.copyFileSync(filePath, backup);
-    console.log(`  Backed up ${label} → ${path.basename(backup)}`);
+    console.log(`  Backed up ${label} → backups/${path.basename(backup)}`);
   }
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
   console.log(`  Saved ${label}`);
@@ -1169,6 +1173,7 @@ async function main() {
   console.log('=== HumanitZ Bot Setup ===\n');
 
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
 
   // --find mode: auto-discover paths and explore SFTP directories
   if (MODE_FIND) {

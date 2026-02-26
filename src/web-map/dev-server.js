@@ -34,7 +34,7 @@ console.log('Calibration:', bounds);
 function loadIdMap() {
   const idMap = {};
   try {
-    const raw = fs.readFileSync(path.join(DATA_DIR, 'PlayerIDMapped.txt'), 'utf8');
+    const raw = fs.readFileSync(path.join(DATA_DIR, 'logs', 'PlayerIDMapped.txt'), 'utf8');
     for (const line of raw.split('\n')) {
       const m = line.trim().match(/^(\d{17})_\+_\|[^@]+@(.+)$/);
       if (m) idMap[m[1]] = m[2].trim();
@@ -53,7 +53,7 @@ for (const [id, name] of Object.entries(idMap).slice(0, 3)) {
 function parseLastSeen() {
   const lastSeen = {};
   try {
-    const raw = fs.readFileSync(path.join(DATA_DIR, 'PlayerConnectedLog.txt'), 'utf8');
+    const raw = fs.readFileSync(path.join(DATA_DIR, 'logs', 'PlayerConnectedLog.txt'), 'utf8');
     for (const line of raw.split('\n')) {
       const m = line.trim().match(/^Player (?:Connected|Disconnected) .+ NetID\((\d{17})_\+_\|[^)]+\) \((\d+)\/(\d+)\/(\d+) (\d+):(\d+)\)/);
       if (m) {
@@ -208,7 +208,7 @@ app.get('/api/refresh', async (req, res) => {
     // 2. Download connection log (for last-seen dates)
     sendEvent('progress', 'Downloading connection log...');
     try {
-      await sftp.get(REMOTE_CONNLOG, path.join(DATA_DIR, 'PlayerConnectedLog.txt'));
+      await sftp.get(REMOTE_CONNLOG, path.join(DATA_DIR, 'logs', 'PlayerConnectedLog.txt'));
       lastSeenMap = parseLastSeen();
     } catch (err) {
       sendEvent('progress', 'Connection log: ' + err.message);
@@ -223,7 +223,7 @@ app.get('/api/refresh', async (req, res) => {
 
     // 4. Download ID map
     sendEvent('progress', 'Downloading player ID map...');
-    await sftp.get(REMOTE_IDMAP, path.join(DATA_DIR, 'PlayerIDMapped.txt'));
+    await sftp.get(REMOTE_IDMAP, path.join(DATA_DIR, 'logs', 'PlayerIDMapped.txt'));
     idMap = loadIdMap();
 
     await sftp.end();
@@ -256,7 +256,7 @@ app.get('/api/fetch-position/:steamId', async (req, res) => {
   try {
     await sftp.connect(SFTP_CONFIG);
     await sftp.get(REMOTE_SAVE, localSave);
-    await sftp.get(REMOTE_IDMAP, path.join(DATA_DIR, 'PlayerIDMapped.txt'));
+    await sftp.get(REMOTE_IDMAP, path.join(DATA_DIR, 'logs', 'PlayerIDMapped.txt'));
     await sftp.end();
 
     console.log('[SFTP] Downloaded', fs.statSync(localSave).size, 'bytes');

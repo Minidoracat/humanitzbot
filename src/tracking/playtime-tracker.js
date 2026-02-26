@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
-const _defaultConfig = require('./config');
+const _defaultConfig = require('../config');
 
-const DEFAULT_DATA_DIR = path.join(__dirname, '..', 'data');
+const DEFAULT_DATA_DIR = path.join(__dirname, '..', '..', 'data');
 
 class PlaytimeTracker {
   /**
@@ -428,7 +428,7 @@ class PlaytimeTracker {
     this._ensurePeaks();
     if (this._data.peaks.uniqueDayPeak > 0) return; // already populated
 
-    const logPath = path.join(this._dataDir, 'PlayerConnectedLog.txt');
+    const logPath = path.join(this._dataDir, 'logs', 'PlayerConnectedLog.txt');
     if (!fs.existsSync(logPath)) return;
 
     try {

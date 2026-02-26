@@ -4,7 +4,7 @@
  */
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { _parseServerInfo: parseServerInfo, _parsePlayerList: parsePlayerList } = require('../src/server-info');
+const { _parseServerInfo: parseServerInfo, _parsePlayerList: parsePlayerList } = require('../src/rcon/server-info');
 
 // ══════════════════════════════════════════════════════════
 // parseServerInfo

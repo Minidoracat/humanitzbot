@@ -6,7 +6,7 @@ const { describe, it, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
 // Minimal stub for PvpScheduler — we only test pure-logic methods
-const PvpScheduler = require('../src/pvp-scheduler');
+const PvpScheduler = require('../src/modules/pvp-scheduler');
 
 function makeScheduler(overrides = {}) {
   const config = {

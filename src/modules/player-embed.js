@@ -1,6 +1,6 @@
 const { EmbedBuilder } = require('discord.js');
-const _defaultPlaytime = require('./playtime-tracker');
-const _defaultConfig = require('./config');
+const _defaultPlaytime = require('../tracking/playtime-tracker');
+const _defaultConfig = require('../config');
 
 /**
  * Build a log-based player stats embed.

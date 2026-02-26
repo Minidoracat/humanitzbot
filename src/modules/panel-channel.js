@@ -14,12 +14,12 @@ const {
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const config = require('./config');
-const panelApi = require('./panel-api');
+const config = require('../config');
+const panelApi = require('../server/panel-api');
 const SftpClient = require('ssh2-sftp-client');
-const { formatBytes, formatUptime } = require('./server-resources');
-const MultiServerManager = require('./multi-server');
-const { loadServers, saveServers, createServerConfig } = require('./multi-server');
+const { formatBytes, formatUptime } = require('../server/server-resources');
+const MultiServerManager = require('../server/multi-server');
+const { loadServers, saveServers, createServerConfig } = require('../server/multi-server');
 
 // ── State colour map ────────────────────────────────────────
 const STATE_DISPLAY = {
@@ -652,8 +652,8 @@ const GAME_SETTINGS_CATEGORIES = [
 ];
 
 // ── .env file helpers ───────────────────────────────────────
-const ENV_PATH = path.join(__dirname, '..', '.env');
-const SETTINGS_CACHE = path.join(__dirname, '..', 'data', 'server-settings.json');
+const ENV_PATH = path.join(__dirname, '..', '..', '.env');
+const SETTINGS_CACHE = path.join(__dirname, '..', '..', 'data', 'server-settings.json');
 
 /** Read current value for an env field — process.env first, then config. */
 function _getEnvValue(field) {
@@ -738,7 +738,7 @@ function _formatBotUptime(ms) {
 // ═════════════════════════════════════════════════════════════
 
 class PanelChannel {
-  static _DATA_DIR = path.join(__dirname, '..', 'data');
+  static _DATA_DIR = path.join(__dirname, '..', '..', 'data');
   /**
    * @param {import('discord.js').Client} client
    * @param {object} opts
@@ -1115,9 +1115,9 @@ class PanelChannel {
       return true;
     }
 
-    const rcon = require('./rcon');
-    const playerStats = require('./player-stats');
-    const playtime = require('./playtime-tracker');
+    const rcon = require('../rcon/rcon');
+    const playerStats = require('../tracking/player-stats');
+    const playtime = require('../tracking/playtime-tracker');
     const upMs = Date.now() - this.startedAt.getTime();
 
     const results = { rcon: null, sftp: null, db: null, channels: [], save: null, panel: null };
@@ -2603,7 +2603,7 @@ class PanelChannel {
 
     // Read current settings from server's data dir cache
     let cached = {};
-    const dataDir = path.join(__dirname, '..', 'data', 'servers', serverId);
+    const dataDir = path.join(__dirname, '..', '..', 'data', 'servers', serverId);
     const cachePath = path.join(dataDir, 'server-settings.json');
     try { cached = JSON.parse(fs.readFileSync(cachePath, 'utf8')); } catch {}
 
@@ -2667,7 +2667,7 @@ class PanelChannel {
       }
 
       // Read/update cache
-      const dataDir = path.join(__dirname, '..', 'data', 'servers', serverId);
+      const dataDir = path.join(__dirname, '..', '..', 'data', 'servers', serverId);
       if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
       const cachePath = path.join(dataDir, 'server-settings.json');
       let cached = {};
@@ -2776,7 +2776,7 @@ class PanelChannel {
       if (discordLink) am.discordLink = discordLink;
 
       // Persist to servers.json
-      const { loadServers, saveServers } = require('./multi-server');
+      const { loadServers, saveServers } = require('../server/multi-server');
       const allServers = loadServers();
       const srvIdx = allServers.findIndex(s => s.id === serverId);
       if (srvIdx !== -1) {
@@ -2827,7 +2827,7 @@ class PanelChannel {
       return true;
     }
 
-    const { needsSync, syncEnv, getVersion, getExampleVersion } = require('./env-sync');
+    const { needsSync, syncEnv, getVersion, getExampleVersion } = require('../env-sync');
 
     if (!needsSync()) {
       await interaction.editReply('✅ Your `.env` is already up to date with `.env.example`.');
@@ -3678,7 +3678,7 @@ class PanelChannel {
       .setLabel('System Diagnostics')
       .setStyle(ButtonStyle.Secondary);
 
-    const { needsSync } = require('./env-sync');
+    const { needsSync } = require('../env-sync');
     const envSyncBtn = new ButtonBuilder()
       .setCustomId(BTN.ENV_SYNC)
       .setLabel(needsSync() ? '🔄 Sync .env' : '✓ .env Synced')

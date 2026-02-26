@@ -1,7 +1,7 @@
 const { Events, EmbedBuilder } = require('discord.js');
-const _defaultConfig = require('./config');
-const { addAdminMembers } = require('./config');
-const _defaultRcon = require('./rcon');
+const _defaultConfig = require('../config');
+const { addAdminMembers } = require('../config');
+const _defaultRcon = require('../rcon/rcon');
 
 // ── Chat line parsers ────────────────────────────────────────
 // Player chat:   <PN>PlayerName:</>Message text

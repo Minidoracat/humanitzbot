@@ -1,8 +1,8 @@
 const { EmbedBuilder } = require('discord.js');
 const SftpClient = require('ssh2-sftp-client');
-const _defaultConfig = require('./config');
-const _defaultRcon = require('./rcon');
-const { color } = require('./rcon-colors');
+const _defaultConfig = require('../config');
+const _defaultRcon = require('../rcon/rcon');
+const { color } = require('../rcon/rcon-colors');
 
 const WARNINGS = [10, 5, 3, 2, 1]; // countdown warnings in minutes
 

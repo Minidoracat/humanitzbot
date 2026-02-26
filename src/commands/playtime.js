@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
-const playtime = require('../playtime-tracker');
+const playtime = require('../tracking/playtime-tracker');
 const config = require('../config');
 
 module.exports = {

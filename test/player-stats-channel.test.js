@@ -5,7 +5,7 @@
 const { describe, it, after } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { _parseIni, _cleanItemName, _resolveUdsWeather } = require('../src/player-stats-channel');
+const { _parseIni, _cleanItemName, _resolveUdsWeather } = require('../src/modules/player-stats-channel');
 
 // Clean up singleton references after tests.
 // Requiring player-stats-channel pulls in both player-stats and playtime-tracker
@@ -130,7 +130,7 @@ describe('_cleanItemName', () => {
 // _isNewWeek (weekly baseline reset detection)
 // ══════════════════════════════════════════════════════════
 
-const PlayerStatsChannel = require('../src/player-stats-channel');
+const PlayerStatsChannel = require('../src/modules/player-stats-channel');
 
 describe('_isNewWeek', () => {
   // Create a minimal instance to call the prototype method

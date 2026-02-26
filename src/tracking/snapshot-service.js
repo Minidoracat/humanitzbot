@@ -11,7 +11,7 @@
  * @module snapshot-service
  */
 
-const { cleanName } = require('./ue4-names');
+const { cleanName } = require('../parsers/ue4-names');
 
 // ── AI type → display name mapping ──────────────────────────
 

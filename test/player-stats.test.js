@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 
 // The module exports a singleton instance — we use it directly.
 // We just need to test the pure methods without triggering file I/O.
-const playerStats = require('../src/player-stats');
+const playerStats = require('../src/tracking/player-stats');
 
 // ══════════════════════════════════════════════════════════
 // _classifyDamageSource — pure regex classifier

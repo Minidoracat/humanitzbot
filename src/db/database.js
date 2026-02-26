@@ -8,7 +8,7 @@
  *   - WAL mode for concurrent reads during bot operation
  *
  * Usage:
- *   const db = require('./db/database');
+ *   const db = require('./database');
  *   db.init();                           // call once at startup
  *   db.upsertPlayer(steamId, data);      // write parsed save data
  *   const p = db.getPlayer(steamId);     // read back

@@ -2,11 +2,11 @@ const { EmbedBuilder } = require('discord.js');
 const SftpClient = require('ssh2-sftp-client');
 const fs = require('fs');
 const path = require('path');
-const _defaultConfig = require('./config');
-const { addAdminMembers } = require('./config');
-const { cleanName } = require('./ue4-names');
-const _defaultPlaytime = require('./playtime-tracker');
-const _defaultPlayerStats = require('./player-stats');
+const _defaultConfig = require('../config');
+const { addAdminMembers } = require('../config');
+const { cleanName } = require('../parsers/ue4-names');
+const _defaultPlaytime = require('../tracking/playtime-tracker');
+const _defaultPlayerStats = require('../tracking/player-stats');
 
 class LogWatcher {
   constructor(client, deps = {}) {
@@ -15,7 +15,7 @@ class LogWatcher {
     this._playerStats = deps.playerStats || _defaultPlayerStats;
     this._db = deps.db || null;
     this._label = deps.label || 'LOGS';
-    this._dataDir = deps.dataDir || path.join(__dirname, '..', 'data');
+    this._dataDir = deps.dataDir || path.join(__dirname, '..', '..', 'data');
 
     // Computed data paths
     this._offsetsPath = path.join(this._dataDir, 'log-offsets.json');
