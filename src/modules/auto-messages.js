@@ -1,13 +1,9 @@
-const fs = require('fs');
-const path = require('path');
 const _defaultConfig = require('../config');
 const { sendAdminMessage, getPlayerList, getServerInfo } = require('../rcon/server-info');
 const _defaultPlaytime = require('../tracking/playtime-tracker');
 const _defaultPlayerStats = require('../tracking/player-stats');
 const SftpClient = require('ssh2-sftp-client');
 const { getDayOffset, getRotatedProfileIndex } = require('./schedule-utils');
-
-const DEFAULT_DATA_DIR = path.join(__dirname, '..', '..', 'data');
 
 // Difficulty index → label (same as server-status.js)
 const DIFFICULTY_LABELS = ['Very Easy', 'Easy', 'Default', 'Hard', 'Very Hard', 'Nightmare'];
@@ -61,29 +57,21 @@ function _rconColorLink(link) {
 
 // ── Standalone helpers (used by buildWelcomeContent and class) ──
 
-function loadCachedSettings(dataDir, db) {
+function loadCachedSettings(db) {
   try {
     if (db) {
       const data = db.getStateJSON('server_settings', null);
       if (data) return data;
     }
-    const filePath = path.join(dataDir || DEFAULT_DATA_DIR, 'server-settings.json');
-    if (fs.existsSync(filePath)) {
-      return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    }
   } catch (_) {}
   return {};
 }
 
-function loadWelcomeStats(dataDir, db) {
+function loadWelcomeStats(db) {
   try {
     if (db) {
       const data = db.getStateJSON('welcome_stats', null);
       if (data) return data;
-    }
-    const filePath = path.join(dataDir || DEFAULT_DATA_DIR, 'welcome-stats.json');
-    if (fs.existsSync(filePath)) {
-      return JSON.parse(fs.readFileSync(filePath, 'utf8'));
     }
   } catch (_) {}
   return {};
@@ -203,9 +191,8 @@ async function buildWelcomeContent(deps = {}) {
   const pt = deps.playtime || _defaultPlaytime;
   const ps = deps.playerStats || _defaultPlayerStats;
   const getInfo = deps.getServerInfo || getServerInfo;
-  const dataDir = deps.dataDir || DEFAULT_DATA_DIR;
   const db = deps.db || null;
-  const settings = loadCachedSettings(dataDir, db);
+  const settings = loadCachedSettings(db);
   const parts = [];
 
   // ── Title ──
@@ -253,7 +240,7 @@ async function buildWelcomeContent(deps = {}) {
 
   // ── Leaderboards ──
   const leaderboard = pt.getLeaderboard();
-  const welcomeStats = loadWelcomeStats(dataDir, db);
+  const welcomeStats = loadWelcomeStats(db);
 
   if (leaderboard.length > 0) {
     parts.push('');
@@ -355,7 +342,7 @@ class AutoMessages {
     this._getPlayerList = deps.getPlayerList || getPlayerList;
     this._sendAdminMessage = deps.sendAdminMessage || sendAdminMessage;
     this._label = deps.label || 'AUTO MSG';
-    this._dataDir = deps.dataDir || DEFAULT_DATA_DIR;
+    this._db = deps.db || null;
 
     this.discordLink = this._config.discordInviteLink;
 
@@ -746,7 +733,7 @@ class AutoMessages {
       playtime: this._playtime,
       playerStats: this._playerStats,
       getServerInfo: this._getServerInfo,
-      dataDir: this._dataDir,
+      db: this._db,
     });
   }
 

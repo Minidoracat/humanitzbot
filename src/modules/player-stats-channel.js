@@ -126,8 +126,6 @@ function _dbRowToSave(row) {
   };
 }
 
-const _DEFAULT_DATA_DIR = path.join(__dirname, '..', '..', 'data');
-
 class PlayerStatsChannel {
   constructor(client, logWatcher, deps = {}) {
     this._config = deps.config || _defaultConfig;
@@ -135,7 +133,6 @@ class PlayerStatsChannel {
     this._playerStats = deps.playerStats || _defaultPlayerStats;
     this._db = deps.db || null;
     this._label = deps.label || 'PLAYER STATS CH';
-    this._dataDir = deps.dataDir || _DEFAULT_DATA_DIR;
     this._serverId = deps.serverId || '';  // unique suffix for select menu IDs
 
     this.client = client;
@@ -289,7 +286,6 @@ class PlayerStatsChannel {
               config: this._config,
               playtime: this._playtime,
               playerStats: this._playerStats,
-              dataDir: this._dataDir,
               db: this._db,
             });
             await sftp.put(Buffer.from(content, 'utf8'), this._config.ftpWelcomePath);
@@ -479,7 +475,6 @@ class PlayerStatsChannel {
             config: this._config,
             playtime: this._playtime,
             playerStats: this._playerStats,
-            dataDir: this._dataDir,
             db: this._db,
           });
           await sftp.put(Buffer.from(content, 'utf8'), this._config.ftpWelcomePath);

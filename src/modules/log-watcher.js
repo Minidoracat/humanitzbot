@@ -1,7 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
 const SftpClient = require('ssh2-sftp-client');
-const fs = require('fs');
-const path = require('path');
 const _defaultConfig = require('../config');
 const { addAdminMembers } = require('../config');
 const { cleanName } = require('../parsers/ue4-names');
@@ -15,12 +13,6 @@ class LogWatcher {
     this._playerStats = deps.playerStats || _defaultPlayerStats;
     this._db = deps.db || null;
     this._label = deps.label || 'LOGS';
-    this._dataDir = deps.dataDir || path.join(__dirname, '..', '..', 'data');
-
-    // Computed data paths
-    this._offsetsPath = path.join(this._dataDir, 'log-offsets.json');
-    this._pvpKillsPath = path.join(this._dataDir, 'pvp-kills.json');
-    this._dayCountsPath = path.join(this._dataDir, 'day-counts.json');
 
     this.client = client;
     this.logChannel = null;
@@ -67,7 +59,7 @@ class LogWatcher {
     this._pvpDamageTracker = new Map();
 
     // PvP kill log: last N kills for the "Last 10 Kills" display
-    // Persisted to data/pvp-kills.json
+    // Persisted to bot_state DB table
     this._pvpKills = [];
     this._pvpKillsDirty = false;
     this._loadPvpKills();
@@ -175,23 +167,11 @@ class LogWatcher {
 
   _loadDayCounts() {
     try {
-      // DB-first: try bot_state
-      if (this._db) {
-        const raw = this._db.getStateJSON('day_counts', null);
-        if (raw && raw.date === this._config.getToday()) {
-          this._dayCounts = { ...this._dayCounts, ...raw.counts };
-          console.log(`[${this._label}] Restored day counts for ${raw.date} (DB)`);
-          return;
-        }
-        return; // DB present but no matching data — start fresh
-      }
-      // Fallback: JSON file (multi-server without DB)
-      if (fs.existsSync(this._dayCountsPath)) {
-        const raw = JSON.parse(fs.readFileSync(this._dayCountsPath, 'utf8'));
-        if (raw && raw.date === this._config.getToday()) {
-          this._dayCounts = { ...this._dayCounts, ...raw.counts };
-          console.log(`[${this._label}] Restored day counts for ${raw.date}`);
-        }
+      if (!this._db) return;
+      const raw = this._db.getStateJSON('day_counts', null);
+      if (raw && raw.date === this._config.getToday()) {
+        this._dayCounts = { ...this._dayCounts, ...raw.counts };
+        console.log(`[${this._label}] Restored day counts for ${raw.date} (DB)`);
       }
     } catch (err) {
       console.warn(`[${this._label}] Could not load day counts:`, err.message);
@@ -201,12 +181,9 @@ class LogWatcher {
   _saveDayCounts() {
     if (!this._dayCountsDirty) return;
     try {
+      if (!this._db) return;
       const data = { date: this._dailyDate || this._config.getToday(), counts: this._dayCounts };
-      if (this._db) {
-        this._db.setStateJSON('day_counts', data);
-      } else {
-        fs.writeFileSync(this._dayCountsPath, JSON.stringify(data, null, 2), 'utf8');
-      }
+      this._db.setStateJSON('day_counts', data);
       this._dayCountsDirty = false;
     } catch (err) {
       console.warn(`[${this._label}] Could not save day counts:`, err.message);
@@ -222,23 +199,11 @@ class LogWatcher {
 
   _loadPvpKills() {
     try {
-      // DB-first: try bot_state
-      if (this._db) {
-        const raw = this._db.getStateJSON('pvp_kills', null);
-        if (Array.isArray(raw)) {
-          this._pvpKills = raw;
-          console.log(`[${this._label}:PVP] Loaded ${raw.length} PvP kill(s) from DB`);
-          return;
-        }
-        return; // DB present but no data
-      }
-      // Fallback: JSON file (multi-server without DB)
-      if (fs.existsSync(this._pvpKillsPath)) {
-        const raw = JSON.parse(fs.readFileSync(this._pvpKillsPath, 'utf8'));
-        if (Array.isArray(raw)) {
-          this._pvpKills = raw;
-          console.log(`[${this._label}:PVP] Loaded ${raw.length} PvP kill(s) from history`);
-        }
+      if (!this._db) return;
+      const raw = this._db.getStateJSON('pvp_kills', null);
+      if (Array.isArray(raw)) {
+        this._pvpKills = raw;
+        console.log(`[${this._label}:PVP] Loaded ${raw.length} PvP kill(s) from DB`);
       }
     } catch (err) {
       console.warn(`[${this._label}:PVP] Could not load pvp kills:`, err.message);
@@ -249,13 +214,8 @@ class LogWatcher {
   _savePvpKills() {
     if (!this._pvpKillsDirty) return;
     try {
-      if (this._db) {
-        this._db.setStateJSON('pvp_kills', this._pvpKills);
-      } else {
-        const dir = path.dirname(this._pvpKillsPath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(this._pvpKillsPath, JSON.stringify(this._pvpKills, null, 2), 'utf8');
-      }
+      if (!this._db) return;
+      this._db.setStateJSON('pvp_kills', this._pvpKills);
       this._pvpKillsDirty = false;
     } catch (err) {
       console.warn(`[${this._label}:PVP] Could not save pvp kills:`, err.message);
@@ -475,7 +435,6 @@ class LogWatcher {
 
   _loadOffsets() {
     try {
-      // DB-first: try bot_state
       if (this._db) {
         const raw = this._db.getStateJSON('log_offsets', null);
         if (raw) {
@@ -484,15 +443,6 @@ class LogWatcher {
             connectLogSize: typeof raw.connectLogSize === 'number' ? raw.connectLogSize : 0,
           };
         }
-        return null;
-      }
-      // Fallback: JSON file (multi-server without DB)
-      if (fs.existsSync(this._offsetsPath)) {
-        const raw = JSON.parse(fs.readFileSync(this._offsetsPath, 'utf8'));
-        return {
-          hmzLogSize: typeof raw.hmzLogSize === 'number' ? raw.hmzLogSize : 0,
-          connectLogSize: typeof raw.connectLogSize === 'number' ? raw.connectLogSize : 0,
-        };
       }
     } catch (err) {
       console.warn(`[${this._label}] Could not load saved offsets:`, err.message);
@@ -509,10 +459,6 @@ class LogWatcher {
       };
       if (this._db) {
         this._db.setStateJSON('log_offsets', data);
-      } else {
-        const dir = path.dirname(this._offsetsPath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(this._offsetsPath, JSON.stringify(data, null, 2));
       }
     } catch (err) {
       console.warn(`[${this._label}] Could not save offsets:`, err.message);
@@ -717,8 +663,6 @@ class LogWatcher {
         let raw = null;
         if (this._db) {
           raw = this._db.getStateJSON('day_counts', null);
-        } else if (fs.existsSync(this._dayCountsPath)) {
-          raw = JSON.parse(fs.readFileSync(this._dayCountsPath, 'utf8'));
         }
         if (raw && raw.date && raw.date !== today && raw.counts) {
           const total = Object.values(raw.counts).reduce((s, v) => s + (v || 0), 0);

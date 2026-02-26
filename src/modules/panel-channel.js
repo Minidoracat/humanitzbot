@@ -653,7 +653,6 @@ const GAME_SETTINGS_CATEGORIES = [
 
 // ── .env file helpers ───────────────────────────────────────
 const ENV_PATH = path.join(__dirname, '..', '..', '.env');
-const SETTINGS_CACHE = path.join(__dirname, '..', '..', 'data', 'server-settings.json');
 
 /** Read current value for an env field — process.env first, then config. */
 function _getEnvValue(field) {
@@ -702,15 +701,15 @@ function _applyLiveConfig(field, value) {
   }
 }
 
-/** Read cached game server settings from bot_state or data/server-settings.json. */
+/** Read cached game server settings from bot_state. */
 function _getCachedSettings(db) {
   try {
     if (db) {
       const data = db.getStateJSON('server_settings', null);
       if (data) return data;
     }
-    return JSON.parse(fs.readFileSync(SETTINGS_CACHE, 'utf8'));
-  } catch { return {}; }
+  } catch {}
+  return {};
 }
 
 /** Safely build a modal title within Discord's 45-char limit. */
@@ -738,7 +737,7 @@ function _formatBotUptime(ms) {
 // ═════════════════════════════════════════════════════════════
 
 class PanelChannel {
-  static _DATA_DIR = path.join(__dirname, '..', '..', 'data');
+
   /**
    * @param {import('discord.js').Client} client
    * @param {object} opts
@@ -1766,7 +1765,7 @@ class PanelChannel {
       await sftp.end().catch(() => {});
 
       // Update local cache so subsequent reads are fresh
-      try { fs.writeFileSync(SETTINGS_CACHE, JSON.stringify(cached, null, 2)); } catch (_) {}
+      if (this._db) try { this._db.setStateJSON('server_settings', cached); } catch (_) {}
 
       let msg = `✅ **${category.label}** updated:\n${changes.join('\n')}`;
       msg += '\n\n⚠️ **Restart the server** for these changes to take effect.';
@@ -2601,11 +2600,9 @@ class PanelChannel {
       return true;
     }
 
-    // Read current settings from server's data dir cache
+    // Read current settings from bot_state cache
     let cached = {};
-    const dataDir = path.join(__dirname, '..', '..', 'data', 'servers', serverId);
-    const cachePath = path.join(dataDir, 'server-settings.json');
-    try { cached = JSON.parse(fs.readFileSync(cachePath, 'utf8')); } catch {}
+    if (this._db) try { cached = this._db.getStateJSON(`server_settings_${serverId}`, {}) || {}; } catch {}
 
     const modal = new ModalBuilder()
       .setCustomId(`panel_srv_game_modal:${serverId}:${categoryId}`)
@@ -2667,11 +2664,8 @@ class PanelChannel {
       }
 
       // Read/update cache
-      const dataDir = path.join(__dirname, '..', '..', 'data', 'servers', serverId);
-      if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-      const cachePath = path.join(dataDir, 'server-settings.json');
       let cached = {};
-      try { cached = JSON.parse(fs.readFileSync(cachePath, 'utf8')); } catch {}
+      if (this._db) try { cached = this._db.getStateJSON(`server_settings_${serverId}`, {}) || {}; } catch {}
 
       const changes = [];
       for (const setting of category.settings) {
@@ -2697,7 +2691,7 @@ class PanelChannel {
       await sftp.put(Buffer.from(content, 'utf8'), sftpCfg.settingsPath);
       await sftp.end().catch(() => {});
 
-      try { fs.writeFileSync(cachePath, JSON.stringify(cached, null, 2)); } catch (_) {}
+      if (this._db) try { this._db.setStateJSON(`server_settings_${serverId}`, cached); } catch (_) {}
 
       let msg = `✅ **${serverDef.name} — ${category.label}** updated:\n${changes.join('\n')}`;
       msg += '\n\n⚠️ **Restart the game server** for these changes to take effect.';
@@ -3214,32 +3208,14 @@ class PanelChannel {
           servers: this._db.getStateJSON('msg_id_panel_servers', {}),
         };
       }
-      const fp = path.join(PanelChannel._DATA_DIR, 'message-ids.json');
-      if (fs.existsSync(fp)) {
-        const data = JSON.parse(fs.readFileSync(fp, 'utf8'));
-        return {
-          panelBot: data.panelUnified || data.panelBot || null,
-          panelServer: data.panelServer || null,
-          servers: data.panelServers || {},
-        };
-      }
     } catch {}
     return { panelBot: null, panelServer: null, servers: {} };
   }
 
   _saveMessageIds() {
     try {
-      if (this._db) {
-        if (this.panelMessage) {
-          this._db.setState('msg_id_panel_bot', this.panelMessage.id);
-        }
-      } else {
-        const fp = path.join(PanelChannel._DATA_DIR, 'message-ids.json');
-        let data = {};
-        try { if (fs.existsSync(fp)) data = JSON.parse(fs.readFileSync(fp, 'utf8')); } catch {}
-        if (this.panelMessage) data.panelUnified = this.panelMessage.id;
-        if (this.panelMessage) data.panelBot = this.panelMessage.id;
-        fs.writeFileSync(fp, JSON.stringify(data, null, 2));
+      if (this._db && this.panelMessage) {
+        this._db.setState('msg_id_panel_bot', this.panelMessage.id);
       }
     } catch {}
   }
