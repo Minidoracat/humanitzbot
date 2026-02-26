@@ -245,10 +245,14 @@ client.once(Events.ClientReady, async (readyClient) => {
   console.log('[BOT] Ready!');
 
   // Connect to RCON (non-fatal — auto-reconnect handles recovery)
-  try {
-    await rcon.connect();
-  } catch (err) {
-    console.warn(`[BOT] Initial RCON connection failed: ${err.message} — will auto-reconnect`);
+  if (!config.needsSetup) {
+    try {
+      await rcon.connect();
+    } catch (err) {
+      console.warn(`[BOT] Initial RCON connection failed: ${err.message} — will auto-reconnect`);
+    }
+  } else {
+    console.log('[BOT] RCON not configured — skipping initial connection (setup wizard will handle)');
   }
 
   // ── RCON lifecycle events — log game server restarts ──
@@ -303,6 +307,7 @@ client.once(Events.ClientReady, async (readyClient) => {
   db = new HumanitZDB();
   db.init();
   gameReference.seed(db);
+  config.loadDisplayOverrides(db);
   console.log('[BOT] SQLite database initialised');
 
   // Wire DB into singletons for unified identity + stats syncing
@@ -418,6 +423,20 @@ client.once(Events.ClientReady, async (readyClient) => {
   }
 
   // ── Start modules with dependency checks ──────────────────
+
+  if (config.needsSetup) {
+    // Minimal boot — only Panel Channel starts so the setup wizard can run.
+    // All other modules are skipped until RCON/SFTP are configured.
+    console.log('[BOT] Setup wizard mode — RCON/SFTP not configured. Only the panel channel will start.');
+    setStatus('Setup Wizard', '🟡 Awaiting configuration via panel channel');
+
+    if (config.panelChannelId) {
+      panelChannel = new PanelChannel(readyClient, { moduleStatus, startedAt, multiServerManager: null, db, saveService: null, logWatcher: null });
+      await panelChannel.start();
+    } else {
+      console.error('[BOT] Cannot start setup wizard — PANEL_CHANNEL_ID not set.');
+    }
+  } else {
 
   // Status Channels — voice channel dashboard
   if (config.enableStatusChannels) {
@@ -689,6 +708,8 @@ client.once(Events.ClientReady, async (readyClient) => {
     setStatus('Panel', '⚫ Disabled');
     console.log('[BOT] Panel disabled via ENABLE_PANEL=false');
   }
+
+  } // end of !config.needsSetup block
 
   // ── Web map server ──────────────────────────────────────────
   const webMapPort = parseInt(process.env.WEB_MAP_PORT, 10);

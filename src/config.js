@@ -1,3 +1,25 @@
+const _cfgFs = require('fs');
+const _cfgPath = require('path');
+
+// ── Bootstrap: generate .env from template if missing ────────
+const _envPath = _cfgPath.join(__dirname, '..', '.env');
+const _examplePath = _cfgPath.join(__dirname, '..', '.env.example');
+if (!_cfgFs.existsSync(_envPath)) {
+  if (_cfgFs.existsSync(_examplePath)) {
+    _cfgFs.copyFileSync(_examplePath, _envPath);
+  }
+  console.log('');
+  console.log('══════════════════════════════════════════════════════════');
+  console.log('  .env file created from template.');
+  console.log('  Open .env and set your Discord credentials:');
+  console.log('    DISCORD_TOKEN, DISCORD_CLIENT_ID, DISCORD_GUILD_ID');
+  console.log('  Then set RCON and SFTP credentials for your game server.');
+  console.log('  See .env.example comments for guidance.');
+  console.log('══════════════════════════════════════════════════════════');
+  console.log('');
+  process.exit(0);
+}
+
 require('dotenv').config();
 
 function envBool(key, defaultValue) {
@@ -424,14 +446,26 @@ if (config.ftpBasePath) {
   console.log(`[CONFIG] FTP base path: ${prefix}`);
 }
 
-// Validate required values (only core Discord + RCON needed)
-const required = ['discordToken', 'clientId', 'guildId', 'rconHost', 'rconPassword'];
+// Validate required values — Discord credentials are always needed.
+// RCON is optional: if missing, the bot starts in setup wizard mode so the user
+// can configure everything through the panel channel's interactive wizard.
+const required = ['discordToken', 'clientId', 'guildId'];
 for (const key of required) {
   if (!config[key] || config[key].startsWith('your_')) {
     console.error(`[CONFIG] Missing or placeholder value for: ${key}`);
     console.error(`         Please configure your .env file. See .env.example for reference.`);
     process.exit(1);
   }
+}
+
+// Flag so modules know whether RCON/SFTP are ready
+config.needsSetup = !config.rconHost || !config.rconPassword || config.rconHost.startsWith('your_') || config.rconPassword.startsWith('your_');
+
+if (!config.panelChannelId) {
+  console.error('[CONFIG] PANEL_CHANNEL_ID is required.');
+  console.error('         The panel channel is the bot\'s admin dashboard — all configuration');
+  console.error('         and control flows through it. Set a channel ID in .env to continue.');
+  process.exit(1);
 }
 
 // ── Timezone-aware date helpers ─────────────────────────────
@@ -531,8 +565,6 @@ console.log(`[CONFIG] Timezone: ${config.botTimezone}, Log timezone: ${config.lo
 // Supports both password and SSH key authentication.
 // Used by: log-watcher, player-stats-channel, pvp-scheduler, multi-server
 
-const _fs = require('fs');
-
 config.sftpConnectConfig = function () {
   const cfg = {
     host: config.ftpHost,
@@ -541,7 +573,7 @@ config.sftpConnectConfig = function () {
   };
   if (config.ftpPrivateKeyPath) {
     try {
-      cfg.privateKey = _fs.readFileSync(config.ftpPrivateKeyPath);
+      cfg.privateKey = _cfgFs.readFileSync(config.ftpPrivateKeyPath);
       // If a password is also set, use it as the passphrase for the key
       if (config.ftpPassword) cfg.passphrase = config.ftpPassword;
     } catch (err) {
@@ -565,6 +597,75 @@ config.getEffectiveSavePollInterval = function () {
     return Math.max(config.agentPollInterval, 30000);  // min 30s
   }
   return config.savePollInterval;
+};
+
+// ── Display settings overlay (DB-backed) ────────────────────
+// Display toggles and feed toggles are stored in bot_state so they're
+// runtime-configurable via the panel channel without editing .env.
+// On startup, loadDisplayOverrides() reads saved values from the DB
+// and overlays them onto the config object. The .env values serve as
+// initial defaults for first-run only.
+
+/**
+ * Load display setting overrides from the DB's bot_state table.
+ * Called once after DB init in index.js.
+ * @param {object} db - HumanitZDB instance
+ */
+config.loadDisplayOverrides = function (db) {
+  if (!db) return;
+  try {
+    const overrides = db.getStateJSON('display_settings', null);
+    if (!overrides || typeof overrides !== 'object') return;
+    let count = 0;
+    for (const [key, value] of Object.entries(overrides)) {
+      if (key in config) {
+        config[key] = value;
+        count++;
+      }
+    }
+    if (count > 0) {
+      console.log(`[CONFIG] Loaded ${count} display setting override(s) from DB`);
+    }
+  } catch (err) {
+    console.warn('[CONFIG] Could not load display overrides:', err.message);
+  }
+};
+
+/**
+ * Save a single display setting to the DB and update config in memory.
+ * @param {object} db - HumanitZDB instance
+ * @param {string} cfgKey - Config key (e.g. 'showVitals')
+ * @param {*} value - New value
+ */
+config.saveDisplaySetting = function (db, cfgKey, value) {
+  config[cfgKey] = value;
+  if (!db) return;
+  try {
+    const overrides = db.getStateJSON('display_settings', {});
+    overrides[cfgKey] = value;
+    db.setStateJSON('display_settings', overrides);
+  } catch (err) {
+    console.warn('[CONFIG] Could not save display override:', err.message);
+  }
+};
+
+/**
+ * Save multiple display settings to the DB and update config in memory.
+ * @param {object} db - HumanitZDB instance
+ * @param {Object<string,*>} settings - Map of cfgKey → value
+ */
+config.saveDisplaySettings = function (db, settings) {
+  for (const [key, value] of Object.entries(settings)) {
+    config[key] = value;
+  }
+  if (!db) return;
+  try {
+    const overrides = db.getStateJSON('display_settings', {});
+    Object.assign(overrides, settings);
+    db.setStateJSON('display_settings', overrides);
+  } catch (err) {
+    console.warn('[CONFIG] Could not save display overrides:', err.message);
+  }
 };
 
 module.exports = config;
