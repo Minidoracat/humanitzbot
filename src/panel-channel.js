@@ -1,20 +1,9 @@
 /**
- * Panel Channel — two-embed admin dashboard.
+ * Panel Channel — unified admin dashboard.
  *
- * Message 1 (top): Bot Controls — always shown when PANEL_CHANNEL_ID is set.
- *   - Bot status, uptime, module status
- *   - Env config editor (select category → modal → write .env + live apply)
- *   - Restart Bot button
- *   - Game settings editor (if SFTP available but no panel API)
- *
- * Message 2 (bottom): Game Server Panel — only when panel API is configured.
- *   - Power state, resources, backups, schedules
- *   - Power buttons (Start / Stop / Restart / Backup / Kill)
- *   - Game settings editor (if SFTP available)
- *
- * Admin-only channel. Requires PANEL_CHANNEL_ID.
- * Panel API features require PANEL_SERVER_URL + PANEL_API_KEY.
- * Game settings editor requires SFTP credentials (FTP_HOST/USER/PASSWORD).
+ * Single message with stacked embeds showing bot, primary server,
+ * and any managed servers. A view selector switches which controls
+ * are active. Admin-only channel. Requires PANEL_CHANNEL_ID.
  */
 
 const {
@@ -74,6 +63,7 @@ const SELECT = {
   ENV2:     'panel_env_select2',
   SETTINGS: 'panel_settings_select',
   SERVER:   'panel_server_select',
+  VIEW:     'panel_view_select',
 };
 
 // ── Env categories ──────────────────────────────────────────
@@ -752,9 +742,9 @@ class PanelChannel {
   constructor(client, { moduleStatus = {}, startedAt = new Date(), multiServerManager = null, db = null, saveService = null, logWatcher = null } = {}) {
     this.client = client;
     this.channel = null;
-    this.botMessage = null;    // first message — bot controls (top)
-    this.panelMessage = null;  // second message — game server panel (bottom)
-    this._serverMessages = new Map(); // serverId → Discord message (per-server embeds)
+    this.panelMessage = null;  // single unified panel message
+    this.botMessage = null;    // alias kept for interaction handler compat (points to panelMessage)
+    this._serverMessages = new Map(); // serverId → Discord message (kept for compat, unused in unified mode)
     this._lastServerKeys = new Map(); // serverId → content hash
     this.interval = null;
     this.updateIntervalMs = parseInt(config.serverStatusInterval, 10) || 30000;
@@ -762,6 +752,7 @@ class PanelChannel {
     this._lastPanelKey = null;
     this._lastState = null;
     this._backupLimit = null;
+    this._activeView = 'bot'; // 'bot' | 'server' | serverId
     this.moduleStatus = moduleStatus;
     this.startedAt = startedAt;
     this.multiServerManager = multiServerManager;
@@ -825,95 +816,19 @@ class PanelChannel {
       features.push('env editor');
       if (this._hasSftp && config.enableGameSettingsEditor) features.push('game settings (SFTP)');
       if (panelApi.available) features.push('server panel (API)');
-      console.log(`[PANEL CH] Posting in #${this.channel.name} — ${features.join(', ')} (every ${this.updateIntervalMs / 1000}s)`);
+      if (this.multiServerManager) {
+        const count = this.multiServerManager.getAllServers().length;
+        if (count > 0) features.push(`${count} managed server(s)`);
+      }
+      console.log(`[PANEL CH] Posting unified panel in #${this.channel.name} — ${features.join(', ')} (every ${this.updateIntervalMs / 1000}s)`);
       await this._cleanOwnMessages();
 
-      // ── Message 1: Bot Controls (always) ──
-      const botEmbed = new EmbedBuilder()
-        .setTitle('🤖 Bot Controls')
-        .setDescription('Loading...')
-        .setColor(0x5865f2)
-        .setTimestamp();
-      this.botMessage = await this.channel.send({
-        embeds: [botEmbed],
-        components: this._buildBotComponents(),
-      });
+      // ── Single unified message with stacked embeds ──
+      const { embeds, components } = await this._buildUnifiedPanel();
+      this.panelMessage = await this.channel.send({ embeds, components });
+      this.botMessage = this.panelMessage; // alias for interaction handler compat
 
-      // ── Message 2: Game Server Panel (only when panel API is available) ──
-      if (panelApi.available) {
-        const serverEmbed = new EmbedBuilder()
-          .setTitle('🖥️ Server Panel')
-          .setDescription('Loading panel data...')
-          .setColor(0x95a5a6)
-          .setTimestamp();
-        this.panelMessage = await this.channel.send({
-          embeds: [serverEmbed],
-          components: this._buildServerComponents('offline'),
-        });
-      }
-
-      // ── Message 2b: Primary Server tools (when no panel API but SFTP is available) ──
-      if (!panelApi.available && this._hasSftp) {
-        const primaryEmbed = new EmbedBuilder()
-          .setTitle('🖥️ Primary Server')
-          .setDescription('Server-specific tools (Welcome, Broadcasts, Game Settings)')
-          .setColor(0x3498db)
-          .setTimestamp();
-        const primaryRows = [];
-        const toolsRow = new ActionRowBuilder();
-        if (config.enableWelcomeFile) {
-          toolsRow.addComponents(
-            new ButtonBuilder()
-              .setCustomId(BTN.WELCOME_EDIT)
-              .setLabel('Welcome Message')
-              .setStyle(ButtonStyle.Secondary)
-          );
-        }
-        if (config.enableAutoMessages) {
-          toolsRow.addComponents(
-            new ButtonBuilder()
-              .setCustomId(BTN.BROADCASTS)
-              .setLabel('Broadcasts')
-              .setStyle(ButtonStyle.Secondary)
-          );
-        }
-        if (toolsRow.components.length > 0) primaryRows.push(toolsRow);
-        if (config.enableGameSettingsEditor) {
-          const settingsSelect = new StringSelectMenuBuilder()
-            .setCustomId(SELECT.SETTINGS)
-            .setPlaceholder('Edit game server settings...')
-            .addOptions(
-              GAME_SETTINGS_CATEGORIES.map(c => ({
-                label: c.label,
-                value: c.id,
-                emoji: c.emoji,
-              }))
-            );
-          primaryRows.push(new ActionRowBuilder().addComponents(settingsSelect));
-        }
-        this.panelMessage = await this.channel.send({
-          embeds: [primaryEmbed],
-          components: primaryRows,
-        });
-      }
-
-      // ── Messages 3+: Per-server management embeds ──
-      if (this.multiServerManager) {
-        const servers = this.multiServerManager.getAllServers();
-        for (const serverDef of servers) {
-          try {
-            const instance = this.multiServerManager.getInstance(serverDef.id);
-            const embed = this._buildManagedServerEmbed(serverDef, instance);
-            const components = this._buildManagedServerComponents(serverDef.id, instance?.running || false);
-            const msg = await this.channel.send({ embeds: [embed], components });
-            this._serverMessages.set(serverDef.id, msg);
-          } catch (err) {
-            console.error(`[PANEL CH] Failed to post embed for ${serverDef.name}:`, err.message);
-          }
-        }
-      }
-
-      // Persist all message IDs for next restart
+      // Persist message ID
       this._saveMessageIds();
 
       // First real update
@@ -992,6 +907,9 @@ class PanelChannel {
 
     // ── Select menus ──
     if (interaction.isStringSelectMenu()) {
+      if (interaction.customId === SELECT.VIEW) {
+        return this._handleViewSelect(interaction);
+      }
       if (interaction.customId === SELECT.ENV || interaction.customId === SELECT.ENV2) {
         return this._handleEnvSelect(interaction);
       }
@@ -1607,6 +1525,24 @@ class PanelChannel {
     }
 
     await interaction.editReply({ embeds });
+    return true;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // View selector handler
+  // ═══════════════════════════════════════════════════════════
+
+  async _handleViewSelect(interaction) {
+    const selected = interaction.values[0];
+    // Map 'srv_xxx' → 'xxx' for managed server views
+    this._activeView = selected.startsWith('srv_') ? selected.slice(4) : selected;
+    // Rebuild panel with new view and update the message
+    try {
+      await interaction.deferUpdate();
+      await this._update(true);
+    } catch (err) {
+      console.error('[PANEL CH] View switch error:', err.message);
+    }
     return true;
   }
 
@@ -3269,9 +3205,9 @@ class PanelChannel {
       if (fs.existsSync(fp)) {
         const data = JSON.parse(fs.readFileSync(fp, 'utf8'));
         return {
-          panelBot: data.panelBot || null,
+          panelBot: data.panelUnified || data.panelBot || null,
           panelServer: data.panelServer || null,
-          servers: data.panelServers || {}, // serverId → messageId
+          servers: data.panelServers || {},
         };
       }
     } catch {}
@@ -3283,101 +3219,186 @@ class PanelChannel {
       const fp = path.join(PanelChannel._DATA_DIR, 'message-ids.json');
       let data = {};
       try { if (fs.existsSync(fp)) data = JSON.parse(fs.readFileSync(fp, 'utf8')); } catch {}
-      if (this.botMessage)   data.panelBot = this.botMessage.id;
-      if (this.panelMessage) data.panelServer = this.panelMessage.id;
-      // Per-server message IDs
-      const serverIds = {};
-      for (const [sid, msg] of this._serverMessages) {
-        serverIds[sid] = msg.id;
-      }
-      if (Object.keys(serverIds).length > 0) data.panelServers = serverIds;
+      if (this.panelMessage) data.panelUnified = this.panelMessage.id;
+      // Legacy compat — also save as panelBot for old interaction handlers
+      if (this.panelMessage) data.panelBot = this.panelMessage.id;
       fs.writeFileSync(fp, JSON.stringify(data, null, 2));
     } catch {}
   }
 
   async _update(force = false) {
     try {
-      // ── Update bot embed (always) ──
-      if (this.botMessage) {
-        const botEmbed = this._buildBotEmbed();
-        const botKey = JSON.stringify(botEmbed.data);
-        if (force || botKey !== this._lastBotKey) {
-          this._lastBotKey = botKey;
-          try {
-            await this.botMessage.edit({ embeds: [botEmbed], components: this._buildBotComponents() });
-          } catch (editErr) {
-            if (editErr.code === 10008 || editErr.message?.includes('Unknown Message')) {
-              console.log('[PANEL CH] Bot message deleted, re-creating...');
-              this.botMessage = await this.channel.send({ embeds: [botEmbed], components: this._buildBotComponents() });
-              this._saveMessageIds();
-            } else throw editErr;
-          }
-        }
-      }
+      if (!this.panelMessage) return;
 
-      // ── Update server embed (only if panel API is available) ──
-      if (this.panelMessage && panelApi.available) {
-        const [resources, details, backups, schedules] = await Promise.all([
-          panelApi.getResources().catch(() => null),
-          panelApi.getServerDetails().catch(() => ({})),
-          panelApi.listBackups().catch(() => []),
-          panelApi.listSchedules().catch(() => []),
-        ]);
+      const { embeds, components } = await this._buildUnifiedPanel();
+      const contentKey = JSON.stringify(embeds.map(e => e.data)) + JSON.stringify(components.map(r => r.toJSON()));
 
-        const state = resources?.state || 'offline';
-        this._backupLimit = details?.feature_limits?.backups ?? null;
-
-        const serverEmbed = this._buildServerEmbed(resources, details, backups, schedules);
-        const panelKey = JSON.stringify(serverEmbed.data);
-        if (force || panelKey !== this._lastPanelKey) {
-          this._lastPanelKey = panelKey;
-          this._lastState = state;
-          try {
-            await this.panelMessage.edit({
-              embeds: [serverEmbed],
-              components: this._buildServerComponents(state),
-            });
-          } catch (editErr) {
-            if (editErr.code === 10008 || editErr.message?.includes('Unknown Message')) {
-              console.log('[PANEL CH] Panel message deleted, re-creating...');
-              this.panelMessage = await this.channel.send({
-                embeds: [serverEmbed],
-                components: this._buildServerComponents(state),
-              });
-              this._saveMessageIds();
-            } else throw editErr;
-          }
-        }
-      }
-
-      // ── Update per-server management embeds ──
-      if (this.multiServerManager && this._serverMessages.size > 0) {
-        const servers = this.multiServerManager.getAllServers();
-        for (const serverDef of servers) {
-          const msg = this._serverMessages.get(serverDef.id);
-          if (!msg) continue;
-          const instance = this.multiServerManager.getInstance(serverDef.id);
-          const embed = this._buildManagedServerEmbed(serverDef, instance);
-          const embedKey = JSON.stringify(embed.data);
-          if (force || embedKey !== this._lastServerKeys.get(serverDef.id)) {
-            this._lastServerKeys.set(serverDef.id, embedKey);
-            const components = this._buildManagedServerComponents(serverDef.id, instance?.running || false);
-            try {
-              await msg.edit({ embeds: [embed], components });
-            } catch (editErr) {
-              if (editErr.code === 10008 || editErr.message?.includes('Unknown Message')) {
-                console.log(`[PANEL CH] Server embed for ${serverDef.name} deleted, re-creating...`);
-                const newMsg = await this.channel.send({ embeds: [embed], components });
-                this._serverMessages.set(serverDef.id, newMsg);
-                this._saveMessageIds();
-              }
-            }
-          }
+      if (force || contentKey !== this._lastBotKey) {
+        this._lastBotKey = contentKey;
+        try {
+          await this.panelMessage.edit({ embeds, components });
+        } catch (editErr) {
+          if (editErr.code === 10008 || editErr.message?.includes('Unknown Message')) {
+            console.log('[PANEL CH] Panel message deleted, re-creating...');
+            this.panelMessage = await this.channel.send({ embeds, components });
+            this.botMessage = this.panelMessage;
+            this._saveMessageIds();
+          } else throw editErr;
         }
       }
     } catch (err) {
       console.error('[PANEL CH] Update error:', err.message);
     }
+  }
+
+  /**
+   * Build the unified panel: all embeds + components for the active view.
+   * Returns { embeds: EmbedBuilder[], components: ActionRowBuilder[] }
+   */
+  async _buildUnifiedPanel() {
+    const embeds = [];
+    const view = this._activeView || 'bot';
+
+    // ── Embed 1: Bot overview (always) ──
+    embeds.push(this._buildBotEmbed());
+
+    // ── Embed 2: Primary server ──
+    let resources = null, details = null, backups = null, schedules = null;
+    if (panelApi.available) {
+      try {
+        [resources, details, backups, schedules] = await Promise.all([
+          panelApi.getResources().catch(() => null),
+          panelApi.getServerDetails().catch(() => ({})),
+          panelApi.listBackups().catch(() => []),
+          panelApi.listSchedules().catch(() => []),
+        ]);
+        const state = resources?.state || 'offline';
+        this._lastState = state;
+        this._backupLimit = details?.feature_limits?.backups ?? null;
+        embeds.push(this._buildServerEmbed(resources, details, backups, schedules));
+      } catch {
+        // Panel API failed — skip server embed
+      }
+    } else if (this._hasSftp) {
+      // No panel API but SFTP available — show minimal server info
+      const serverEmbed = new EmbedBuilder()
+        .setTitle('🖥️ Primary Server')
+        .setColor(0x3498db)
+        .setDescription('SFTP connected — use controls below for server tools')
+        .setTimestamp();
+      embeds.push(serverEmbed);
+    }
+
+    // ── Embeds 3+: Managed servers ──
+    const managedServers = this.multiServerManager?.getAllServers() || [];
+    for (const serverDef of managedServers) {
+      const instance = this.multiServerManager.getInstance(serverDef.id);
+      embeds.push(this._buildManagedServerEmbed(serverDef, instance));
+    }
+
+    // ── Build components based on active view ──
+    const components = this._buildViewComponents(view, managedServers);
+
+    return { embeds, components };
+  }
+
+  /**
+   * Build action rows for the currently selected view.
+   * Row 1 is always the view selector. Rows 2-5 depend on the view.
+   */
+  _buildViewComponents(view, managedServers = []) {
+    const rows = [];
+
+    // ── Row 1: View selector ──
+    const viewOptions = [
+      { label: 'Bot Controls', value: 'bot', emoji: '🤖', default: view === 'bot' },
+    ];
+    if (panelApi.available || this._hasSftp) {
+      viewOptions.push({ label: 'Primary Server', value: 'server', emoji: '🖥️', default: view === 'server' });
+    }
+    for (const s of managedServers) {
+      viewOptions.push({
+        label: s.name || s.id,
+        value: `srv_${s.id}`,
+        emoji: '🌐',
+        default: view === s.id,
+      });
+    }
+    // Only show view selector if there's more than one option
+    if (viewOptions.length > 1) {
+      const viewSelect = new StringSelectMenuBuilder()
+        .setCustomId(SELECT.VIEW)
+        .setPlaceholder('Select panel view...')
+        .addOptions(viewOptions);
+      rows.push(new ActionRowBuilder().addComponents(viewSelect));
+    }
+
+    // ── Rows 2-5: View-specific controls ──
+    const maxRemaining = 5 - rows.length;
+    let viewRows = [];
+
+    if (view === 'bot') {
+      viewRows = this._buildBotComponents();
+    } else if (view === 'server') {
+      if (panelApi.available) {
+        viewRows = this._buildServerComponents(this._lastState || 'offline');
+      } else if (this._hasSftp) {
+        viewRows = this._buildSftpOnlyServerComponents();
+      }
+    } else {
+      // Managed server view
+      const serverDef = managedServers.find(s => s.id === view);
+      if (serverDef) {
+        const instance = this.multiServerManager?.getInstance(serverDef.id);
+        viewRows = this._buildManagedServerComponents(serverDef.id, instance?.running || false);
+      }
+    }
+
+    // Trim to fit within Discord's 5 row limit
+    for (let i = 0; i < Math.min(viewRows.length, maxRemaining); i++) {
+      rows.push(viewRows[i]);
+    }
+
+    return rows;
+  }
+
+  /**
+   * Build components for SFTP-only server view (no panel API).
+   */
+  _buildSftpOnlyServerComponents() {
+    const rows = [];
+    const toolsRow = new ActionRowBuilder();
+    if (config.enableWelcomeFile) {
+      toolsRow.addComponents(
+        new ButtonBuilder()
+          .setCustomId(BTN.WELCOME_EDIT)
+          .setLabel('Welcome Message')
+          .setStyle(ButtonStyle.Secondary)
+      );
+    }
+    if (config.enableAutoMessages) {
+      toolsRow.addComponents(
+        new ButtonBuilder()
+          .setCustomId(BTN.BROADCASTS)
+          .setLabel('Broadcasts')
+          .setStyle(ButtonStyle.Secondary)
+      );
+    }
+    if (toolsRow.components.length > 0) rows.push(toolsRow);
+    if (config.enableGameSettingsEditor) {
+      const settingsSelect = new StringSelectMenuBuilder()
+        .setCustomId(SELECT.SETTINGS)
+        .setPlaceholder('Edit game server settings...')
+        .addOptions(
+          GAME_SETTINGS_CATEGORIES.map(c => ({
+            label: c.label,
+            value: c.id,
+            emoji: c.emoji,
+          }))
+        );
+      rows.push(new ActionRowBuilder().addComponents(settingsSelect));
+    }
+    return rows;
   }
 
   // ═══════════════════════════════════════════════════════════

@@ -421,6 +421,12 @@ class PlayerStats {
     return this._idMap;
   }
 
+  /** Look up a SteamID64 by player name (case-insensitive). */
+  getSteamId(name) {
+    if (!this._idMap || !name) return null;
+    return this._idMap.get(name.toLowerCase()) || null;
+  }
+
   getAllPlayers() {
     this._ensureInit();
     // Return cached result when data hasn't changed

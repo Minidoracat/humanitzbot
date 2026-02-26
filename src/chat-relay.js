@@ -36,7 +36,11 @@ class ChatRelay {
     this._rolloverPending = false; // true = waiting for activity thread before creating chat thread
     this._rolloverFallback = null; // safety timer if LogWatcher callback never fires
     this._nukeActive = false;      // true during NUKE_BOT — suppresses thread creation
+    this._healthy = true;           // false if start() failed — module appears active but isn't
   }
+
+  /** Whether the chat relay started successfully. */
+  get healthy() { return this._healthy; }
 
   async start() {
     try {
@@ -44,11 +48,13 @@ class ChatRelay {
       const chatId = this._config.chatChannelId || this._config.adminChannelId;
       if (!chatId) {
         console.log(`[${this._label}] No ADMIN_CHANNEL_ID or CHAT_CHANNEL_ID configured, skipping chat relay.`);
+        this._healthy = false;
         return;
       }
       this.adminChannel = await this.client.channels.fetch(chatId);
       if (!this.adminChannel) {
         console.error(`[${this._label}] Chat channel not found! Check ADMIN_CHANNEL_ID / CHAT_CHANNEL_ID.`);
+        this._healthy = false;
         return;
       }
 
@@ -76,7 +82,8 @@ class ChatRelay {
       this._pollTimer = setInterval(() => this._pollChat(), pollMs);
       console.log(`[${this._label}] Polling fetchchat every ${pollMs / 1000}s`);
     } catch (err) {
-      console.error(`[${this._label}] Failed to start:`, err.message);
+      this._healthy = false;
+      console.error(`[${this._label}] Failed to start:`, err.message, err.stack);
     }
   }
 

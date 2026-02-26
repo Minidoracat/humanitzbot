@@ -1,35 +1,61 @@
 /**
- * Game reference module — seeds static game data into SQLite.
+ * Game reference module — seeds all static game data into SQLite.
  *
- * Uses the curated data from game-data.js (high quality, hand-verified).
+ * Sources:
+ *   - game-data-extract.js (dynamic extraction from game-tables-raw.json)
+ *   - game-data.js (hand-curated data + re-exports from extract)
  *
- * Run once at startup via db.seedGameReference() or manually via
- *   node -e "require('./src/parsers/game-reference').seed(db)"
- *
- * Tables populated:
- *   - game_professions   (from PROFESSION_DETAILS)
- *   - game_afflictions    (from AFFLICTION_MAP)
- *   - game_skills         (from SKILL_EFFECTS)
- *   - game_challenges     (from CHALLENGES + CHALLENGE_DESCRIPTIONS)
- *   - game_loading_tips   (from LOADING_TIPS)
- *   - game_server_setting_defs (from SERVER_SETTING_DESCRIPTIONS)
+ * Tables populated (schema v11):
+ *   - game_items              (718 items)
+ *   - game_professions        (12 professions)
+ *   - game_afflictions        (20 afflictions)
+ *   - game_skills             (35 skills)
+ *   - game_challenges         (32 challenges/stats)
+ *   - game_loading_tips       (26 tips)
+ *   - game_server_setting_defs
+ *   - game_recipes            (154 recipes)
+ *   - game_lore               (12 lore entries)
+ *   - game_quests             (18 quests)
+ *   - game_spawn_locations    (10 spawn locations)
+ *   - game_buildings          (122 buildings)
+ *   - game_loot_pools / game_loot_pool_items (68 loot tables)
+ *   - game_vehicles_ref       (27 vehicles)
+ *   - game_animals            (6 animals)
+ *   - game_crops              (6 crops)
+ *   - game_car_upgrades       (23 upgrades)
+ *   - game_ammo_types         (8 ammo types)
+ *   - game_repair_data        (57 repair entries)
+ *   - game_furniture          (21 furniture)
+ *   - game_traps              (6 traps)
+ *   - game_sprays             (8 sprays)
  */
 
 const {
   AFFLICTION_MAP,
+  AFFLICTION_DETAILS,
   PROFESSION_DETAILS,
   CHALLENGES,
   CHALLENGE_DESCRIPTIONS,
   LOADING_TIPS,
   SKILL_EFFECTS,
+  SKILL_DETAILS,
   SERVER_SETTING_DESCRIPTIONS,
   ITEM_DATABASE,
   CRAFTING_RECIPES,
   LORE_ENTRIES,
   QUEST_DATA,
   SPAWN_LOCATIONS,
-  SKILL_DETAILS,
-  AFFLICTION_DETAILS,
+  BUILDINGS,
+  LOOT_TABLES,
+  VEHICLES,
+  ANIMALS,
+  CROP_DATA,
+  CAR_UPGRADES,
+  AMMO_DAMAGE,
+  REPAIR_RECIPES,
+  FURNITURE_DROPS,
+  TRAPS,
+  SPRAYS,
 } = require('../game-data');
 
 // ─── Seed all game reference data ──────────────────────────────────────────
@@ -41,26 +67,49 @@ const {
  * @param {import('../db/database')} db - Initialised HumanitZDB instance
  */
 function seed(db) {
+  // Core reference tables
+  seedItems(db);
   seedProfessions(db);
   seedAfflictions(db);
   seedSkills(db);
   seedChallenges(db);
   seedLoadingTips(db);
   seedServerSettingDefs(db);
-  seedItems(db);
   seedRecipes(db);
   seedLore(db);
   seedQuests(db);
   seedSpawnLocations(db);
 
+  // New v11 reference tables
+  seedBuildings(db);
+  seedLootPools(db);
+  seedVehicles(db);
+  seedAnimals(db);
+  seedCrops(db);
+  seedCarUpgrades(db);
+  seedAmmoTypes(db);
+  seedRepairData(db);
+  seedFurniture(db);
+  seedTraps(db);
+  seedSprays(db);
+
   db._setMeta('game_ref_seeded', new Date().toISOString());
-  console.log('[GameRef] All game reference data seeded');
+  console.log('[GameRef] All game reference data seeded (22 tables)');
+}
+
+// ─── Items (game_items — 718 entries) ───────────────────────────────────────
+
+function seedItems(db) {
+  // Extract ITEMS already have the exact shape seedGameItems expects
+  const items = Object.values(ITEM_DATABASE);
+  db.seedGameItems(items);
 }
 
 // ─── Professions ────────────────────────────────────────────────────────────
 
 function seedProfessions(db) {
-  const { PERK_MAP } = require('./save-parser');
+  let PERK_MAP;
+  try { PERK_MAP = require('./save-parser').PERK_MAP; } catch { PERK_MAP = {}; }
 
   // Build enum_value → name reverse map
   const enumToName = {};
@@ -90,7 +139,6 @@ function _enumIndex(enumValue) {
 // ─── Afflictions ────────────────────────────────────────────────────────────
 
 function seedAfflictions(db) {
-  // Merge AFFLICTION_MAP (indexed array) with AFFLICTION_DETAILS (descriptions)
   const detailsByName = {};
   for (const [, detail] of Object.entries(AFFLICTION_DETAILS)) {
     detailsByName[detail.name] = detail;
@@ -108,7 +156,6 @@ function seedAfflictions(db) {
 // ─── Skills ─────────────────────────────────────────────────────────────────
 
 function seedSkills(db) {
-  // Merge SKILL_EFFECTS (id→effect) with SKILL_DETAILS (full data from DT_Skills)
   const detailsByName = {};
   for (const [, detail] of Object.entries(SKILL_DETAILS)) {
     detailsByName[detail.name.toUpperCase()] = detail;
@@ -146,10 +193,8 @@ function _inferSkillCategory(skillId) {
 // ─── Challenges ─────────────────────────────────────────────────────────────
 
 function seedChallenges(db) {
-  // Merge CHALLENGES (from DT_StatConfig) with CHALLENGE_DESCRIPTIONS (from save field mapping)
   const merged = [];
 
-  // From DT_StatConfig
   for (const ch of CHALLENGES) {
     merged.push({
       id: ch.id,
@@ -160,7 +205,6 @@ function seedChallenges(db) {
     });
   }
 
-  // From save field mapping (these have save_field keys)
   for (const [field, info] of Object.entries(CHALLENGE_DESCRIPTIONS)) {
     const existing = merged.find(m => m.name === info.name);
     if (existing) {
@@ -201,17 +245,15 @@ function seedLoadingTips(db) {
 // ─── Server setting definitions ─────────────────────────────────────────────
 
 function seedServerSettingDefs(db) {
-  const stmt = db.db.prepare(
-    'INSERT OR REPLACE INTO game_server_setting_defs (key, label, description, type, default_val, options) VALUES (?, ?, ?, ?, ?, ?)'
-  );
-
-  const tx = db.db.transaction(() => {
-    for (const [key, label] of Object.entries(SERVER_SETTING_DESCRIPTIONS)) {
-      const type = _inferSettingType(key);
-      stmt.run(key, label, '', type, '', '[]');
-    }
-  });
-  tx();
+  const settings = Object.entries(SERVER_SETTING_DESCRIPTIONS).map(([key, label]) => ({
+    key,
+    label,
+    description: '',
+    type: _inferSettingType(key),
+    defaultVal: '',
+    options: [],
+  }));
+  db.seedGameServerSettingDefs(settings);
 }
 
 function _inferSettingType(key) {
@@ -222,109 +264,111 @@ function _inferSettingType(key) {
   return 'string';
 }
 
-// ─── Items (game_items — 718 entries) ───────────────────────────────────────
-
-function seedItems(db) {
-  const items = Object.entries(ITEM_DATABASE).map(([id, item]) => ({
-    id,
-    name: item.name,
-    description: item.description || '',
-    category: item.type || '',
-    icon: '',
-    blueprint: '',
-    stackSize: item.stack || 1,
-    extra: {
-      weight: item.weight,
-      tradeValue: item.tradeValue,
-      playerValue: item.playerValue,
-      durabilityLoss: item.durabilityLoss,
-      doesDecay: item.doesDecay,
-      armorValue: item.armorValue,
-      warmthValue: item.warmthValue,
-      isSkillBook: item.isSkillBook,
-      spawnChance: item.spawnChance,
-    },
-  }));
-  db.seedGameItems(items);
-}
-
 // ─── Recipes (game_recipes — 154 entries) ───────────────────────────────────
 
 function seedRecipes(db) {
-  const stmt = db.db.prepare(
-    'INSERT OR REPLACE INTO game_recipes (id, name, type, station, ingredients, result, extra) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  );
-
-  const tx = db.db.transaction(() => {
-    for (const [id, recipe] of Object.entries(CRAFTING_RECIPES)) {
-      stmt.run(
-        id,
-        recipe.name,
-        'crafting',
-        recipe.station || '',
-        JSON.stringify(recipe.ingredients || []),
-        recipe.result || '',
-        JSON.stringify({ resultAmount: recipe.resultAmount || 1 })
-      );
-    }
-  });
-  tx();
+  const recipes = Object.values(CRAFTING_RECIPES);
+  db.seedGameRecipes(recipes);
 }
 
 // ─── Lore (game_lore — 12 entries) ──────────────────────────────────────────
 
 function seedLore(db) {
-  const stmt = db.db.prepare(
-    'INSERT OR REPLACE INTO game_lore (id, title, text, location) VALUES (?, ?, ?, ?)'
-  );
-
-  const tx = db.db.transaction(() => {
-    for (const [id, lore] of Object.entries(LORE_ENTRIES)) {
-      const text = [lore.byline, lore.author, lore.body].filter(Boolean).join('\n\n');
-      stmt.run(id, lore.title || '', text, lore.type || '');
-    }
-  });
-  tx();
+  const lore = Object.values(LORE_ENTRIES);
+  db.seedGameLore(lore);
 }
 
 // ─── Quests (game_quests — 18 entries) ──────────────────────────────────────
 
 function seedQuests(db) {
-  const stmt = db.db.prepare(
-    'INSERT OR REPLACE INTO game_quests (id, name, description, objectives, rewards, extra) VALUES (?, ?, ?, ?, ?, ?)'
-  );
-
-  const tx = db.db.transaction(() => {
-    for (const [id, quest] of Object.entries(QUEST_DATA)) {
-      stmt.run(
-        id,
-        quest.name,
-        '',
-        '[]',
-        JSON.stringify([
-          quest.xp ? { type: 'xp', amount: quest.xp } : null,
-          quest.skillPoint ? { type: 'skillPoint', amount: quest.skillPoint } : null,
-        ].filter(Boolean)),
-        JSON.stringify({ next: quest.next || '', dependsOn: quest.dependsOn || '' })
-      );
-    }
-  });
-  tx();
+  const quests = Object.values(QUEST_DATA);
+  db.seedGameQuests(quests);
 }
 
 // ─── Spawn locations (game_spawn_locations — 10 entries) ────────────────────
 
 function seedSpawnLocations(db) {
-  const stmt = db.db.prepare(
-    'INSERT OR REPLACE INTO game_spawn_locations (id, name, description, type, image) VALUES (?, ?, ?, ?, ?)'
-  );
+  const spawns = Object.values(SPAWN_LOCATIONS);
+  db.seedGameSpawnLocations(spawns);
+}
 
-  const tx = db.db.transaction(() => {
-    for (const [id, spawn] of Object.entries(SPAWN_LOCATIONS)) {
-      stmt.run(id, spawn.name, spawn.description || '', '', '');
-    }
-  });
-  tx();
+// ─── Buildings (game_buildings — 122 entries) ───────────────────────────────
+
+function seedBuildings(db) {
+  const buildings = Object.values(BUILDINGS);
+  db.seedGameBuildings(buildings);
+}
+
+// ─── Loot pools (game_loot_pools + game_loot_pool_items — 68 tables) ───────
+
+function seedLootPools(db) {
+  db.seedGameLootPools(LOOT_TABLES);
+}
+
+// ─── Vehicles (game_vehicles_ref — 27 entries) ─────────────────────────────
+
+function seedVehicles(db) {
+  const vehicles = Object.entries(VEHICLES).map(([id, v]) => ({
+    id,
+    name: v.name || id,
+  }));
+  db.seedGameVehiclesRef(vehicles);
+}
+
+// ─── Animals (game_animals — 6 entries) ─────────────────────────────────────
+
+function seedAnimals(db) {
+  const animals = Object.values(ANIMALS);
+  db.seedGameAnimals(animals);
+}
+
+// ─── Crops (game_crops — 6 entries) ─────────────────────────────────────────
+
+function seedCrops(db) {
+  const crops = Object.values(CROP_DATA);
+  db.seedGameCrops(crops);
+}
+
+// ─── Car upgrades (game_car_upgrades — 23 entries) ──────────────────────────
+
+function seedCarUpgrades(db) {
+  const upgrades = Object.values(CAR_UPGRADES);
+  db.seedGameCarUpgrades(upgrades);
+}
+
+// ─── Ammo types (game_ammo_types — 8 entries) ───────────────────────────────
+
+function seedAmmoTypes(db) {
+  const ammo = Object.values(AMMO_DAMAGE);
+  db.seedGameAmmoTypes(ammo);
+}
+
+// ─── Repair data (game_repair_data — 57 entries) ────────────────────────────
+
+function seedRepairData(db) {
+  const repairs = Object.values(REPAIR_RECIPES);
+  db.seedGameRepairData(repairs);
+}
+
+// ─── Furniture (game_furniture — 21 entries) ─────────────────────────────────
+
+function seedFurniture(db) {
+  const furniture = Object.values(FURNITURE_DROPS);
+  db.seedGameFurniture(furniture);
+}
+
+// ─── Traps (game_traps — 6 entries) ─────────────────────────────────────────
+
+function seedTraps(db) {
+  const traps = Object.values(TRAPS);
+  db.seedGameTraps(traps);
+}
+
+// ─── Sprays (game_sprays — 8 entries) ───────────────────────────────────────
+
+function seedSprays(db) {
+  const sprays = Object.values(SPRAYS);
+  db.seedGameSprays(sprays);
 }
 
 module.exports = { seed };

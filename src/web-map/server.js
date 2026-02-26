@@ -17,13 +17,46 @@ const fs = require('fs');
 const config = require('../config');
 const { parseSave, PERK_MAP } = require('../parsers/save-parser');
 const { AFFLICTION_MAP } = require('../game-data');
-const { cleanActorName, cleanItemName, cleanItemArray, isHexGuid } = require('../ue4-names');
+const { cleanName: cleanActorName, cleanItemName, cleanItemArray, isHexGuid } = require('../ue4-names');
 const playerStats = require('../player-stats');
 const playtime = require('../playtime-tracker');
 const rcon = require('../rcon');
 const { setupAuth, requireTier } = require('./auth');
 const serverResources = require('../server-resources');
 const { formatBytes, formatUptime } = require('../server-resources');
+
+// ── Rate limiter (simple in-memory, per-IP) ──
+const _rateBuckets = new Map();
+function rateLimit(windowMs, maxReqs) {
+  return (req, res, next) => {
+    const key = req.ip + ':' + req.path;
+    const now = Date.now();
+    let bucket = _rateBuckets.get(key);
+    if (!bucket || now - bucket.start > windowMs) {
+      bucket = { start: now, count: 0 };
+      _rateBuckets.set(key, bucket);
+    }
+    bucket.count++;
+    if (bucket.count > maxReqs) {
+      return res.status(429).json({ error: 'Too many requests, try again later' });
+    }
+    next();
+  };
+}
+// Prune stale rate buckets every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of _rateBuckets) {
+    if (now - bucket.start > 300000) _rateBuckets.delete(key);
+  }
+}, 300000).unref();
+
+/** Sanitize error messages for client responses — strip file paths and stack traces */
+function safeError(err) {
+  const msg = (err && err.message) || 'Internal server error';
+  // Strip absolute paths
+  return msg.replace(/\/[\w/.-]+/g, '[path]').substring(0, 200);
+}
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const SERVERS_DIR = path.join(DATA_DIR, 'servers');
@@ -48,6 +81,16 @@ class WebMapServer {
     this._lastParse = 0;
     this._idMap = {};
 
+    // Security headers
+    this._app.use((_req, res, next) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('X-XSS-Protection', '1; mode=block');
+      res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+      res.removeHeader('X-Powered-By');
+      next();
+    });
+
     // Set up Express
     this._setupRoutes();
   }
@@ -68,6 +111,10 @@ class WebMapServer {
     // These map world coordinates to the [0, 4096] pixel space of the map image.
     // xMin = world X at the BOTTOM of the map, xMax = world X at the TOP
     // yMin = world Y at the LEFT of the map, yMax = world Y at the RIGHT
+    // NOTE: These are empirically calibrated to the map tile image, NOT raw
+    // world bounds. Theoretical world range is ~(-5000→380000, -410000→5000)
+    // but the map image covers a different extent. Changing these without
+    // re-calibrating the map image will shift all markers.
     return {
       xMin: 3076,      // south edge (bottom of map)
       xMax: 398076,    // north edge (top of map)
@@ -393,23 +440,7 @@ class WebMapServer {
         res.json(points);
       } catch (err) {
         console.error('[WEB MAP] Calibration data error:', err.message);
-        res.status(500).json({ error: err.message });
-      }
-    });
-
-    // ── API: Save calibration bounds ──
-    app.post('/api/calibration', requireTier('admin'), express.json(), (req, res) => {
-      try {
-        const { xMin, xMax, yMin, yMax } = req.body;
-        if ([xMin, xMax, yMin, yMax].some(v => typeof v !== 'number')) {
-          return res.status(400).json({ error: 'All bounds must be numbers' });
-        }
-        const calibPath = path.join(DATA_DIR, 'map-calibration.json');
-        fs.writeFileSync(calibPath, JSON.stringify({ xMin, xMax, yMin, yMax }, null, 2));
-        console.log(`[WEB MAP] Saved calibration: X=[${xMin}..${xMax}] Y=[${yMin}..${yMax}]`);
-        res.json({ ok: true });
-      } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: safeError(err) });
       }
     });
 
@@ -711,38 +742,42 @@ class WebMapServer {
     });
 
     // ── API: Admin action — kick ──
-    app.post('/api/admin/kick', requireTier('mod'), async (req, res) => {
+    app.post('/api/admin/kick', requireTier('mod'), rateLimit(5000, 5), async (req, res) => {
       const { steamId } = req.body;
-      if (!steamId) return res.status(400).json({ error: 'Missing steamId' });
+      if (!steamId || typeof steamId !== 'string') return res.status(400).json({ error: 'Missing steamId' });
+      // Validate steam ID format
+      if (!/^\d{17}$/.test(steamId)) return res.status(400).json({ error: 'Invalid steamId format' });
       try {
         const result = await rcon.send(`kick ${steamId}`);
         res.json({ ok: true, result });
       } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: safeError(err) });
       }
     });
 
     // ── API: Admin action — ban ──
-    app.post('/api/admin/ban', requireTier('admin'), async (req, res) => {
+    app.post('/api/admin/ban', requireTier('admin'), rateLimit(5000, 3), async (req, res) => {
       const { steamId } = req.body;
-      if (!steamId) return res.status(400).json({ error: 'Missing steamId' });
+      if (!steamId || typeof steamId !== 'string') return res.status(400).json({ error: 'Missing steamId' });
+      if (!/^\d{17}$/.test(steamId)) return res.status(400).json({ error: 'Invalid steamId format' });
       try {
         const result = await rcon.send(`ban ${steamId}`);
         res.json({ ok: true, result });
       } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: safeError(err) });
       }
     });
 
     // ── API: RCON send message ──
-    app.post('/api/admin/message', requireTier('mod'), async (req, res) => {
+    app.post('/api/admin/message', requireTier('mod'), rateLimit(3000, 5), async (req, res) => {
       const { message } = req.body;
-      if (!message) return res.status(400).json({ error: 'Missing message' });
+      if (!message || typeof message !== 'string') return res.status(400).json({ error: 'Missing message' });
+      if (message.length > 500) return res.status(400).json({ error: 'Message too long' });
       try {
         const result = await rcon.send(`say ${message}`);
         res.json({ ok: true, result });
       } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: safeError(err) });
       }
     });
 
@@ -753,7 +788,7 @@ class WebMapServer {
         const list = await getPlayerList();
         res.json({ players: list });
       } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: safeError(err) });
       }
     });
 
@@ -765,7 +800,7 @@ class WebMapServer {
      * Returns server status, connect info, and multi-server data for the
      * public landing page. No authentication needed.
      */
-    app.get('/api/landing', async (req, res) => {
+    app.get('/api/landing', rateLimit(30000, 20), async (req, res) => {
       const result = {
         primary: {
           name: config.serverName || 'HumanitZ Server',
@@ -1025,7 +1060,7 @@ class WebMapServer {
 
         res.json({ events: resolved });
       } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: safeError(err) });
       }
     });
 
@@ -1037,7 +1072,7 @@ class WebMapServer {
         const clans = this._db.getAllClans?.() || [];
         res.json({ clans });
       } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: safeError(err) });
       }
     });
 
@@ -1102,7 +1137,7 @@ class WebMapServer {
 
         res.json(result);
       } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: safeError(err) });
       }
     });
 
@@ -1163,7 +1198,7 @@ class WebMapServer {
           },
         });
       } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: safeError(err) });
       }
     });
 
@@ -1178,7 +1213,7 @@ class WebMapServer {
         const movements = this._db.getItemMovements(id);
         res.json({ instance, movements });
       } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: safeError(err) });
       }
     });
 
@@ -1194,7 +1229,7 @@ class WebMapServer {
         const movements = this._db.getItemMovementsByGroup(id);
         res.json({ group, movements });
       } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: safeError(err) });
       }
     });
 
@@ -1218,7 +1253,106 @@ class WebMapServer {
 
         res.json({ movements });
       } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: safeError(err) });
+      }
+    });
+
+    // GET /api/panel/items/lookup — Look up item instance/group by name + fingerprint data
+    // Used by item popups across the entire UI to bridge save data → item tracking DB
+    app.get('/api/panel/items/lookup', requireTier('survivor'), (req, res) => {
+      if (!this._db) return res.json({ match: null, movements: [] });
+      try {
+        const { fingerprint, item: itemName, steamId } = req.query;
+        if (!fingerprint && !itemName) return res.status(400).json({ error: 'Need fingerprint or item name' });
+
+        let match = null;
+        let movements = [];
+        let matchType = null; // 'instance' or 'group'
+
+        // Try exact fingerprint match first
+        if (fingerprint) {
+          // Check instances
+          const instances = this._db.findItemsByFingerprint(fingerprint);
+          if (instances.length > 0) {
+            // If steamId provided, prefer the instance at that player's location
+            if (steamId) {
+              match = instances.find(i => i.location_type === 'player' && i.location_id === steamId) || instances[0];
+            } else {
+              match = instances[0];
+            }
+            matchType = 'instance';
+            try { match.attachments = JSON.parse(match.attachments); } catch { match.attachments = []; }
+            movements = this._db.getItemMovements(match.id);
+          }
+
+          // Check groups if no instance match
+          if (!match) {
+            const groups = this._db.findActiveGroupsByFingerprint?.(fingerprint) || [];
+            if (groups.length > 0) {
+              if (steamId) {
+                match = groups.find(g => g.location_type === 'player' && g.location_id === steamId) || groups[0];
+              } else {
+                match = groups[0];
+              }
+              matchType = 'group';
+              try { match.attachments = JSON.parse(match.attachments); } catch { match.attachments = []; }
+              movements = this._db.getItemMovementsByGroup(match.id);
+            }
+          }
+        }
+
+        // Fall back to item name search if no fingerprint match
+        if (!match && itemName) {
+          const instances = this._db.getItemInstancesByItem(itemName);
+          if (instances.length > 0) {
+            if (steamId) {
+              match = instances.find(i => i.location_type === 'player' && i.location_id === steamId) || instances[0];
+            } else {
+              match = instances[0];
+            }
+            matchType = 'instance';
+            try { match.attachments = JSON.parse(match.attachments); } catch { match.attachments = []; }
+            movements = this._db.getItemMovements(match.id);
+          }
+        }
+
+        // Resolve player names in movements
+        const nameCache = {};
+        const resolveName = (sid) => {
+          if (!sid) return null;
+          if (nameCache[sid]) return nameCache[sid];
+          const name = this._idMap[sid] || sid;
+          nameCache[sid] = name;
+          return name;
+        };
+
+        // Enrich movement data with resolved names
+        const enrichedMovements = movements.map(m => ({
+          ...m,
+          from_name: m.from_type === 'player' ? resolveName(m.from_id) : null,
+          to_name: m.to_type === 'player' ? resolveName(m.to_id) : null,
+          attributed_name: m.attributed_name || resolveName(m.attributed_steam_id),
+        }));
+
+        // Build ownership chain — unique players who have held this item
+        const ownershipChain = [];
+        const seenOwners = new Set();
+        for (const m of movements) {
+          if (m.to_type === 'player' && m.to_id && !seenOwners.has(m.to_id)) {
+            seenOwners.add(m.to_id);
+            ownershipChain.push({ steamId: m.to_id, name: resolveName(m.to_id), at: m.created_at });
+          }
+        }
+
+        res.json({
+          match,
+          matchType,
+          movements: enrichedMovements,
+          ownershipChain,
+          totalMovements: movements.length,
+        });
+      } catch (err) {
+        res.status(500).json({ error: safeError(err) });
       }
     });
 
@@ -1239,6 +1373,13 @@ class WebMapServer {
         'snapshots', 'game_items', 'game_professions', 'game_afflictions',
         'game_skills', 'game_challenges', 'game_recipes',
         'item_instances', 'item_movements', 'item_groups', 'world_drops',
+        // v11 reference tables
+        'game_buildings', 'game_loot_pools', 'game_loot_pool_items',
+        'game_vehicles_ref', 'game_animals', 'game_crops',
+        'game_car_upgrades', 'game_ammo_types', 'game_repair_data',
+        'game_furniture', 'game_traps', 'game_sprays',
+        'game_quests', 'game_lore', 'game_loading_tips',
+        'game_spawn_locations', 'game_server_setting_defs',
       ]);
 
       if (!ALLOWED.has(table)) {
@@ -1290,7 +1431,7 @@ class WebMapServer {
 
         res.json({ table, columns, rows, total: rows.length });
       } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: safeError(err) });
       }
     });
 
@@ -1304,18 +1445,20 @@ class WebMapServer {
         const messages = this._db.getRecentChat(limit);
         res.json({ messages: messages || [] });
       } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: safeError(err) });
       }
     });
 
     // ── Panel: RCON command execution ──
-    app.post('/api/panel/rcon', requireTier('admin'), async (req, res) => {
+    app.post('/api/panel/rcon', requireTier('admin'), rateLimit(10000, 10), async (req, res) => {
       const { command } = req.body;
-      if (!command) return res.status(400).json({ error: 'Missing command' });
+      if (!command || typeof command !== 'string') return res.status(400).json({ error: 'Missing command' });
+      if (command.length > 500) return res.status(400).json({ error: 'Command too long' });
 
       // Safety: block dangerous commands
       const cmd = command.trim().toLowerCase();
-      if (cmd.startsWith('exit') || cmd.startsWith('quit') || cmd.startsWith('shutdown')) {
+      const blocked = ['exit', 'quit', 'shutdown', 'destroyall', 'destroy_all', 'wipe', 'reset'];
+      if (blocked.some(b => cmd.startsWith(b))) {
         return res.status(403).json({ error: 'Command blocked for safety' });
       }
 
@@ -1323,13 +1466,13 @@ class WebMapServer {
         const response = await rcon.send(command);
         res.json({ ok: true, response });
       } catch (err) {
-        res.status(500).json({ ok: false, error: err.message });
+        res.status(500).json({ ok: false, error: safeError(err) });
       }
     });
 
     // ── Panel: Server power controls ──
     // Supports Docker CLI (VPS), Pterodactyl API, or SSH-based controls
-    app.post('/api/panel/power', requireTier('admin'), async (req, res) => {
+    app.post('/api/panel/power', requireTier('admin'), rateLimit(30000, 3), async (req, res) => {
       const { action } = req.body;
       const valid = ['start', 'stop', 'restart', 'backup'];
       if (!valid.includes(action)) return res.status(400).json({ error: `Invalid action: ${action}` });
@@ -1345,28 +1488,27 @@ class WebMapServer {
           await panelApi.sendPowerAction(action);
           return res.json({ ok: true, message: `Server ${action} sent via panel API` });
         } catch (err) {
-          return res.status(500).json({ ok: false, error: err.message });
+          return res.status(500).json({ ok: false, error: safeError(err) });
         }
       }
 
       // Fall back to Docker CLI (VPS setup)
-      const { exec } = require('child_process');
-      const dockerContainer = process.env.DOCKER_CONTAINER || 'hzserver';
+      const { execFile } = require('child_process');
+      // Sanitize container name — alphanumeric, hyphens, underscores only
+      const dockerContainer = (process.env.DOCKER_CONTAINER || 'hzserver').replace(/[^a-zA-Z0-9_.-]/g, '');
 
       if (action === 'backup') {
-        // Create a backup by copying the save file
-        const backupCmd = `docker cp ${dockerContainer}:/home/steam/hzserver/serverfiles/HumanitZServer/Saved /root/humanitzbot/data/backups/$(date +%Y%m%d_%H%M%S) 2>&1 || echo 'Backup created'`;
-        exec(backupCmd, { timeout: 30000 }, (err, stdout) => {
-          if (err) return res.status(500).json({ ok: false, error: err.message });
+        const backupDir = path.join(DATA_DIR, 'backups', new Date().toISOString().replace(/[:.]/g, '-'));
+        execFile('docker', ['cp', `${dockerContainer}:/home/steam/hzserver/serverfiles/HumanitZServer/Saved`, backupDir], { timeout: 30000 }, (err) => {
+          if (err) return res.status(500).json({ ok: false, error: 'Backup failed' });
           res.json({ ok: true, message: 'Backup created' });
         });
         return;
       }
 
-      const dockerCmd = `docker ${action} ${dockerContainer} 2>&1`;
-      exec(dockerCmd, { timeout: 30000 }, (err, stdout, stderr) => {
+      execFile('docker', [action, dockerContainer], { timeout: 30000 }, (err, _stdout, stderr) => {
         if (err) {
-          return res.status(500).json({ ok: false, error: stderr || err.message });
+          return res.status(500).json({ ok: false, error: 'Docker command failed' });
         }
         res.json({ ok: true, message: `Server ${action} executed` });
       });
@@ -1416,7 +1558,7 @@ class WebMapServer {
           fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
           res.json({ settings: filterSettings(settings) });
         } catch (err) {
-          res.status(500).json({ error: `Failed to read settings: ${err.message}` });
+          res.status(500).json({ error: `Failed to read settings: ${safeError(err)}` });
         }
       } else {
         res.status(404).json({ error: 'No settings available (SFTP not configured)' });
@@ -1424,7 +1566,7 @@ class WebMapServer {
     });
 
     // ── Panel: Game server settings (write) ──
-    app.post('/api/panel/settings', requireTier('admin'), async (req, res) => {
+    app.post('/api/panel/settings', requireTier('admin'), rateLimit(30000, 5), async (req, res) => {
       const { settings } = req.body;
       if (!settings || typeof settings !== 'object') {
         return res.status(400).json({ error: 'Missing settings object' });
@@ -1473,12 +1615,12 @@ class WebMapServer {
 
         res.json({ ok: true, updated: [...updated] });
       } catch (err) {
-        res.status(500).json({ error: `Failed to save settings: ${err.message}` });
+        res.status(500).json({ error: `Failed to save settings: ${safeError(err)}` });
       }
     });
 
     // ── API: Server scheduler status ──
-    app.get('/api/panel/scheduler', (req, res) => {
+    app.get('/api/panel/scheduler', requireTier('survivor'), (req, res) => {
       // This will be populated by the bot when it passes the scheduler instance
       if (this._scheduler) {
         res.json(this._scheduler.getStatus());
@@ -1486,10 +1628,166 @@ class WebMapServer {
         res.json({ active: false });
       }
     });
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Timeline API — time-scroll playback, entity history, death causes
+    // ══════════════════════════════════════════════════════════════════
+
+    /** GET /api/timeline/bounds — earliest/latest snapshot timestamps + count */
+    app.get('/api/timeline/bounds', requireTier('survivor'), (req, res) => {
+      if (!this._db) return res.json({ earliest: null, latest: null, count: 0 });
+      try {
+        const bounds = this._db.getTimelineBounds();
+        res.json(bounds || { earliest: null, latest: null, count: 0 });
+      } catch (err) {
+        res.status(500).json({ error: safeError(err) });
+      }
+    });
+
+    /** GET /api/timeline/snapshots?from=&to=&limit= — snapshot list (metadata only) */
+    app.get('/api/timeline/snapshots', requireTier('survivor'), (req, res) => {
+      if (!this._db) return res.json([]);
+      try {
+        const { from, to, limit } = req.query;
+        let snapshots;
+        if (from && to) {
+          snapshots = this._db.getTimelineSnapshotRange(from, to);
+        } else {
+          snapshots = this._db.getTimelineSnapshots(parseInt(limit, 10) || 50);
+        }
+        res.json(snapshots);
+      } catch (err) {
+        res.status(500).json({ error: safeError(err) });
+      }
+    });
+
+    /** GET /api/timeline/snapshot/:id — full snapshot data (all entities with map coords) */
+    app.get('/api/timeline/snapshot/:id', requireTier('survivor'), (req, res) => {
+      if (!this._db) return res.status(404).json({ error: 'Database not available' });
+      try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id)) return res.status(400).json({ error: 'Invalid snapshot ID' });
+
+        const full = this._db.getTimelineSnapshotFull(id);
+        if (!full) return res.status(404).json({ error: 'Snapshot not found' });
+
+        // Convert world coordinates to leaflet coordinates for all entities
+        const convert = (item) => {
+          if (item.pos_x != null && item.pos_y != null && !(item.pos_x === 0 && item.pos_y === 0)) {
+            const [lat, lng] = this._worldToLeaflet(item.pos_x, item.pos_y);
+            return { ...item, lat, lng };
+          }
+          return { ...item, lat: null, lng: null };
+        };
+
+        full.players = (full.players || []).map(convert);
+        full.ai = (full.ai || []).map(convert);
+        full.vehicles = (full.vehicles || []).map(convert);
+        full.structures = (full.structures || []).map(convert);
+        full.companions = (full.companions || []).map(convert);
+        full.backpacks = (full.backpacks || []).map(convert);
+
+        // Build name map for owner resolution
+        const nameMap = {};
+        try {
+          const rows = this._db.db.prepare('SELECT steam_id, name FROM players').all();
+          for (const r of rows) nameMap[r.steam_id] = r.name;
+        } catch { /* */ }
+        full.nameMap = nameMap;
+
+        res.json(full);
+      } catch (err) {
+        res.status(500).json({ error: safeError(err) });
+      }
+    });
+
+    /** GET /api/timeline/player/:steamId/trail?from=&to= — player position history */
+    app.get('/api/timeline/player/:steamId/trail', requireTier('survivor'), (req, res) => {
+      if (!this._db) return res.json([]);
+      try {
+        const { steamId } = req.params;
+        const { from, to } = req.query;
+        if (!from || !to) return res.status(400).json({ error: 'from and to are required' });
+
+        const positions = this._db.getPlayerPositionHistory(steamId, from, to);
+        // Convert to map coordinates
+        const trail = positions.map(p => {
+          if (p.pos_x != null && p.pos_y != null && !(p.pos_x === 0 && p.pos_y === 0)) {
+            const [lat, lng] = this._worldToLeaflet(p.pos_x, p.pos_y);
+            return { lat, lng, health: p.health, online: p.online, time: p.created_at, gameDay: p.game_day };
+          }
+          return null;
+        }).filter(Boolean);
+
+        res.json(trail);
+      } catch (err) {
+        res.status(500).json({ error: safeError(err) });
+      }
+    });
+
+    /** GET /api/timeline/ai/population?from=&to= — AI population over time */
+    app.get('/api/timeline/ai/population', requireTier('survivor'), (req, res) => {
+      if (!this._db) return res.json([]);
+      try {
+        const { from, to } = req.query;
+        if (!from || !to) return res.status(400).json({ error: 'from and to are required' });
+        const data = this._db.getAIPopulationHistory(from, to);
+        res.json(data);
+      } catch (err) {
+        res.status(500).json({ error: safeError(err) });
+      }
+    });
+
+    /** GET /api/timeline/deaths?limit=&player= — recent death causes */
+    app.get('/api/timeline/deaths', requireTier('survivor'), (req, res) => {
+      if (!this._db) return res.json([]);
+      try {
+        const { limit, player } = req.query;
+        let deaths;
+        if (player) {
+          deaths = this._db.getDeathCausesByPlayer(player, parseInt(limit, 10) || 50);
+        } else {
+          deaths = this._db.getDeathCauses(parseInt(limit, 10) || 50);
+        }
+        // Add map coordinates
+        deaths = deaths.map(d => {
+          if (d.pos_x != null && d.pos_y != null && !(d.pos_x === 0 && d.pos_y === 0)) {
+            const [lat, lng] = this._worldToLeaflet(d.pos_x, d.pos_y);
+            return { ...d, lat, lng };
+          }
+          return { ...d, lat: null, lng: null };
+        });
+        res.json(deaths);
+      } catch (err) {
+        res.status(500).json({ error: safeError(err) });
+      }
+    });
+
+    /** GET /api/timeline/deaths/stats — death cause breakdown */
+    app.get('/api/timeline/deaths/stats', requireTier('survivor'), (req, res) => {
+      if (!this._db) return res.json([]);
+      try {
+        const stats = this._db.getDeathCauseStats();
+        res.json(stats);
+      } catch (err) {
+        res.status(500).json({ error: safeError(err) });
+      }
+    });
   }
 
   /** Start the Express server. */
+  _addErrorHandler() {
+    // Global error handler — catch unhandled errors in routes
+    this._app.use((err, _req, res, _next) => {
+      console.error('[WEB MAP] Unhandled route error:', err.message);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+  }
+
   start() {
+    this._addErrorHandler();
     return new Promise((resolve, reject) => {
       this._server = this._app.listen(this._port, () => {
         console.log(`[WEB MAP] Interactive map running at http://localhost:${this._port}`);
@@ -1512,9 +1810,12 @@ class WebMapServer {
   }
 }
 
+const { generateFingerprint } = require('../db/item-fingerprint');
+
 /**
  * Clean inventory slot items — applies cleanItemName to each item object.
  * Filters out empty/None items, cleans names, preserves durability/ammo.
+ * Now also generates item fingerprints for tracking system integration.
  * @param {Array} slots - Array of { item, amount, durability, ammo } or strings
  * @returns {Array}
  */
@@ -1527,7 +1828,13 @@ function _cleanInventorySlots(slots) {
       return cleanItemName(slot);
     }
     if (typeof slot === 'object' && slot.item) {
-      return { ...slot, item: cleanItemName(slot.item) };
+      const cleaned = { ...slot, item: cleanItemName(slot.item) };
+      // Generate fingerprint for item tracking integration
+      // Uses the RAW item name for fingerprint (before cleaning) since
+      // that's what the item tracker uses
+      const fp = generateFingerprint(slot);
+      if (fp) cleaned.fingerprint = fp;
+      return cleaned;
     }
     return slot;
   });

@@ -507,7 +507,7 @@ describe('HumanitZDB', () => {
 
     it('sets schema version', () => {
       const version = db._getMeta('schema_version');
-      assert.equal(version, '9');
+      assert.equal(version, '11');
     });
 
     it('creates player_aliases table', () => {
@@ -991,7 +991,7 @@ describe('game-reference seed', () => {
 
   it('populates game_loading_tips', () => {
     const rows = db.db.prepare('SELECT * FROM game_loading_tips').all();
-    assert.ok(rows.length >= 50, `Expected >= 50 tips, got ${rows.length}`);
+    assert.ok(rows.length >= 20, `Expected >= 20 tips, got ${rows.length}`);
   });
 
   it('populates game_server_setting_defs', () => {

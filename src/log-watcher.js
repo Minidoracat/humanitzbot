@@ -83,6 +83,50 @@ class LogWatcher {
     // Used by ActivityLog to attribute container item changes to players.
     // Map<containerTypeNorm, { player, steamId, ownerSteamId, timestamp }>
     this._recentContainerAccess = new Map();
+
+    // Death cause tracker: tracks ALL damage sources (NPC, animal, zombie, player)
+    // for death attribution. Same pattern as _pvpDamageTracker but covers everything.
+    // Map<victimNameLower, { source, sourceRaw, timestamp, totalDamage }>
+    this._deathCauseTracker = new Map();
+  }
+
+  // ── Damage source classification ───────────────────────────
+
+  /**
+   * Classify a raw BP_ damage source into a human-readable name and category.
+   * Used for death attribution and damage stats.
+   * @param {string} source - Raw damage source (e.g. 'BP_PawnZombie_Runner_C_123')
+   * @returns {{ name: string, type: string }} classified result
+   */
+  _classifyDamageSource(source) {
+    if (/Dogzombie/i.test(source)) return { name: 'Dog Zombie', type: 'zombie' };
+    if (/ZombieBear/i.test(source)) return { name: 'Zombie Bear', type: 'zombie' };
+    if (/Mutant/i.test(source)) return { name: 'Mutant', type: 'zombie' };
+    if (/Runner.*Brute|Brute.*Runner|RunnerBrute/i.test(source)) return { name: 'Runner Brute', type: 'zombie' };
+    if (/Runner/i.test(source)) return { name: 'Runner', type: 'zombie' };
+    if (/BruteCop/i.test(source)) return { name: 'Riot Brute', type: 'zombie' };
+    if (/Brute/i.test(source)) return { name: 'Brute', type: 'zombie' };
+    if (/Pudge|BellyToxic/i.test(source)) return { name: 'Bloater', type: 'zombie' };
+    if (/MilitaryArmoured/i.test(source)) return { name: 'Military Armoured', type: 'zombie' };
+    if (/PoliceArmor/i.test(source)) return { name: 'Police Armoured', type: 'zombie' };
+    if (/Police|Cop/i.test(source)) return { name: 'Police Zombie', type: 'zombie' };
+    if (/Medic/i.test(source)) return { name: 'Medic Zombie', type: 'zombie' };
+    if (/Hazmat/i.test(source)) return { name: 'Hazmat Zombie', type: 'zombie' };
+    if (/Camo/i.test(source)) return { name: 'Camo Zombie', type: 'zombie' };
+    if (/Urban/i.test(source)) return { name: 'Urban Zombie', type: 'zombie' };
+    if (/Girl|Female/i.test(source)) return { name: 'Female Zombie', type: 'zombie' };
+    if (/Zombie/i.test(source)) return { name: 'Zombie', type: 'zombie' };
+    if (/KaiHuman/i.test(source)) return { name: 'Bandit', type: 'bandit' };
+    if (/Wolf/i.test(source)) return { name: 'Wolf', type: 'animal' };
+    if (/Bear(?!.*Zombie)/i.test(source)) return { name: 'Bear', type: 'animal' };
+    if (/Deer|Stag|Doe/i.test(source)) return { name: 'Deer', type: 'animal' };
+    if (/Snake/i.test(source)) return { name: 'Snake', type: 'animal' };
+    if (/Spider/i.test(source)) return { name: 'Spider', type: 'animal' };
+    if (/Pig/i.test(source)) return { name: 'Pig', type: 'animal' };
+    if (/Rabbit/i.test(source)) return { name: 'Rabbit', type: 'animal' };
+    if (/Chicken/i.test(source)) return { name: 'Chicken', type: 'animal' };
+    if (!source.startsWith('BP_')) return { name: source, type: 'player' };
+    return { name: 'Unknown', type: 'environment' };
   }
 
   // ── DB event logging ───────────────────────────────────────
@@ -261,6 +305,61 @@ class LogWatcher {
         this._pvpDamageTracker.delete(key);
       }
     }
+    // Also prune death cause tracker
+    for (const [key, entry] of this._deathCauseTracker) {
+      if (now - entry.timestamp > this._config.pvpKillWindow * 2) {
+        this._deathCauseTracker.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Record damage from ANY source for death cause attribution.
+   * Last-hit attribution: the most recent damage source before death is the cause.
+   */
+  _recordDeathCauseDamage(victim, source, damage, timestamp) {
+    const key = victim.toLowerCase();
+    const ts = timestamp.getTime();
+    const existing = this._deathCauseTracker.get(key);
+
+    if (existing && existing.sourceRaw === source) {
+      // Same source — accumulate
+      existing.totalDamage += damage;
+      existing.timestamp = ts;
+    } else {
+      // New/different source — replace (last-hit)
+      this._deathCauseTracker.set(key, {
+        sourceRaw: source,
+        timestamp: ts,
+        totalDamage: damage,
+      });
+    }
+  }
+
+  /**
+   * Check death cause: look up the most recent damage source for a victim.
+   * Returns classified cause or null.
+   */
+  _checkDeathCause(victim, deathTimestamp) {
+    const key = victim.toLowerCase();
+    const entry = this._deathCauseTracker.get(key);
+    if (!entry) return null;
+
+    const elapsed = deathTimestamp.getTime() - entry.timestamp;
+    if (elapsed <= this._config.pvpKillWindow && elapsed >= 0) {
+      this._deathCauseTracker.delete(key);
+      const classified = this._classifyDamageSource(entry.sourceRaw);
+      return {
+        ...classified,
+        raw: entry.sourceRaw,
+        totalDamage: entry.totalDamage,
+      };
+    }
+
+    if (elapsed > this._config.pvpKillWindow) {
+      this._deathCauseTracker.delete(key);
+    }
+    return null;
   }
 
   getPvpKills(count = 10) {
@@ -967,6 +1066,9 @@ class LogWatcher {
         if (this._config.enablePvpKillFeed && !dmgSource.startsWith('BP_') && !this._isNpcDamageSource(dmgSource)) {
           this._recordPvpDamage(dmgVictim, dmgSource, dmgAmount, timestamp);
         }
+
+        // Track ALL damage for death cause attribution (PvE, PvP, everything)
+        this._recordDeathCauseDamage(dmgVictim, dmgSource, dmgAmount, timestamp);
       }
       return true;
     }
@@ -1233,8 +1335,42 @@ class LogWatcher {
     this._playerStats.recordDeath(playerName, timestamp);
     this._incDayCount('deaths');
 
+    // Check for death cause attribution (ALL damage sources)
+    const deathCause = this._checkDeathCause(playerName, timestamp);
+
     // Check for PvP kill attribution
     const pvpKill = this._config.enablePvpKillFeed ? this._checkPvpKill(playerName, timestamp) : null;
+
+    // Record death cause to DB (regardless of PvP or PvE)
+    if (deathCause && this._db) {
+      try {
+        this._db.insertDeathCause({
+          victimName: playerName,
+          victimSteamId: this._playerStats.getSteamId?.(playerName) || '',
+          causeType: pvpKill ? 'player' : deathCause.type,
+          causeName: pvpKill ? pvpKill.attacker : deathCause.name,
+          causeRaw: deathCause.raw,
+          damageTotal: deathCause.totalDamage,
+        });
+      } catch (err) {
+        if (!this._deathCauseWarnShown) {
+          console.warn(`[${this._label}] Failed to log death cause:`, err.message);
+          this._deathCauseWarnShown = true;
+        }
+      }
+    } else if (!deathCause && this._db) {
+      // No damage tracked — log as unknown cause
+      try {
+        this._db.insertDeathCause({
+          victimName: playerName,
+          victimSteamId: this._playerStats.getSteamId?.(playerName) || '',
+          causeType: pvpKill ? 'player' : 'unknown',
+          causeName: pvpKill ? pvpKill.attacker : '',
+          causeRaw: '',
+          damageTotal: pvpKill ? pvpKill.totalDamage : 0,
+        });
+      } catch { /* swallow */ }
+    }
 
     if (pvpKill) {
       // PvP kill confirmed
@@ -1300,13 +1436,24 @@ class LogWatcher {
       }
     }
 
-    // DB: log PvE death event
-    this._logEvent({ type: 'player_death', category: 'death', actorName: playerName, timestamp });
+    // Build death description with cause attribution
+    let deathDesc = `**${playerName}** died`;
+    if (deathCause && deathCause.name !== 'Unknown') {
+      deathDesc = `**${playerName}** was killed by **${deathCause.name}**`;
+    }
 
-    // Normal death embed (no loop, or under threshold)
+    // DB: log PvE death event with cause details
+    this._logEvent({
+      type: 'player_death', category: 'death', actorName: playerName,
+      item: deathCause ? deathCause.name : '',
+      details: deathCause ? { causeType: deathCause.type, causeName: deathCause.name, causeRaw: deathCause.raw, damage: deathCause.totalDamage } : {},
+      timestamp,
+    });
+
+    // Normal death embed with cause attribution
     const embed = new EmbedBuilder()
       .setAuthor({ name: '💀 Player Death' })
-      .setDescription(`**${playerName}** died`)
+      .setDescription(deathDesc)
       .setColor(0x992d22)
       .setFooter({ text: timestamp ? this._formatTime(timestamp) : 'Just now' });
     this._sendToThread(embed);

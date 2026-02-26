@@ -21,6 +21,8 @@
 /* ── Cards ── */
 .card { background: #1e2030; border: 1px solid #262940; border-radius: 0.625rem; padding: 1.25rem; }
 .card-title { font-size: 0.8125rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.75rem; letter-spacing: 0.01em; }
+.clan-card { transition: border-color 0.15s, box-shadow 0.15s; }
+.clan-card:hover { border-color: #313557; box-shadow: 0 2px 12px rgba(0,0,0,0.2); }
 .stat-card { background: #1e2030; border: 1px solid #262940; border-radius: 0.5rem; padding: 0.875rem 1rem; }
 .stat-label { font-size: 0.6875rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 500; }
 .stat-value { font-size: 1.125rem; font-weight: 600; color: #e2e8f0; margin-top: 0.25rem; }
@@ -193,6 +195,10 @@
 .leaflet-popup-content-wrapper { background: #1e2030; color: #e2e8f0; border-radius: 0.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
 .leaflet-popup-tip { background: #1e2030; }
 .leaflet-popup-content { margin: 0.625rem 0.875rem; font-size: 0.8125rem; line-height: 1.5; }
+
+/* Leaflet tooltip dark theme */
+.leaflet-tooltip-dark { background: #1e2030; color: #e2e8f0; border: 1px solid #262940; border-radius: 4px; font-size: 0.75rem; padding: 3px 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+.leaflet-tooltip-dark::before { border-top-color: #262940; }
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }

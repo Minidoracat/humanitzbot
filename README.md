@@ -1,6 +1,6 @@
 # Changelog — Experimental Branch
 
-**Generated:** 2026-02-24  
+**Generated:** 2026-02-26  
 **Branch:** `experimental`  
 **Base:** `main`  
 **Status:** Active Development
@@ -9,13 +9,13 @@
 
 ## Summary
 
-- **Total Commits:** 42
+- **Total Commits:** 60
 - **Main Branch Commits:** 33
-- **Experimental-Only Commits:** 9
-- **Files Changed:** 47
-  - Added: 16
-  - Modified: 30
-  - Deleted: 1
+- **Experimental-Only Commits:** 27
+- **Files Changed:** 79
+  - Added: 33
+  - Modified: 42
+  - Deleted: 4
 
 ---
 
@@ -39,54 +39,100 @@ These features exist only in the experimental branch and are not yet merged to m
 
 ### Bug Fixes
 
+- audit fixes — nuke wipe list, PUBLIC_HOST in .env.example, test stability `68596c3`
+- web map loads player data immediately on page load `6d6611b`
+- wire DISCORD_OAUTH_SECRET to config for web map startup `0856f77`
+- add .env.backup* to .gitignore to prevent credential exposure `b003975`
+- replace deprecated ephemeral option with MessageFlags across all commands `b469872`
+- panel channel ActionRow overflow + ephemeral deprecation `1150d51`
+- defer player stats select menu interactions `d639e6c`
 - config.js path prefixing + add smart .env sync utility `70767dd`
 - auto-discovery for GameServerSettings.ini and WelcomeMessage.txt `4c9ce5f`
 - stop excluding web-map assets from git `24ba7c8`
 
+### Documentation
+
+- update changelog with latest commits `a0ddc72`
+
 ### Other Changes
 
+- Schema v11, game data extraction pipeline, timeline snapshots, repo hygiene `3a06a62`
+- DB-first architecture, schema v9, embed redesign, item tracking, codebase cleanup `fb67ff8`
+- Server scheduler with daily rotation, web panel security, map calibration `9f58741`
+- Complete save parser overhaul: extract all game data with positions `705936c`
+- Web panel overhaul, server scheduler, player ID & container name fixes `35b98ff`
+- Fix NUKE_BOT breaking bot startup permanently `a1807fd`
+- Unified item name cleaning across all display surfaces `1329e46`
+- Add container-player cross-referencing, per-event timestamps, and web map online status `34e5009`
+- Make auto-discovery truly universal `eacbd4f`
+- Fix interaction timeout bugs (defer-before-async pattern) `7288a2a`
 - Merge branch 'web-map' into experimental `ef62fa6`
 
 ---
 
 ## File Changes
 
-### Added Files (16)
+### Added Files (33)
 
 - `scripts/generate-changelog.js`
 - `src/activity-log.js`
 - `src/db/diff-engine.js`
+- `src/db/item-fingerprint.js`
+- `src/db/item-tracker.js`
 - `src/env-sync.js`
+- `src/game-data-extract.js`
 - `src/rcon-colors.js`
+- `src/schedule-utils.js`
+- `src/server-scheduler.js`
+- `src/snapshot-service.js`
 - `src/ue4-names.js`
 - `src/web-map/auth.js`
 - `src/web-map/dev-server.js`
 - `src/web-map/public/app.js`
-- `src/web-map/public/index.html`
+- `src/web-map/public/calibrate.html`
+- `src/web-map/public/island-shape.svg`
 - `src/web-map/public/map-2048.jpg`
 - `src/web-map/public/map-2048.png`
 - `src/web-map/public/map-4096.png`
+- `src/web-map/public/map-standalone.html`
+- `src/web-map/public/panel.css`
+- `src/web-map/public/panel.html`
+- `src/web-map/public/panel.js`
+- `src/web-map/public/timeline.js`
 - `src/web-map/server.js`
 - `test/diff-engine.test.js`
+- `test/interactions.test.js`
+- `test/item-fingerprint.test.js`
+- `test/item-tracker.test.js`
+- `test/schedule-utils.test.js`
+- `test/timeline.test.js`
 - `test/ue4-names.test.js`
 
-### Modified Files (30)
+### Modified Files (42)
 
 - `.env.example`
 - `.gitignore`
+- `README.md`
+- `package-lock.json`
 - `package.json`
 - `setup.js`
 - `src/auto-messages.js`
 - `src/chat-relay.js`
+- `src/commands/panel.js`
+- `src/commands/playerstats.js`
+- `src/commands/rcon.js`
+- `src/commands/server.js`
 - `src/commands/threads.js`
 - `src/config.js`
 - `src/db/database.js`
 - `src/db/schema.js`
+- `src/game-data.js`
 - `src/game-server/humanitz-agent.js`
 - `src/index.js`
 - `src/log-watcher.js`
 - `src/multi-server.js`
 - `src/panel-channel.js`
+- `src/parsers/agent-builder.js`
 - `src/parsers/game-reference.js`
 - `src/parsers/gvas-reader.js`
 - `src/parsers/save-parser.js`
@@ -96,20 +142,428 @@ These features exist only in the experimental branch and are not yet merged to m
 - `src/player-stats.js`
 - `src/playtime-tracker.js`
 - `src/pvp-scheduler.js`
+- `src/rcon.js`
 - `src/server-info.js`
 - `src/server-resources.js`
 - `src/server-status.js`
 - `test/agent.test.js`
+- `test/game-data.test.js`
+- `test/log-watcher.test.js`
 - `test/new-parser.test.js`
 - `test/save-parser.test.js`
+- `test/web-map-auth.test.js`
 
-### Deleted Files (1)
+### Deleted Files (4)
 
+- `src/commands/map.js`
+- `src/player-map.js`
 - `src/save-parser.js`
+- `test/player-map.test.js`
 
 ---
 
 ## Complete History (All Commits)
+
+### [EXPERIMENTAL] `3a06a62` Schema v11, game data extraction pipeline, timeline snapshots, repo hygiene
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-26  
+**Type:** other  
+**Status:** Experimental only  
+
+**Details:**
+```
+- Schema v10→v11: 9 timeline tables, death_causes, 11 new game reference tables
+- game-data-extract.js: 24 extractors for 105 raw game tables (718 items, 122 buildings, 154 recipes)
+- game-reference.js rewritten to seed 23 tables from extracted data
+- database.js: 16 new seed methods, boolean binding fixes
+- SnapshotService: periodic world state snapshots for timeline tracking
+- Timeline UI: panel tab with snapshot browser and change history
+- Web panel: expanded ALLOWED whitelist (+17 tables), secure cookie flags
+- .gitignore cleanup: .github/ fully ignored, data/ properly blocked
+- Changelog generator script added (scripts/generate-changelog.js)
+- All 674 tests passing
+```
+
+### [EXPERIMENTAL] `fb67ff8` DB-first architecture, schema v9, embed redesign, item tracking, codebase cleanup
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-25  
+**Type:** other  
+**Status:** Experimental only  
+
+**Details:**
+```
+Schema & Database:
+- Bump to schema v9 with 13 new player columns for granular log/playtime persistence
+- Add server_peaks KV table for peak tracking
+- Add item_instances, item_movements, item_groups, world_drops tables for item tracking
+- Add new DB methods: upsertFullLogStats, upsertFullPlaytime, setServerPeak, getAllServerPeaks
+- Remove deprecated updatePlayerLogStats and updatePlayerPlaytime methods
+- Add item fingerprint utility (src/db/item-fingerprint.js) and reconciler (src/db/item-tracker.js)
+- Add game-reference.js seed functions for 10 DB reference tables
+DB-First Migration:
+- player-stats.js: load from DB first, fallback to JSON, one-time migration, persist on every mutation
+- playtime-tracker.js: load from DB first, fallback to JSON, one-time migration, persist on every mutation
+- Both modules maintain JSON backup on autosave for recovery
+Embed Redesign:
+- Server overview: compact stat summary, inline 3-column leaderboards, emoji section headers
+- Player detail: character info in description, visual health bars, merged combat/base/inventory sections
+- Log-based player embed: merged sections, emoji prefixes, reduced field count
+Web Panel Enhancements:
+- Add /api/panel/clans, /api/panel/mapdata, /api/panel/items, /api/panel/movements endpoints
+- Add /api/panel/db/:table generic admin query with table whitelist
+- Add auth to /api/servers endpoint (requireTier survivor)
+- Filter sensitive settings (AdminPass, RCONPass) from settings API
+- Resolve steam IDs and clean UE4 names in activity feed API
+- Add timezone-aware event counting, game day from save-cache fallback
+Game Data:
+- Map all 36 dt-* files into game-data.js (29 exports, 1882 lines)
+- Wire ue4-names.js with authoritative ITEM_NAMES/BUILDING_NAMES lookups
+- Add PvP NPC source detection with comprehensive NPC name filtering
+Cleanup:
+- Remove legacy player-map module (src/player-map.js, test/player-map.test.js, src/commands/map.js)
+- Remove @napi-rs/canvas dependency (only used by deleted player-map)
+- Remove stale .bak files from web panel
+- Fix broken require path in dev-server.js (save-parser → parsers/save-parser)
+Tests: 635 passing (20 test files, 161 suites)
+```
+
+### [EXPERIMENTAL] `9f58741` Server scheduler with daily rotation, web panel security, map calibration
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-25  
+**Type:** other  
+**Status:** Experimental only  
+
+**Details:**
+```
+Server Scheduler:
+- 3 difficulty profiles (Calm/Surge/Horde) cycling across 3 daily restart windows
+- Daily rotation: profile↔time-slot mapping shifts each day so players
+  experience different difficulty at each time of day
+- RESTART_ROTATE_DAILY toggle (default: true)
+- Shared schedule-utils.js module for consistent rotation logic across
+  scheduler, Discord embeds, welcome messages, and web panel
+- 18 new tests for rotation math (560 total, all passing)
+Web Panel:
+- Discord OAuth security with tiered access (public/user/admin)
+- 14+ routes protected with requireTier middleware
+- Landing page shows today's rotated schedule with active marker
+- Dashboard scheduler card with countdown to next restart
+- Renamed index.html → map-standalone.html (panel.html is main entry)
+- Developer credit updated
+Infrastructure:
+- Env-sync preserves dynamic keys (RESTART_PROFILE_*, PVP_HOURS_*, etc.)
+  via DYNAMIC_PREFIXES list instead of deprecating them
+- Activity log deduplication (consecutive identical events collapse with ×N)
+- Map coordinate calibration (xMin:3076, xMax:398076, yMin:-397582, yMax:-2582)
+- Player map tests updated for calibrated bounds
+```
+
+### [EXPERIMENTAL] `705936c` Complete save parser overhaul: extract all game data with positions
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-25  
+**Type:** other  
+**Status:** Experimental only  
+
+**Details:**
+```
+Parser changes (save-parser.js + gvas-reader.js):
+- Disable skipLargeArrays to parse ALL array data (was skipping arrays >10 elements)
+- Increase recoverForward scan from 50KB to 500KB to find all sections
+- Extract BuildActorTransform positions: 633/633 structures now have coordinates
+- Fix DestroyedRandCars: Vector format (not Transform children), 56/56 with positions
+- Add NodeSaveData AI extraction: 119 spawns (72 zombies, 7 bandits, 40 animals)
+  with types (ZombieDefault2, AnimalStag, BanditMelee, etc.) and positions
+- Add SGlobalContainerSave handler: 437 world containers with item data
+- Add LODPickups full extraction: 5282 items with positions and RowName item IDs
+- Add BackpackData handler: 293 dropped backpacks with positions
+- Add PreBuildActors extraction: 133 with class, position, resources
+- Add LODHouseData extraction: 517 houses with window/door/furniture state
+- Add LodModularLootActor extraction: 300 actors, 602 slots with item configs
+- Expand HZActorManagerData: destroyed actors (111) + destroyed instances (218)
+- Expand GameDiff: structured server settings (loot, zombie, season, etc.)
+- Expand StoneCutting: name, stage, time per station
+- Add BuildingDecay summary: count + active decay tracking
+- Fix ExplodableBarrelsTransform: extract Translation from children
+- Fix Exp handler: parse StructProperty for Level, SkillPoints, XP
+- Fix CompanionData: extract class, transform, stats, inventory per companion
+- Add SavedActors full extraction: class, position, health, owner, locked
+Player data additions:
+- CharProfile: full appearance (preset, skin, hair, body type, eye color, etc.)
+- FloatData: all keys (BadFood, Skin_Blood, Skin_Dirt, Clean, Sleepers)
+- Appearance fields: Rep* cosmetics, Backpack size, Profile, Skin tone
+- Expanded createPlayerData() with all new fields
+Map coordinate fixes:
+- Update world bounds: X[-60K..380K] Y[-400K..50K] (was X[-20K..260K] Y[-370K..20K])
+- Verified 0/1663 player-relevant entities out of bounds (was 323 off-map)
+- Updated both player-map.js and web-map/server.js defaults
+Parse performance: 670ms for 68MB file (improved from ~2s with skipping)
+All 542 tests pass.
+```
+
+### [EXPERIMENTAL] `35b98ff` Web panel overhaul, server scheduler, player ID & container name fixes
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-25  
+**Type:** other  
+**Status:** Experimental only  
+
+**Details:**
+```
+Web Panel:
+- 4-tier auth system (public/survivor/mod/admin) with role-based access
+- Public landing page with multi-server status, connect info, copy button
+- Dashboard, activity feed, chat log, RCON console, settings editor
+- requireTier() middleware for per-route access control
+- Map tab restricted to mod tier and above
+- Survivors get community stats, leaderboards, connect details
+Server Scheduler:
+- Timed server restarts with configurable profiles (difficulty rotation)
+- Per-profile GameServerSettings.ini overrides via SFTP
+- Countdown warnings in Discord and in-game via RCON
+- Profile cycling (e.g. day/night difficulty rotation)
+- Docker container restart support
+Bug Fixes:
+- Zombie loot containers now display as 'Zombie Drop' instead of 'Container Enemy AI'
+- Player names resolve correctly in activity logs (was showing raw SteamIDs)
+- SaveService auto-loads PlayerIDMapped.txt on startup
+- LogWatcher shares ID map updates with SaveService in real-time
+- One-time DB repair fixes existing activity_log rows with SteamID-as-name
+```
+
+### [EXPERIMENTAL] `a1807fd` Fix NUKE_BOT breaking bot startup permanently
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-25  
+**Type:** other  
+**Status:** Experimental only  
+
+**Details:**
+```
+Two bugs caused the nuke feature to kill the bot on every restart:
+1. rcon.js: Socket error during connect() never rejected the promise,
+   causing `await rcon.connect()` to hang forever. The entire ClientReady
+   handler would stall — no modules started, no NUKE_BOT=false written.
+2. index.js: NUKE_BOT=false was only written at the END of the nuke
+   process. If anything crashed during channel wipe or thread rebuild,
+   the flag stayed true and the bot would nuke again on next restart.
+Fixes:
+- rcon.js: Socket error handler now rejects the connect promise on
+  initial connection failures (auto-reconnect still handles recovery)
+- index.js: Wrap rcon.connect() in try/catch so RCON being unavailable
+  doesn't crash the entire startup sequence
+- index.js: Write NUKE_BOT=false BEFORE the channel wipe phase so a
+  crash during nuke can't cause an infinite nuke loop
+```
+
+### [EXPERIMENTAL] `1329e46` Unified item name cleaning across all display surfaces
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-25  
+**Type:** other  
+**Status:** Experimental only  
+
+**Details:**
+```
+Shared cleanItemName (ue4-names.js):
+- Added 60+ ITEM_ALIASES map for common broken names (tacticalmachette, 22ammo, etc.)
+- Hex GUID detection and filtering (isHexGuid, cleanItemArray)
+- Lv→Lvl expansion, ABCDef→ABC Def splitting, title casing
+- Smart trailing digit strip (glued to words only, not after spaces)
+player-stats-channel.js:
+- Replaced inferior local _cleanItemName with shared cleaner wrapper
+- Status effects and body conditions now properly cleaned
+- Unique items filtered of hex GUIDs via cleanItemArray
+web-map/server.js:
+- Server-side cleaning of all inventory, recipes, skills, status effects
+- Unique items cleaned with cleanItemArray
+activity-log.js:
+- Clear verbs ("took from"/"stored in"), grid location references
+- Destroyed container contents display, new structure/vehicle event types
+diff-engine.js:
+- Added diffStructures(), diffVehicleState() for structure and vehicle tracking
+All 539 tests pass (4 new test cases for Lv→Lvl, ABCDef, status effects).
+```
+
+### [EXPERIMENTAL] `34e5009` Add container-player cross-referencing, per-event timestamps, and web map online status
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-25  
+**Type:** other  
+**Status:** Experimental only  
+
+**Details:**
+```
+Activity Log:
+- Cross-reference container item changes with player inventory changes from
+  the same save diff cycle to attribute who accessed containers. Uses item
+  name matching + position proximity validation (5000 UE4 units). Falls
+  back to log-based attribution if no cross-reference match found.
+- Add per-event timestamps (HH:MM in bot timezone) to all activity feed
+  lines for better readability.
+- SaveService now emits syncTime in the sync event for timestamp display.
+Web Map:
+- /api/players endpoint now queries RCON for the live player list and sets
+  isOnline on matching players. Frontend already checks this field — players
+  now correctly show green/red/grey status markers.
+Tests:
+- 8 new cross-referencing tests in diff-engine.test.js covering: basic
+  take/deposit attribution, distance filtering, multi-player best-match,
+  null coordinate handling, empty event arrays, and full end-to-end through
+  diffSaveState(). All 526 tests pass.
+```
+
+### [EXPERIMENTAL] `68596c3` audit fixes — nuke wipe list, PUBLIC_HOST in .env.example, test stability
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-25  
+**Type:** fix  
+**Status:** Experimental only  
+
+**Details:**
+```
+- Add save-cache.json and weekly-baseline.json to factory reset wipe list
+  (previously survived nuke, leaving stale data after reset)
+- Add PUBLIC_HOST to .env.example with documentation
+- Fix dev-server.js MAP_PORT → WEB_MAP_PORT (with backward compat fallback)
+- Fix player-map test: force _load() while fs mocks are active to prevent
+  real player-locations.json from contaminating test state
+```
+
+### [EXPERIMENTAL] `6d6611b` web map loads player data immediately on page load
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-25  
+**Type:** fix  
+**Status:** Experimental only  
+
+**Details:**
+```
+Initial load called refreshPlayers() which opens an SSE connection
+to /api/refresh — an endpoint that doesn't exist. This caused the
+map to show no players until the 30s auto-refresh timer fired.
+Changed initial load to use fetchPlayersQuick() which hits the
+working /api/players endpoint directly. Also added fallback in
+the SSE error handler to fetch data via the quick endpoint.
+```
+
+### [EXPERIMENTAL] `0856f77` wire DISCORD_OAUTH_SECRET to config for web map startup
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-25  
+**Type:** fix  
+**Status:** Experimental only  
+
+**Details:**
+```
+config.discordClientSecret was referenced in index.js but never
+defined in config.js, preventing the web map from starting even
+when credentials were set. Also corrected the error message to
+reference the actual env var name (DISCORD_OAUTH_SECRET).
+```
+
+### [EXPERIMENTAL] `b003975` add .env.backup* to .gitignore to prevent credential exposure
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-25  
+**Type:** fix  
+**Status:** Experimental only  
+
+### [EXPERIMENTAL] `b469872` replace deprecated ephemeral option with MessageFlags across all commands
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-25  
+**Type:** fix  
+**Status:** Experimental only  
+
+**Details:**
+```
+Replace ephemeral: true with flags: MessageFlags.Ephemeral in all
+slash commands and interaction handlers to resolve discord.js v14
+deprecation warnings. Affected files: index.js, map.js, panel.js,
+playerstats.js, rcon.js, server.js, threads.js.
+```
+
+### [EXPERIMENTAL] `1150d51` panel channel ActionRow overflow + ephemeral deprecation
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-25  
+**Type:** fix  
+**Status:** Experimental only  
+
+**Details:**
+```
+- Move Add Server button to separate ActionRow to avoid Discord
+  5-component limit crash when multi-server is enabled
+- Replace all ephemeral: true with flags: MessageFlags.Ephemeral
+  across panel-channel.js (59 occurrences) to resolve discord.js
+  deprecation warning
+```
+
+### [EXPERIMENTAL] `eacbd4f` Make auto-discovery truly universal
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-25  
+**Type:** other  
+**Status:** Experimental only  
+
+**Details:**
+```
+- Auto-detects FTP_BASE_PATH from discovered file locations
+- Smarter directory prioritization (data, serverfiles, home, opt, etc.)
+- Skips system directories for faster discovery
+- Fixed web-map require path (save-parser moved to parsers/)
+- Works with any SFTP setup: Docker bind mounts, direct container access, or traditional server layouts
+Discovery now finds common parent directory and writes it to .env automatically.
+No manual FTP_BASE_PATH configuration needed - just provide FTP credentials.
+```
+
+### [EXPERIMENTAL] `7288a2a` Fix interaction timeout bugs (defer-before-async pattern)
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-25  
+**Type:** other  
+**Status:** Experimental only  
+
+**Details:**
+```
+- Fixed player/clan select menus in index.js to defer immediately
+- Fixed 12 panel handlers to defer before admin checks and async work
+- Added _isAdmin() synchronous helper, deprecated async _requireAdmin()
+- Created comprehensive interaction tests (6 passing)
+- Removed scripts/ from tracking (personal dev utilities)
+All interaction handlers now follow the pattern:
+1. deferReply() immediately (before any async operations)
+2. Synchronous checks (_isAdmin, config flags)
+3. Use editReply() for all responses after defer
+This prevents Discord API 10062 'Unknown interaction' errors caused by
+token expiry when async operations happen before defer.
+```
+
+### [EXPERIMENTAL] `d639e6c` defer player stats select menu interactions
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-25  
+**Type:** fix  
+**Status:** Experimental only  
+
+**Details:**
+```
+- Add deferReply before building player/clan embeds
+- Prevents DiscordAPIError[10062] Unknown interaction timeouts
+- Use flags: 64 instead of deprecated ephemeral option
+- Fixes crash when selecting players from stats dropdown
+```
+
+### [EXPERIMENTAL] `a0ddc72` update changelog with latest commits
+
+**Author:** QS-Zuq  
+**Date:** 2026-02-25  
+**Type:** docs  
+**Status:** Experimental only  
 
 ### [EXPERIMENTAL] `fd83e2f` complete .env sync + dynamic changelog generator
 
@@ -733,4 +1187,4 @@ Fixes:
 
 **Repository:** QS-Zuq/humanitzbot-dev  
 **Branch Comparison:** `main..experimental`  
-**Last Generated:** 2026-02-24T23:36:12.422Z
+**Last Generated:** 2026-02-26T13:45:35.617Z

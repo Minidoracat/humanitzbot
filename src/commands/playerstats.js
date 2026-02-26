@@ -57,24 +57,31 @@ module.exports = {
     });
 
     collector.on('collect', async (selectInteraction) => {
-      const selectedId = selectInteraction.values[0];
-      const stats = playerStats.getStats(selectedId);
+      try {
+        const selectedId = selectInteraction.values[0];
+        const stats = playerStats.getStats(selectedId);
 
-      if (!stats) {
+        if (!stats) {
+          await selectInteraction.update({
+            embeds: [new EmbedBuilder().setDescription('Player not found.').setColor(0xe74c3c)],
+            components: [row],
+          });
+          return;
+        }
+
+        const isAdmin = require('../config').isAdminView(selectInteraction.member);
+        const embed = buildPlayerEmbed(stats, { isAdmin });
+
         await selectInteraction.update({
-          embeds: [new EmbedBuilder().setDescription('Player not found.').setColor(0xe74c3c)],
+          embeds: [embed],
           components: [row],
         });
-        return;
+      } catch (err) {
+        // Interaction may have expired (10062) or message deleted (10008)
+        if (![10062, 10008, 40060].includes(err.code)) {
+          console.error('[CMD:playerstats] Select interaction error:', err.message);
+        }
       }
-
-      const isAdmin = require('../config').isAdminView(selectInteraction.member);
-      const embed = buildPlayerEmbed(stats, { isAdmin });
-
-      await selectInteraction.update({
-        embeds: [embed],
-        components: [row],
-      });
     });
 
     collector.on('end', async () => {

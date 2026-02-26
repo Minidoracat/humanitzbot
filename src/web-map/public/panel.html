@@ -110,6 +110,7 @@
         <ul class="flex-1 py-2 overflow-y-auto space-y-0.5">
           <li><a href="#" class="nav-link active" data-tab="dashboard"><span class="nav-ico">◉</span><span class="nav-txt">Dashboard</span></a></li>
           <li><a href="#" class="nav-link" data-tab="map" data-min-tier="2"><span class="nav-ico">◎</span><span class="nav-txt">Live Map</span></a></li>
+          <li><a href="#" class="nav-link" data-tab="timeline" data-min-tier="2"><span class="nav-ico">⏱</span><span class="nav-txt">Timeline</span></a></li>
           <li><a href="#" class="nav-link" data-tab="players" data-min-tier="1"><span class="nav-ico">◇</span><span class="nav-txt">Players</span></a></li>
           <li><a href="#" class="nav-link" data-tab="clans" data-min-tier="1"><span class="nav-ico">△</span><span class="nav-txt">Clans</span></a></li>
           <li><a href="#" class="nav-link" data-tab="activity" data-min-tier="1"><span class="nav-ico">▤</span><span class="nav-txt">Activity</span></a></li>
@@ -200,6 +201,44 @@
           </div>
         </section>
 
+        <!-- TIMELINE -->
+        <section id="tab-timeline" class="tab-content hidden flex flex-col" style="height:100vh">
+          <!-- Top bar -->
+          <div class="flex items-center gap-3 px-5 py-2.5 border-b border-border bg-surface-200 flex-shrink-0 flex-wrap">
+            <h1 class="text-sm font-semibold text-white mr-2">Timeline</h1>
+            <!-- Playback controls -->
+            <button id="tl-step-back" class="tl-btn" title="Previous (←)">⏮</button>
+            <button id="tl-play" class="tl-btn" title="Play/Pause (Space)">▶</button>
+            <button id="tl-step-fwd" class="tl-btn" title="Next (→)">⏭</button>
+            <button id="tl-go-latest" class="tl-btn" title="Latest (End)">⏩</button>
+            <span class="flex gap-0.5 ml-1">
+              <button class="tl-speed" data-speed="1">1×</button>
+              <button class="tl-speed active" data-speed="5">5×</button>
+              <button class="tl-speed" data-speed="10">10×</button>
+            </span>
+            <span class="text-[11px] text-muted mx-1">|</span>
+            <!-- Layer toggles -->
+            <label class="tl-layer"><input type="checkbox" id="tl-l-players" checked> <span class="text-emerald-400">👤 Players</span> <span id="tl-c-players" class="text-muted"></span></label>
+            <label class="tl-layer"><input type="checkbox" id="tl-l-zombies" checked> <span class="text-purple-400">🧟 Zombies</span> <span id="tl-c-zombies" class="text-muted"></span></label>
+            <label class="tl-layer"><input type="checkbox" id="tl-l-animals" checked> <span class="text-orange-400">🐺 Animals</span> <span id="tl-c-animals" class="text-muted"></span></label>
+            <label class="tl-layer"><input type="checkbox" id="tl-l-bandits" checked> <span class="text-red-400">🔫 Bandits</span> <span id="tl-c-bandits" class="text-muted"></span></label>
+            <label class="tl-layer"><input type="checkbox" id="tl-l-vehicles" checked> <span class="text-blue-400">🚗 Vehicles</span> <span id="tl-c-vehicles" class="text-muted"></span></label>
+            <label class="tl-layer"><input type="checkbox" id="tl-l-structures"> <span class="text-gray-400">🏗 Structs</span> <span id="tl-c-structures" class="text-muted"></span></label>
+            <label class="tl-layer"><input type="checkbox" id="tl-l-companions" checked> <span class="text-yellow-400">🐕 Companions</span> <span id="tl-c-companions" class="text-muted"></span></label>
+            <label class="tl-layer"><input type="checkbox" id="tl-l-backpacks"> <span class="text-fuchsia-400">🎒 Packs</span> <span id="tl-c-backpacks" class="text-muted"></span></label>
+            <label class="tl-layer"><input type="checkbox" id="tl-l-deaths" checked> <span class="text-red-500">💀 Deaths</span></label>
+          </div>
+          <!-- Map + slider -->
+          <div class="flex-1 relative min-h-0">
+            <div id="tl-map" class="absolute inset-0"></div>
+          </div>
+          <!-- Timeline slider + info -->
+          <div class="px-4 py-2 bg-surface-200 border-t border-border flex items-center gap-3">
+            <input type="range" id="tl-slider" min="0" max="0" value="0" step="1" class="flex-1 h-1.5 accent-accent cursor-pointer">
+            <div id="tl-info" class="text-[11px] text-muted whitespace-nowrap">No snapshots</div>
+          </div>
+        </section>
+
         <!-- PLAYERS -->
         <section id="tab-players" class="tab-content hidden p-6 space-y-4">
           <div class="flex items-center justify-between flex-wrap gap-3">
@@ -227,8 +266,26 @@
 
         <!-- CLANS -->
         <section id="tab-clans" class="tab-content hidden p-6 space-y-4">
-          <h1 class="text-lg font-semibold text-white">Clans</h1>
-          <div id="clan-list" class="space-y-3"></div>
+          <div class="flex items-center justify-between flex-wrap gap-3">
+            <h1 class="text-lg font-semibold text-white">Clans</h1>
+            <div class="flex items-center gap-2">
+              <input type="text" id="clan-search" placeholder="Search clans..." class="input-field w-48">
+              <select id="clan-sort" class="input-field w-40">
+                <option value="members">Most Members</option>
+                <option value="name">Name</option>
+                <option value="online">Most Online</option>
+                <option value="kills">Total Kills</option>
+              </select>
+              <span id="clan-count" class="text-xs text-muted"></span>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3" id="clan-stats">
+            <div class="stat-card"><div class="stat-label">Total Clans</div><div id="clans-total" class="stat-value">-</div></div>
+            <div class="stat-card"><div class="stat-label">Players in Clans</div><div id="clans-players" class="stat-value">-</div></div>
+            <div class="stat-card"><div class="stat-label">Largest Clan</div><div id="clans-largest" class="stat-value">-</div></div>
+            <div class="stat-card"><div class="stat-label">Online in Clans</div><div id="clans-online" class="stat-value">-</div></div>
+          </div>
+          <div id="clan-list" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4"></div>
         </section>
 
         <!-- ACTIVITY -->
@@ -269,9 +326,6 @@
           </div>
         </section>
 
-        <!-- CONSOLE -->
-        <section id="tab-console" class="tab-content hidden flex flex-col" style="height:100vh">
-
         <!-- ITEMS -->
         <section id="tab-items" class="tab-content hidden p-6 space-y-4">
           <div class="flex items-center justify-between flex-wrap gap-3">
@@ -304,6 +358,9 @@
             </div>
           </div>
         </section>
+
+        <!-- CONSOLE -->
+        <section id="tab-console" class="tab-content hidden flex flex-col" style="height:100vh">
           <div class="flex items-center justify-between px-5 py-2.5 border-b border-border bg-surface-200 flex-shrink-0">
             <h1 class="text-sm font-semibold text-white">RCON Console</h1>
             <div class="flex items-center gap-3">
@@ -398,6 +455,17 @@
     </div>
   </div>
 
+  <style>
+    .tl-btn{background:#1e2433;border:1px solid #2d3548;color:#c9d1d9;padding:3px 9px;border-radius:4px;cursor:pointer;font-size:13px}
+    .tl-btn:hover{background:#2d3548}
+    .tl-speed{background:#1e2433;border:1px solid #2d3548;color:#6e7681;padding:2px 6px;font-size:10px;border-radius:3px;cursor:pointer}
+    .tl-speed.active{background:#1f6feb;border-color:#58a6ff;color:#fff}
+    .tl-layer{display:flex;align-items:center;gap:2px;font-size:10px;cursor:pointer;white-space:nowrap;user-select:none}
+    .tl-layer input{width:12px;height:12px;accent-color:#58a6ff}
+    .tl-popup{font-size:12px;line-height:1.5}
+    .tl-popup b{color:#58a6ff}
+    .tl-marker{background:transparent!important;border:none!important}
+  </style>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="panel.js"></script>
 </body>

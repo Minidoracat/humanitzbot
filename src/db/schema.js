@@ -9,7 +9,7 @@
  * Schema is applied via database.js on first run and auto-migrated on updates.
  */
 
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 11;
 
 // ─── Player data ────────────────────────────────────────────────────────────
 
@@ -532,14 +532,185 @@ CREATE TABLE IF NOT EXISTS server_settings (
 
 const GAME_ITEMS = `
 CREATE TABLE IF NOT EXISTS game_items (
-  id          TEXT PRIMARY KEY,                -- internal name / row name
-  name        TEXT NOT NULL,                   -- display name
-  description TEXT DEFAULT '',
-  category    TEXT DEFAULT '',                 -- weapon, food, medical, tool, etc.
-  icon        TEXT DEFAULT '',                 -- icon asset path
-  blueprint   TEXT DEFAULT '',                 -- blueprint class path
-  stack_size  INTEGER DEFAULT 1,
-  extra       TEXT DEFAULT '{}'                -- JSON: any additional properties
+  id                    TEXT PRIMARY KEY,
+  name                  TEXT NOT NULL,
+  description           TEXT DEFAULT '',
+  type                  TEXT DEFAULT '',
+  type_raw              TEXT DEFAULT '',
+  specific_type         TEXT DEFAULT '',
+  wear_position         TEXT DEFAULT '',
+  category              TEXT DEFAULT '',
+  chance_to_spawn       REAL DEFAULT 0,
+  durability_loss        REAL DEFAULT 0,
+  armor_protection      REAL DEFAULT 0,
+  max_stack_size        INTEGER DEFAULT 1,
+  can_stack             INTEGER DEFAULT 0,
+  item_size             INTEGER DEFAULT 1,
+  weight                REAL DEFAULT 0,
+  first_value           REAL DEFAULT 0,
+  second_item_type      TEXT DEFAULT '',
+  second_value          REAL DEFAULT 0,
+  value_to_trader       REAL DEFAULT 0,
+  value_for_player      REAL DEFAULT 0,
+  does_decay            INTEGER DEFAULT 0,
+  decay_per_day         REAL DEFAULT 0,
+  only_decay_if_opened  INTEGER DEFAULT 0,
+  warmth_value          REAL DEFAULT 0,
+  infection_protection  REAL DEFAULT 0,
+  clothing_rain_mod     REAL DEFAULT 0,
+  clothing_snow_mod     REAL DEFAULT 0,
+  summer_cool_value     REAL DEFAULT 0,
+  is_skill_book         INTEGER DEFAULT 0,
+  no_pocket             INTEGER DEFAULT 0,
+  exclude_from_vendor   INTEGER DEFAULT 0,
+  exclude_from_ai       INTEGER DEFAULT 0,
+  use_as_fertilizer     INTEGER DEFAULT 0,
+  state                 TEXT DEFAULT '',
+  tag                   TEXT DEFAULT '',
+  open_item             TEXT DEFAULT '',
+  body_attach_socket    TEXT DEFAULT '',
+  supported_attachments TEXT DEFAULT '[]',
+  items_inside          TEXT DEFAULT '[]',
+  skill_book_data       TEXT DEFAULT '{}',
+  extra                 TEXT DEFAULT '{}'
+);
+`;
+
+const GAME_BUILDINGS = `
+CREATE TABLE IF NOT EXISTS game_buildings (
+  id                    TEXT PRIMARY KEY,
+  name                  TEXT NOT NULL,
+  description           TEXT DEFAULT '',
+  category              TEXT DEFAULT '',
+  category_raw          TEXT DEFAULT '',
+  health                REAL DEFAULT 0,
+  show_in_build_menu    INTEGER DEFAULT 0,
+  requires_build_tool   INTEGER DEFAULT 0,
+  moveable              INTEGER DEFAULT 0,
+  learned_building      INTEGER DEFAULT 0,
+  landscape_only        INTEGER DEFAULT 0,
+  water_only            INTEGER DEFAULT 0,
+  structure_only        INTEGER DEFAULT 0,
+  wall_placement        INTEGER DEFAULT 0,
+  require_foundation    INTEGER DEFAULT 0,
+  xp_multiplier         REAL DEFAULT 1,
+  resources             TEXT DEFAULT '[]',
+  upgrades              TEXT DEFAULT '[]'
+);
+`;
+
+const GAME_LOOT_POOLS = `
+CREATE TABLE IF NOT EXISTS game_loot_pools (
+  id                    TEXT PRIMARY KEY,
+  name                  TEXT NOT NULL,
+  item_count            INTEGER DEFAULT 0
+);
+`;
+
+const GAME_LOOT_POOL_ITEMS = `
+CREATE TABLE IF NOT EXISTS game_loot_pool_items (
+  pool_id               TEXT NOT NULL,
+  item_id               TEXT NOT NULL,
+  name                  TEXT DEFAULT '',
+  chance_to_spawn       REAL DEFAULT 0,
+  type                  TEXT DEFAULT '',
+  max_stack_size        INTEGER DEFAULT 1,
+  PRIMARY KEY (pool_id, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_loot_pool ON game_loot_pool_items(pool_id);
+`;
+
+const GAME_VEHICLES_REF = `
+CREATE TABLE IF NOT EXISTS game_vehicles_ref (
+  id                    TEXT PRIMARY KEY,
+  name                  TEXT NOT NULL
+);
+`;
+
+const GAME_ANIMALS = `
+CREATE TABLE IF NOT EXISTS game_animals (
+  id                    TEXT PRIMARY KEY,
+  name                  TEXT NOT NULL,
+  type                  TEXT DEFAULT '',
+  hide_item_id          TEXT DEFAULT ''
+);
+`;
+
+const GAME_CROPS = `
+CREATE TABLE IF NOT EXISTS game_crops (
+  id                    TEXT PRIMARY KEY,
+  crop_id               INTEGER DEFAULT 0,
+  growth_time_days      REAL DEFAULT 0,
+  grid_columns          INTEGER DEFAULT 1,
+  grid_rows             INTEGER DEFAULT 1,
+  harvest_result        TEXT DEFAULT '',
+  harvest_count         INTEGER DEFAULT 0,
+  grow_seasons          TEXT DEFAULT '[]'
+);
+`;
+
+const GAME_CAR_UPGRADES = `
+CREATE TABLE IF NOT EXISTS game_car_upgrades (
+  id                    TEXT PRIMARY KEY,
+  type                  TEXT DEFAULT '',
+  type_raw              TEXT DEFAULT '',
+  level                 INTEGER DEFAULT 0,
+  socket                TEXT DEFAULT '',
+  tool_durability_lost  REAL DEFAULT 0,
+  craft_time_minutes    REAL DEFAULT 0,
+  health                REAL DEFAULT 0,
+  craft_cost            TEXT DEFAULT '[]'
+);
+`;
+
+const GAME_AMMO_TYPES = `
+CREATE TABLE IF NOT EXISTS game_ammo_types (
+  id                    TEXT PRIMARY KEY,
+  damage                REAL DEFAULT 0,
+  headshot_multiplier   REAL DEFAULT 1,
+  range                 REAL DEFAULT 0,
+  penetration           REAL DEFAULT 0
+);
+`;
+
+const GAME_REPAIR_DATA = `
+CREATE TABLE IF NOT EXISTS game_repair_data (
+  id                    TEXT PRIMARY KEY,
+  resource_type         TEXT DEFAULT '',
+  resource_type_raw     TEXT DEFAULT '',
+  amount                INTEGER DEFAULT 0,
+  health_to_add         REAL DEFAULT 0,
+  is_repairable         INTEGER DEFAULT 1,
+  extra_resources       TEXT DEFAULT '[]'
+);
+`;
+
+const GAME_FURNITURE = `
+CREATE TABLE IF NOT EXISTS game_furniture (
+  id                    TEXT PRIMARY KEY,
+  name                  TEXT NOT NULL,
+  mesh_count            INTEGER DEFAULT 0,
+  drop_resources        TEXT DEFAULT '[]'
+);
+`;
+
+const GAME_TRAPS = `
+CREATE TABLE IF NOT EXISTS game_traps (
+  id                    TEXT PRIMARY KEY,
+  item_id               TEXT DEFAULT '',
+  requires_weapon       INTEGER DEFAULT 0,
+  requires_ammo         INTEGER DEFAULT 0,
+  requires_items        INTEGER DEFAULT 0,
+  required_ammo_id      TEXT DEFAULT ''
+);
+`;
+
+const GAME_SPRAYS = `
+CREATE TABLE IF NOT EXISTS game_sprays (
+  id                    TEXT PRIMARY KEY,
+  name                  TEXT NOT NULL,
+  description           TEXT DEFAULT '',
+  color                 TEXT DEFAULT ''
 );
 `;
 
@@ -587,13 +758,29 @@ CREATE TABLE IF NOT EXISTS game_challenges (
 
 const GAME_RECIPES = `
 CREATE TABLE IF NOT EXISTS game_recipes (
-  id          TEXT PRIMARY KEY,
-  name        TEXT NOT NULL,
-  type        TEXT DEFAULT 'crafting',         -- crafting | building
-  station     TEXT DEFAULT '',                 -- required crafting station
-  ingredients TEXT DEFAULT '[]',               -- JSON array
-  result      TEXT DEFAULT '',
-  extra       TEXT DEFAULT '{}'
+  id                    TEXT PRIMARY KEY,
+  name                  TEXT NOT NULL,
+  description           TEXT DEFAULT '',
+  station               TEXT DEFAULT '',
+  station_raw           TEXT DEFAULT '',
+  recipe_type           TEXT DEFAULT '',
+  craft_time            REAL DEFAULT 0,
+  profession            TEXT DEFAULT '',
+  profession_raw        TEXT DEFAULT '',
+  requires_recipe       INTEGER DEFAULT 0,
+  hidden                INTEGER DEFAULT 0,
+  inventory_search_only INTEGER DEFAULT 0,
+  xp_multiplier         REAL DEFAULT 1,
+  use_any               INTEGER DEFAULT 0,
+  copy_capacity         INTEGER DEFAULT 0,
+  no_spoiled            INTEGER DEFAULT 0,
+  ignore_melee_check    INTEGER DEFAULT 0,
+  override_name         TEXT DEFAULT '',
+  override_description  TEXT DEFAULT '',
+  crafted_item          TEXT DEFAULT '{}',
+  also_give_item        TEXT DEFAULT '{}',
+  also_give_arr         TEXT DEFAULT '[]',
+  ingredients           TEXT DEFAULT '[]'
 );
 `;
 
@@ -602,9 +789,9 @@ CREATE TABLE IF NOT EXISTS game_quests (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,
   description TEXT DEFAULT '',
-  objectives  TEXT DEFAULT '[]',               -- JSON array of objectives
-  rewards     TEXT DEFAULT '[]',
-  extra       TEXT DEFAULT '{}'
+  xp_reward   INTEGER DEFAULT 0,
+  requirements TEXT DEFAULT '[]',
+  rewards     TEXT DEFAULT '[]'
 );
 `;
 
@@ -613,7 +800,8 @@ CREATE TABLE IF NOT EXISTS game_lore (
   id          TEXT PRIMARY KEY,
   title       TEXT DEFAULT '',
   text        TEXT DEFAULT '',
-  location    TEXT DEFAULT ''
+  category    TEXT DEFAULT '',
+  sort_order  INTEGER DEFAULT 0
 );
 `;
 
@@ -630,8 +818,7 @@ CREATE TABLE IF NOT EXISTS game_spawn_locations (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,
   description TEXT DEFAULT '',
-  type        TEXT DEFAULT '',                 -- starter, inland, coast
-  image       TEXT DEFAULT ''
+  map         TEXT DEFAULT ''
 );
 `;
 
@@ -759,6 +946,203 @@ CREATE INDEX IF NOT EXISTS idx_chat_steam ON chat_log(steam_id);
 CREATE INDEX IF NOT EXISTS idx_chat_player ON chat_log(player_name);
 `;
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  TIMELINE — full temporal tracking of every entity across save polls
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── Timeline snapshots (one row per save poll — the master tick) ────────────
+
+const TIMELINE_SNAPSHOTS = `
+CREATE TABLE IF NOT EXISTS timeline_snapshots (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  game_day        INTEGER DEFAULT 0,           -- in-game day number
+  game_time       REAL DEFAULT 0,              -- in-game time of day (0-2400 float)
+  player_count    INTEGER DEFAULT 0,           -- total players in save
+  online_count    INTEGER DEFAULT 0,           -- players currently online
+  ai_count        INTEGER DEFAULT 0,           -- total AI spawns
+  structure_count INTEGER DEFAULT 0,
+  vehicle_count   INTEGER DEFAULT 0,
+  container_count INTEGER DEFAULT 0,
+  world_item_count INTEGER DEFAULT 0,          -- LOD pickups
+  weather_type    TEXT DEFAULT '',              -- current weather (resolved)
+  season          TEXT DEFAULT '',              -- current season
+  airdrop_active  INTEGER DEFAULT 0,           -- 1 if airdrop exists
+  airdrop_x       REAL,
+  airdrop_y       REAL,
+  airdrop_ai_alive INTEGER DEFAULT 0,
+  summary         TEXT DEFAULT '{}',           -- JSON: game difficulty, misc world state
+  created_at      TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tl_snap_created ON timeline_snapshots(created_at);
+CREATE INDEX IF NOT EXISTS idx_tl_snap_day ON timeline_snapshots(game_day);
+`;
+
+// ─── Player positions / state over time ─────────────────────────────────────
+
+const TIMELINE_PLAYERS = `
+CREATE TABLE IF NOT EXISTS timeline_players (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  snapshot_id     INTEGER NOT NULL REFERENCES timeline_snapshots(id) ON DELETE CASCADE,
+  steam_id        TEXT NOT NULL,
+  name            TEXT DEFAULT '',
+  online          INTEGER DEFAULT 0,
+  pos_x           REAL,
+  pos_y           REAL,
+  pos_z           REAL,
+  health          REAL DEFAULT 0,
+  max_health      REAL DEFAULT 100,
+  hunger          REAL DEFAULT 0,
+  thirst          REAL DEFAULT 0,
+  infection       REAL DEFAULT 0,
+  stamina         REAL DEFAULT 0,
+  level           INTEGER DEFAULT 0,
+  zeeks_killed    INTEGER DEFAULT 0,
+  days_survived   INTEGER DEFAULT 0,
+  lifetime_kills  INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_tl_players_snap ON timeline_players(snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_tl_players_steam ON timeline_players(steam_id);
+`;
+
+// ─── AI spawn positions / state over time ───────────────────────────────────
+
+const TIMELINE_AI = `
+CREATE TABLE IF NOT EXISTS timeline_ai (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  snapshot_id     INTEGER NOT NULL REFERENCES timeline_snapshots(id) ON DELETE CASCADE,
+  ai_type         TEXT NOT NULL,               -- 'ZombieDefault', 'ZombieRunner', 'AnimalWolf', 'BanditRifle', etc.
+  category        TEXT NOT NULL DEFAULT '',     -- 'zombie', 'animal', 'bandit'
+  display_name    TEXT DEFAULT '',              -- resolved human name: 'Runner', 'Wolf', 'Bandit (Rifle)'
+  node_uid        TEXT DEFAULT '',              -- unique spawn node ID
+  pos_x           REAL,
+  pos_y           REAL,
+  pos_z           REAL
+);
+CREATE INDEX IF NOT EXISTS idx_tl_ai_snap ON timeline_ai(snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_tl_ai_type ON timeline_ai(ai_type);
+CREATE INDEX IF NOT EXISTS idx_tl_ai_cat ON timeline_ai(category);
+`;
+
+// ─── Vehicle positions / state over time ────────────────────────────────────
+
+const TIMELINE_VEHICLES = `
+CREATE TABLE IF NOT EXISTS timeline_vehicles (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  snapshot_id     INTEGER NOT NULL REFERENCES timeline_snapshots(id) ON DELETE CASCADE,
+  class           TEXT NOT NULL,
+  display_name    TEXT DEFAULT '',
+  pos_x           REAL,
+  pos_y           REAL,
+  pos_z           REAL,
+  health          REAL DEFAULT 0,
+  max_health      REAL DEFAULT 0,
+  fuel            REAL DEFAULT 0,
+  item_count      INTEGER DEFAULT 0            -- number of items in trunk
+);
+CREATE INDEX IF NOT EXISTS idx_tl_vehicles_snap ON timeline_vehicles(snapshot_id);
+`;
+
+// ─── Structure state over time ──────────────────────────────────────────────
+
+const TIMELINE_STRUCTURES = `
+CREATE TABLE IF NOT EXISTS timeline_structures (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  snapshot_id     INTEGER NOT NULL REFERENCES timeline_snapshots(id) ON DELETE CASCADE,
+  actor_class     TEXT NOT NULL,
+  display_name    TEXT DEFAULT '',
+  owner_steam_id  TEXT DEFAULT '',
+  pos_x           REAL,
+  pos_y           REAL,
+  pos_z           REAL,
+  current_health  REAL DEFAULT 0,
+  max_health      REAL DEFAULT 0,
+  upgrade_level   INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_tl_structures_snap ON timeline_structures(snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_tl_structures_owner ON timeline_structures(owner_steam_id);
+`;
+
+// ─── House state over time ──────────────────────────────────────────────────
+
+const TIMELINE_HOUSES = `
+CREATE TABLE IF NOT EXISTS timeline_houses (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  snapshot_id     INTEGER NOT NULL REFERENCES timeline_snapshots(id) ON DELETE CASCADE,
+  uid             TEXT NOT NULL,
+  name            TEXT DEFAULT '',
+  windows_open    INTEGER DEFAULT 0,
+  windows_total   INTEGER DEFAULT 0,
+  doors_open      INTEGER DEFAULT 0,
+  doors_locked    INTEGER DEFAULT 0,
+  doors_total     INTEGER DEFAULT 0,
+  destroyed_furniture INTEGER DEFAULT 0,
+  has_generator   INTEGER DEFAULT 0,
+  sleepers        REAL DEFAULT 0,
+  clean           REAL DEFAULT 0,
+  pos_x           REAL,                        -- estimated from actor name hash (if available)
+  pos_y           REAL
+);
+CREATE INDEX IF NOT EXISTS idx_tl_houses_snap ON timeline_houses(snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_tl_houses_uid ON timeline_houses(uid);
+`;
+
+// ─── Companion / horse positions over time ──────────────────────────────────
+
+const TIMELINE_COMPANIONS = `
+CREATE TABLE IF NOT EXISTS timeline_companions (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  snapshot_id     INTEGER NOT NULL REFERENCES timeline_snapshots(id) ON DELETE CASCADE,
+  entity_type     TEXT NOT NULL,               -- 'dog', 'horse'
+  actor_name      TEXT DEFAULT '',
+  display_name    TEXT DEFAULT '',
+  owner_steam_id  TEXT DEFAULT '',
+  pos_x           REAL,
+  pos_y           REAL,
+  pos_z           REAL,
+  health          REAL DEFAULT 0,
+  extra           TEXT DEFAULT '{}'             -- JSON: energy, command, saddle, etc.
+);
+CREATE INDEX IF NOT EXISTS idx_tl_companions_snap ON timeline_companions(snapshot_id);
+`;
+
+// ─── Dropped backpacks over time ────────────────────────────────────────────
+
+const TIMELINE_BACKPACKS = `
+CREATE TABLE IF NOT EXISTS timeline_backpacks (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  snapshot_id     INTEGER NOT NULL REFERENCES timeline_snapshots(id) ON DELETE CASCADE,
+  class           TEXT DEFAULT '',
+  pos_x           REAL,
+  pos_y           REAL,
+  pos_z           REAL,
+  item_count      INTEGER DEFAULT 0,
+  items_summary   TEXT DEFAULT '[]'            -- JSON: [{item, amount}] top items
+);
+CREATE INDEX IF NOT EXISTS idx_tl_backpacks_snap ON timeline_backpacks(snapshot_id);
+`;
+
+// ─── Death cause tracking (correlates damage→death events) ──────────────────
+
+const DEATH_CAUSES = `
+CREATE TABLE IF NOT EXISTS death_causes (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  victim_name     TEXT NOT NULL,
+  victim_steam_id TEXT DEFAULT '',
+  cause_type      TEXT NOT NULL,               -- 'zombie', 'animal', 'bandit', 'player', 'environment', 'unknown'
+  cause_name      TEXT DEFAULT '',              -- classified name: 'Runner', 'Wolf', 'PlayerX'
+  cause_raw       TEXT DEFAULT '',              -- raw BP_ name from log
+  damage_total    REAL DEFAULT 0,
+  pos_x           REAL,
+  pos_y           REAL,
+  pos_z           REAL,
+  created_at      TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_death_cause_victim ON death_causes(victim_name);
+CREATE INDEX IF NOT EXISTS idx_death_cause_type ON death_causes(cause_type);
+CREATE INDEX IF NOT EXISTS idx_death_cause_created ON death_causes(created_at);
+CREATE INDEX IF NOT EXISTS idx_death_cause_steam ON death_causes(victim_steam_id);
+`;
+
 // ─── Meta ───────────────────────────────────────────────────────────────────
 
 const META = `
@@ -802,6 +1186,18 @@ const ALL_TABLES = [
   QUESTS,
   SERVER_SETTINGS,
   GAME_ITEMS,
+  GAME_BUILDINGS,
+  GAME_LOOT_POOLS,
+  GAME_LOOT_POOL_ITEMS,
+  GAME_VEHICLES_REF,
+  GAME_ANIMALS,
+  GAME_CROPS,
+  GAME_CAR_UPGRADES,
+  GAME_AMMO_TYPES,
+  GAME_REPAIR_DATA,
+  GAME_FURNITURE,
+  GAME_TRAPS,
+  GAME_SPRAYS,
   GAME_PROFESSIONS,
   GAME_AFFLICTIONS,
   GAME_SKILLS,
@@ -816,6 +1212,15 @@ const ALL_TABLES = [
   SERVER_PEAKS,
   ACTIVITY_LOG,
   CHAT_LOG,
+  TIMELINE_SNAPSHOTS,
+  TIMELINE_PLAYERS,
+  TIMELINE_AI,
+  TIMELINE_VEHICLES,
+  TIMELINE_STRUCTURES,
+  TIMELINE_HOUSES,
+  TIMELINE_COMPANIONS,
+  TIMELINE_BACKPACKS,
+  DEATH_CAUSES,
   INDEXES,
 ];
 

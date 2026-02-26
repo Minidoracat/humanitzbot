@@ -58,7 +58,7 @@ function cleanName(raw) {
   // Already clean (no underscores, no BP_ prefix, has spaces) — return as-is
   if (!name.includes('_') && !name.startsWith('BP_')) {
     // Check BUILDING_NAMES for CamelCase building names (e.g. "WaterCatcher" → "Rain Collector")
-    if (BUILDING_NAMES[name]) return BUILDING_NAMES[name].name;
+    if (BUILDING_NAMES[name]) return BUILDING_NAMES[name];
 
     // But still CamelCase-split: "LockedMetalShutter" → "Locked Metal Shutter"
     if (/[a-z][A-Z]/.test(name)) {
@@ -95,7 +95,7 @@ function cleanName(raw) {
   name = name.replace(/_\d+$/, '');
 
   // Check BUILDING_NAMES for authoritative display name
-  if (BUILDING_NAMES[name]) return BUILDING_NAMES[name].name;
+  if (BUILDING_NAMES[name]) return BUILDING_NAMES[name];
 
   // Check container aliases on the cleaned intermediate
   for (const [pattern, alias] of CONTAINER_ALIASES) {

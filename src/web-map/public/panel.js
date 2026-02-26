@@ -319,12 +319,23 @@
     var mso = $('#map-show-offline');
     if (mso) mso.addEventListener('change', function() { updateMapMarkers(); filterMapPlayers(); });
 
+    // Map layer toggles
+    ['structures', 'vehicles', 'containers', 'companions'].forEach(function(layer) {
+      var cb = $('#map-layer-' + layer);
+      if (cb) cb.addEventListener('change', function() { loadMapData(); });
+    });
+
     var af = $('#activity-filter');
     if (af) af.addEventListener('change', loadActivity);
     var as = $('#activity-search');
     if (as) as.addEventListener('input', loadActivity);
     var ad = $('#activity-date');
     if (ad) ad.addEventListener('change', loadActivity);
+
+    var cs = $('#clan-search');
+    if (cs) cs.addEventListener('input', debounce(loadClans, 300));
+    var cso = $('#clan-sort');
+    if (cso) cso.addEventListener('change', loadClans);
 
     var ss = $('#settings-search');
     if (ss) ss.addEventListener('input', filterSettings);
@@ -400,6 +411,7 @@
       case 'settings': loadSettings(); break;
       case 'database': loadDatabase(); break;
       case 'items': loadItems(); break;
+      case 'timeline': initTimeline(); break;
     }
   }
 
@@ -625,7 +637,89 @@
       S.worldBounds = d.worldBounds || null;
       updateMapMarkers();
       updateMapSidebar();
+
+      // Load extra map layers if toggled on
+      var wantLayers = [];
+      ['structures', 'vehicles', 'containers', 'companions'].forEach(function(l) {
+        var cb = $('#map-layer-' + l);
+        if (cb && cb.checked) wantLayers.push(l);
+      });
+      if (wantLayers.length > 0) {
+        try {
+          var lr = await fetch('/api/panel/mapdata?layers=' + wantLayers.join(','));
+          if (lr.ok) {
+            var ld = await lr.json();
+            updateMapWorldLayers(ld, wantLayers);
+          }
+        } catch(e) { /* mapdata unavailable */ }
+      } else {
+        // Clear world layers if nothing checked
+        clearMapWorldLayers();
+      }
     } catch (e) { console.error('Map data error:', e); }
+  }
+
+  // World entity layer groups
+  var mapWorldLayers = {};
+
+  function clearMapWorldLayers() {
+    for (var k in mapWorldLayers) {
+      if (mapWorldLayers[k] && S.map) S.map.removeLayer(mapWorldLayers[k]);
+    }
+    mapWorldLayers = {};
+  }
+
+  function updateMapWorldLayers(data, layers) {
+    if (!S.map || !window.L) return;
+    clearMapWorldLayers();
+
+    if (layers.indexOf('structures') !== -1 && data.structures) {
+      mapWorldLayers.structures = L.layerGroup();
+      data.structures.forEach(function(s) {
+        if (s.lat == null) return;
+        var icon = L.divIcon({ className: '', html: '<div style="width:5px;height:5px;background:#3b82f6;border-radius:1px;border:1px solid #10121e"></div>', iconSize: [5, 5], iconAnchor: [2.5, 2.5] });
+        var m = L.marker([s.lat, s.lng], { icon: icon });
+        m.bindTooltip(s.name || 'Structure', { direction: 'top', offset: [0, -4] });
+        m.addTo(mapWorldLayers.structures);
+      });
+      mapWorldLayers.structures.addTo(S.map);
+    }
+
+    if (layers.indexOf('vehicles') !== -1 && data.vehicles) {
+      mapWorldLayers.vehicles = L.layerGroup();
+      data.vehicles.forEach(function(v) {
+        if (v.lat == null) return;
+        var icon = L.divIcon({ className: '', html: '<div style="width:7px;height:7px;background:#fbbf24;border-radius:1px;border:1px solid #10121e"></div>', iconSize: [7, 7], iconAnchor: [3.5, 3.5] });
+        var m = L.marker([v.lat, v.lng], { icon: icon });
+        m.bindTooltip((v.name || 'Vehicle') + ' \u2764 ' + Math.round(v.health || 0) + ' \u26FD ' + (v.fuel || 0) + 'L', { direction: 'top', offset: [0, -5] });
+        m.addTo(mapWorldLayers.vehicles);
+      });
+      mapWorldLayers.vehicles.addTo(S.map);
+    }
+
+    if (layers.indexOf('containers') !== -1 && data.containers) {
+      mapWorldLayers.containers = L.layerGroup();
+      data.containers.forEach(function(c) {
+        if (c.lat == null) return;
+        var icon = L.divIcon({ className: '', html: '<div style="width:4px;height:4px;background:#a855f7;border-radius:50%;border:1px solid #10121e"></div>', iconSize: [4, 4], iconAnchor: [2, 2] });
+        var m = L.marker([c.lat, c.lng], { icon: icon });
+        m.bindTooltip((c.name || 'Container') + ' (' + (c.itemCount || 0) + ')', { direction: 'top', offset: [0, -4] });
+        m.addTo(mapWorldLayers.containers);
+      });
+      mapWorldLayers.containers.addTo(S.map);
+    }
+
+    if (layers.indexOf('companions') !== -1 && data.companions) {
+      mapWorldLayers.companions = L.layerGroup();
+      data.companions.forEach(function(c) {
+        if (c.lat == null) return;
+        var icon = L.divIcon({ className: '', html: '<div style="width:6px;height:6px;background:#ec4899;border-radius:50%;border:1px solid #10121e"></div>', iconSize: [6, 6], iconAnchor: [3, 3] });
+        var m = L.marker([c.lat, c.lng], { icon: icon });
+        m.bindTooltip(c.type || 'Companion', { direction: 'top', offset: [0, -4] });
+        m.addTo(mapWorldLayers.companions);
+      });
+      mapWorldLayers.companions.addTo(S.map);
+    }
   }
 
   function updateMapMarkers() {
@@ -699,6 +793,7 @@
     var content = $('#map-detail-content');
     if (!panel || !content) return;
     content.innerHTML = buildPlayerDetail(p);
+    content.dataset.steamId = p.steamId || '';
     panel.classList.remove('hidden');
   }
 
@@ -830,6 +925,7 @@
     var content = $('#player-modal-content');
     if (!modal || !content) return;
     content.innerHTML = buildPlayerDetail(p);
+    content.dataset.steamId = p.steamId || '';
     modal.classList.remove('hidden');
   }
 
@@ -989,7 +1085,11 @@
         var durPct = item.durability != null ? Math.round(item.durability) : null;
         var durColor = durPct != null ? (durPct > 60 ? '#34d399' : durPct > 25 ? '#fbbf24' : '#f87171') : '';
         var durBar = durPct != null ? '<div class="inv-dur-track"><div class="inv-dur-fill" style="width:' + durPct + '%;background:' + durColor + '"></div></div>' : '';
-        html += '<div class="inv-slot inv-clickable" data-item-name="' + esc(name) + '" data-item-qty="' + qty + '" data-item-dur="' + (durPct != null ? durPct : '') + '"><span class="inv-name">' + esc(name) + '</span>' + (qty > 1 ? '<span class="inv-qty">\u00d7' + qty + '</span>' : '') + durBar + '</div>';
+        var fpAttr = item.fingerprint ? ' data-item-fp="' + esc(item.fingerprint) + '"' : '';
+        var ammoAttr = item.ammo ? ' data-item-ammo="' + item.ammo + '"' : '';
+        var attachAttr = (item.attachments && item.attachments.length) ? ' data-item-attach="' + esc(JSON.stringify(item.attachments)) + '"' : '';
+        var maxDurAttr = item.maxDur ? ' data-item-maxdur="' + item.maxDur + '"' : '';
+        html += '<div class="inv-slot inv-clickable" data-item-name="' + esc(name) + '" data-item-qty="' + qty + '" data-item-dur="' + (durPct != null ? durPct : '') + '"' + fpAttr + ammoAttr + attachAttr + maxDurAttr + '><span class="inv-name">' + esc(name) + '</span>' + (qty > 1 ? '<span class="inv-qty">\u00d7' + qty + '</span>' : '') + durBar + '</div>';
       }
     }
     html += '</div></div>';
@@ -1004,77 +1104,195 @@
     var container = $('#clan-list');
     if (!container) return;
 
+    var allClans = [];
+
     // Try dedicated clan API (DB-backed)
     try {
       var r = await fetch('/api/panel/clans');
       if (r.ok) {
         var d = await r.json();
-        var clans = d.clans || [];
-        if (clans.length > 0) {
-          renderClansFromDB(container, clans);
-          return;
-        }
+        allClans = d.clans || [];
       }
     } catch (e) { /* fall through */ }
 
     // Fallback: group from player data
-    if (!S.players.length) {
-      try {
-        var r2 = await fetch('/api/players');
-        if (r2.ok) { var d2 = await r2.json(); S.players = d2.players || []; }
-      } catch (e) { /* ignore */ }
+    if (allClans.length === 0) {
+      if (!S.players.length) {
+        try {
+          var r2 = await fetch('/api/players');
+          if (r2.ok) { var d2 = await r2.json(); S.players = d2.players || []; }
+        } catch (e) { /* ignore */ }
+      }
+
+      var clanMap = {};
+      for (var i = 0; i < S.players.length; i++) {
+        var p = S.players[i];
+        var tag = p.clanName || null;
+        if (!tag) continue;
+        if (!clanMap[tag]) clanMap[tag] = { name: tag, members: [] };
+        clanMap[tag].members.push({
+          name: p.name,
+          steam_id: p.steamId,
+          rank: p.clanRank || '',
+          is_online: p.isOnline || false,
+          kills: p.kills || 0,
+          deaths: p.deaths || 0,
+          profession: p.profession || '',
+          days_survived: p.daysSurvived || 0,
+          playtime: p.playtime || 0,
+        });
+      }
+      for (var key in clanMap) {
+        if (clanMap.hasOwnProperty(key)) allClans.push(clanMap[key]);
+      }
     }
 
-    var clanMap = {};
-    for (var i = 0; i < S.players.length; i++) {
-      var p = S.players[i];
-      var tag = p.clanName || null;
-      if (!tag) continue;
-      if (!clanMap[tag]) clanMap[tag] = [];
-      clanMap[tag].push(p);
+    // Enrich clans with player data if available
+    for (var ci = 0; ci < allClans.length; ci++) {
+      var clan = allClans[ci];
+      clan._onlineCount = 0;
+      clan._totalKills = 0;
+      clan._totalDeaths = 0;
+      clan._totalPlaytime = 0;
+      for (var mi = 0; mi < (clan.members || []).length; mi++) {
+        var m = clan.members[mi];
+        var player = S.players.find(function(p) { return p.steamId === m.steam_id; });
+        if (player) {
+          m.is_online = player.isOnline || false;
+          m.kills = m.kills || player.kills || 0;
+          m.deaths = m.deaths || player.deaths || 0;
+          m.profession = m.profession || player.profession || '';
+          m.days_survived = m.days_survived || player.daysSurvived || 0;
+          m.playtime = m.playtime || player.playtime || 0;
+        }
+        if (m.is_online) clan._onlineCount++;
+        clan._totalKills += (m.kills || 0);
+        clan._totalDeaths += (m.deaths || 0);
+        clan._totalPlaytime += (m.playtime || 0);
+      }
     }
 
-    if (Object.keys(clanMap).length === 0) {
-      container.innerHTML = '<div class="feed-empty">No clan data available. Players will appear here when they join clans.</div>';
+    // Apply search filter
+    var searchVal = ($('#clan-search') ? $('#clan-search').value : '').toLowerCase();
+    var filtered = allClans;
+    if (searchVal) {
+      filtered = allClans.filter(function(c) {
+        if (c.name.toLowerCase().indexOf(searchVal) !== -1) return true;
+        for (var mi = 0; mi < (c.members || []).length; mi++) {
+          if ((c.members[mi].name || '').toLowerCase().indexOf(searchVal) !== -1) return true;
+        }
+        return false;
+      });
+    }
+
+    // Apply sort
+    var sortVal = ($('#clan-sort') ? $('#clan-sort').value : 'members');
+    filtered.sort(function(a, b) {
+      if (sortVal === 'name') return (a.name || '').localeCompare(b.name || '');
+      if (sortVal === 'online') return (b._onlineCount || 0) - (a._onlineCount || 0);
+      if (sortVal === 'kills') return (b._totalKills || 0) - (a._totalKills || 0);
+      return (b.members || []).length - (a.members || []).length; // default: members
+    });
+
+    // Update stat cards
+    var totalPlayers = 0;
+    var totalOnline = 0;
+    var largestName = '-';
+    var largestSize = 0;
+    for (var si = 0; si < allClans.length; si++) {
+      var sc = allClans[si];
+      var ml = (sc.members || []).length;
+      totalPlayers += ml;
+      totalOnline += (sc._onlineCount || 0);
+      if (ml > largestSize) { largestSize = ml; largestName = sc.name; }
+    }
+    var clsTotalEl = $('#clans-total');
+    if (clsTotalEl) clsTotalEl.textContent = allClans.length;
+    var clsPlayersEl = $('#clans-players');
+    if (clsPlayersEl) clsPlayersEl.textContent = totalPlayers;
+    var clsLargestEl = $('#clans-largest');
+    if (clsLargestEl) clsLargestEl.textContent = largestSize > 0 ? '[' + largestName + '] (' + largestSize + ')' : '-';
+    var clsOnlineEl = $('#clans-online');
+    if (clsOnlineEl) clsOnlineEl.textContent = totalOnline;
+    var clsCountEl = $('#clan-count');
+    if (clsCountEl) clsCountEl.textContent = filtered.length + ' clan' + (filtered.length !== 1 ? 's' : '');
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<div class="feed-empty col-span-full">No clans found. Clans appear when players form groups in-game.</div>';
       return;
     }
 
+    // Render clan cards
     container.innerHTML = '';
-    for (var tag in clanMap) {
-      if (!clanMap.hasOwnProperty(tag)) continue;
-      var members = clanMap[tag];
-      var card = el('div', 'card');
-      var html = '<h3 class="card-title">[' + esc(tag) + '] \u2014 ' + members.length + ' member' + (members.length !== 1 ? 's' : '') + '</h3>';
+    for (var ci2 = 0; ci2 < filtered.length; ci2++) {
+      var clan2 = filtered[ci2];
+      var members2 = clan2.members || [];
+      var card = el('div', 'card clan-card');
+      var online2 = clan2._onlineCount || 0;
+
+      var html = '';
+      // Header
+      html += '<div class="flex items-center justify-between mb-3">';
+      html += '<div>';
+      html += '<h3 class="text-base font-semibold text-white">[' + esc(clan2.name) + ']</h3>';
+      html += '<span class="text-xs text-muted">' + members2.length + ' member' + (members2.length !== 1 ? 's' : '');
+      if (online2 > 0) html += ' · <span class="text-calm">' + online2 + ' online</span>';
+      html += '</span>';
+      html += '</div>';
+      // Online indicator
+      html += '<div class="flex items-center gap-1.5">';
+      if (online2 > 0) html += '<span class="w-2.5 h-2.5 rounded-full bg-calm animate-pulse"></span>';
+      else html += '<span class="w-2.5 h-2.5 rounded-full bg-muted/30"></span>';
+      html += '</div>';
+      html += '</div>';
+
+      // Stats row
+      html += '<div class="grid grid-cols-3 gap-2 mb-3">';
+      html += '<div class="text-center bg-surface-300 rounded-lg py-1.5 px-1">';
+      html += '<div class="text-[10px] text-muted uppercase">Kills</div>';
+      html += '<div class="text-sm font-semibold text-horde">' + (clan2._totalKills || 0) + '</div>';
+      html += '</div>';
+      html += '<div class="text-center bg-surface-300 rounded-lg py-1.5 px-1">';
+      html += '<div class="text-[10px] text-muted uppercase">Deaths</div>';
+      html += '<div class="text-sm font-semibold text-surge">' + (clan2._totalDeaths || 0) + '</div>';
+      html += '</div>';
+      html += '<div class="text-center bg-surface-300 rounded-lg py-1.5 px-1">';
+      html += '<div class="text-[10px] text-muted uppercase">Playtime</div>';
+      html += '<div class="text-sm font-semibold text-accent">' + formatPlaytimeShort(clan2._totalPlaytime || 0) + '</div>';
+      html += '</div>';
+      html += '</div>';
+
+      // Member list
       html += '<div class="space-y-1">';
-      for (var mi = 0; mi < members.length; mi++) {
-        var m = members[mi];
-        html += '<div class="flex items-center gap-2 text-sm"><span class="status-dot ' + (m.isOnline ? 'online' : 'offline') + '"></span><span class="player-link" data-steam-id="' + esc(m.steamId) + '">' + esc(m.name) + '</span>' + (m.clanRank ? '<span class="text-[10px] text-accent bg-accent/10 px-1.5 rounded">' + esc(m.clanRank) + '</span>' : '') + '<span class="text-muted text-xs ml-auto">' + esc(m.profession || '-') + '</span></div>';
+      // Sort members: online first, then by kills
+      members2.sort(function(a, b) {
+        if (a.is_online !== b.is_online) return a.is_online ? -1 : 1;
+        return (b.kills || 0) - (a.kills || 0);
+      });
+      for (var mi2 = 0; mi2 < members2.length; mi2++) {
+        var m2 = members2[mi2];
+        var displayName = m2.name || m2.steam_id || 'Unknown';
+        html += '<div class="flex items-center gap-2 py-1 px-2 rounded hover:bg-surface-300/50 transition-colors group">';
+        html += '<span class="status-dot ' + (m2.is_online ? 'online' : 'offline') + ' flex-shrink-0"></span>';
+        html += '<span class="player-link text-sm truncate flex-1" data-steam-id="' + esc(m2.steam_id || '') + '">' + esc(displayName) + '</span>';
+        if (m2.rank) html += '<span class="text-[10px] font-medium text-accent bg-accent/10 px-1.5 py-0.5 rounded flex-shrink-0">' + esc(m2.rank) + '</span>';
+        if (m2.profession) html += '<span class="text-[10px] text-muted hidden group-hover:inline flex-shrink-0">' + esc(m2.profession) + '</span>';
+        html += '<span class="text-[11px] text-muted ml-auto flex-shrink-0 tabular-nums">' + (m2.kills || 0) + 'K/' + (m2.deaths || 0) + 'D</span>';
+        html += '</div>';
       }
       html += '</div>';
+
       card.innerHTML = html;
       container.appendChild(card);
     }
   }
 
-  function renderClansFromDB(container, clans) {
-    container.innerHTML = '';
-    for (var ci = 0; ci < clans.length; ci++) {
-      var clan = clans[ci];
-      var card = el('div', 'card');
-      var members = clan.members || [];
-      var html = '<h3 class="card-title">[' + esc(clan.name) + '] \u2014 ' + members.length + ' member' + (members.length !== 1 ? 's' : '') + '</h3>';
-      html += '<div class="space-y-1">';
-      for (var mi = 0; mi < members.length; mi++) {
-        var m = members[mi];
-        var player = S.players.find(function(p) { return p.steamId === m.steam_id; });
-        var isOnline = player ? player.isOnline : false;
-        var displayName = (player ? player.name : null) || m.name || m.steam_id;
-        html += '<div class="flex items-center gap-2 text-sm"><span class="status-dot ' + (isOnline ? 'online' : 'offline') + '"></span><span class="player-link" data-steam-id="' + esc(m.steam_id) + '">' + esc(displayName) + '</span>' + (m.rank ? '<span class="text-[10px] text-accent bg-accent/10 px-1.5 rounded">' + esc(m.rank) + '</span>' : '') + (m.can_invite ? '<span class="text-[10px] text-muted">invite</span>' : '') + (m.can_kick ? '<span class="text-[10px] text-muted">kick</span>' : '') + '</div>';
-      }
-      html += '</div>';
-      card.innerHTML = html;
-      container.appendChild(card);
-    }
+  function formatPlaytimeShort(seconds) {
+    if (!seconds || seconds <= 0) return '0h';
+    var h = Math.floor(seconds / 3600);
+    var m = Math.floor((seconds % 3600) / 60);
+    if (h > 0) return h + 'h ' + m + 'm';
+    return m + 'm';
   }
 
   // ══════════════════════════════════════════════════
@@ -1588,7 +1806,12 @@
       html += '<span class="text-muted">from</span>' + _locationBadge(m.from_type, m.from_id, m.from_slot);
       html += '<span class="text-muted">to</span>' + _locationBadge(m.to_type, m.to_id, m.to_slot);
       if (m.attributed_name) {
-        html += '<span class="text-calm ml-auto">by ' + esc(m.attributed_name) + '</span>';
+        var attrSid = m.attributed_steam_id || '';
+        if (attrSid) {
+          html += '<span class="text-calm ml-auto player-link cursor-pointer hover:underline" data-steam-id="' + esc(attrSid) + '">by ' + esc(m.attributed_name) + '</span>';
+        } else {
+          html += '<span class="text-calm ml-auto">by ' + esc(m.attributed_name) + '</span>';
+        }
       }
       html += '<span class="ml-auto">' + typeLabel + '</span>';
       html += '</div>';
@@ -1609,14 +1832,30 @@
       global_container: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30',
     };
     var cls = colors[type] || 'bg-surface-50 text-muted border-border';
-    var label = _formatLocationType(type) + ': ' + _shortenId(id);
+    var label = _formatLocationType(type) + ': ' + _resolveLocationLabel(type, id);
     if (slot && slot !== 'items' && slot !== 'ground') label += ' (' + slot + ')';
+    // Make player-type badges clickable
+    if (type === 'player' && id && /^\d{17}$/.test(id)) {
+      return '<span class="inline-flex px-1.5 py-0.5 rounded text-[10px] border cursor-pointer hover:brightness-125 player-link ' + cls + '" data-steam-id="' + esc(id) + '">' + esc(label) + '</span>';
+    }
     return '<span class="inline-flex px-1.5 py-0.5 rounded text-[10px] border ' + cls + '">' + esc(label) + '</span>';
   }
 
   function _formatLocationType(type) {
     var map = { player: 'Player', container: 'Container', vehicle: 'Vehicle', horse: 'Horse', structure: 'Structure', world_drop: 'World', backpack: 'Backpack', global_container: 'Global' };
     return map[type] || type;
+  }
+
+  /** Resolve a location ID to a human-readable label — uses player names when possible */
+  function _resolveLocationLabel(type, id) {
+    if (!id) return '?';
+    // For player locations, try to resolve the steam ID to a name
+    if (type === 'player' && /^\d{17}$/.test(id)) {
+      var p = S.players.find(function(pl) { return pl.steamId === id; });
+      if (p && p.name) return p.name;
+      return '\u2026' + id.slice(-6);
+    }
+    return _shortenId(id);
   }
 
   function _shortenId(id) {
@@ -1709,7 +1948,14 @@
           html += _locationBadge(m.from_type, m.from_id, m.from_slot);
           html += '<span class="text-muted">→</span>';
           html += _locationBadge(m.to_type, m.to_id, m.to_slot);
-          if (m.attributed_name) html += '<span class="text-calm ml-auto">' + esc(m.attributed_name) + '</span>';
+          if (m.attributed_name) {
+            var attrSteamId = m.attributed_steam_id || '';
+            if (attrSteamId) {
+              html += '<span class="text-calm ml-auto player-link cursor-pointer hover:underline" data-steam-id="' + esc(attrSteamId) + '">' + esc(m.attributed_name) + '</span>';
+            } else {
+              html += '<span class="text-calm ml-auto">' + esc(m.attributed_name) + '</span>';
+            }
+          }
           html += '</div>';
         }
         html += '</div>';
@@ -1961,8 +2207,21 @@
     var name = slot.dataset.itemName || 'Unknown';
     var qty = slot.dataset.itemQty || '';
     var dur = slot.dataset.itemDur || '';
+    var fp = slot.dataset.itemFp || '';
+    var ammo = slot.dataset.itemAmmo || '';
+    var attachStr = slot.dataset.itemAttach || '';
+    var maxDur = slot.dataset.itemMaxdur || '';
 
-    // Count how many players have this item
+    // Parse attachments
+    var attachments = [];
+    if (attachStr) { try { attachments = JSON.parse(attachStr); } catch(e) {} }
+
+    // Determine the player context (whose inventory is this item in?)
+    var contextSteamId = '';
+    var parentContent = slot.closest('#player-modal-content, #map-detail-content');
+    if (parentContent) contextSteamId = parentContent.dataset.steamId || '';
+
+    // Count how many players have this item (client-side scan)
     var owners = [];
     for (var i = 0; i < S.players.length; i++) {
       var p = S.players[i];
@@ -1973,31 +2232,183 @@
 
     var popup = document.createElement('div');
     popup.className = 'item-popup';
+
+    // Build header with basic info
     var html = '<div class="item-popup-header">' + esc(name) + '</div>';
     html += '<div class="item-popup-body">';
-    if (qty) html += '<div class="text-xs"><span class="text-muted">Quantity:</span> ' + qty + '</div>';
-    if (dur) html += '<div class="text-xs"><span class="text-muted">Durability:</span> ' + dur + '%</div>';
-    if (owners.length > 0) {
-      html += '<div class="text-xs text-muted mt-2 mb-1">Held by ' + owners.length + ' player' + (owners.length > 1 ? 's' : '') + ':</div>';
-      html += '<div class="item-popup-owners">';
-      for (var oi = 0; oi < Math.min(owners.length, 8); oi++) {
-        html += '<div class="text-xs"><span class="player-link" data-steam-id="' + esc(owners[oi].steamId) + '">' + esc(owners[oi].name) + '</span> <span class="text-muted">\u00d7' + owners[oi].count + '</span></div>';
-      }
-      if (owners.length > 8) html += '<div class="text-[10px] text-muted">+' + (owners.length - 8) + ' more</div>';
+
+    // Basic stats grid
+    html += '<div class="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs mb-2">';
+    if (qty) html += '<div><span class="text-muted">Quantity:</span> ' + qty + '</div>';
+    if (dur) {
+      var durN = parseInt(dur, 10);
+      var durCol = durN > 60 ? 'text-emerald-400' : durN > 25 ? 'text-amber-400' : 'text-red-400';
+      html += '<div><span class="text-muted">Durability:</span> <span class="' + durCol + '">' + dur + '%</span>';
+      if (maxDur) html += ' <span class="text-muted text-[10px]">(max ' + parseFloat(maxDur).toFixed(1) + ')</span>';
       html += '</div>';
     }
-    // DB cross-reference link
-    html += '<div class="mt-2"><span class="db-link text-[10px] text-accent hover:underline cursor-pointer" data-table="activity_log" data-search="' + esc(name) + '">Search activity log \u2192</span></div>';
+    if (ammo) html += '<div><span class="text-muted">Ammo:</span> ' + ammo + '</div>';
+    if (fp) html += '<div><span class="text-muted">Fingerprint:</span> <span class="font-mono text-[10px]">' + esc(fp) + '</span></div>';
+    html += '</div>';
+
+    // Attachments
+    if (attachments.length > 0) {
+      html += '<div class="text-xs mb-2"><span class="text-muted">Attachments:</span> <span class="text-accent">' + attachments.map(function(a) { return esc(a); }).join(', ') + '</span></div>';
+    }
+
+    // Owners section
+    if (owners.length > 0) {
+      html += '<div class="text-xs text-muted mt-1 mb-1">Held by ' + owners.length + ' player' + (owners.length > 1 ? 's' : '') + ':</div>';
+      html += '<div class="item-popup-owners">';
+      for (var oi = 0; oi < Math.min(owners.length, 6); oi++) {
+        html += '<div class="text-xs"><span class="player-link cursor-pointer hover:underline text-accent" data-steam-id="' + esc(owners[oi].steamId) + '">' + esc(owners[oi].name) + '</span> <span class="text-muted">\u00d7' + owners[oi].count + '</span></div>';
+      }
+      if (owners.length > 6) html += '<div class="text-[10px] text-muted">+' + (owners.length - 6) + ' more</div>';
+      html += '</div>';
+    }
+
+    // Tracking data container — will be populated async
+    html += '<div id="item-tracking-data" class="mt-2 border-t border-border/30 pt-2">';
+    if (fp || name) {
+      html += '<div class="text-[10px] text-muted">Loading tracking data...</div>';
+    }
+    html += '</div>';
+
+    // Quick links
+    html += '<div class="mt-2 flex gap-2 flex-wrap">';
+    html += '<span class="db-link text-[10px] text-accent hover:underline cursor-pointer" data-table="activity_log" data-search="' + esc(name) + '">Activity log \u2192</span>';
+    if (S.tier >= 3) { // admin
+      html += '<span class="db-link text-[10px] text-accent hover:underline cursor-pointer" data-table="item_instances" data-search="' + esc(name) + '">Item DB \u2192</span>';
+      html += '<span class="db-link text-[10px] text-accent hover:underline cursor-pointer" data-table="item_movements" data-search="' + esc(name) + '">Movements \u2192</span>';
+    }
+    html += '</div>';
     html += '</div>';
     popup.innerHTML = html;
 
     // Position near the slot
     var rect = slot.getBoundingClientRect();
     popup.style.position = 'fixed';
-    popup.style.left = Math.min(rect.right + 8, window.innerWidth - 260) + 'px';
+    popup.style.left = Math.min(rect.right + 8, window.innerWidth - 320) + 'px';
     popup.style.top = Math.max(rect.top - 20, 8) + 'px';
     popup.style.zIndex = '10000';
+    popup.style.maxWidth = '320px';
     document.body.appendChild(popup);
+
+    // Async: Fetch tracking data from item fingerprint API
+    if (fp || name) {
+      _fetchItemTrackingData(fp, name, contextSteamId);
+    }
+  }
+
+  /** Fetch item tracking data from the fingerprint API and update the popup */
+  async function _fetchItemTrackingData(fingerprint, itemName, steamId) {
+    var container = document.getElementById('item-tracking-data');
+    if (!container) return;
+
+    try {
+      var params = [];
+      if (fingerprint) params.push('fingerprint=' + encodeURIComponent(fingerprint));
+      if (itemName) params.push('item=' + encodeURIComponent(itemName));
+      if (steamId) params.push('steamId=' + encodeURIComponent(steamId));
+      var url = '/api/panel/items/lookup?' + params.join('&');
+
+      var r = await fetch(url);
+      if (!r.ok) {
+        container.innerHTML = '<div class="text-[10px] text-muted">No tracking data available</div>';
+        return;
+      }
+
+      var data = await r.json();
+      if (!data.match) {
+        container.innerHTML = '<div class="text-[10px] text-muted">Not yet tracked by fingerprint system</div>';
+        return;
+      }
+
+      var html = '';
+      var m = data.match;
+
+      // Instance/group identity
+      html += '<div class="text-[10px] font-semibold text-white mb-1">';
+      html += data.matchType === 'group' ? '\ud83d\udce6 Fungible Group' : '\ud83d\udd0d Tracked Instance';
+      html += ' #' + m.id + '</div>';
+
+      // Tracking metadata
+      html += '<div class="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px] mb-1.5">';
+      if (m.first_seen) html += '<div><span class="text-muted">First seen:</span> ' + _timeAgo(m.first_seen) + ' ago</div>';
+      if (m.last_seen) html += '<div><span class="text-muted">Last seen:</span> ' + _timeAgo(m.last_seen) + ' ago</div>';
+      if (data.matchType === 'group') {
+        html += '<div><span class="text-muted">Qty tracked:</span> ' + (m.quantity || 0) + '</div>';
+      }
+      html += '<div><span class="text-muted">Movements:</span> ' + data.totalMovements + '</div>';
+      html += '</div>';
+
+      // Ownership chain
+      if (data.ownershipChain && data.ownershipChain.length > 0) {
+        html += '<div class="text-[10px] text-muted mb-0.5">Ownership chain:</div>';
+        html += '<div class="flex flex-wrap gap-1 mb-1.5">';
+        for (var oi = 0; oi < Math.min(data.ownershipChain.length, 8); oi++) {
+          var owner = data.ownershipChain[oi];
+          html += '<span class="player-link cursor-pointer hover:underline inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] bg-emerald-500/15 text-emerald-400 border border-emerald-500/30" data-steam-id="' + esc(owner.steamId) + '">';
+          html += esc(owner.name);
+          html += '</span>';
+          if (oi < Math.min(data.ownershipChain.length, 8) - 1) html += '<span class="text-muted text-[10px]">\u2192</span>';
+        }
+        if (data.ownershipChain.length > 8) html += '<span class="text-[10px] text-muted">+' + (data.ownershipChain.length - 8) + ' more</span>';
+        html += '</div>';
+      }
+
+      // Recent movements (last 5)
+      var movements = data.movements || [];
+      if (movements.length > 0) {
+        var showCount = Math.min(movements.length, 5);
+        html += '<div class="text-[10px] text-muted mb-0.5">Recent movements:</div>';
+        html += '<div class="space-y-0.5 max-h-28 overflow-y-auto">';
+        // Show most recent first
+        var recentMovements = movements.slice(-showCount).reverse();
+        for (var mi = 0; mi < recentMovements.length; mi++) {
+          var mv = recentMovements[mi];
+          html += '<div class="flex items-center gap-1 text-[10px] py-0.5">';
+          html += '<span class="text-muted font-mono shrink-0">' + _timeAgo(mv.created_at) + '</span>';
+          html += _locationBadgeMini(mv.from_type, mv.from_id, mv.from_name);
+          html += '<span class="text-muted">\u2192</span>';
+          html += _locationBadgeMini(mv.to_type, mv.to_id, mv.to_name);
+          if (mv.attributed_name) {
+            html += '<span class="text-calm ml-auto player-link cursor-pointer hover:underline" data-steam-id="' + esc(mv.attributed_steam_id || '') + '">' + esc(mv.attributed_name) + '</span>';
+          }
+          html += '</div>';
+        }
+        html += '</div>';
+        if (movements.length > 5) {
+          html += '<div class="text-[10px] text-muted mt-0.5">' + (movements.length - 5) + ' more movements \u2014 ';
+          html += '<span class="text-accent cursor-pointer hover:underline" onclick="if(S.tier>=3){switchTab(\'items\');}">';
+          html += 'view in Items tab</span></div>';
+        }
+      }
+
+      container.innerHTML = html;
+    } catch (err) {
+      container.innerHTML = '<div class="text-[10px] text-muted">Tracking data unavailable</div>';
+    }
+  }
+
+  /** Mini location badge for item popup movement history */
+  function _locationBadgeMini(type, id, resolvedName) {
+    var colors = {
+      player: 'text-emerald-400',
+      container: 'text-purple-400',
+      vehicle: 'text-amber-400',
+      horse: 'text-pink-400',
+      structure: 'text-blue-400',
+      world_drop: 'text-gray-400',
+      backpack: 'text-orange-400',
+      global_container: 'text-indigo-400',
+    };
+    var cls = colors[type] || 'text-muted';
+    var label = resolvedName || _shortenId(id);
+    if (type === 'player') {
+      return '<span class="' + cls + ' player-link cursor-pointer hover:underline" data-steam-id="' + esc(id || '') + '">' + esc(label) + '</span>';
+    }
+    return '<span class="' + cls + '">' + esc(_formatLocationType(type)) + ':' + esc(label) + '</span>';
   }
 
   function countItemInPlayer(player, itemName) {
@@ -2059,6 +2470,312 @@
       clearTimeout(timer);
       timer = setTimeout(function() { fn.apply(null, args); }, ms);
     };
+  }
+
+  // ══════════════════════════════════════════════════
+  //  TIMELINE — time-scroll playback of world state
+  // ══════════════════════════════════════════════════
+
+  var TL = {
+    map: null, ready: false,
+    snapshots: [],   // metadata list
+    idx: -1,         // current index in snapshots[]
+    data: null,      // full entity data for current snapshot
+    playing: false,
+    timer: null,
+    speed: 5,
+    layers: {},      // L.layerGroup per entity type
+    visible: { players:true, zombies:true, animals:true, bandits:true, vehicles:true, structures:false, companions:true, backpacks:false, deaths:true },
+    deathMarkers: null,
+    nameMap: {},
+  };
+
+  function tlIcon(color, size, shape, title) {
+    var css = shape === 'diamond'
+      ? 'width:'+size+'px;height:'+size+'px;transform:rotate(45deg);border-radius:2px;'
+      : shape === 'square'
+        ? 'width:'+size+'px;height:'+size+'px;border-radius:2px;'
+        : 'width:'+size+'px;height:'+size+'px;border-radius:50%;';
+    return L.divIcon({
+      className: 'tl-marker',
+      html: '<div style="'+css+'background:'+color+';border:1.5px solid rgba(255,255,255,0.35);box-shadow:0 0 4px '+color+'60" title="'+(title||'')+'"></div>',
+      iconSize: [size, size], iconAnchor: [size/2, size/2],
+    });
+  }
+
+  async function initTimeline() {
+    // Init map
+    if (!TL.ready) {
+      var c = $('#tl-map');
+      if (!c || !window.L) return;
+      TL.map = L.map(c, { crs: L.CRS.Simple, minZoom: -2, maxZoom: 4, zoomControl: true, attributionControl: false });
+      L.imageOverlay('/map-4096.png', [[0,0],[4096,4096]]).addTo(TL.map);
+      TL.map.fitBounds([[0,0],[4096,4096]]);
+
+      // Create layer groups
+      ['players','zombies','animals','bandits','vehicles','structures','companions','backpacks','deaths'].forEach(function(k) {
+        TL.layers[k] = L.layerGroup();
+        if (TL.visible[k]) TL.layers[k].addTo(TL.map);
+      });
+
+      // Wire controls
+      var playBtn = $('#tl-play');
+      if (playBtn) playBtn.addEventListener('click', tlTogglePlay);
+      var stepBack = $('#tl-step-back');
+      if (stepBack) stepBack.addEventListener('click', function() { tlStop(); tlStep(-1); });
+      var stepFwd = $('#tl-step-fwd');
+      if (stepFwd) stepFwd.addEventListener('click', function() { tlStop(); tlStep(1); });
+      var latest = $('#tl-go-latest');
+      if (latest) latest.addEventListener('click', function() { tlStop(); tlGoTo(TL.snapshots.length - 1); });
+      var slider = $('#tl-slider');
+      if (slider) slider.addEventListener('input', function() { tlStop(); tlGoTo(parseInt(this.value, 10)); });
+
+      // Speed buttons
+      $$('.tl-speed').forEach(function(b) {
+        b.addEventListener('click', function() {
+          TL.speed = parseInt(this.dataset.speed, 10) || 5;
+          $$('.tl-speed').forEach(function(x) { x.classList.toggle('active', parseInt(x.dataset.speed,10) === TL.speed); });
+          if (TL.playing) { tlStop(); tlPlay(); }
+        });
+      });
+
+      // Layer toggles
+      ['players','zombies','animals','bandits','vehicles','structures','companions','backpacks','deaths'].forEach(function(k) {
+        var cb = $('#tl-l-' + k);
+        if (cb) cb.addEventListener('change', function() {
+          TL.visible[k] = this.checked;
+          if (this.checked) TL.layers[k].addTo(TL.map);
+          else TL.map.removeLayer(TL.layers[k]);
+          if (TL.data) tlRender();
+        });
+      });
+
+      // Keyboard
+      document.addEventListener('keydown', function(e) {
+        if (S.currentTab !== 'timeline') return;
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === ' ') { e.preventDefault(); tlTogglePlay(); }
+        if (e.key === 'ArrowLeft') { e.preventDefault(); tlStop(); tlStep(-1); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); tlStop(); tlStep(1); }
+        if (e.key === 'End') { e.preventDefault(); tlStop(); tlGoTo(TL.snapshots.length - 1); }
+      });
+
+      TL.ready = true;
+    }
+
+    // After a brief delay, invalidate map size (tab may not be visible yet)
+    setTimeout(function() { if (TL.map) TL.map.invalidateSize(); }, 100);
+
+    // Load snapshot list
+    try {
+      var bounds = await fetch('/api/timeline/bounds').then(function(r) { return r.json(); });
+      if (!bounds || !bounds.count) {
+        $('#tl-info').textContent = 'No snapshots yet — data records every ' + (5) + ' min';
+        return;
+      }
+      TL.snapshots = await fetch('/api/timeline/snapshots?from=' + bounds.earliest + '&to=' + bounds.latest).then(function(r) { return r.json(); });
+      if (!TL.snapshots.length) return;
+
+      var slider = $('#tl-slider');
+      if (slider) { slider.min = 0; slider.max = TL.snapshots.length - 1; slider.value = TL.snapshots.length - 1; }
+
+      // Load latest snapshot
+      tlGoTo(TL.snapshots.length - 1);
+      // Load death markers
+      tlLoadDeaths();
+    } catch (e) {
+      console.warn('[TL] Init error:', e);
+      $('#tl-info').textContent = 'Timeline unavailable';
+    }
+  }
+
+  async function tlGoTo(idx) {
+    if (idx < 0 || idx >= TL.snapshots.length) return;
+    TL.idx = idx;
+    var slider = $('#tl-slider');
+    if (slider) slider.value = idx;
+    tlUpdateInfo();
+
+    try {
+      var snap = TL.snapshots[idx];
+      TL.data = await fetch('/api/timeline/snapshot/' + snap.id).then(function(r) { return r.json(); });
+      TL.nameMap = TL.data.nameMap || {};
+      tlRender();
+    } catch (e) {
+      console.warn('[TL] Snapshot load error:', e);
+    }
+  }
+
+  function tlUpdateInfo() {
+    var info = $('#tl-info');
+    if (!info) return;
+    var s = TL.snapshots[TL.idx];
+    if (!s) { info.textContent = 'No data'; return; }
+    var d = new Date(s.created_at + (s.created_at.endsWith('Z') ? '' : 'Z'));
+    var time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    var date = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+    var w = s.weather_type || '';
+    var sn = s.season || '';
+    var day = s.game_day ? 'Day ' + s.game_day : '';
+    info.innerHTML = '<b>' + date + ' ' + time + '</b> · ' + day + ' · ' + w + ' · ' + sn +
+      ' · 👤' + (s.online_count||0) + '/' + (s.player_count||0) +
+      ' 🧟' + (s.ai_count||0) + ' 🚗' + (s.vehicle_count||0) +
+      ' 🏗️' + (s.structure_count||0) +
+      ' <span class="text-muted text-[10px]">(' + (TL.idx+1) + '/' + TL.snapshots.length + ')</span>';
+  }
+
+  function tlRender() {
+    if (!TL.data || !TL.map) return;
+    var d = TL.data;
+
+    // Clear entity layers (not deaths — those are loaded separately)
+    ['players','zombies','animals','bandits','vehicles','structures','companions','backpacks'].forEach(function(k) {
+      TL.layers[k].clearLayers();
+    });
+
+    // Players
+    if (TL.visible.players && d.players) {
+      d.players.forEach(function(p) {
+        if (p.lat == null) return;
+        var online = !!p.online;
+        var icon = tlIcon(online ? '#34d399' : '#64748b', online ? 14 : 10, 'circle', p.name);
+        var m = L.marker([p.lat, p.lng], { icon: icon, zIndexOffset: online ? 1000 : 500 });
+        m.bindTooltip((online ? '🟢 ' : '') + p.name, { direction: 'top', offset: [0, -8] });
+        m.bindPopup('<div class="tl-popup"><b>' + esc(p.name) + '</b> ' + (online ? '🟢' : '🔴') + '<br>' +
+          '❤️ ' + Math.round(p.health||0) + '/' + (p.max_health||100) +
+          ' | 🍖 ' + Math.round(p.hunger||0) + ' | 💧 ' + Math.round(p.thirst||0) + '<br>' +
+          '🧟 Kills: ' + (p.zeeks_killed||0) + ' | ⭐ Lvl ' + (p.level||0) + '<br>' +
+          '📅 Days: ' + (p.days_survived||0) + '</div>');
+        m.addTo(TL.layers.players);
+      });
+    }
+
+    // AI
+    if (d.ai) {
+      d.ai.forEach(function(a) {
+        if (a.lat == null) return;
+        var cat = a.category || 'zombie';
+        if (cat === 'zombie' && !TL.visible.zombies) return;
+        if (cat === 'animal' && !TL.visible.animals) return;
+        if (cat === 'bandit' && !TL.visible.bandits) return;
+        var icon = cat === 'animal' ? tlIcon('#e67e22', 6, 'diamond') :
+                   cat === 'bandit' ? tlIcon('#e74c3c', 7, 'square') :
+                   tlIcon('#9b59b6', 5, 'circle');
+        var layerKey = cat === 'animal' ? 'animals' : cat === 'bandit' ? 'bandits' : 'zombies';
+        var m = L.marker([a.lat, a.lng], { icon: icon });
+        m.bindTooltip(a.display_name || a.ai_type, { direction: 'top', offset: [0, -5] });
+        m.addTo(TL.layers[layerKey]);
+      });
+    }
+
+    // Vehicles
+    if (TL.visible.vehicles && d.vehicles) {
+      d.vehicles.forEach(function(v) {
+        if (v.lat == null) return;
+        var m = L.marker([v.lat, v.lng], { icon: tlIcon('#3498db', 9, 'square') });
+        var name = v.display_name || v.class || 'Vehicle';
+        m.bindTooltip(name, { direction: 'top', offset: [0, -7] });
+        m.bindPopup('<div class="tl-popup"><b>' + esc(name) + '</b><br>❤️ ' +
+          Math.round(v.health||0) + '/' + (v.max_health||0) + '<br>⛽ ' +
+          (Math.round((v.fuel||0)*10)/10) + 'L<br>📦 ' + (v.item_count||0) + ' items</div>');
+        m.addTo(TL.layers.vehicles);
+      });
+    }
+
+    // Structures
+    if (TL.visible.structures && d.structures) {
+      d.structures.forEach(function(s) {
+        if (s.lat == null) return;
+        var m = L.marker([s.lat, s.lng], { icon: tlIcon('#95a5a6', 4, 'square') });
+        var name = s.display_name || s.actor_class || 'Structure';
+        var owner = TL.nameMap[s.owner_steam_id] || s.owner_steam_id || '?';
+        m.bindTooltip(name, { direction: 'top', offset: [0, -5] });
+        m.bindPopup('<div class="tl-popup"><b>' + esc(name) + '</b><br>Owner: ' + esc(owner) +
+          '<br>❤️ ' + Math.round(s.current_health||0) + '/' + (s.max_health||0) +
+          '<br>⬆️ Tier ' + (s.upgrade_level||0) + '</div>');
+        m.addTo(TL.layers.structures);
+      });
+    }
+
+    // Companions
+    if (TL.visible.companions && d.companions) {
+      d.companions.forEach(function(c) {
+        if (c.lat == null) return;
+        var m = L.marker([c.lat, c.lng], { icon: tlIcon('#f1c40f', 7, 'diamond') });
+        var name = c.display_name || c.entity_type || 'Companion';
+        var owner = TL.nameMap[c.owner_steam_id] || '';
+        m.bindTooltip(name + (owner ? ' (' + owner + ')' : ''), { direction: 'top', offset: [0, -6] });
+        m.addTo(TL.layers.companions);
+      });
+    }
+
+    // Backpacks
+    if (TL.visible.backpacks && d.backpacks) {
+      d.backpacks.forEach(function(b) {
+        if (b.lat == null) return;
+        var m = L.marker([b.lat, b.lng], { icon: tlIcon('#8e44ad', 6, 'square') });
+        m.bindTooltip('Backpack (' + (b.item_count||0) + ' items)', { direction: 'top', offset: [0, -5] });
+        m.addTo(TL.layers.backpacks);
+      });
+    }
+
+    // Update counts
+    var counts = {
+      players: d.players ? d.players.length : 0,
+      zombies: d.ai ? d.ai.filter(function(a){return a.category==='zombie';}).length : 0,
+      animals: d.ai ? d.ai.filter(function(a){return a.category==='animal';}).length : 0,
+      bandits: d.ai ? d.ai.filter(function(a){return a.category==='bandit';}).length : 0,
+      vehicles: d.vehicles ? d.vehicles.length : 0,
+      structures: d.structures ? d.structures.length : 0,
+      companions: d.companions ? d.companions.length : 0,
+      backpacks: d.backpacks ? d.backpacks.length : 0,
+    };
+    for (var k in counts) {
+      var countEl = $('#tl-c-' + k);
+      if (countEl) countEl.textContent = counts[k];
+    }
+  }
+
+  async function tlLoadDeaths() {
+    try {
+      var deaths = await fetch('/api/timeline/deaths?limit=200').then(function(r){return r.json();});
+      TL.layers.deaths.clearLayers();
+      deaths.forEach(function(d) {
+        if (d.lat == null) return;
+        var m = L.marker([d.lat, d.lng], { icon: tlIcon('#ff0000', 8, 'circle', 'Death'), zIndexOffset: -100 });
+        var cause = d.cause_name || d.cause_type || 'Unknown';
+        var t = new Date(d.created_at).toLocaleString('en-GB', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+        m.bindPopup('<div class="tl-popup"><b>💀 ' + esc(d.victim_name||'?') + '</b><br>Killed by: ' + esc(cause) +
+          ' (' + esc(d.cause_type||'') + ')<br>Dmg: ' + Math.round(d.damage_total||0) + '<br><small>' + t + '</small></div>');
+        m.addTo(TL.layers.deaths);
+      });
+    } catch (e) { console.warn('[TL] Deaths error:', e); }
+  }
+
+  function tlTogglePlay() { TL.playing ? tlStop() : tlPlay(); }
+
+  function tlPlay() {
+    if (TL.playing || !TL.snapshots.length) return;
+    TL.playing = true;
+    var btn = $('#tl-play');
+    if (btn) btn.textContent = '⏸';
+    var interval = Math.max(200, 2000 / TL.speed);
+    TL.timer = setInterval(function() {
+      if (TL.idx >= TL.snapshots.length - 1) { tlStop(); return; }
+      tlGoTo(TL.idx + 1);
+    }, interval);
+  }
+
+  function tlStop() {
+    TL.playing = false;
+    if (TL.timer) { clearInterval(TL.timer); TL.timer = null; }
+    var btn = $('#tl-play');
+    if (btn) btn.textContent = '▶';
+  }
+
+  function tlStep(dir) {
+    var next = TL.idx + dir;
+    if (next >= 0 && next < TL.snapshots.length) tlGoTo(next);
   }
 
 })();

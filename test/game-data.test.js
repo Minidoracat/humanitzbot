@@ -129,15 +129,14 @@ describe('BUILDING_NAMES', () => {
     assert.equal(Object.keys(gameData.BUILDING_NAMES).length, 122);
   });
 
-  it('each building has name and health', () => {
-    for (const [id, b] of Object.entries(gameData.BUILDING_NAMES)) {
-      assert.ok(b.name, `${id} missing name`);
-      assert.ok(typeof b.health === 'number', `${id} missing health`);
+  it('each building name is a string', () => {
+    for (const [id, name] of Object.entries(gameData.BUILDING_NAMES)) {
+      assert.ok(typeof name === 'string' && name.length > 0, `${id} missing name`);
     }
   });
 
   it('WaterCatcher is Rain Collector', () => {
-    assert.equal(gameData.BUILDING_NAMES['WaterCatcher'].name, 'Rain Collector');
+    assert.equal(gameData.BUILDING_NAMES['WaterCatcher'], 'Rain Collector');
   });
 });
 
@@ -172,10 +171,9 @@ describe('LORE_ENTRIES', () => {
     assert.equal(Object.keys(gameData.LORE_ENTRIES).length, 12);
   });
 
-  it('each entry has title and type', () => {
+  it('each entry has title', () => {
     for (const [id, l] of Object.entries(gameData.LORE_ENTRIES)) {
       assert.ok(l.title, `${id} missing title`);
-      assert.ok(l.type, `${id} missing type`);
     }
   });
 });
@@ -203,10 +201,10 @@ describe('AMMO_DAMAGE', () => {
     assert.equal(Object.keys(gameData.AMMO_DAMAGE).length, 8);
   });
 
-  it('each has baseDamage and headDamage', () => {
+  it('each has damage and headshotMultiplier', () => {
     for (const [id, a] of Object.entries(gameData.AMMO_DAMAGE)) {
-      assert.ok(typeof a.baseDamage === 'number', `${id} missing baseDamage`);
-      assert.ok(typeof a.headDamage === 'number', `${id} missing headDamage`);
+      assert.ok(typeof a.damage === 'number', `${id} missing damage`);
+      assert.ok(typeof a.headshotMultiplier === 'number', `${id} missing headshotMultiplier`);
     }
   });
 });
@@ -229,9 +227,10 @@ describe('REPAIR_RECIPES', () => {
     assert.equal(Object.keys(gameData.REPAIR_RECIPES).length, 57);
   });
 
-  it('each value is an array', () => {
-    for (const [id, ingredients] of Object.entries(gameData.REPAIR_RECIPES)) {
-      assert.ok(Array.isArray(ingredients), `${id} should be an array`);
+  it('each value is an object with id', () => {
+    for (const [id, r] of Object.entries(gameData.REPAIR_RECIPES)) {
+      assert.ok(r && typeof r === 'object', `${id} should be an object`);
+      assert.ok(r.id, `${id} missing id`);
     }
   });
 });
@@ -241,9 +240,9 @@ describe('CROP_DATA', () => {
     assert.equal(Object.keys(gameData.CROP_DATA).length, 6);
   });
 
-  it('each crop has growthTime', () => {
+  it('each crop has growthTimeDays', () => {
     for (const [id, c] of Object.entries(gameData.CROP_DATA)) {
-      assert.ok(typeof c.growthTime === 'number', `${id} missing growthTime`);
+      assert.ok(typeof c.growthTimeDays === 'number', `${id} missing growthTimeDays`);
     }
   });
 });

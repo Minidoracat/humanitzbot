@@ -34,6 +34,7 @@ const SaveService = require('./parsers/save-service');
 const gameReference = require('./parsers/game-reference');
 const { writeAgent } = require('./parsers/agent-builder');
 const WebMapServer = require('./web-map/server');
+const SnapshotService = require('./snapshot-service');
 
 // ── Create Discord client ───────────────────────────────────
 const intents = [
@@ -79,8 +80,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   // ── Persistent select menu on the player-stats channel ──
   if (interaction.isStringSelectMenu() && interaction.customId.startsWith('playerstats_player_select')) {
-    // Defer immediately to prevent token expiry
-    await interaction.deferReply({ flags: 64 });
+    try {
+      await interaction.deferReply({ flags: 64 });
+    } catch (deferErr) {
+      // Interaction token expired (10062) or already acknowledged — skip silently
+      console.log('[BOT] Player select interaction expired, ignoring');
+      return;
+    }
     
     const serverId = interaction.customId.split(':')[1] || '';
     const psc = serverId
@@ -100,8 +106,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   // ── Clan select menu on the player-stats channel ──
   if (interaction.isStringSelectMenu() && interaction.customId.startsWith('playerstats_clan_select')) {
-    // Defer immediately to prevent token expiry
-    await interaction.deferReply({ flags: 64 });
+    try {
+      await interaction.deferReply({ flags: 64 });
+    } catch (deferErr) {
+      // Interaction token expired (10062) or already acknowledged — skip silently
+      console.log('[BOT] Clan select interaction expired, ignoring');
+      return;
+    }
     
     const serverId = interaction.customId.split(':')[1] || '';
     const psc = serverId
@@ -152,6 +163,7 @@ let multiServerManager;
 let webMapServer;  // Web map server instance
 let db;            // HumanitZDB instance
 let saveService;   // SaveService instance
+let snapshotService; // SnapshotService — timeline recording
 let activityLog;   // ActivityLog instance
 let adminChannel;  // cached for online/offline notifications
 const startedAt = new Date();
@@ -518,8 +530,45 @@ client.once(Events.ClientReady, async (readyClient) => {
     if (logWatcher) {
       logWatcher._onIdMapRefresh = (idMap) => saveService.setIdMap(idMap);
     }
+
+    // ── Snapshot Service — timeline recording on every save sync ──
+    snapshotService = new SnapshotService(db, {
+      retentionDays: parseInt(process.env.TIMELINE_RETENTION_DAYS, 10) || 14,
+      trackStructures: process.env.TIMELINE_TRACK_STRUCTURES !== 'false',
+      trackHouses: process.env.TIMELINE_TRACK_HOUSES !== 'false',
+      trackBackpacks: process.env.TIMELINE_TRACK_BACKPACKS !== 'false',
+    });
+    saveService.on('sync', async (result) => {
+      if (!result.parsed) return;
+      try {
+        // Build online player set from RCON if available
+        let onlinePlayers = new Set();
+        try {
+          const { getPlayerList } = require('./server-info');
+          const list = await getPlayerList();
+          const arr = list?.players || (Array.isArray(list) ? list : []);
+          for (const p of arr) {
+            if (p.name) onlinePlayers.add(p.name.toLowerCase());
+          }
+        } catch { /* RCON unavailable */ }
+
+        snapshotService.recordSnapshot({
+          players: result.parsed.players,
+          worldState: result.worldState,
+          vehicles: result.parsed.vehicles,
+          structures: result.parsed.structures,
+          containers: result.parsed.containers,
+          companions: result.parsed.companions,
+          horses: result.parsed.horses,
+        }, { onlinePlayers });
+      } catch (err) {
+        console.error('[BOT] Snapshot recording error:', err.message);
+      }
+    });
+    setStatus('Timeline', '🟢 Active');
   } else {
     setStatus('Save Service', '🟡 Skipped (FTP credentials not set)');
+    setStatus('Timeline', '🟡 Skipped (requires Save Service)');
   }
 
   // Activity Log — save-file change tracking feed
@@ -849,6 +898,7 @@ async function shutdown(reason = 'Manual shutdown') {
   if (serverStatus) serverStatus.stop();
   if (autoMessages) autoMessages.stop();
   if (pvpScheduler) pvpScheduler.stop();
+  if (serverScheduler) serverScheduler.stop();
   if (panelChannel) panelChannel.stop();
   if (webMapServer) webMapServer.stop();
   if (logWatcher) logWatcher.stop();
@@ -884,6 +934,18 @@ process.on('SIGINT', () => shutdown('SIGINT received'));
 process.on('SIGTERM', () => shutdown('SIGTERM received'));
 process.on('uncaughtException', (err) => {
   console.error('[BOT] Uncaught exception:', err);
+
+  // Discord API errors that are safe to ignore (don't crash)
+  const recoverableCodes = [
+    10062, // Unknown interaction (expired token — user clicked stale button/menu)
+    10008, // Unknown Message (message was deleted)
+    40060, // Interaction already acknowledged
+  ];
+  if (err.code && recoverableCodes.includes(err.code)) {
+    console.log(`[BOT] Recoverable Discord error ${err.code} — continuing`);
+    return; // do NOT crash
+  }
+
   // Post to admin channel before shutting down
   _postErrorEmbed('Uncaught Exception', err).finally(() => {
     shutdown(`Uncaught exception: ${err.message}`).catch(() => process.exit(1));

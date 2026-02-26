@@ -198,6 +198,83 @@
     }
     .player-list-section:first-child { margin-top: 8px; }
 
+    /* ── Timeline panel ── */
+    #timeline-panel {
+      position: fixed; bottom: 0; left: 0; right: 320px; z-index: 1001;
+      background: rgba(13, 17, 23, 0.94); backdrop-filter: blur(8px);
+      border-top: 1px solid #30363d;
+      padding: 8px 16px 10px;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    #tl-layers {
+      display: flex; flex-wrap: wrap; gap: 4px 12px;
+      font-size: 11px; color: #8b949e;
+    }
+    #tl-layers label {
+      display: flex; align-items: center; gap: 3px; cursor: pointer;
+      white-space: nowrap;
+    }
+    #tl-layers label:hover { color: #c9d1d9; }
+    #tl-layers input[type="checkbox"] {
+      accent-color: #58a6ff; width: 13px; height: 13px;
+    }
+    #tl-layers span { color: #6e7681; font-size: 10px; }
+    #tl-controls {
+      display: flex; align-items: center; gap: 6px;
+    }
+    #tl-controls button {
+      background: #21262d; border: 1px solid #30363d; color: #c9d1d9;
+      padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 13px;
+    }
+    #tl-controls button:hover { background: #30363d; }
+    .tl-speed-group {
+      display: flex; gap: 2px; margin-left: 8px;
+    }
+    .tl-speed-btn {
+      background: #21262d !important; border: 1px solid #30363d !important;
+      color: #8b949e !important; padding: 3px 7px !important;
+      font-size: 11px !important; border-radius: 3px !important; cursor: pointer;
+    }
+    .tl-speed-btn.active {
+      background: #1f6feb !important; border-color: #58a6ff !important;
+      color: #fff !important;
+    }
+    #timeline-slider {
+      width: 100%; height: 6px; -webkit-appearance: none; appearance: none;
+      background: #21262d; border-radius: 3px; outline: none;
+      cursor: pointer;
+    }
+    #timeline-slider::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: #58a6ff; cursor: pointer; border: 2px solid #1f6feb;
+    }
+    #timeline-slider::-moz-range-thumb {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: #58a6ff; cursor: pointer; border: 2px solid #1f6feb;
+    }
+    #timeline-info {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 11px; color: #8b949e;
+    }
+    #timeline-info .tl-sep { color: #30363d; }
+    #timeline-info .tl-date { color: #c9d1d9; font-weight: 600; }
+    #timeline-info .tl-day { color: #58a6ff; }
+    #timeline-info .tl-weather { color: #f0c040; }
+    #timeline-info .tl-season { color: #3fb950; }
+    #timeline-info .tl-counts { color: #8b949e; }
+
+    /* Timeline entity popups */
+    .tl-popup { font-size: 12px; line-height: 1.5; }
+    .tl-popup b { color: #58a6ff; }
+    .tl-popup small { color: #6e7681; }
+
+    /* Timeline marker override — no default icon artifacts */
+    .timeline-marker {
+      background: transparent !important;
+      border: none !important;
+    }
+
   </style>
 </head>
 <body>
@@ -209,6 +286,7 @@
     <span class="stat"><span class="offline-dot"></span>Total: <b id="total-count">0</b></span>
     <span class="stat" style="color:#6e7681">Updated: <b id="last-update" style="font-weight:400">—</b></span>
     <span style="flex:1"></span>
+    <button id="btn-timeline" onclick="toggleTimelineMode()" title="Toggle timeline mode (time-scroll)">⏱ Timeline</button>
     <button id="btn-focus-online" onclick="focusOnlinePlayers()" title="Zoom to fit online players">Online</button>
     <button id="btn-zoom-out" onclick="zoomToFit()" title="Zoom out to see entire map">Full Map</button>
     <button id="btn-refresh" onclick="refreshPlayers()">Refresh</button>
@@ -231,8 +309,46 @@
   <!-- Refresh progress (SSE) -->
   <div id="refresh-progress"></div>
 
+  <!-- Timeline panel (hidden until timeline data available) -->
+  <div id="timeline-panel" style="display:none;">
+    <!-- Layer toggles -->
+    <div id="tl-layers">
+      <label><input type="checkbox" id="tl-layer-players" checked onchange="toggleLayer('players')"> 👤 Players <span id="tl-count-players">0</span></label>
+      <label><input type="checkbox" id="tl-layer-zombies" checked onchange="toggleLayer('zombies')"> 🧟 Zombies <span id="tl-count-zombies">0</span></label>
+      <label><input type="checkbox" id="tl-layer-animals" checked onchange="toggleLayer('animals')"> 🐺 Animals <span id="tl-count-animals">0</span></label>
+      <label><input type="checkbox" id="tl-layer-bandits" checked onchange="toggleLayer('bandits')"> 🔫 Bandits <span id="tl-count-bandits">0</span></label>
+      <label><input type="checkbox" id="tl-layer-vehicles" checked onchange="toggleLayer('vehicles')"> 🚗 Vehicles <span id="tl-count-vehicles">0</span></label>
+      <label><input type="checkbox" id="tl-layer-structures" onchange="toggleLayer('structures')"> 🏗️ Structures <span id="tl-count-structures">0</span></label>
+      <label><input type="checkbox" id="tl-layer-companions" checked onchange="toggleLayer('companions')"> 🐕 Companions <span id="tl-count-companions">0</span></label>
+      <label><input type="checkbox" id="tl-layer-backpacks" onchange="toggleLayer('backpacks')"> 🎒 Backpacks <span id="tl-count-backpacks">0</span></label>
+      <label><input type="checkbox" id="tl-layer-trails" checked onchange="toggleLayer('trails')"> 🛤️ Trails</label>
+      <label><input type="checkbox" id="tl-layer-deaths" checked onchange="toggleLayer('deaths')"> 💀 Deaths</label>
+    </div>
+
+    <!-- Playback controls -->
+    <div id="tl-controls">
+      <button onclick="stepBackward()" title="Previous snapshot (←)">⏮</button>
+      <button id="tl-play-btn" onclick="togglePlayback()" title="Play/Pause (Space)">▶</button>
+      <button onclick="stepForward()" title="Next snapshot (→)">⏭</button>
+      <button onclick="goToLatest()" title="Jump to latest (End)">⏩</button>
+      <span class="tl-speed-group">
+        <button class="tl-speed-btn" data-speed="1" onclick="setPlaybackSpeed(1)">1×</button>
+        <button class="tl-speed-btn" data-speed="2" onclick="setPlaybackSpeed(2)">2×</button>
+        <button class="tl-speed-btn active" data-speed="5" onclick="setPlaybackSpeed(5)">5×</button>
+        <button class="tl-speed-btn" data-speed="10" onclick="setPlaybackSpeed(10)">10×</button>
+      </span>
+    </div>
+
+    <!-- Timeline slider -->
+    <input type="range" id="timeline-slider" min="0" max="0" value="0" step="1">
+
+    <!-- Snapshot info -->
+    <div id="timeline-info"></div>
+  </div>
+
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="app.js"></script>
+  <script src="timeline.js"></script>
 </body>
 </html>

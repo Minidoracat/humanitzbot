@@ -1,21 +1,28 @@
 node_modules/
 .env
 .env.backup*
-data/
+
+# Runtime data directory (user data, caches, downloaded logs)
+# humanitz-template.db is tracked — pre-seeded with game reference data for first-run bootstrap
+data/*
+!data/humanitz-template.db
+
 *.7z
 *.sav
 *.log
-*.txt
-.github/
+
+# Dev-only directories
 .dev/
 .dev
 
-# Auto-generated changelog (JSON only - README.md is the changelog)
+# Internal dev notes and Copilot context (private — never tracked)
+.github/
+
+# Auto-generated changelog JSON (README.md is the user-facing doc)
 CHANGELOG.json
 
 # Personal developer scripts (credentials, diagnostics)
 _*.js
-scripts/
 
 # Web map generated tile cache only
 src/web-map/public/tiles/

@@ -207,13 +207,6 @@ function setupAuth(app) {
     };
   }
 
-  const authorizeUrl = `${DISCORD_API}/oauth2/authorize?` + new URLSearchParams({
-    client_id: authCfg.clientId,
-    redirect_uri: authCfg.callbackUrl,
-    response_type: 'code',
-    scope: OAUTH_SCOPES,
-  }).toString();
-
   console.log(`[WEB AUTH] Discord OAuth enabled — callback: ${authCfg.callbackUrl}`);
   if (authCfg.adminRoles.length > 0) console.log(`[WEB AUTH] Admin roles: ${authCfg.adminRoles.join(', ')}`);
   if (authCfg.modRoles.length > 0) console.log(`[WEB AUTH] Mod roles: ${authCfg.modRoles.join(', ')}`);
@@ -223,12 +216,32 @@ function setupAuth(app) {
   // ── Auth routes (always accessible) ──
 
   app.get('/auth/login', (_req, res) => {
-    res.redirect(authorizeUrl);
+    // Generate CSRF state parameter
+    const state = crypto.randomBytes(16).toString('hex');
+    // Store state in a short-lived cookie
+    res.setHeader('Set-Cookie', `hmz_oauth_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=300`);
+    const url = `${DISCORD_API}/oauth2/authorize?` + new URLSearchParams({
+      client_id: authCfg.clientId,
+      redirect_uri: authCfg.callbackUrl,
+      response_type: 'code',
+      scope: OAUTH_SCOPES,
+      state,
+    }).toString();
+    res.redirect(url);
   });
 
   app.get('/auth/callback', async (req, res) => {
-    const { code } = req.query;
+    const { code, state } = req.query;
     if (!code) return res.status(400).send('Missing authorization code');
+
+    // Verify CSRF state parameter
+    const cookies = parseCookies(req.headers.cookie);
+    const expectedState = cookies['hmz_oauth_state'];
+    if (!state || !expectedState || state !== expectedState) {
+      return res.status(403).send('<h2>Invalid OAuth State</h2><p>Please try logging in again.</p><a href="/auth/login">Login</a>');
+    }
+    // Clear state cookie
+    res.setHeader('Set-Cookie', 'hmz_oauth_state=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
 
     try {
       const tokenData = await exchangeCode(code, authCfg);
@@ -253,17 +266,30 @@ function setupAuth(app) {
       });
 
       const signed = signSession(sessionId, authCfg.sessionSecret);
-      res.setHeader('Set-Cookie', `${COOKIE_NAME}=${signed}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL / 1000}`);
+      const isSecure = authCfg.callbackUrl.startsWith('https');
+      const cookieFlags = `HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL / 1000}` + (isSecure ? '; Secure' : '');
+      res.setHeader('Set-Cookie', `${COOKIE_NAME}=${signed}; ${cookieFlags}`);
       res.redirect('/');
 
     } catch (err) {
       console.error('[WEB AUTH] OAuth callback error:', err.message);
-      res.status(500).send(`<h2>Authentication Error</h2><p>${err.message}</p><a href="/auth/login">Try again</a>`);
+      // Escape error message to prevent XSS
+      const safeMsg = (err.message || 'Unknown error').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      res.status(500).send(`<h2>Authentication Error</h2><p>${safeMsg}</p><a href="/auth/login">Try again</a>`);
     }
   });
 
-  app.get('/auth/logout', (_req, res) => {
-    res.setHeader('Set-Cookie', `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+  app.get('/auth/logout', (req, res) => {
+    // Destroy session if present
+    const cookies = parseCookies(req.headers.cookie);
+    const signed = cookies[COOKIE_NAME];
+    if (signed) {
+      const sessionId = verifySession(signed, authCfg.sessionSecret);
+      if (sessionId) sessions.delete(sessionId);
+    }
+    const isSecure = authCfg.callbackUrl.startsWith('https');
+    const flags = `HttpOnly; SameSite=Lax; Path=/; Max-Age=0` + (isSecure ? '; Secure' : '');
+    res.setHeader('Set-Cookie', [`${COOKIE_NAME}=; ${flags}`, `hmz_oauth_state=; ${flags}`]);
     res.redirect('/');
   });
 

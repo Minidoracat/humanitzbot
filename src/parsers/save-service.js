@@ -775,44 +775,9 @@ class SaveService extends EventEmitter {
 
     // ── Write all data to DB ──
 
-    // Sync everything into the database in one transaction
-    this._db.syncFromSave({
-      players: parsed.players,
-      worldState: parsed.worldState,
-      structures: parsed.structures,
-      vehicles: parsed.vehicles,
-      companions: parsed.companions,
-      clans,
-    });
-
-    // Sync dead bodies
-    if (parsed.deadBodies && parsed.deadBodies.length > 0) {
-      this._db.replaceDeadBodies(parsed.deadBodies);
-    }
-
-    // Sync containers (with enriched metadata)
-    if (parsed.containers && parsed.containers.length > 0) {
-      this._db.replaceContainers(parsed.containers);
-    }
-
-    // Sync loot actors
-    if (parsed.lootActors && parsed.lootActors.length > 0) {
-      this._db.replaceLootActors(parsed.lootActors);
-    }
-
-    // Sync world quests
-    if (parsed.quests && parsed.quests.length > 0) {
-      this._db.replaceQuests(parsed.quests);
-    }
-
-    // Sync world horses (new in v4)
-    if (parsed.horses && parsed.horses.length > 0) {
-      this._db.replaceWorldHorses(parsed.horses);
-    }
-
-    // Sync world drops (LODPickups, dropped backpacks, global containers)
+    // Build world drops array outside the transaction
+    const worldDrops = [];
     try {
-      const worldDrops = [];
       const ws = parsed.worldState || {};
 
       // LOD Pickups — items on the ground
@@ -850,13 +815,25 @@ class SaveService extends EventEmitter {
           });
         }
       }
-
-      if (worldDrops.length > 0) {
-        this._db.replaceWorldDrops(worldDrops);
-      }
     } catch (err) {
-      console.warn(`[${this._label}] World drops sync error (non-fatal):`, err.message);
+      console.warn(`[${this._label}] World drops build error (non-fatal):`, err.message);
     }
+
+    // Sync everything into the database in ONE atomic transaction
+    this._db.syncAllFromSave({
+      players: parsed.players,
+      worldState: parsed.worldState,
+      structures: parsed.structures,
+      vehicles: parsed.vehicles,
+      companions: parsed.companions,
+      clans,
+      deadBodies: parsed.deadBodies,
+      containers: parsed.containers,
+      lootActors: parsed.lootActors,
+      quests: parsed.quests,
+      horses: parsed.horses,
+      worldDrops: worldDrops.length > 0 ? worldDrops : null,
+    });
 
     // ── Item instance tracking (fingerprint reconciliation) ──
     let itemStats = null;
@@ -926,6 +903,15 @@ class SaveService extends EventEmitter {
       mode,
       diffEvents, // pass to listeners for real-time Discord updates
       syncTime: new Date(), // timestamp for activity log event display
+      // Full parsed data for timeline snapshots (SnapshotService)
+      parsed: {
+        players: parsed.players,
+        structures: parsed.structures,
+        vehicles: parsed.vehicles,
+        companions: parsed.companions,
+        horses: parsed.horses || [],
+        containers: parsed.containers || [],
+      },
     };
 
     this.emit('sync', result);
