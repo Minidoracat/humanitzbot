@@ -56,7 +56,7 @@ These features exist only in the experimental branch and are not yet merged to m
 
 ### Other Changes
 
-- Schema v11, game data extraction pipeline, timeline snapshots, repo hygiene `3a06a62`
+- Schema v11, game data extraction pipeline, timeline snapshots, repo hygiene `0ab828d`
 - DB-first architecture, schema v9, embed redesign, item tracking, codebase cleanup `fb67ff8`
 - Server scheduler with daily rotation, web panel security, map calibration `9f58741`
 - Complete save parser overhaul: extract all game data with positions `705936c`
@@ -164,7 +164,7 @@ These features exist only in the experimental branch and are not yet merged to m
 
 ## Complete History (All Commits)
 
-### [EXPERIMENTAL] `3a06a62` Schema v11, game data extraction pipeline, timeline snapshots, repo hygiene
+### [EXPERIMENTAL] `0ab828d` Schema v11, game data extraction pipeline, timeline snapshots, repo hygiene
 
 **Author:** QS-Zuq  
 **Date:** 2026-02-26  
@@ -1187,4 +1187,4 @@ Fixes:
 
 **Repository:** QS-Zuq/humanitzbot-dev  
 **Branch Comparison:** `main..experimental`  
-**Last Generated:** 2026-02-26T13:45:35.617Z
+**Last Generated:** 2026-02-26T13:46:46.240Z
