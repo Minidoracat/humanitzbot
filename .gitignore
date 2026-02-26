@@ -3,9 +3,9 @@ node_modules/
 .env.backup*
 
 # Runtime data directory (user data, caches, downloaded logs)
-# humanitz-template.db is tracked — pre-seeded with game reference data for first-run bootstrap
 data/*
-!data/humanitz-template.db
+# Game reference data required for DB seeding (will be replaced by humanitz-template.db in Phase 1g)
+!data/game-tables-raw.json
 
 *.7z
 *.sav
