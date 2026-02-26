@@ -2,7 +2,7 @@
 /**
  * HumanitZ Save Parser Agent v1
  * Auto-generated — do not edit manually.
- * Regenerate via: node -e "require('../parsers/agent-builder').writeAgent()"
+ * Regenerate via: node -e "require('./src/parsers/agent-builder').writeAgent()"
  *
  * Parses Save_DedicatedSaveMP.sav on the game server and writes
  * a compact humanitz-cache.json for the bot to download.
