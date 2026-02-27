@@ -49,6 +49,7 @@ describe('StdinConsole', () => {
 
   before(() => {
     db = new HumanitZDB({ memory: true });
+    db.init();
     // Seed some test data
     db.upsertPlayer('76561198000000001', {
       name: 'TestPlayer',
@@ -230,7 +231,7 @@ describe('StdinConsole', () => {
     const lines = await captureOutput(wsc, () => wsc._dispatch('state.delete temp_key'));
     const joined = lines.join('\n');
     assert.ok(joined.includes('Deleted'), 'Should confirm delete');
-    assert.equal(db.getState('temp_key'), undefined);
+    assert.equal(db.getState('temp_key'), null);
   });
 
   // ── stats ───────────────────────────────────────────────────

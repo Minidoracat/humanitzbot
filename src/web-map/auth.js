@@ -38,13 +38,27 @@ const COOKIE_NAME = 'hmz_session';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+// Persistent session secret — generated once per process lifetime if not configured.
+// Falls back to env var, then generates a stable random secret for this process.
+let _cachedSessionSecret;
+function getSessionSecret() {
+  if (_cachedSessionSecret) return _cachedSessionSecret;
+  if (process.env.WEB_MAP_SESSION_SECRET) {
+    _cachedSessionSecret = process.env.WEB_MAP_SESSION_SECRET;
+  } else {
+    console.warn('[WEB AUTH] WEB_MAP_SESSION_SECRET not set — generating random secret (sessions will not survive restarts)');
+    _cachedSessionSecret = crypto.randomBytes(32).toString('hex');
+  }
+  return _cachedSessionSecret;
+}
+
 function getAuthConfig() {
   return {
     clientId: config.clientId,
     clientSecret: process.env.DISCORD_OAUTH_SECRET || '',
     guildId: config.guildId,
     callbackUrl: process.env.WEB_MAP_CALLBACK_URL || '',
-    sessionSecret: process.env.WEB_MAP_SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
+    sessionSecret: getSessionSecret(),
     // Legacy single-tier role list (backwards compat)
     allowedRoles: (process.env.WEB_MAP_ALLOWED_ROLES || '').split(',').map(s => s.trim()).filter(Boolean),
     // Multi-tier role lists
@@ -240,10 +254,11 @@ function setupAuth(app) {
     const { code, state } = req.query;
     if (!code) return res.status(400).send('Missing authorization code');
 
-    // Verify CSRF state parameter
+    // Verify CSRF state parameter (timing-safe comparison)
     const cookies = parseCookies(req.headers.cookie);
     const expectedState = cookies['hmz_oauth_state'];
-    if (!state || !expectedState || state !== expectedState) {
+    if (!state || !expectedState || state.length !== expectedState.length ||
+        !crypto.timingSafeEqual(Buffer.from(state), Buffer.from(expectedState))) {
       return res.status(403).send('<h2>Invalid OAuth State</h2><p>Please try logging in again.</p><a href="/auth/login">Login</a>');
     }
     // Clear state cookie

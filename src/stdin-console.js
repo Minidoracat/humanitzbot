@@ -444,11 +444,12 @@ Available commands:
     if (!this._db) { this._print('No database available.'); return; }
     try {
       const state = this._db.getAllWorldState();
-      if (!state || state.length === 0) { this._print('No world state data.'); return; }
+      const entries = Object.entries(state || {});
+      if (entries.length === 0) { this._print('No world state data.'); return; }
 
       this._print('World state:');
-      for (const r of state) {
-        this._print(`  ${(r.key || '').padEnd(30)} ${String(r.value || '').slice(0, 60)}`);
+      for (const [key, value] of entries) {
+        this._print(`  ${key.padEnd(30)} ${String(value ?? '').slice(0, 60)}`);
       }
     } catch (err) {
       this._print(`World state query failed: ${err.message}`);

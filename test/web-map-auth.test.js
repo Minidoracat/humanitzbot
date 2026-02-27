@@ -207,8 +207,9 @@ describe('Web Map Auth', () => {
       middleware({}, {}, () => { nextCalled = true; });
       assert.equal(nextCalled, true);
 
-      // No auth routes should be registered
-      assert.equal(routes['GET /auth/login'], undefined);
+      // Stub auth routes should still be registered (so frontend can function)
+      assert.equal(typeof routes['GET /auth/login'], 'function');
+      assert.equal(typeof routes['GET /auth/me'], 'function');
     });
 
     it('registers auth routes when OAuth is configured', () => {

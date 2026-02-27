@@ -89,6 +89,18 @@ class WebMapServer {
       res.setHeader('X-Frame-Options', 'DENY');
       res.setHeader('X-XSS-Protection', '1; mode=block');
       res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+      // CSP: allow self + CDN scripts/styles used by the panel frontend
+      // unsafe-inline required for Tailwind config block and inline onclick handlers
+      // Will tighten to nonce-based CSP during web panel redesign
+      res.setHeader('Content-Security-Policy', [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://unpkg.com",
+        "style-src 'self' 'unsafe-inline' https://unpkg.com",
+        "img-src 'self' https://cdn.discordapp.com data: blob:",
+        "connect-src 'self'",
+        "font-src 'self'",
+        "frame-ancestors 'none'",
+      ].join('; '));
       res.removeHeader('X-Powered-By');
       next();
     });
@@ -369,7 +381,7 @@ class WebMapServer {
     });
 
     // Serve static files (HTML, JS, CSS, map images)
-    app.use(express.static(PUBLIC_DIR));
+    app.use(express.static(PUBLIC_DIR, { dotfiles: 'deny' }));
     app.use(express.json());
 
     // ── API: List available servers (multi-server support) ──
@@ -444,7 +456,7 @@ class WebMapServer {
     });
 
     // ── API: Get all player positions ──
-    app.get('/api/players', requireTier('survivor'), async (req, res) => {
+    app.get('/api/players', requireTier('survivor'), rateLimit(10000, 10), async (req, res) => {
       const serverId = req.query.server || 'primary';
       const isPrimary = !serverId || serverId === 'primary';
 
@@ -772,8 +784,11 @@ class WebMapServer {
       const { message } = req.body;
       if (!message || typeof message !== 'string') return res.status(400).json({ error: 'Missing message' });
       if (message.length > 500) return res.status(400).json({ error: 'Message too long' });
+      // Sanitize: strip control chars and collapse newlines to prevent RCON injection
+      const safe = message.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '').replace(/[\r\n]+/g, ' ').trim();
+      if (!safe) return res.status(400).json({ error: 'Message is empty after sanitization' });
       try {
-        const result = await rcon.send(`say ${message}`);
+        const result = await rcon.send(`say ${safe}`);
         res.json({ ok: true, result });
       } catch (err) {
         res.status(500).json({ error: safeError(err) });
@@ -1021,7 +1036,7 @@ class WebMapServer {
     });
 
     // ── Panel: Activity feed from DB ──
-    app.get('/api/panel/activity', requireTier('survivor'), (req, res) => {
+    app.get('/api/panel/activity', requireTier('survivor'), rateLimit(10000, 20), (req, res) => {
       if (!this._db) return res.json({ events: [] });
 
       const limit = Math.min(parseInt(req.query.limit, 10) || 50, 500);
@@ -1076,7 +1091,7 @@ class WebMapServer {
     });
 
     // ── Panel: Map world data (structures, vehicles, containers, companions, dead bodies) ──
-    app.get('/api/panel/mapdata', requireTier('survivor'), (req, res) => {
+    app.get('/api/panel/mapdata', requireTier('survivor'), rateLimit(10000, 10), (req, res) => {
       if (!this._db) return res.json({ structures: [], vehicles: [], containers: [], companions: [], deadBodies: [] });
 
       const layers = (req.query.layers || 'all').split(',');
@@ -1166,7 +1181,7 @@ class WebMapServer {
     // ── Panel: Item Tracking API ──
 
     // GET /api/panel/items — All tracked items (instances + groups), with filters
-    app.get('/api/panel/items', requireTier('admin'), (req, res) => {
+    app.get('/api/panel/items', requireTier('admin'), rateLimit(10000, 15), (req, res) => {
       if (!this._db) return res.json({ instances: [], groups: [], total: 0 });
       try {
         const search = req.query.search || '';
@@ -1379,10 +1394,14 @@ class WebMapServer {
     });
 
     // ── Panel: Comprehensive DB query (admin only) ──
-    app.get('/api/panel/db/:table', requireTier('admin'), (req, res) => {
+    app.get('/api/panel/db/:table', requireTier('admin'), rateLimit(10000, 15), (req, res) => {
       if (!this._db) return res.json({ rows: [], columns: [] });
 
       const table = req.params.table;
+      // Defense-in-depth: validate table name is alphanumeric + underscores only
+      if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(table)) {
+        return res.status(400).json({ error: 'Invalid table name' });
+      }
       const limit = Math.min(parseInt(req.query.limit, 10) || 50, 1000);
       const search = req.query.search || '';
 
@@ -1406,6 +1425,10 @@ class WebMapServer {
 
       if (!ALLOWED.has(table)) {
         return res.status(400).json({ error: `Table '${table}' not queryable` });
+      }
+      // Defense-in-depth: validate table name is a safe SQL identifier
+      if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(table)) {
+        return res.status(400).json({ error: 'Invalid table name' });
       }
 
       try {
@@ -1477,15 +1500,22 @@ class WebMapServer {
       if (!command || typeof command !== 'string') return res.status(400).json({ error: 'Missing command' });
       if (command.length > 500) return res.status(400).json({ error: 'Command too long' });
 
-      // Safety: block dangerous commands
-      const cmd = command.trim().toLowerCase();
-      const blocked = ['exit', 'quit', 'shutdown', 'destroyall', 'destroy_all', 'wipe', 'reset'];
-      if (blocked.some(b => cmd.startsWith(b))) {
-        return res.status(403).json({ error: 'Command blocked for safety' });
+      // Sanitize: strip control chars and newlines to prevent RCON protocol injection
+      const sanitized = command.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '').replace(/[\r\n]+/g, ' ').trim();
+      if (!sanitized) return res.status(400).json({ error: 'Command is empty after sanitization' });
+
+      // Safety: block dangerous commands by first word (consolidated blocklist)
+      const cmdWord = sanitized.toLowerCase().split(/\s+/)[0];
+      const BLOCKED_RCON = new Set([
+        'exit', 'quit', 'shutdown', 'destroyall', 'destroy_all',
+        'wipe', 'reset', 'restartnow', 'quickrestart', 'cancelrestart',
+      ]);
+      if (BLOCKED_RCON.has(cmdWord)) {
+        return res.status(403).json({ error: `Command '${cmdWord}' is blocked for safety` });
       }
 
       try {
-        const response = await rcon.send(command);
+        const response = await rcon.send(sanitized);
         res.json({ ok: true, response });
       } catch (err) {
         res.status(500).json({ ok: false, error: safeError(err) });
@@ -1558,7 +1588,7 @@ class WebMapServer {
       });
     });
 
-    // Sensitive keys that should never be exposed via API
+    // Sensitive keys that should never be exposed or written via API
     const HIDDEN_SETTINGS = new Set(['AdminPass', 'RCONPass', 'Password', 'RConPort', 'RCONEnabled']);
     function filterSettings(settings) {
       const filtered = {};
@@ -1614,6 +1644,19 @@ class WebMapServer {
       const { settings } = req.body;
       if (!settings || typeof settings !== 'object') {
         return res.status(400).json({ error: 'Missing settings object' });
+      }
+
+      // Block writes to sensitive keys — same set filtered on read, enforced on write
+      const rejected = Object.keys(settings).filter(k => HIDDEN_SETTINGS.has(k) || k.startsWith('_'));
+      if (rejected.length > 0) {
+        return res.status(403).json({ error: `Cannot write protected settings: ${rejected.join(', ')}` });
+      }
+      // Validate values: no newlines, no INI section injection
+      for (const [key, value] of Object.entries(settings)) {
+        const v = String(value);
+        if (/[\r\n]/.test(v) || /^\[/.test(v.trim())) {
+          return res.status(400).json({ error: `Invalid value for '${key}': contains illegal characters` });
+        }
       }
 
       if (!config.ftpHost || !config.ftpUser) {
@@ -1678,7 +1721,7 @@ class WebMapServer {
     // ══════════════════════════════════════════════════════════════════
 
     /** GET /api/timeline/bounds — earliest/latest snapshot timestamps + count */
-    app.get('/api/timeline/bounds', requireTier('survivor'), (req, res) => {
+    app.get('/api/timeline/bounds', requireTier('survivor'), rateLimit(10000, 10), (req, res) => {
       if (!this._db) return res.json({ earliest: null, latest: null, count: 0 });
       try {
         const bounds = this._db.getTimelineBounds();
@@ -1689,7 +1732,7 @@ class WebMapServer {
     });
 
     /** GET /api/timeline/snapshots?from=&to=&limit= — snapshot list (metadata only) */
-    app.get('/api/timeline/snapshots', requireTier('survivor'), (req, res) => {
+    app.get('/api/timeline/snapshots', requireTier('survivor'), rateLimit(10000, 10), (req, res) => {
       if (!this._db) return res.json([]);
       try {
         const { from, to, limit } = req.query;
@@ -1706,7 +1749,7 @@ class WebMapServer {
     });
 
     /** GET /api/timeline/snapshot/:id — full snapshot data (all entities with map coords) */
-    app.get('/api/timeline/snapshot/:id', requireTier('survivor'), (req, res) => {
+    app.get('/api/timeline/snapshot/:id', requireTier('survivor'), rateLimit(10000, 15), (req, res) => {
       if (!this._db) return res.status(404).json({ error: 'Database not available' });
       try {
         const id = parseInt(req.params.id, 10);
@@ -1746,7 +1789,7 @@ class WebMapServer {
     });
 
     /** GET /api/timeline/player/:steamId/trail?from=&to= — player position history */
-    app.get('/api/timeline/player/:steamId/trail', requireTier('survivor'), (req, res) => {
+    app.get('/api/timeline/player/:steamId/trail', requireTier('survivor'), rateLimit(10000, 10), (req, res) => {
       if (!this._db) return res.json([]);
       try {
         const { steamId } = req.params;
@@ -1770,7 +1813,7 @@ class WebMapServer {
     });
 
     /** GET /api/timeline/ai/population?from=&to= — AI population over time */
-    app.get('/api/timeline/ai/population', requireTier('survivor'), (req, res) => {
+    app.get('/api/timeline/ai/population', requireTier('survivor'), rateLimit(10000, 10), (req, res) => {
       if (!this._db) return res.json([]);
       try {
         const { from, to } = req.query;
@@ -1783,7 +1826,7 @@ class WebMapServer {
     });
 
     /** GET /api/timeline/deaths?limit=&player= — recent death causes */
-    app.get('/api/timeline/deaths', requireTier('survivor'), (req, res) => {
+    app.get('/api/timeline/deaths', requireTier('survivor'), rateLimit(10000, 15), (req, res) => {
       if (!this._db) return res.json([]);
       try {
         const { limit, player } = req.query;
@@ -1808,7 +1851,7 @@ class WebMapServer {
     });
 
     /** GET /api/timeline/deaths/stats — death cause breakdown */
-    app.get('/api/timeline/deaths/stats', requireTier('survivor'), (req, res) => {
+    app.get('/api/timeline/deaths/stats', requireTier('survivor'), rateLimit(10000, 10), (req, res) => {
       if (!this._db) return res.json([]);
       try {
         const stats = this._db.getDeathCauseStats();

@@ -2,8 +2,10 @@ const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('disc
 const rcon = require('../rcon/rcon');
 
 // Commands that could disrupt the server — blocked from Discord execution
+// Keep in sync with web panel blocklist in src/web-map/server.js
 const BLOCKED_COMMANDS = new Set([
   'shutdown', 'quit', 'exit', 'restartnow', 'quickrestart',
+  'cancelrestart', 'destroyall', 'destroy_all', 'wipe', 'reset',
 ]);
 
 module.exports = {
