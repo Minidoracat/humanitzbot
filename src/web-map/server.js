@@ -72,6 +72,7 @@ class WebMapServer {
     this._port = parseInt(process.env.WEB_MAP_PORT, 10) || 3000;
     this._db = opts.db || null;
     this._scheduler = opts.scheduler || null;
+    this._saveService = opts.saveService || null;
 
     // World coordinate bounds — loaded from calibration file or defaults
     this._worldBounds = this._loadCalibration();
@@ -111,15 +112,12 @@ class WebMapServer {
     // These map world coordinates to the [0, 4096] pixel space of the map image.
     // xMin = world X at the BOTTOM of the map, xMax = world X at the TOP
     // yMin = world Y at the LEFT of the map, yMax = world Y at the RIGHT
-    // NOTE: These are empirically calibrated to the map tile image, NOT raw
-    // world bounds. Theoretical world range is ~(-5000→380000, -410000→5000)
-    // but the map image covers a different extent. Changing these without
-    // re-calibrating the map image will shift all markers.
+    // Source: developer-provided values — Width: 395900, Offset X=201200 Y=-200600
     return {
-      xMin: 3076,      // south edge (bottom of map)
-      xMax: 398076,    // north edge (top of map)
-      yMin: -397582,   // west edge (left of map)
-      yMax: -2582,     // east edge (right of map)
+      xMin: 3250,      // south edge (bottom of map)
+      xMax: 399150,    // north edge (top of map)
+      yMin: -398550,   // west edge (left of map)
+      yMax: -2650,     // east edge (right of map)
     };
   }
 
@@ -1129,6 +1127,29 @@ class WebMapServer {
           });
         }
 
+        // AI layers from latest timeline snapshot
+        const wantAI = showAll || layers.includes('zombies') || layers.includes('animals') || layers.includes('bandits');
+        if (wantAI) {
+          try {
+            const latestSnap = this._db.db.prepare('SELECT id FROM timeline_snapshots ORDER BY created_at DESC LIMIT 1').get();
+            if (latestSnap) {
+              const aiRows = this._db.db.prepare('SELECT ai_type, category, display_name, pos_x, pos_y FROM timeline_ai WHERE snapshot_id = ? AND pos_x IS NOT NULL').all(latestSnap.id);
+              const zombies = [], animals = [], bandits = [];
+              for (const r of aiRows) {
+                if (r.pos_x === 0 && r.pos_y === 0) continue;
+                const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
+                const entry = { name: r.display_name || cleanActorName(r.ai_type), lat, lng, type: r.ai_type };
+                if (r.category === 'zombie') zombies.push(entry);
+                else if (r.category === 'animal') animals.push(entry);
+                else if (r.category === 'bandit') bandits.push(entry);
+              }
+              if (showAll || layers.includes('zombies')) result.zombies = zombies;
+              if (showAll || layers.includes('animals')) result.animals = animals;
+              if (showAll || layers.includes('bandits')) result.bandits = bandits;
+            }
+          } catch { /* timeline_ai may not exist yet */ }
+        }
+
         // Build steam_id → name lookup for owner resolution
         const nameMap = {};
         const nameRows = this._db.db.prepare('SELECT steam_id, name FROM players').all();
@@ -1465,6 +1486,28 @@ class WebMapServer {
       try {
         const response = await rcon.send(command);
         res.json({ ok: true, response });
+      } catch (err) {
+        res.status(500).json({ ok: false, error: safeError(err) });
+      }
+    });
+
+    // POST /api/panel/refresh-snapshot — Force game save + re-poll save file + record fresh snapshot
+    app.post('/api/panel/refresh-snapshot', requireTier('mod'), rateLimit(30000, 2), async (req, res) => {
+      if (!this._saveService) return res.status(503).json({ error: 'Save service not available' });
+
+      try {
+        // Step 1: Tell the game server to save
+        try {
+          await rcon.send('save');
+        } catch { /* RCON may not be connected — continue anyway, save file may still be recent */ }
+
+        // Step 2: Wait briefly for the save to flush to disk
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Step 3: Force save service to re-poll (downloads .sav, parses, syncs DB, emits 'sync' → snapshot recorded)
+        await this._saveService._poll(true);
+
+        res.json({ ok: true, message: 'Snapshot refreshed' });
       } catch (err) {
         res.status(500).json({ ok: false, error: safeError(err) });
       }

@@ -117,52 +117,6 @@ class LogWatcher {
     return { name: 'Unknown', type: 'environment' };
   }
 
-  // ── DB event logging ───────────────────────────────────────
-
-  /**
-   * Insert a log-parsed event into the activity_log DB table.
-   * This makes the DB the primary store — Discord embeds are a view layer.
-   * Safe to call without a DB (silently skips).
-   *
-   * @param {object} event
-   * @param {string} event.type - Event type (player_connect, player_death, etc.)
-   * @param {string} event.category - Category grouping (session, death, build, loot, raid, combat, admin)
-   * @param {string} [event.actor] - Primary actor (steam ID or entity)
-   * @param {string} [event.actorName] - Human-readable name
-   * @param {string} [event.steamId] - Player steam ID
-   * @param {string} [event.targetName] - Secondary actor name
-   * @param {string} [event.targetSteamId] - Secondary actor steam ID
-   * @param {string} [event.item] - Item/building name
-   * @param {number} [event.amount] - Quantity
-   * @param {object} [event.details] - Extra JSON context
-   * @param {Date}   [event.timestamp] - Event timestamp (for createdAt)
-   */
-  _logEvent(event) {
-    if (!this._db) return;
-    try {
-      const entry = {
-        ...event,
-        source: 'log',
-      };
-      // Use insertActivitiesAt if we have a timestamp, otherwise insertActivities
-      if (event.timestamp) {
-        entry.createdAt = event.timestamp instanceof Date
-          ? event.timestamp.toISOString()
-          : String(event.timestamp);
-        delete entry.timestamp;
-        this._db.insertActivitiesAt([entry]);
-      } else {
-        this._db.insertActivities([entry]);
-      }
-    } catch (err) {
-      // Don't let DB errors break log processing
-      if (!this._logEventWarnShown) {
-        console.warn(`[${this._label}] Failed to log event to DB:`, err.message);
-        this._logEventWarnShown = true;
-      }
-    }
-  }
-
   // ── Day Counts Persistence ─────────────────────────────────
 
   _loadDayCounts() {

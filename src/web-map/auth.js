@@ -200,6 +200,12 @@ function setupAuth(app) {
 
   if (!authCfg.clientSecret || !authCfg.callbackUrl) {
     console.warn('[WEB AUTH] Discord OAuth not configured — all routes UNPROTECTED');
+    // Still register /auth/me so the frontend can boot
+    app.get('/auth/me', (_req, res) => {
+      res.json({ authenticated: true, tier: 'admin', tierLevel: TIER.admin, username: 'Admin (no OAuth)', devMode: true });
+    });
+    app.get('/auth/login', (_req, res) => res.redirect('/'));
+    app.get('/auth/logout', (_req, res) => res.redirect('/'));
     return (_req, _res, next) => {
       _req.tier = 'admin'; // no auth = full access (dev mode)
       _req.tierLevel = TIER.admin;

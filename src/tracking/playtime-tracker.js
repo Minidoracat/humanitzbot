@@ -59,7 +59,54 @@ class PlaytimeTracker {
   }
 
   /** Attach a HumanitZDB instance for unified playtime + alias syncing. */
-  setDb(db) { this._db = db; }
+  setDb(db) {
+    this._db = db;
+    // If init() already ran with no DB (empty data), reload from DB now.
+    // This prevents the scenario where empty in-memory data overwrites
+    // real DB values on the next _persistPlaytime() call.
+    if (this._data && db) {
+      try {
+        const rows = db.getAllPlayerPlaytime();
+        if (rows && rows.length > 0) {
+          let reloaded = 0;
+          for (const row of rows) {
+            const sid = row.steam_id;
+            const dbMs = (row.playtime_seconds || 0) * 1000;
+            const memMs = this._data.players[sid]?.totalMs || 0;
+            // Only take DB value if it's higher (never reduce playtime)
+            if (dbMs > memMs) {
+              this._data.players[sid] = {
+                name: row.name || this._data.players[sid]?.name || sid,
+                totalMs: dbMs,
+                sessions: Math.max(row.session_count || 0, this._data.players[sid]?.sessions || 0),
+                firstSeen: row.playtime_first_seen || this._data.players[sid]?.firstSeen || null,
+                lastLogin: row.playtime_last_login || this._data.players[sid]?.lastLogin || null,
+                lastSeen: row.playtime_last_seen || this._data.players[sid]?.lastSeen || null,
+              };
+              reloaded++;
+            } else if (!this._data.players[sid] && row.playtime_seconds > 0) {
+              // Player exists in DB but not in memory at all
+              this._data.players[sid] = {
+                name: row.name || sid,
+                totalMs: dbMs,
+                sessions: row.session_count || 0,
+                firstSeen: row.playtime_first_seen || null,
+                lastLogin: row.playtime_last_login || null,
+                lastSeen: row.playtime_last_seen || null,
+              };
+              reloaded++;
+            }
+          }
+          if (reloaded > 0) {
+            console.log(`[${this._label}] Reloaded ${reloaded} player(s) from DB after late setDb()`);
+            this._leaderboardCache = null;
+          }
+        }
+      } catch (err) {
+        console.warn(`[${this._label}] DB reload on setDb() failed:`, err.message);
+      }
+    }
+  }
 
   playerJoin(id, name, timestamp) {
     // Only accept SteamID keys — reject name-based keys

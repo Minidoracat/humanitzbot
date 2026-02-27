@@ -29,6 +29,8 @@ const panelApi = require('./server/panel-api');
 const PanelChannel = require('./modules/panel-channel');
 const MultiServerManager = require('./server/multi-server');
 const ActivityLog = require('./modules/activity-log');
+const MilestoneTracker = require('./modules/milestone-tracker');
+const RecapService = require('./modules/recap-service');
 const HumanitZDB = require('./db/database');
 const SaveService = require('./parsers/save-service');
 const gameReference = require('./parsers/game-reference');
@@ -167,6 +169,8 @@ let saveService;   // SaveService instance
 let playtimeFlushTimer; // periodic playtime → DB flush
 let snapshotService; // SnapshotService — timeline recording
 let activityLog;   // ActivityLog instance
+let milestoneTracker; // MilestoneTracker instance
+let recapService;     // RecapService instance
 let adminChannel;  // cached for online/offline notifications
 let stdinConsole;  // interactive stdin console for headless hosts
 const startedAt = new Date();
@@ -558,6 +562,35 @@ client.once(Events.ClientReady, async (readyClient) => {
     });
     saveService.on('sync', (result) => {
       console.log(`[BOT] Save sync: ${result.playerCount} players, ${result.structureCount} structures (${result.mode}, ${result.elapsed}ms)`);
+
+      // Write save-cache.json for web map consumption
+      if (result.parsed) {
+        try {
+          const cacheData = {
+            updatedAt: new Date().toISOString(),
+            playerCount: result.playerCount,
+            worldState: result.worldState || {},
+            players: {},
+            structures: Array.isArray(result.parsed.structures) ? result.parsed.structures : [],
+            vehicles: Array.isArray(result.parsed.vehicles) ? result.parsed.vehicles : [],
+            horses: Array.isArray(result.parsed.horses) ? result.parsed.horses : [],
+            containers: Array.isArray(result.parsed.containers) ? result.parsed.containers : [],
+            companions: Array.isArray(result.parsed.companions) ? result.parsed.companions : [],
+          };
+          // Convert players Map to plain object
+          if (result.parsed.players instanceof Map) {
+            for (const [steamId, pData] of result.parsed.players) {
+              cacheData.players[steamId] = pData;
+            }
+          } else if (result.parsed.players && typeof result.parsed.players === 'object') {
+            cacheData.players = result.parsed.players;
+          }
+          const cachePath = path.join(__dirname, '..', 'data', 'save-cache.json');
+          fs.writeFileSync(cachePath, JSON.stringify(cacheData), 'utf8');
+        } catch (err) {
+          console.error('[BOT] Failed to write save-cache.json:', err.message);
+        }
+      }
     });
     saveService.on('error', (err) => {
       console.error('[BOT] Save service error:', err.message);
@@ -621,6 +654,58 @@ client.once(Events.ClientReady, async (readyClient) => {
     }
   } else {
     setStatus('Activity Log', '⚫ Disabled');
+  }
+
+  // Milestone Tracker — player achievement announcements
+  if (config.enableMilestones) {
+    if (!db) {
+      setStatus('Milestones', '🟡 Skipped (no database)');
+    } else {
+      milestoneTracker = new MilestoneTracker(readyClient, { db, logWatcher, config });
+      // Check milestones on every save sync
+      if (saveService) {
+        saveService.on('sync', (result) => {
+          milestoneTracker.check(result).catch(err => {
+            console.error('[BOT] Milestone check error:', err.message);
+          });
+        });
+      }
+      // Wire death events from LogWatcher to reset survival streaks
+      if (logWatcher) {
+        const origOnDeath = logWatcher._onDeath.bind(logWatcher);
+        logWatcher._onDeath = function(playerName, timestamp) {
+          origOnDeath(playerName, timestamp);
+          const steamId = playerStats.getSteamId(playerName);
+          if (steamId) milestoneTracker.onPlayerDeath(steamId);
+        };
+      }
+      setStatus('Milestones', '🟢 Active');
+    }
+  } else {
+    setStatus('Milestones', '⚫ Disabled');
+    console.log('[BOT] Milestones disabled via ENABLE_MILESTONES=false');
+  }
+
+  // Recap Service — daily/weekly summary embeds
+  if (config.enableRecaps) {
+    if (!db) {
+      setStatus('Recaps', '🟡 Skipped (no database)');
+    } else {
+      recapService = new RecapService(readyClient, { db, logWatcher, config, playtime });
+      // Chain into LogWatcher day-rollover callback
+      if (logWatcher) {
+        const prevCb = logWatcher._dayRolloverCb;
+        logWatcher._dayRolloverCb = async () => {
+          if (typeof prevCb === 'function') await prevCb();
+          const yesterday = recapService._getYesterday();
+          await recapService.onDayRollover(yesterday);
+        };
+      }
+      setStatus('Recaps', '🟢 Active');
+    }
+  } else {
+    setStatus('Recaps', '⚫ Disabled');
+    console.log('[BOT] Recaps disabled via ENABLE_RECAPS=false');
   }
 
   // Player Stats — DB-first reads (SaveService populates DB, PSC reads it)
@@ -718,7 +803,7 @@ client.once(Events.ClientReady, async (readyClient) => {
       if (!config.discordClientSecret) {
         console.warn('[BOT] Web map starting WITHOUT Discord OAuth — all routes unprotected');
       }
-      webMapServer = new WebMapServer(readyClient, { db, scheduler: serverScheduler });
+      webMapServer = new WebMapServer(readyClient, { db, scheduler: serverScheduler, saveService });
       await webMapServer.start();
       setStatus('WebMap', `🟢 Running on http://localhost:${webMapPort}`);
       console.log(`[BOT] Web map server started: http://localhost:${webMapPort}`);

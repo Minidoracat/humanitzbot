@@ -257,7 +257,7 @@ Infrastructure:
 - Env-sync preserves dynamic keys (RESTART_PROFILE_*, PVP_HOURS_*, etc.)
   via DYNAMIC_PREFIXES list instead of deprecating them
 - Activity log deduplication (consecutive identical events collapse with ×N)
-- Map coordinate calibration (xMin:3076, xMax:398076, yMin:-397582, yMax:-2582)
+- Map coordinate calibration (xMin:3250, xMax:399150, yMin:-398550, yMax:-2650)
 - Player map tests updated for calibrated bounds
 ```
 

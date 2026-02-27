@@ -233,6 +233,8 @@ const config = {
   enableLogWatcher: envBool('ENABLE_LOG_WATCHER', true),
   enablePlayerStats: envBool('ENABLE_PLAYER_STATS', true),
   enablePlaytime: envBool('ENABLE_PLAYTIME', true),
+  enableMilestones: envBool('ENABLE_MILESTONES', false),
+  enableRecaps: envBool('ENABLE_RECAPS', false),
   // Thread mode — when true (default), chat/activity go into daily threads.
   // When false, messages post directly to the channel.
   useChatThreads: envBool('USE_CHAT_THREADS', true),

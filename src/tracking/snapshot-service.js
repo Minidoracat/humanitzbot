@@ -163,7 +163,9 @@ class SnapshotService {
         lifetimeKills: p.lifetimeKills || p.lifetime_kills || 0,
       }));
 
-      const timelineAI = aiSpawns.map(a => ({
+      // Filter out dead AI (graveTimeMinutes > 0 means killed, waiting to respawn)
+      const aliveAI = aiSpawns.filter(a => !a.graveTimeMinutes || a.graveTimeMinutes <= 0);
+      const timelineAI = aliveAI.map(a => ({
         aiType: a.type || 'Unknown',
         category: a.category || this._classifyAICategory(a.type),
         displayName: AI_DISPLAY_NAMES[a.type] || cleanName(a.type) || a.type,

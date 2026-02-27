@@ -822,13 +822,10 @@ class PlayerStatsChannel {
         console.log(`[${this._label}] Saved message ${savedId} already gone, sweeping channel...`);
       }
     }
-    // No saved ID, or saved message was already deleted — sweep old bot messages
-    // Only delete messages older than this process start to avoid wiping
-    // sibling multi-server embeds posted earlier in this same startup.
-    const bootTime = Date.now() - process.uptime() * 1000;
+    // No saved ID, or saved message was already deleted — sweep ALL old bot messages
     try {
       const messages = await this.channel.messages.fetch({ limit: 20 });
-      const botMessages = messages.filter(m => m.author.id === this.client.user.id && m.createdTimestamp < bootTime);
+      const botMessages = messages.filter(m => m.author.id === this.client.user.id);
       if (botMessages.size > 0) {
         console.log(`[${this._label}] Cleaning ${botMessages.size} old bot message(s)`);
         for (const [, msg] of botMessages) {

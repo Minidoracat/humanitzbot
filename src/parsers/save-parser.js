@@ -1165,9 +1165,13 @@ function parseSave(buf) {
     if (n === 'PlayerTransform' && prop.type === 'StructProperty' && prop.structType === 'Transform') {
       _extractTransform(prop, p);
     }
-    // Also handle unnamed Transform properties (fallback)
-    if (prop.type === 'StructProperty' && prop.structType === 'Transform' && prop.value?.translation) {
-      _extractTransform(prop, p);
+    // Fallback: only if we haven't already got a valid position AND
+    // the property isn't a known non-position transform (respawn, backpack, etc.)
+    else if (p.x === null && prop.type === 'StructProperty' && prop.structType === 'Transform' && prop.value?.translation) {
+      const SKIP_TRANSFORMS = ['PlayerRespawnPoint', 'BackpackTransform', 'Transform', 'CompanionTransform'];
+      if (!SKIP_TRANSFORMS.includes(n)) {
+        _extractTransform(prop, p);
+      }
     }
 
     // ── Respawn point ──

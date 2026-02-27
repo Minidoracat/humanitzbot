@@ -640,7 +640,7 @@
 
       // Load extra map layers if toggled on
       var wantLayers = [];
-      ['structures', 'vehicles', 'containers', 'companions'].forEach(function(l) {
+      ['structures', 'vehicles', 'containers', 'companions', 'zombies', 'animals', 'bandits'].forEach(function(l) {
         var cb = $('#map-layer-' + l);
         if (cb && cb.checked) wantLayers.push(l);
       });
@@ -720,6 +720,42 @@
       });
       mapWorldLayers.companions.addTo(S.map);
     }
+
+    if (layers.indexOf('zombies') !== -1 && data.zombies) {
+      mapWorldLayers.zombies = L.layerGroup();
+      data.zombies.forEach(function(z) {
+        if (z.lat == null) return;
+        var icon = L.divIcon({ className: 'timeline-marker', html: '<div style="width:6px;height:6px;border-radius:50%;background:#9b59b6;border:1.5px solid rgba(255,255,255,0.4);box-shadow:0 0 4px #9b59b660;" title="Zombie"></div>', iconSize: [6, 6], iconAnchor: [3, 3] });
+        var m = L.marker([z.lat, z.lng], { icon: icon });
+        m.bindTooltip(z.name || 'Zombie', { direction: 'top', offset: [0, -4] });
+        m.addTo(mapWorldLayers.zombies);
+      });
+      mapWorldLayers.zombies.addTo(S.map);
+    }
+
+    if (layers.indexOf('animals') !== -1 && data.animals) {
+      mapWorldLayers.animals = L.layerGroup();
+      data.animals.forEach(function(a) {
+        if (a.lat == null) return;
+        var icon = L.divIcon({ className: 'timeline-marker', html: '<div style="width:7px;height:7px;transform:rotate(45deg);border-radius:2px;background:#e67e22;border:1.5px solid rgba(255,255,255,0.4);box-shadow:0 0 4px #e67e2260;" title="Animal"></div>', iconSize: [7, 7], iconAnchor: [3.5, 3.5] });
+        var m = L.marker([a.lat, a.lng], { icon: icon });
+        m.bindTooltip(a.name || 'Animal', { direction: 'top', offset: [0, -4] });
+        m.addTo(mapWorldLayers.animals);
+      });
+      mapWorldLayers.animals.addTo(S.map);
+    }
+
+    if (layers.indexOf('bandits') !== -1 && data.bandits) {
+      mapWorldLayers.bandits = L.layerGroup();
+      data.bandits.forEach(function(b) {
+        if (b.lat == null) return;
+        var icon = L.divIcon({ className: 'timeline-marker', html: '<div style="width:8px;height:8px;border-radius:2px;background:#e74c3c;border:1.5px solid rgba(255,255,255,0.4);box-shadow:0 0 4px #e74c3c60;" title="Bandit"></div>', iconSize: [8, 8], iconAnchor: [4, 4] });
+        var m = L.marker([b.lat, b.lng], { icon: icon });
+        m.bindTooltip(b.name || 'Bandit', { direction: 'top', offset: [0, -4] });
+        m.addTo(mapWorldLayers.bandits);
+      });
+      mapWorldLayers.bandits.addTo(S.map);
+    }
   }
 
   function updateMapMarkers() {
@@ -787,6 +823,30 @@
       entry.style.display = text.includes(q) ? '' : 'none';
     });
   }
+
+  // Refresh button — force game save + re-poll save file + update map
+  window.refreshMapSnapshot = async function() {
+    var btn = $('#map-refresh-btn');
+    if (!btn) return;
+    var orig = btn.textContent;
+    btn.textContent = '⏳ Saving…';
+    btn.disabled = true;
+    try {
+      var r = await (typeof authFetch === 'function' ? authFetch : fetch)('/api/panel/refresh-snapshot', { method: 'POST' });
+      if (r.ok) {
+        btn.textContent = '✓ Done';
+        // Reload map data after a brief pause for DB writes to settle
+        setTimeout(function() { loadMapData(); btn.textContent = orig; btn.disabled = false; }, 1000);
+      } else {
+        var d = await r.json().catch(function() { return {}; });
+        btn.textContent = '✗ ' + (d.error || 'Failed');
+        setTimeout(function() { btn.textContent = orig; btn.disabled = false; }, 3000);
+      }
+    } catch (e) {
+      btn.textContent = '✗ Error';
+      setTimeout(function() { btn.textContent = orig; btn.disabled = false; }, 3000);
+    }
+  };
 
   function showMapPlayerDetail(p) {
     var panel = $('#map-player-detail');

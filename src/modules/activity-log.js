@@ -425,16 +425,16 @@ function _formatEvent(event, timeStr) {
  * Returns " `[C4]`" or empty string if no coordinates.
  *
  * Grid: 8x8 (A-H columns, 1-8 rows) mapped to UE4 world bounds.
- * World bounds approximately: X [-200000, 200000], Y [-200000, 200000]
+ * World bounds: Width 395900, Offset X=201200 Y=-200600 (developer-provided)
  */
 function _formatLocation(event) {
   const x = event.x ?? event.pos_x;
   const y = event.y ?? event.pos_y;
   if (x == null || y == null) return '';
 
-  // UE4 coordinate ranges for HumanitZ map (approximate)
-  const minX = -204800, maxX = 204800;
-  const minY = -204800, maxY = 204800;
+  // UE4 coordinate ranges for HumanitZ map (developer-provided)
+  const minX = 3250, maxX = 399150;
+  const minY = -398550, maxY = -2650;
 
   // Clamp to map bounds
   const nx = Math.max(0, Math.min(7, Math.floor(((x - minX) / (maxX - minX)) * 8)));

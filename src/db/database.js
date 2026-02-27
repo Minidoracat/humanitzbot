@@ -1035,6 +1035,8 @@ class HumanitZDB {
     `);
 
     // Full playtime upsert — used by DB-first playtime-tracker
+    // Uses MAX() to NEVER reduce existing values — prevents data loss if
+    // the tracker restarts with empty in-memory state.
     this._stmts.upsertPlayerPlaytime = this._db.prepare(`
       INSERT INTO players (steam_id, name, playtime_seconds, session_count,
         playtime_first_seen, playtime_last_login, playtime_last_seen,
@@ -1044,11 +1046,19 @@ class HumanitZDB {
         datetime('now'), datetime('now'), datetime('now'))
       ON CONFLICT(steam_id) DO UPDATE SET
         name = CASE WHEN excluded.name != '' THEN excluded.name ELSE players.name END,
-        playtime_seconds = excluded.playtime_seconds,
-        session_count = excluded.session_count,
-        playtime_first_seen = excluded.playtime_first_seen,
-        playtime_last_login = excluded.playtime_last_login,
-        playtime_last_seen = excluded.playtime_last_seen,
+        playtime_seconds = MAX(players.playtime_seconds, excluded.playtime_seconds),
+        session_count = MAX(players.session_count, excluded.session_count),
+        playtime_first_seen = CASE
+          WHEN players.playtime_first_seen IS NULL THEN excluded.playtime_first_seen
+          WHEN excluded.playtime_first_seen IS NULL THEN players.playtime_first_seen
+          WHEN excluded.playtime_first_seen < players.playtime_first_seen THEN excluded.playtime_first_seen
+          ELSE players.playtime_first_seen END,
+        playtime_last_login = CASE
+          WHEN excluded.playtime_last_login > COALESCE(players.playtime_last_login, '') THEN excluded.playtime_last_login
+          ELSE players.playtime_last_login END,
+        playtime_last_seen = CASE
+          WHEN excluded.playtime_last_seen > COALESCE(players.playtime_last_seen, '') THEN excluded.playtime_last_seen
+          ELSE players.playtime_last_seen END,
         updated_at = datetime('now')
     `);
 
@@ -1977,7 +1987,17 @@ class HumanitZDB {
     const clans = this._stmts.getAllClans.all();
     return clans.map(c => ({
       ...c,
-      members: this._stmts.getClanMembers.all(c.name),
+      members: this._stmts.getClanMembers.all(c.name).map(m => ({
+        steamId: m.steam_id,
+        name: m.name,
+        rank: m.rank,
+        canInvite: m.can_invite,
+        canKick: m.can_kick,
+        // Preserve snake_case for any code that still uses it
+        steam_id: m.steam_id,
+        can_invite: m.can_invite,
+        can_kick: m.can_kick,
+      })),
     }));
   }
 

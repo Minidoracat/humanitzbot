@@ -21,13 +21,14 @@ const path = require('path');
 
 const ENV_PATH = path.join(__dirname, '..', '.env');
 const EXAMPLE_PATH = path.join(__dirname, '..', '.env.example');
+const BACKUP_DIR = path.join(__dirname, '..', 'data', 'backups');
 const ENV_VERSION_KEY = 'ENV_SCHEMA_VERSION';
 
 /**
  * Parse .env file into structured data
  * @returns {{ version: string|null, entries: Map<key, { value, comment, line }>, raw: string }}
  */
-function parseEnv(filePath) {
+function parseEnv(filePath, { includeCommented = false } = {}) {
   if (!fs.existsSync(filePath)) return { version: null, entries: new Map(), raw: '' };
   
   const raw = fs.readFileSync(filePath, 'utf8');
@@ -40,26 +41,53 @@ function parseEnv(filePath) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     
-    // Capture comments
-    if (line.startsWith('#')) {
-      currentComment.push(line);
-      continue;
-    }
-    
-    // Parse key=value
-    const match = line.match(/^([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/);
-    if (match) {
-      const [, key, value] = match;
+    // Parse active key=value
+    const activeMatch = line.match(/^([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/);
+    if (activeMatch) {
+      const [, key, value] = activeMatch;
       entries.set(key, {
         value: value.trim(),
         comment: currentComment.join('\n'),
         line: i + 1,
+        commented: false,
       });
       
       if (key === ENV_VERSION_KEY) {
         version = value.trim();
       }
       
+      currentComment = [];
+      continue;
+    }
+    
+    // Parse commented-out key=value (e.g. #RESTART_TIMES=06:00,18:00)
+    // Only when includeCommented is true (for .env.example parsing)
+    if (includeCommented && line.startsWith('#')) {
+      const commentedMatch = line.match(/^#\s*([A-Z_][A-Z0-9_]*)\s*=(.*)$/);
+      if (commentedMatch) {
+        const [, key, value] = commentedMatch;
+        // Don't overwrite an active entry with a commented one
+        if (!entries.has(key)) {
+          entries.set(key, {
+            value: value.trim(),
+            comment: currentComment.join('\n'),
+            line: i + 1,
+            commented: true, // optional key — user can uncomment
+          });
+        }
+        currentComment = [];
+        continue;
+      }
+    }
+    
+    // Capture comments
+    if (line.startsWith('#')) {
+      currentComment.push(line);
+      continue;
+    }
+    
+    // Reset comment accumulator on blank lines
+    if (line === '') {
       currentComment = [];
     }
   }
@@ -93,14 +121,14 @@ function extractSections(examplePath) {
       };
     }
     
-    // Key=value
-    const match = trimmed.match(/^([A-Z_][A-Z0-9_]*)\s*=/);
+    // Key=value (active or commented-out optional)
+    const match = trimmed.match(/^#?\s*([A-Z_][A-Z0-9_]*)\s*=/);
     if (match) {
       const key = match[1];
       lastKey = key;
       if (currentSection) {
         if (!currentSection.startKey) currentSection.startKey = key;
-        currentSection.keys.push(key);
+        if (!currentSection.keys.includes(key)) currentSection.keys.push(key);
       }
     }
   }
@@ -122,14 +150,14 @@ function needsSync() {
   if (!fs.existsSync(EXAMPLE_PATH)) return false;
   
   const env = parseEnv(ENV_PATH);
-  const example = parseEnv(EXAMPLE_PATH);
+  const example = parseEnv(EXAMPLE_PATH, { includeCommented: true });
   
   // Check version mismatch
   if (env.version !== example.version) return true;
   
-  // Check for missing keys
-  for (const key of example.entries.keys()) {
-    if (!env.entries.has(key)) return true;
+  // Check for missing non-optional keys
+  for (const [key, entry] of example.entries) {
+    if (!entry.commented && !env.entries.has(key)) return true;
   }
   
   return false;
@@ -145,7 +173,7 @@ function syncEnv() {
   }
   
   const env = parseEnv(ENV_PATH);
-  const example = parseEnv(EXAMPLE_PATH);
+  const example = parseEnv(EXAMPLE_PATH, { includeCommented: true });
   const sections = extractSections(EXAMPLE_PATH);
   
   const result = { added: 0, deprecated: 0, updated: 0 };
@@ -159,6 +187,7 @@ function syncEnv() {
     for (const key of section.keys) {
       const exampleEntry = example.entries.get(key);
       const envEntry = env.entries.get(key);
+      if (!exampleEntry) continue; // safety
       
       // Add comment block from example
       if (exampleEntry.comment) {
@@ -166,10 +195,13 @@ function syncEnv() {
       }
       
       if (envEntry) {
-        // Preserve existing value
+        // Preserve existing user value (whether example was commented or not)
         output.push(`${key}=${envEntry.value}`);
+      } else if (exampleEntry.commented) {
+        // Optional key — keep it commented like in example
+        output.push(`#${key}=${exampleEntry.value}`);
       } else {
-        // Add new key with example value
+        // Required key missing — add with example default
         output.push(`${key}=${exampleEntry.value}`);
         result.added++;
       }
@@ -219,11 +251,22 @@ function syncEnv() {
   // Write updated .env
   const newContent = output.join('\n');
   
-  // Backup old .env
+  // Backup old .env to data/backups/, keep last 2
   if (fs.existsSync(ENV_PATH)) {
-    const backup = `${ENV_PATH}.backup.${Date.now()}`;
+    if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const backup = path.join(BACKUP_DIR, `.env.backup.${Date.now()}`);
     fs.copyFileSync(ENV_PATH, backup);
-    console.log(`[ENV-SYNC] Backed up old .env to: ${path.basename(backup)}`);
+    console.log(`[ENV-SYNC] Backed up old .env to: ${path.relative(path.join(__dirname, '..'), backup)}`);
+    // Prune old backups — keep only the 2 most recent
+    try {
+      const backups = fs.readdirSync(BACKUP_DIR)
+        .filter(f => f.startsWith('.env.backup.'))
+        .sort()
+        .map(f => path.join(BACKUP_DIR, f));
+      while (backups.length > 2) {
+        fs.unlinkSync(backups.shift());
+      }
+    } catch (_) { /* best effort */ }
   }
   
   fs.writeFileSync(ENV_PATH, newContent, 'utf8');
