@@ -25,7 +25,7 @@ const path = require('path');
 const GVAS_READER_PATH = path.join(__dirname, 'gvas-reader.js');
 const SAVE_PARSER_PATH = path.join(__dirname, 'save-parser.js');
 
-const AGENT_VERSION = 1;
+const AGENT_VERSION = 2;
 
 // ─── Agent CLI template (prepended) ────────────────────────────────────────
 
@@ -64,6 +64,7 @@ const AGENT_CLI = `
 
 const CACHE_FILENAME = 'humanitz-cache.json';
 const SAVE_FILENAME = 'Save_DedicatedSaveMP.sav';
+const CLAN_FILENAME = 'Save_ClanData.sav';
 
 // ── Argument parsing ──
 
@@ -159,6 +160,18 @@ function parseAndWrite(savePath, outputPath) {
     playersObj[steamId] = data;
   }
 
+  // Parse clan data if Save_ClanData.sav exists alongside the main save
+  let clans = [];
+  const clanPath = _path.join(_path.dirname(savePath), CLAN_FILENAME);
+  try {
+    if (_fs.existsSync(clanPath)) {
+      const clanBuf = _fs.readFileSync(clanPath);
+      clans = parseClanData(clanBuf);
+    }
+  } catch (err) {
+    console.error('[Agent] Clan parse warning:', err.message);
+  }
+
   const cache = {
     v: ${AGENT_VERSION},
     ts: new Date().toISOString(),
@@ -173,6 +186,7 @@ function parseAndWrite(savePath, outputPath) {
     lootActors: result.lootActors,
     quests: result.quests,
     horses: result.horses,
+    clans: clans,
   };
 
   const json = JSON.stringify(cache);
@@ -181,9 +195,11 @@ function parseAndWrite(savePath, outputPath) {
   const elapsed = Date.now() - startTime;
   const sizeMB = (json.length / 1024 / 1024).toFixed(2);
   const playerCount = Object.keys(playersObj).length;
+  const clanInfo = clans.length ? ', ' + clans.length + ' clans' : '';
   console.log('[Agent] Parsed ' + playerCount + ' players, '
     + result.structures.length + ' structures, '
-    + result.vehicles.length + ' vehicles → '
+    + result.vehicles.length + ' vehicles'
+    + clanInfo + ' → '
     + sizeMB + 'MB cache (' + elapsed + 'ms)');
 
   return cache;
