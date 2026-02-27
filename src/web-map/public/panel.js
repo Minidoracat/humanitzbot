@@ -200,6 +200,9 @@
         if (d.schedule.rotateDaily) {
           var rn = $('#ls-rotate-note');
           if (rn) rn.classList.remove('hidden');
+          if (d.schedule.tomorrowSchedule) {
+            renderTomorrowSchedule($('#ls-schedule-list'), d.schedule);
+          }
         }
       }
 
@@ -637,6 +640,9 @@
           var sc = $('#schedule-card');
           if (sc) sc.classList.remove('hidden');
           renderSchedule($('#schedule-info'), sched, 'dashboard');
+          if (sched.rotateDaily && sched.tomorrowSchedule) {
+            renderTomorrowSchedule($('#schedule-info'), sched);
+          }
         }
       } catch (e) {  }
 
@@ -663,6 +669,13 @@
     container.innerHTML = '';
     var profileSettings = sched.profileSettings || {};
 
+    // Today header when rotation is on
+    if (sched.rotateDaily) {
+      var hdr = el('div', 'text-[10px] uppercase tracking-wider text-muted/50 font-semibold mt-0.5 mb-0.5');
+      hdr.textContent = 'Today';
+      container.appendChild(hdr);
+    }
+
     for (var i = 0; i < sched.todaySchedule.length; i++) {
       var slot = sched.todaySchedule[i];
       var isCurrent = slot.profileName === sched.currentProfile;
@@ -686,6 +699,36 @@
       div.innerHTML = inner;
       container.appendChild(div);
 
+      if (ps && Object.keys(ps).length > 0 && typeof tippy !== 'undefined') {
+        var tipContent = '<div style="font-size:0.6875rem"><div style="font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:#c8c2b8;margin-bottom:4px">' + esc(displayName) + '</div>';
+        for (var k in ps) {
+          if (!ps.hasOwnProperty(k)) continue;
+          tipContent += '<div style="display:flex;justify-content:space-between;gap:12px;padding:1px 0"><span style="color:#5c574f">' + esc(humanizeSettingKey(k)) + '</span><span style="color:#c8c2b8;font-family:JetBrains Mono,monospace">' + esc(String(ps[k])) + '</span></div>';
+        }
+        tipContent += '</div>';
+        tippy(div, { content: tipContent, allowHTML: true, theme: 'translucent', placement: 'bottom-start', maxWidth: 280, delay: [200, 0] });
+      }
+    }
+  }
+
+  function renderTomorrowSchedule(container, sched) {
+    if (!container || !sched.tomorrowSchedule) return;
+    var profileSettings = sched.profileSettings || {};
+
+    var hdr = el('div', 'text-[10px] uppercase tracking-wider text-muted/50 font-semibold mt-2.5 mb-0.5');
+    hdr.textContent = 'Tomorrow';
+    container.appendChild(hdr);
+
+    for (var i = 0; i < sched.tomorrowSchedule.length; i++) {
+      var slot = sched.tomorrowSchedule[i];
+      var div = el('div', 'sched-slot tomorrow');
+      var pn = slot.profileName || '';
+      var colorCls = pn.includes('calm') ? 'calm' : pn.includes('surge') ? 'surge' : pn.includes('horde') ? 'horde' : '';
+      var displayName = pn.charAt(0).toUpperCase() + pn.slice(1);
+      div.innerHTML = '<span class="sched-time">' + esc(slot.startTime) + '</span><span class="sched-name ' + colorCls + '">' + esc(displayName) + '</span>';
+
+      var ps = profileSettings[pn];
+      container.appendChild(div);
       if (ps && Object.keys(ps).length > 0 && typeof tippy !== 'undefined') {
         var tipContent = '<div style="font-size:0.6875rem"><div style="font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:#c8c2b8;margin-bottom:4px">' + esc(displayName) + '</div>';
         for (var k in ps) {

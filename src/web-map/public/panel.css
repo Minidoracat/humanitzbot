@@ -283,6 +283,7 @@ body { background: #12100e; color: #c8c2b8; }
 .sched-name.horde { color: #c45a4a; }
 .sched-marker { color: #d4915c; font-size: 0.6875rem; margin-left: auto; font-weight: 500; }
 .sched-hint { font-size: 0.625rem; color: #5c574f; margin-left: auto; }
+.sched-slot.tomorrow { opacity: 0.45; }
 
 /* ── Map sidebar ── */
 .map-player-entry { display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.75rem; font-size: 0.75rem; cursor: pointer; transition: background 0.1s; }

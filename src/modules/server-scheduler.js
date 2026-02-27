@@ -575,6 +575,11 @@ class ServerScheduler {
     const timeStrs = this._restartTimes.map(fmt);
     const todaySchedule = getTodaySchedule(timeStrs, this._profiles, dayOffset);
 
+    // Build tomorrow's schedule (useful when rotation is on)
+    const tomorrowSchedule = this._config.restartRotateDaily
+      ? getTodaySchedule(timeStrs, this._profiles, (dayOffset + 1) % this._profiles.length)
+      : null;
+
     // Build per-profile settings map for external consumers (web panel hover)
     const profileSettings = {};
     for (const name of this._profiles) {
@@ -594,6 +599,7 @@ class ServerScheduler {
       profiles: this._profiles,
       profileSettings,
       todaySchedule,
+      tomorrowSchedule,
       rotateDaily: this._config.restartRotateDaily,
       transitioning: this._transitioning,
       timezone: this._config.botTimezone || 'UTC',
