@@ -928,7 +928,7 @@ class WebMapServer {
     // ═══════════════════════════════════════════════════════
 
     // ── Panel: Server status (RCON info + resources) ──
-    app.get('/api/panel/status', requireTier('public'), async (req, res) => {
+    app.get('/api/panel/status', requireTier('survivor'), async (req, res) => {
       const result = { serverState: 'unknown', uptime: null, maxPlayers: null, onlineCount: 0, fps: null, gameDay: null, season: null, gameTime: null, timezone: config.botTimezone || 'UTC', resources: null };
 
       // RCON server info
@@ -1008,7 +1008,7 @@ class WebMapServer {
     });
 
     // ── Panel: Quick stats ──
-    app.get('/api/panel/stats', requireTier('public'), async (req, res) => {
+    app.get('/api/panel/stats', requireTier('survivor'), async (req, res) => {
       const result = { totalPlayers: 0, onlinePlayers: 0, eventsToday: 0, chatsToday: 0 };
 
       // Player count from save data

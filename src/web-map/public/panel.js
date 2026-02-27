@@ -130,7 +130,7 @@
     const res = await fetch('/auth/me');
     S.user = await res.json();
     S.tier = S.user.tierLevel || 0;
-    if (!S.user.authenticated) showLanding();
+    if (!S.user.authenticated || S.tier < 1) showLanding();
     else showPanel();
   });
 
@@ -1826,6 +1826,7 @@
   }
 
   async function sendChat() {
+    if (S.tier < 3) return;
     var input = $('#chat-msg-input');
     if (!input) return;
     var msg = input.value.trim();
