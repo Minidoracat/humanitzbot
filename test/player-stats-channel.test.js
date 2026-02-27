@@ -132,102 +132,88 @@ describe('_cleanItemName', () => {
 
 const PlayerStatsChannel = require('../src/modules/player-stats-channel');
 
-describe('_isNewWeek', () => {
-  // Create a minimal instance to call the prototype method
-  function makeInstance() {
-    const inst = Object.create(PlayerStatsChannel.prototype);
-    inst._config = { weeklyResetDay: 1, botTimezone: 'UTC' };
-    return inst;
+describe('_isNewWeek (via KillTracker)', () => {
+  const KillTracker = require('../src/tracking/kill-tracker');
+
+  function makeTracker(resetDay = 1, tz = 'UTC') {
+    return new KillTracker({
+      config: { weeklyResetDay: resetDay, botTimezone: tz, showWeeklyStats: true, getToday: () => '2025-06-12' },
+      playerStats: { getStats: () => null, getAllPlayers: () => [], getNameForId: () => null },
+      playtime: { getPlaytime: () => null },
+      db: null,
+    });
   }
 
   it('returns true when no weekStart exists', () => {
-    const inst = makeInstance();
-    assert.equal(inst._isNewWeek(null, new Date('2025-06-16T10:00:00Z')), true);
+    const tracker = makeTracker();
+    assert.equal(tracker._isNewWeek(null, new Date('2025-06-16T10:00:00Z')), true);
   });
 
   it('returns false when baseline is in current week (reset Mon)', () => {
-    const inst = makeInstance();
-    // Wednesday baseline, checked on Thursday (same week, reset day=Mon)
-    // config.weeklyResetDay = 1 (Monday), config.botTimezone = 'UTC' or similar
+    const tracker = makeTracker();
     const baseline = '2025-06-11T12:00:00Z'; // Wednesday Jun 11
     const now = new Date('2025-06-12T12:00:00Z'); // Thursday Jun 12
-    // Both are in the week starting Mon Jun 9
-    assert.equal(inst._isNewWeek(baseline, now), false);
+    assert.equal(tracker._isNewWeek(baseline, now), false);
   });
 
   it('returns true when baseline is from previous week', () => {
-    const inst = makeInstance();
-    // Baseline from last week Friday, now is this week Tuesday
+    const tracker = makeTracker();
     const baseline = '2025-06-06T12:00:00Z'; // Friday Jun 6
     const now = new Date('2025-06-10T12:00:00Z'); // Tuesday Jun 10
-    // Reset is Monday → Jun 9 is the boundary
-    assert.equal(inst._isNewWeek(baseline, now), true);
+    assert.equal(tracker._isNewWeek(baseline, now), true);
   });
 
   it('returns true when baseline is from before the reset boundary', () => {
-    const inst = makeInstance();
-    // Baseline from Saturday, now is Monday afternoon (after reset)
-    // In Europe/Tallinn (UTC+3): Sat Jun 7 23:00 → Mon Jun 9 15:00
+    const tracker = makeTracker();
     const baseline = '2025-06-07T20:00:00Z'; // Saturday Jun 7
     const now = new Date('2025-06-09T12:00:00Z'); // Monday Jun 9
-    assert.equal(inst._isNewWeek(baseline, now), true);
+    assert.equal(tracker._isNewWeek(baseline, now), true);
   });
 
   it('returns false when checked on reset day with same-week baseline', () => {
-    const inst = makeInstance();
-    // Baseline from this Monday morning, checked later same Monday
+    const tracker = makeTracker();
     const baseline = '2025-06-09T06:00:00Z'; // Monday Jun 9 morning
     const now = new Date('2025-06-09T18:00:00Z'); // Monday Jun 9 evening
-    assert.equal(inst._isNewWeek(baseline, now), false);
+    assert.equal(tracker._isNewWeek(baseline, now), false);
   });
 
   it('handles bot timezone ahead of UTC without false reset', () => {
-    // Bug scenario: bot TZ = Europe/Tallinn (UTC+2/+3).
-    // At 23:30 UTC on Sunday the bot TZ date is already Monday (01:30).
-    // With the old setHours(0,0,0,0) approach this caused a spurious reset
-    // because the midnight boundary was computed in UTC not bot TZ.
-    const inst = Object.create(PlayerStatsChannel.prototype);
-    inst._config = { weeklyResetDay: 1, botTimezone: 'Europe/Tallinn' };
-
-    // Baseline created on Wednesday in bot TZ
+    const tracker = makeTracker(1, 'Europe/Tallinn');
     const baseline = '2025-06-11T12:00:00Z'; // Wed Jun 11 15:00 Tallinn
-    // Now is Thursday in bot TZ (no week boundary crossed)
     const now = new Date('2025-06-12T21:30:00Z'); // Fri Jun 13 00:30 Tallinn
-    assert.equal(inst._isNewWeek(baseline, now), false,
+    assert.equal(tracker._isNewWeek(baseline, now), false,
       'should NOT reset mid-week even when bot TZ is ahead of system TZ');
   });
 
   it('correctly resets when bot timezone crosses weekly boundary', () => {
-    const inst = Object.create(PlayerStatsChannel.prototype);
-    inst._config = { weeklyResetDay: 1, botTimezone: 'Europe/Tallinn' };
-
-    // Baseline was last week (Fri Jun 6 in Tallinn)
+    const tracker = makeTracker(1, 'Europe/Tallinn');
     const baseline = '2025-06-06T12:00:00Z'; // Fri Jun 6
-    // Now is Tuesday Jun 10 in Tallinn
     const now = new Date('2025-06-10T08:00:00Z'); // Tue Jun 10, 11:00 Tallinn
-    assert.equal(inst._isNewWeek(baseline, now), true,
+    assert.equal(tracker._isNewWeek(baseline, now), true,
       'should reset when Mon boundary has passed in bot TZ');
   });
 });
 
 // ══════════════════════════════════════════════════════════
-// _snapshotPlayerStats
+// _snapshotPlayerStats (now in KillTracker)
 // ══════════════════════════════════════════════════════════
 
-describe('_snapshotPlayerStats', () => {
-  function makeInstance(saveData, logStats, ptData) {
-    const inst = Object.create(PlayerStatsChannel.prototype);
-    inst._saveData = saveData || new Map();
-    inst._killData = { players: {} };
-    inst._playerStats = { getStats: () => logStats || null, getAllPlayers: () => [] };
-    inst._playtime = { getPlaytime: () => ptData || null };
-    return inst;
+describe('_snapshotPlayerStats (via KillTracker)', () => {
+  const KillTracker = require('../src/tracking/kill-tracker');
+
+  function makeTracker(saveData, logStats, ptData) {
+    return new KillTracker({
+      config: { showWeeklyStats: true, weeklyResetDay: 1, botTimezone: 'UTC', getToday: () => '2025-01-15' },
+      playerStats: { getStats: () => logStats || null, getAllPlayers: () => [], getNameForId: () => null },
+      playtime: { getPlaytime: () => ptData || null },
+      db: null,
+    });
   }
 
   it('creates a snapshot with all stat fields', () => {
     const saveData = new Map([['12345', { fishCaught: 10, timesBitten: 3, lifetimeKills: 50, hasExtendedStats: true }]]);
-    const inst = makeInstance(saveData);
-    const snap = inst._snapshotPlayerStats('12345');
+    const tracker = makeTracker(saveData);
+    const snap = tracker._snapshotPlayerStats('12345', saveData);
     assert.equal(snap.kills, 50);
     assert.equal(snap.fish, 10);
     assert.equal(snap.bitten, 3);
@@ -236,8 +222,8 @@ describe('_snapshotPlayerStats', () => {
   });
 
   it('returns zeros for unknown player', () => {
-    const inst = makeInstance(new Map());
-    const snap = inst._snapshotPlayerStats('unknown');
+    const tracker = makeTracker(new Map());
+    const snap = tracker._snapshotPlayerStats('unknown', new Map());
     assert.equal(snap.kills, 0);
     assert.equal(snap.pvpKills, 0);
     assert.equal(snap.fish, 0);
@@ -273,17 +259,19 @@ describe('_resolveUdsWeather', () => {
 // Challenge snapshot and detection helpers
 // ══════════════════════════════════════════════════════════
 
-describe('Challenge tracking', () => {
+describe('Challenge tracking (via KillTracker)', () => {
+  const KillTracker = require('../src/tracking/kill-tracker');
+
   it('CHALLENGE_KEYS contains all 19 challenge fields', () => {
-    assert.equal(PlayerStatsChannel.CHALLENGE_KEYS.length, 19);
-    assert.ok(PlayerStatsChannel.CHALLENGE_KEYS.includes('challengeKill50'));
-    assert.ok(PlayerStatsChannel.CHALLENGE_KEYS.includes('challengeFindDog'));
-    assert.ok(PlayerStatsChannel.CHALLENGE_KEYS.includes('challengeRepairRadio'));
+    assert.equal(KillTracker.CHALLENGE_KEYS.length, 19);
+    assert.ok(KillTracker.CHALLENGE_KEYS.includes('challengeKill50'));
+    assert.ok(KillTracker.CHALLENGE_KEYS.includes('challengeFindDog'));
+    assert.ok(KillTracker.CHALLENGE_KEYS.includes('challengeRepairRadio'));
   });
 
   it('_snapshotChallenges captures current values', () => {
     const save = { challengeKill50: 35, challengeFindDog: 1, challengeCraftFurnace: 0 };
-    const snap = PlayerStatsChannel._snapshotChallenges(save);
+    const snap = KillTracker._snapshotChallenges(save);
     assert.equal(snap.challengeKill50, 35);
     assert.equal(snap.challengeFindDog, 1);
     assert.equal(snap.challengeCraftFurnace, 0);

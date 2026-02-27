@@ -6,6 +6,8 @@ const _defaultConfig = require('../config');
 const { cleanOwnMessages, embedContentKey } = require('./discord-utils');
 const _defaultPlaytime = require('../tracking/playtime-tracker');
 const _defaultPlayerStats = require('../tracking/player-stats');
+const KillTracker = require('../tracking/kill-tracker');
+const { resolvePlayer } = require('../tracking/kill-tracker');
 const { parseSave, parseClanData, PERK_MAP, PERK_INDEX_MAP } = require('../parsers/save-parser');
 const { buildWelcomeContent } = require('./auto-messages');
 const gameData = require('../parsers/game-data');
@@ -145,9 +147,8 @@ class PlayerStatsChannel {
     this._clanData = [];           // array of { name, members: [{ name, steamId, rank }] }
     this._lastSaveUpdate = null;
     this._embedInterval = null;
-    // Kill tracker: { players: { steamId: { cumulative: {...}, lastSnapshot: {...} } } }
-    this._killData = { players: {} };
-    this._killDirty = false;
+    // Kill/stat tracker (shared data layer)
+    this._killTracker = new KillTracker(deps);
     this._serverSettings = {};  // parsed GameServerSettings.ini
     this._weeklyStats = null;   // cached weekly delta leaderboards
   }
@@ -209,7 +210,7 @@ class PlayerStatsChannel {
     console.log(`[${this._label}] Posting in #${this.channel.name}`);
 
     // Load persistent kill tracker
-    this._loadKillData();
+    this._killTracker.load();
 
     // Delete previous own message (by saved ID), not all bot messages
     await this._cleanOwnMessage();
@@ -247,7 +248,7 @@ class PlayerStatsChannel {
   stop() {
     if (this.saveInterval) { clearInterval(this.saveInterval); this.saveInterval = null; }
     if (this._embedInterval) { clearInterval(this._embedInterval); this._embedInterval = null; }
-    this._saveKillData();
+    this._killTracker.save();
   }
 
   async _pollSave() {
@@ -343,7 +344,7 @@ class PlayerStatsChannel {
       console.log(`[${this._label}] DB-first load: ${players.size} players`);
 
       // Accumulate lifetime stats across deaths (kills + survival + activity)
-      this._accumulateStats();
+      this._runAccumulate();
 
       // Detect world state changes (season, day milestones, airdrops)
       if (prevWorldState && this._config.enableWorldEventFeed && this._logWatcher) {
@@ -445,7 +446,7 @@ class PlayerStatsChannel {
       this._worldState = worldState || {};
       console.log(`[${this._label}] Legacy parse: ${players.size} players (${(buf.length / 1024 / 1024).toFixed(1)}MB)`);
 
-      this._accumulateStats();
+      this._runAccumulate();
 
       if (prevWorldState && this._config.enableWorldEventFeed && this._logWatcher) {
         this._detectWorldEvents(prevWorldState, this._worldState);
@@ -612,159 +613,9 @@ class PlayerStatsChannel {
     }
   }
 
-  /**
-   * Load or create the weekly baseline, reset if the week has turned over,
-   * and return top-5 weekly delta leaderboards.
-   */
+  /** Delegate weekly stats to KillTracker */
   _computeWeeklyStats() {
-    if (!this._config.showWeeklyStats) return null;
-
-    // Load existing baseline
-    let baseline = { weekStart: null, players: {} };
-    try {
-      if (this._db) {
-        const saved = this._db.getStateJSON('weekly_baseline', null);
-        if (saved) baseline = saved;
-      }
-    } catch (_) {}
-
-    // Check if we need to reset (different week)
-    const now = new Date();
-    const needsReset = !baseline.weekStart || this._isNewWeek(baseline.weekStart, now);
-
-    if (needsReset) {
-      // Snapshot current stats as baseline
-      baseline = { weekStart: now.toISOString(), players: {} };
-      for (const [id] of this._saveData) {
-        baseline.players[id] = this._snapshotPlayerStats(id);
-      }
-      try {
-        if (this._db) this._db.setStateJSON('weekly_baseline', baseline);
-        console.log(`[${this._label}] Weekly baseline reset`);
-      } catch (err) {
-        console.error(`[${this._label}] Failed to write weekly baseline:`, err.message);
-      }
-    }
-
-    // Compute deltas: current - baseline
-    const allLog = this._playerStats.getAllPlayers();
-    const logMap = new Map(allLog.map(p => [p.id, p]));
-
-    const weeklyKillers = [];
-    const weeklyPvpKillers = [];
-    const weeklyFishers = [];
-    const weeklyBitten = [];
-    const weeklyPlaytime = [];
-
-    const allIds = new Set([...this._saveData.keys(), ...allLog.map(p => p.id)]);
-    for (const id of allIds) {
-      const resolved = this._resolvePlayer(id);
-      const snap = baseline.players[id] || {};
-
-      // Zombie kills (from save/tracker)
-      const at = this.getAllTimeKills(id);
-      const kills = (at?.zeeksKilled || 0) - (snap.kills || 0);
-      if (kills > 0) weeklyKillers.push({ name: resolved.name, kills });
-
-      // PvP kills (from logs)
-      const log = logMap.get(id);
-      const pvp = (log?.pvpKills || 0) - (snap.pvpKills || 0);
-      if (pvp > 0) weeklyPvpKillers.push({ name: resolved.name, kills: pvp });
-
-      // Fish caught (from save)
-      const save = this._saveData.get(id);
-      const fish = (save?.fishCaught || 0) - (snap.fish || 0);
-      if (fish > 0) weeklyFishers.push({ name: resolved.name, count: fish });
-
-      // Bitten (from save)
-      const bites = (save?.timesBitten || 0) - (snap.bitten || 0);
-      if (bites > 0) weeklyBitten.push({ name: resolved.name, count: bites });
-
-      // Playtime
-      const pt = this._playtime.getPlaytime(id);
-      const ptMs = (pt?.totalMs || 0) - (snap.playtimeMs || 0);
-      if (ptMs > 60000) weeklyPlaytime.push({ name: resolved.name, ms: ptMs });
-    }
-
-    weeklyKillers.sort((a, b) => b.kills - a.kills);
-    weeklyPvpKillers.sort((a, b) => b.kills - a.kills);
-    weeklyFishers.sort((a, b) => b.count - a.count);
-    weeklyBitten.sort((a, b) => b.count - a.count);
-    weeklyPlaytime.sort((a, b) => b.ms - a.ms);
-
-    return {
-      weekStart: baseline.weekStart,
-      topKillers: weeklyKillers.slice(0, 5),
-      topPvpKillers: weeklyPvpKillers.slice(0, 5),
-      topFishers: weeklyFishers.slice(0, 5),
-      topBitten: weeklyBitten.slice(0, 5),
-      topPlaytime: weeklyPlaytime.slice(0, 5),
-    };
-  }
-
-  /**
-   * Snapshot a player's current stats for weekly baseline comparison.
-   */
-  _snapshotPlayerStats(id) {
-    const at = this.getAllTimeKills(id);
-    const log = this._playerStats.getStats(id);
-    const save = this._saveData.get(id);
-    const pt = this._playtime.getPlaytime(id);
-    return {
-      kills: at?.zeeksKilled || 0,
-      pvpKills: log?.pvpKills || 0,
-      fish: save?.fishCaught || 0,
-      bitten: save?.timesBitten || 0,
-      playtimeMs: pt?.totalMs || 0,
-      // New weekly-tracked fields
-      craftingRecipes: save?.craftingRecipes?.length || 0,
-      buildingRecipes: save?.buildingRecipes?.length || 0,
-      unlockedSkills: save?.unlockedSkills?.length || 0,
-      unlockedProfessions: save?.unlockedProfessions?.length || 0,
-      lore: save?.lore?.length || 0,
-      uniqueLoots: save?.uniqueLoots?.length || 0,
-      craftedUniques: save?.craftedUniques?.length || 0,
-      companions: (save?.companionData?.length || 0) + (save?.horses?.length || 0),
-    };
-  }
-
-  /**
-   * Check if the baseline's weekStart falls in a previous week
-   * relative to `now`, using the configured reset day.
-   *
-   * All date comparisons are done as YYYY-MM-DD strings in the bot timezone
-   * to avoid mismatches between system-timezone midnight and bot-timezone
-   * day-of-week boundaries. (setHours(0,0,0,0) operates in the system
-   * timezone, which may differ from BOT_TIMEZONE.)
-   */
-  _isNewWeek(weekStartIso, now) {
-    const resetDay = this._config.weeklyResetDay; // 0=Sun, 1=Mon, … 6=Sat
-
-    // Current day-of-week in bot timezone
-    const dayStr = now.toLocaleDateString('en-US', {
-      weekday: 'short',
-      timeZone: this._config.botTimezone,
-    });
-    const dayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-    const currentDay = dayMap[dayStr] ?? now.getDay();
-    const daysSinceReset = (currentDay - resetDay + 7) % 7;
-
-    // Today's date in bot timezone as 'YYYY-MM-DD'
-    const todayStr = now.toLocaleDateString('en-CA', {
-      timeZone: this._config.botTimezone,
-    });
-    // Reset boundary = todayStr minus daysSinceReset (as a date-only value in UTC avoids DST)
-    const [y, m, d] = todayStr.split('-').map(Number);
-    const resetDate = new Date(Date.UTC(y, m - 1, d - daysSinceReset));
-    const resetDateStr = resetDate.toISOString().slice(0, 10);
-
-    // weekStart's date in bot timezone
-    const weekStart = new Date(weekStartIso);
-    const weekStartDateStr = weekStart.toLocaleDateString('en-CA', {
-      timeZone: this._config.botTimezone,
-    });
-
-    return weekStartDateStr < resetDateStr;
+    return this._killTracker.computeWeeklyStats(this._saveData);
   }
 
   async _updateEmbed() {
@@ -850,389 +701,20 @@ class PlayerStatsChannel {
     }
   }
 
-  // ── Lifetime Stat Tracker (accumulates across deaths) ─────
+  // ── Key arrays re-exported from KillTracker for embed builders ──
+  static KILL_KEYS = KillTracker.KILL_KEYS;
+  static SURVIVAL_KEYS = KillTracker.SURVIVAL_KEYS;
+  static LIFETIME_KEY_MAP = KillTracker.LIFETIME_KEY_MAP;
 
-  static KILL_KEYS = ['zeeksKilled', 'headshots', 'meleeKills', 'gunKills', 'blastKills', 'fistKills', 'takedownKills', 'vehicleKills'];
-  static SURVIVAL_KEYS = ['daysSurvived'];
-
-  // Scalar activity fields tracked via save diffs (simple number deltas)
-  static ACTIVITY_SCALAR_KEYS = ['fishCaught', 'fishCaughtPike', 'timesBitten'];
-
-  // Challenge progress keys — tracked for completion feed
-  static CHALLENGE_KEYS = [
-    'challengeKillZombies', 'challengeKill50', 'challengeCatch20Fish', 'challengeRegularAngler',
-    'challengeKillZombieBear', 'challenge9Squares', 'challengeCraftFirearm', 'challengeCraftFurnace',
-    'challengeCraftMeleeBench', 'challengeCraftMeleeWeapon', 'challengeCraftRainCollector',
-    'challengeCraftTablesaw', 'challengeCraftTreatment', 'challengeCraftWeaponsBench',
-    'challengeCraftWorkbench', 'challengeFindDog', 'challengeFindHeli', 'challengeLockpickSUV',
-    'challengeRepairRadio',
-  ];
-
-  // Array-based activity fields tracked via save diffs (new items = set difference)
-  static ACTIVITY_ARRAY_KEYS = [
-    'craftingRecipes', 'buildingRecipes', 'unlockedSkills',
-    'unlockedProfessions', 'lore', 'lootItemUnique', 'craftedUniques',
-    'companionData', 'horses',
-  ];
-
-  // Maps GameStats key → ExtendedStats (lifetime) save field
-  static LIFETIME_KEY_MAP = {
-    zeeksKilled:   'lifetimeKills',
-    headshots:     'lifetimeHeadshots',
-    meleeKills:    'lifetimeMeleeKills',
-    gunKills:      'lifetimeGunKills',
-    blastKills:    'lifetimeBlastKills',
-    fistKills:     'lifetimeFistKills',
-    takedownKills: 'lifetimeTakedownKills',
-    vehicleKills:  'lifetimeVehicleKills',
-  };
-
-  _loadKillData() {
-    try {
-      let raw = null;
-      if (this._db) {
-        raw = this._db.getStateJSON('kill_tracker', null);
-        if (raw) {
-          this._killData = raw;
-          const count = Object.keys(this._killData.players || {}).length;
-          console.log(`[${this._label}] Loaded ${count} player(s) from kill tracker (DB)`);
-        }
-      }
-      if (raw) {
-        // Migrate old records: add missing fields
-        for (const record of Object.values(this._killData.players)) {
-          if (!record.survivalCumulative) record.survivalCumulative = PlayerStatsChannel._emptyObj(PlayerStatsChannel.SURVIVAL_KEYS);
-          if (!record.survivalSnapshot) record.survivalSnapshot = PlayerStatsChannel._emptyObj(PlayerStatsChannel.SURVIVAL_KEYS);
-          if (!record.deathCheckpoint) record.deathCheckpoint = null;
-          if (record.lastKnownDeaths === undefined) record.lastKnownDeaths = 0;
-          if (!record.lifetimeSnapshot) record.lifetimeSnapshot = null;
-          if (!record.survivalLifetimeSnapshot) record.survivalLifetimeSnapshot = null;
-          if (!record.lastLifetimeSnapshot) record.lastLifetimeSnapshot = record.lifetimeSnapshot ? { ...record.lifetimeSnapshot } : null;
-          if (!record.lastSurvivalLifetimeSnapshot) record.lastSurvivalLifetimeSnapshot = record.survivalLifetimeSnapshot ? { ...record.survivalLifetimeSnapshot } : null;
-          if (!record.activitySnapshot) record.activitySnapshot = PlayerStatsChannel._emptyObj(PlayerStatsChannel.ACTIVITY_SCALAR_KEYS);
-          if (!record.activityArraySnapshot) {
-            record.activityArraySnapshot = {};
-            for (const k of PlayerStatsChannel.ACTIVITY_ARRAY_KEYS) record.activityArraySnapshot[k] = [];
-          }
-          if (!record.challengeSnapshot) record.challengeSnapshot = PlayerStatsChannel._emptyObj(PlayerStatsChannel.CHALLENGE_KEYS);
-        }
-      }
-    } catch (err) {
-      console.error(`[${this._label}] Failed to load kill tracker, starting fresh:`, err.message);
-      this._killData = { players: {} };
-    }
-  }
-
-  _saveKillData() {
-    if (!this._killDirty) return;
-    try {
-      if (this._db) this._db.setStateJSON('kill_tracker', this._killData);
-      this._killDirty = false;
-    } catch (err) {
-      console.error(`[${this._label}] Failed to save kill tracker:`, err.message);
-    }
-  }
-
-  static _emptyObj(keys) {
-    const obj = {};
-    for (const k of keys) obj[k] = 0;
-    return obj;
-  }
-
-  static _emptyKills() { return PlayerStatsChannel._emptyObj(PlayerStatsChannel.KILL_KEYS); }
-
-  static _snapshotKills(save) {
-    const obj = {};
-    for (const k of PlayerStatsChannel.KILL_KEYS) obj[k] = save[k] || 0;
-    return obj;
-  }
-
-  static _snapshotSurvival(save) {
-    const obj = {};
-    for (const k of PlayerStatsChannel.SURVIVAL_KEYS) obj[k] = save[k] || 0;
-    return obj;
-  }
-
-  static _snapshotChallenges(save) {
-    const obj = {};
-    for (const k of PlayerStatsChannel.CHALLENGE_KEYS) obj[k] = save[k] || 0;
-    return obj;
-  }
-
-  _accumulateStats() {
-    const today = this._config.getToday();  // timezone-aware 'YYYY-MM-DD'
-
-    // Determine which date's thread these deltas belong to.
-    // If kill-tracker has a lastPollDate from a previous day, the first poll's
-    // deltas represent activity that happened on that day — post to the old thread.
-    const lastPollDate = this._killData.lastPollDate || null;
-    const targetDate = (lastPollDate && lastPollDate !== today) ? lastPollDate : today;
-    this._killData.lastPollDate = today;
-    this._killDirty = true;
-
-    if (targetDate !== today) {
-      console.log(`[${this._label}] First poll after restart — posting pending deltas to ${targetDate} thread`);
-    }
-
-    const killDeltas = [];    // per-player kill deltas for the kill feed
-    const survivalDeltas = []; // per-player survival deltas for the survival feed
-    const fishingDeltas = [];  // per-player fishing deltas
-    const recipeDeltas = [];   // per-player new recipes
-    const skillDeltas = [];    // per-player new skills
-    const professionDeltas = []; // per-player new professions
-    const loreDeltas = [];     // per-player new lore entries
-    const uniqueDeltas = [];   // per-player new unique items
-    const companionDeltas = []; // per-player new companions/horses
-    const challengeDeltas = []; // per-player challenge completions
-
-    for (const [id, save] of this._saveData) {
-      const currentKills = PlayerStatsChannel._snapshotKills(save);
-      const currentSurvival = PlayerStatsChannel._snapshotSurvival(save);
-
-      if (!this._killData.players[id]) {
-        // First time seeing this player — initialise both trackers
-        const logDeaths = this._playerStats.getStats(id)?.deaths || 0;
-        const actSnapshot = {};
-        for (const k of PlayerStatsChannel.ACTIVITY_SCALAR_KEYS) actSnapshot[k] = save[k] || 0;
-        const arrSnapshot = {};
-        for (const k of PlayerStatsChannel.ACTIVITY_ARRAY_KEYS) arrSnapshot[k] = Array.isArray(save[k]) ? [...save[k]] : [];
-        this._killData.players[id] = {
-          cumulative: PlayerStatsChannel._emptyKills(),
-          lastSnapshot: currentKills,
-          survivalCumulative: PlayerStatsChannel._emptyObj(PlayerStatsChannel.SURVIVAL_KEYS),
-          survivalSnapshot: currentSurvival,
-          hasExtendedStats: !!save.hasExtendedStats,
-          deathCheckpoint: null,
-          lastKnownDeaths: logDeaths,
-          lifetimeSnapshot: null,
-          survivalLifetimeSnapshot: null,
-          lastLifetimeSnapshot: null,
-          lastSurvivalLifetimeSnapshot: null,
-          activitySnapshot: actSnapshot,
-          activityArraySnapshot: arrSnapshot,
-          challengeSnapshot: PlayerStatsChannel._snapshotChallenges(save),
-        };
-        // Cache lifetime values if available
-        if (save.hasExtendedStats) {
-          const ls = {};
-          for (const k of PlayerStatsChannel.KILL_KEYS) {
-            const lifetimeKey = PlayerStatsChannel.LIFETIME_KEY_MAP[k];
-            ls[k] = lifetimeKey ? (save[lifetimeKey] || 0) : 0;
-          }
-          this._killData.players[id].lifetimeSnapshot = ls;
-          this._killData.players[id].lastLifetimeSnapshot = { ...ls }; // seed delta baseline
-          this._killData.players[id].survivalLifetimeSnapshot = {
-            daysSurvived: save.lifetimeDaysSurvived || save.daysSurvived || 0,
-          };
-          this._killData.players[id].lastSurvivalLifetimeSnapshot = {
-            ...this._killData.players[id].survivalLifetimeSnapshot,
-          };
-        }
-        // Don't set initial checkpoint — GameStats is often stale and would
-        // produce a wrong checkpoint.  Leave null until the bot actually
-        // observes a death via LogWatcher, then _accumulateStats sets it
-        // precisely from the death-time lifetime snapshot.
-        this._killDirty = true;
-        continue;
-      }
-
-      const record = this._killData.players[id];
-      const lastKills = record.lastSnapshot;
-      const lastSurvival = record.survivalSnapshot || PlayerStatsChannel._emptyObj(PlayerStatsChannel.SURVIVAL_KEYS);
-      const playerName = this._resolvePlayer(id).name;
-
-      // ExtendedStats values are already lifetime cumulative — skip legacy death detection
-      if (save.hasExtendedStats) {
-        record.hasExtendedStats = true;
-        // Clear stale cumulative data (ExtendedStats replaces the banking system)
-        if (record.cumulative.zeeksKilled > 0 || record.survivalCumulative?.daysSurvived > 0) {
-          console.log(`[${this._label}] ${id}: ExtendedStats available — clearing banked cumulative`);
-          record.cumulative = PlayerStatsChannel._emptyKills();
-          record.survivalCumulative = PlayerStatsChannel._emptyObj(PlayerStatsChannel.SURVIVAL_KEYS);
-        }
-        // Cache lifetime values so they persist when player goes offline
-        const ls = {};
-        for (const k of PlayerStatsChannel.KILL_KEYS) {
-          const lifetimeKey = PlayerStatsChannel.LIFETIME_KEY_MAP[k];
-          ls[k] = lifetimeKey ? (save[lifetimeKey] || 0) : 0;
-        }
-        record.lifetimeSnapshot = ls;
-        record.survivalLifetimeSnapshot = {
-          daysSurvived: save.lifetimeDaysSurvived || save.daysSurvived || 0,
-        };
-
-        // Death checkpoint: detect new deaths via log data and snapshot lifetime kills
-        const logDeaths = this._playerStats.getStats(id)?.deaths || 0;
-        const prevDeaths = record.lastKnownDeaths || 0;
-        if (logDeaths > prevDeaths) {
-          // Death occurred — set checkpoint = lifetimeKills - current GameStats kills
-          // GameStats shows kills in the NEW life (may be 0 if just died or offline)
-          const cp = {};
-          for (const k of PlayerStatsChannel.KILL_KEYS) {
-            const lifetimeKey = PlayerStatsChannel.LIFETIME_KEY_MAP[k];
-            const lifetime = lifetimeKey ? (save[lifetimeKey] || 0) : 0;
-            cp[k] = lifetime - (currentKills[k] || 0);
-          }
-          record.deathCheckpoint = cp;
-          record.lastKnownDeaths = logDeaths;
-          console.log(`[${this._label}] ${id}: death #${logDeaths} — checkpoint set (lifetime ${save.lifetimeKills || 0}, session ${currentKills.zeeksKilled})`);
-          this._killDirty = true;
-        } else if (record.lastKnownDeaths !== logDeaths) {
-          record.lastKnownDeaths = logDeaths;
-          this._killDirty = true;
-        }
-      } else {
-        // Legacy fallback: detect death reset (main kill count dropped)
-        const deathReset = currentKills.zeeksKilled < lastKills.zeeksKilled;
-        if (deathReset) {
-          for (const k of PlayerStatsChannel.KILL_KEYS) {
-            record.cumulative[k] += lastKills[k];
-          }
-          if (!record.survivalCumulative) record.survivalCumulative = PlayerStatsChannel._emptyObj(PlayerStatsChannel.SURVIVAL_KEYS);
-          for (const k of PlayerStatsChannel.SURVIVAL_KEYS) {
-            record.survivalCumulative[k] += lastSurvival[k];
-          }
-          console.log(`[${this._label}] ${id}: death detected — banked ${lastKills.zeeksKilled} kills, ${lastSurvival.daysSurvived} days`);
-          record.lastSnapshot = currentKills;
-          record.survivalSnapshot = currentSurvival;
-          this._killDirty = true;
-          continue;
-        }
-      }
-
-      // Compute kill deltas since last poll
-      // For ExtendedStats players: use lifetime values (never reset on death)
-      // For legacy players: use GameStats values (session-based)
-      const killDelta = {};
-      let hasKills = false;
-      if (record.hasExtendedStats && record.lifetimeSnapshot) {
-        const prevLifetime = record.lastLifetimeSnapshot || PlayerStatsChannel._emptyKills();
-        for (const k of PlayerStatsChannel.KILL_KEYS) {
-          const diff = (record.lifetimeSnapshot[k] || 0) - (prevLifetime[k] || 0);
-          if (diff > 0) { killDelta[k] = diff; hasKills = true; }
-        }
-        record.lastLifetimeSnapshot = { ...record.lifetimeSnapshot };
-      } else {
-        for (const k of PlayerStatsChannel.KILL_KEYS) {
-          const diff = currentKills[k] - lastKills[k];
-          if (diff > 0) { killDelta[k] = diff; hasKills = true; }
-        }
-      }
-      if (hasKills) {
-        killDeltas.push({ steamId: id, name: playerName, delta: killDelta });
-      }
-
-      // Compute survival deltas since last poll
-      // For ExtendedStats: use lifetime values (reliable); legacy: use GameStats
-      const survDelta = {};
-      let hasSurv = false;
-      if (record.hasExtendedStats && record.survivalLifetimeSnapshot) {
-        const prevSurvLifetime = record.lastSurvivalLifetimeSnapshot || PlayerStatsChannel._emptyObj(PlayerStatsChannel.SURVIVAL_KEYS);
-        for (const k of PlayerStatsChannel.SURVIVAL_KEYS) {
-          const diff = (record.survivalLifetimeSnapshot[k] || 0) - (prevSurvLifetime[k] || 0);
-          if (diff > 0) { survDelta[k] = diff; hasSurv = true; }
-        }
-        record.lastSurvivalLifetimeSnapshot = { ...record.survivalLifetimeSnapshot };
-      } else {
-        for (const k of PlayerStatsChannel.SURVIVAL_KEYS) {
-          const diff = currentSurvival[k] - lastSurvival[k];
-          if (diff > 0) { survDelta[k] = diff; hasSurv = true; }
-        }
-      }
-      if (hasSurv) {
-        survivalDeltas.push({ steamId: id, name: playerName, delta: survDelta });
-      }
-
-      // ── Activity scalar diffs (fishing, bites) ──
-      const prevAct = record.activitySnapshot || PlayerStatsChannel._emptyObj(PlayerStatsChannel.ACTIVITY_SCALAR_KEYS);
-      const fishDelta = {};
-      let hasFish = false;
-      for (const k of PlayerStatsChannel.ACTIVITY_SCALAR_KEYS) {
-        const diff = (save[k] || 0) - (prevAct[k] || 0);
-        if (diff > 0) { fishDelta[k] = diff; hasFish = true; }
-      }
-      if (hasFish) {
-        fishingDeltas.push({ steamId: id, name: playerName, delta: fishDelta });
-      }
-      // Update scalar snapshot
-      const newActSnapshot = {};
-      for (const k of PlayerStatsChannel.ACTIVITY_SCALAR_KEYS) newActSnapshot[k] = save[k] || 0;
-      record.activitySnapshot = newActSnapshot;
-
-      // ── Activity array diffs (recipes, skills, professions, lore, uniques, companions) ──
-      const prevArr = record.activityArraySnapshot || {};
-      const newArrSnapshot = {};
-      for (const k of PlayerStatsChannel.ACTIVITY_ARRAY_KEYS) {
-        const current = Array.isArray(save[k]) ? save[k] : [];
-        const prev = Array.isArray(prevArr[k]) ? prevArr[k] : [];
-        newArrSnapshot[k] = [...current];
-
-        // Find new entries (in current but not in previous)
-        if (current.length > prev.length) {
-          const prevSet = new Set(prev.map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)));
-          const newItems = current.filter(v => {
-            const key = typeof v === 'object' ? JSON.stringify(v) : String(v);
-            return !prevSet.has(key);
-          });
-          if (newItems.length > 0) {
-            if (k === 'craftingRecipes' || k === 'buildingRecipes') {
-              recipeDeltas.push({ steamId: id, name: playerName, type: k === 'craftingRecipes' ? 'Crafting' : 'Building', items: newItems });
-            } else if (k === 'unlockedSkills') {
-              skillDeltas.push({ steamId: id, name: playerName, items: newItems });
-            } else if (k === 'unlockedProfessions') {
-              professionDeltas.push({ steamId: id, name: playerName, items: newItems });
-            } else if (k === 'lore') {
-              loreDeltas.push({ steamId: id, name: playerName, items: newItems });
-            } else if (k === 'lootItemUnique' || k === 'craftedUniques') {
-              uniqueDeltas.push({ steamId: id, name: playerName, type: k === 'lootItemUnique' ? 'found' : 'crafted', items: newItems });
-            } else if (k === 'companionData' || k === 'horses') {
-              companionDeltas.push({ steamId: id, name: playerName, type: k === 'horses' ? 'horse' : 'companion', items: newItems });
-            }
-          }
-        }
-      }
-      record.activityArraySnapshot = newArrSnapshot;
-
-      // ── Challenge completion detection ──
-      if (save.hasExtendedStats) {
-        const prevChal = record.challengeSnapshot || PlayerStatsChannel._emptyObj(PlayerStatsChannel.CHALLENGE_KEYS);
-        const completedNow = [];
-        for (const k of PlayerStatsChannel.CHALLENGE_KEYS) {
-          const cur = save[k] || 0;
-          const prev = prevChal[k] || 0;
-          if (cur > prev) {
-            const info = gameData.CHALLENGE_DESCRIPTIONS[k];
-            // Check if the challenge was just completed (reached or exceeded target)
-            // For challenges without a numeric target (e.g., "find a dog"), any increase = completion
-            if (info) {
-              const wasComplete = info.target ? prev >= info.target : prev > 0;
-              const isComplete = info.target ? cur >= info.target : cur > 0;
-              if (!wasComplete && isComplete) {
-                completedNow.push({ key: k, name: info.name, desc: info.desc });
-              }
-            }
-          }
-        }
-        if (completedNow.length > 0) {
-          challengeDeltas.push({ steamId: id, name: playerName, completed: completedNow });
-        }
-        record.challengeSnapshot = PlayerStatsChannel._snapshotChallenges(save);
-      }
-
-      record.lastSnapshot = currentKills;
-      record.survivalSnapshot = currentSurvival;
-      this._killDirty = true;
-    }
-
-    this._saveKillData();
-
-    // Post consolidated activity summary to activity thread
+  /**
+   * Run KillTracker.accumulate() and post the resulting deltas to the
+   * activity thread. This is the thin bridge between data (KillTracker)
+   * and presentation (PSC embeds / activity feed).
+   */
+  _runAccumulate() {
+    const { deltas, targetDate } = this._killTracker.accumulate(this._saveData, { gameData });
     if (this._logWatcher) {
-      this._postActivitySummary({
-        killDeltas, survivalDeltas, fishingDeltas, recipeDeltas,
-        skillDeltas, professionDeltas, loreDeltas, uniqueDeltas,
-        companionDeltas, challengeDeltas,
-      }, targetDate);
+      this._postActivitySummary(deltas, targetDate);
     }
   }
 
@@ -1455,128 +937,15 @@ class PlayerStatsChannel {
   }
 
   getAllTimeKills(steamId) {
-    const record = this._killData.players[steamId];
-    const save = this._saveData.get(steamId);
-    if (!record && !save) return null;
-
-    const allTime = PlayerStatsChannel._emptyKills();
-
-    // ExtendedStats lifetime values (persist across deaths)
-    if (save?.hasExtendedStats) {
-      allTime.zeeksKilled    = save.lifetimeKills        || 0;
-      allTime.headshots      = save.lifetimeHeadshots    || 0;
-      allTime.meleeKills     = save.lifetimeMeleeKills   || 0;
-      allTime.gunKills       = save.lifetimeGunKills     || 0;
-      allTime.blastKills     = save.lifetimeBlastKills   || 0;
-      allTime.fistKills      = save.lifetimeFistKills    || 0;
-      allTime.takedownKills  = save.lifetimeTakedownKills || 0;
-      allTime.vehicleKills   = save.lifetimeVehicleKills || 0;
-      return allTime;
-    }
-
-    // Player was previously seen with ExtendedStats but is now offline — use cached lifetime values
-    if (record?.hasExtendedStats && record.lifetimeSnapshot) {
-      for (const k of PlayerStatsChannel.KILL_KEYS) {
-        allTime[k] = record.lifetimeSnapshot[k] || 0;
-      }
-      return allTime;
-    }
-
-    // Fallback: cumulative (banked from deaths) + current save
-    if (record) {
-      for (const k of PlayerStatsChannel.KILL_KEYS) {
-        allTime[k] += record.cumulative[k];
-      }
-    }
-    if (save) {
-      for (const k of PlayerStatsChannel.KILL_KEYS) {
-        allTime[k] += (save[k] || 0);
-      }
-    }
-    return allTime;
+    return this._killTracker.getAllTimeKills(steamId, this._saveData);
   }
 
-  /**
-   * Get current-life kills for a player.
-   * For ExtendedStats players: lifetime - deathCheckpoint (most reliable).
-   * Falls back to GameStats for legacy (non-ExtendedStats) players only.
-   * Returns { zeeksKilled, headshots, ... } or null.
-   */
   getCurrentLifeKills(steamId) {
-    const record = this._killData.players[steamId];
-    const save = this._saveData.get(steamId);
-    if (!save) return null;
-
-    // ExtendedStats: compute from lifetime - checkpoint (most reliable source;
-    // GameStats writes infrequently and is often stale)
-    if (save.hasExtendedStats && record?.deathCheckpoint) {
-      const life = {};
-      for (const k of PlayerStatsChannel.KILL_KEYS) {
-        const lifetimeKey = PlayerStatsChannel.LIFETIME_KEY_MAP[k];
-        const lifetime = lifetimeKey ? (save[lifetimeKey] || 0) : 0;
-        life[k] = Math.max(0, lifetime - (record.deathCheckpoint[k] || 0));
-      }
-      return life;
-    }
-
-    // ExtendedStats, never died (or no checkpoint yet): all lifetime kills are current life
-    if (save.hasExtendedStats) {
-      const life = {};
-      for (const k of PlayerStatsChannel.KILL_KEYS) {
-        const lifetimeKey = PlayerStatsChannel.LIFETIME_KEY_MAP[k];
-        life[k] = lifetimeKey ? (save[lifetimeKey] || 0) : 0;
-      }
-      return life;
-    }
-
-    // Player offline but was previously seen with ExtendedStats — use cached lifetime - checkpoint
-    if (record?.hasExtendedStats && record.lifetimeSnapshot) {
-      if (record.deathCheckpoint) {
-        const life = {};
-        for (const k of PlayerStatsChannel.KILL_KEYS) {
-          life[k] = Math.max(0, (record.lifetimeSnapshot[k] || 0) - (record.deathCheckpoint[k] || 0));
-        }
-        return life;
-      }
-      // Never died — all lifetime kills are current life
-      return { ...record.lifetimeSnapshot };
-    }
-
-    // Legacy: GameStats is the current-life value
-    return PlayerStatsChannel._snapshotKills(save);
+    return this._killTracker.getCurrentLifeKills(steamId, this._saveData);
   }
 
   getAllTimeSurvival(steamId) {
-    const record = this._killData.players[steamId];
-    const save = this._saveData.get(steamId);
-    if (!record && !save) return null;
-
-    const allTime = PlayerStatsChannel._emptyObj(PlayerStatsChannel.SURVIVAL_KEYS);
-
-    // ExtendedStats lifetime values (persist across deaths)
-    if (save?.hasExtendedStats) {
-      allTime.daysSurvived = save.lifetimeDaysSurvived || save.daysSurvived || 0;
-      return allTime;
-    }
-
-    // Player was previously seen with ExtendedStats but is now offline — use cached lifetime values
-    if (record?.hasExtendedStats && record.survivalLifetimeSnapshot) {
-      allTime.daysSurvived = record.survivalLifetimeSnapshot.daysSurvived || 0;
-      return allTime;
-    }
-
-    // Fallback: cumulative (banked from deaths) + current save
-    if (record?.survivalCumulative) {
-      for (const k of PlayerStatsChannel.SURVIVAL_KEYS) {
-        allTime[k] += record.survivalCumulative[k];
-      }
-    }
-    if (save) {
-      for (const k of PlayerStatsChannel.SURVIVAL_KEYS) {
-        allTime[k] += (save[k] || 0);
-      }
-    }
-    return allTime;
+    return this._killTracker.getAllTimeSurvival(steamId, this._saveData);
   }
 
   _buildOverviewEmbed() {
@@ -1612,7 +981,7 @@ class PlayerStatsChannel {
     // Combined set of all known player IDs (save file + kill tracker)
     const allTrackedIds = new Set([
       ...this._saveData.keys(),
-      ...Object.keys(this._killData.players || {}),
+      ...Object.keys(this._killTracker.players || {}),
     ]);
 
     const medals = ['🥇', '🥈', '🥉'];

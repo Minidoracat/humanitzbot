@@ -1024,12 +1024,16 @@ class LogWatcher {
       const looterId = lootMatch[2];
       const containerType = lootMatch[3];
       const ownerSteamId = lootMatch[4];
+      const isClanAccess = looterId !== ownerSteamId && this._db?.areClanmates?.(looterId, ownerSteamId);
       this._playerStats.recordLoot(looterName, looterId, ownerSteamId, timestamp);
       this._incDayCount('loots');
-      this._batchLoot(looterName, looterId, containerType, ownerSteamId, timestamp);
+      // Only batch for Discord if it's not a clanmate accessing shared containers
+      if (!isClanAccess) {
+        this._batchLoot(looterName, looterId, containerType, ownerSteamId, timestamp);
+      }
 
-      // DB: log container loot event
-      this._logEvent({ type: 'container_loot', category: 'loot', actorName: looterName, steamId: looterId, item: this._simplifyContainerName(containerType), targetSteamId: ownerSteamId, timestamp });
+      // DB: always log — tag clan access separately so the web panel can filter
+      this._logEvent({ type: isClanAccess ? 'clan_container_access' : 'container_loot', category: isClanAccess ? 'clan' : 'loot', actorName: looterName, steamId: looterId, item: this._simplifyContainerName(containerType), targetSteamId: ownerSteamId, timestamp });
 
       // Track container access for attribution in activity log
       const cleanType = this._simplifyContainerName(containerType).toLowerCase();
@@ -1066,6 +1070,12 @@ class LogWatcher {
       if (attackerRaw === 'Decayfalse' || attackerRaw === 'Zeek') return false;
       // Skip self-damage (player damaging their own building)
       if (attackerSteamId && ownerSteamId && attackerSteamId === ownerSteamId) return false;
+      // Skip clanmates hitting clan buildings — not a raid, just building/upgrading.
+      // Still logged to DB via _logEvent for the web panel.
+      if (attackerSteamId && ownerSteamId && this._db?.areClanmates?.(attackerSteamId, ownerSteamId)) {
+        this._logEvent({ type: 'clan_building_damage', category: 'clan', actorName: attackerRaw, steamId: attackerSteamId, targetSteamId: ownerSteamId, item: this._simplifyBlueprintName(buildingType), amount: destroyed ? 1 : 0, details: { destroyed }, timestamp });
+        return true;
+      }
 
       this._onRaid(attackerRaw, attackerSteamId, ownerSteamId, buildingType, destroyed, timestamp);
       return true;
@@ -1502,6 +1512,8 @@ class LogWatcher {
   _batchLoot(playerName, steamId, containerType, ownerSteamId, timestamp) {
     // Don't report self-looting
     if (steamId === ownerSteamId) return;
+    // Don't spam Discord with clan members accessing shared containers
+    if (this._db && this._db.areClanmates && this._db.areClanmates(steamId, ownerSteamId)) return;
 
     const key = `${steamId}|${ownerSteamId}`;
     if (!this._lootBatch[key]) {

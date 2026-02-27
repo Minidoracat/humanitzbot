@@ -1110,6 +1110,8 @@ class HumanitZDB {
     this._stmts.insertClanMember = this._db.prepare('INSERT OR REPLACE INTO clan_members (clan_name, steam_id, name, rank, can_invite, can_kick) VALUES (?, ?, ?, ?, ?, ?)');
     this._stmts.getAllClans = this._db.prepare('SELECT * FROM clans ORDER BY name');
     this._stmts.getClanMembers = this._db.prepare('SELECT * FROM clan_members WHERE clan_name = ? ORDER BY rank DESC, name');
+    this._stmts.getClanForSteamId = this._db.prepare('SELECT clan_name FROM clan_members WHERE steam_id = ? LIMIT 1');
+    this._stmts.areClanmates = this._db.prepare(`SELECT 1 FROM clan_members a JOIN clan_members b ON a.clan_name = b.clan_name WHERE a.steam_id = ? AND b.steam_id = ? LIMIT 1`);
 
     // World state
     this._stmts.setWorldState = this._db.prepare('INSERT OR REPLACE INTO world_state (key, value, updated_at) VALUES (?, ?, datetime(\'now\'))');
@@ -2017,6 +2019,28 @@ class HumanitZDB {
         can_kick: m.can_kick,
       })),
     }));
+  }
+
+  /**
+   * Check if two steam IDs are in the same clan.
+   * @param {string} steamId1
+   * @param {string} steamId2
+   * @returns {boolean}
+   */
+  areClanmates(steamId1, steamId2) {
+    if (!steamId1 || !steamId2 || steamId1 === steamId2) return false;
+    return !!this._stmts.areClanmates.get(steamId1, steamId2);
+  }
+
+  /**
+   * Get the clan name for a steam ID, or null.
+   * @param {string} steamId
+   * @returns {string|null}
+   */
+  getClanForSteamId(steamId) {
+    if (!steamId) return null;
+    const row = this._stmts.getClanForSteamId.get(steamId);
+    return row ? row.clan_name : null;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
