@@ -1100,6 +1100,9 @@ class HumanitZDB {
     this._stmts.topFish = this._db.prepare('SELECT steam_id, name, fish_caught, fish_caught_pike FROM players WHERE fish_caught > 0 ORDER BY fish_caught DESC LIMIT ?');
     this._stmts.topBitten = this._db.prepare('SELECT steam_id, name, times_bitten FROM players WHERE times_bitten > 0 ORDER BY times_bitten DESC LIMIT ?');
     this._stmts.topPvp = this._db.prepare('SELECT steam_id, name, log_pvp_kills, log_pvp_deaths FROM players WHERE log_pvp_kills > 0 ORDER BY log_pvp_kills DESC LIMIT ?');
+    this._stmts.topBuilders = this._db.prepare('SELECT steam_id, name, log_builds FROM players WHERE log_builds > 0 ORDER BY log_builds DESC LIMIT ?');
+    this._stmts.topDeaths = this._db.prepare('SELECT steam_id, name, log_deaths, log_killed_by FROM players WHERE log_deaths > 0 ORDER BY log_deaths DESC LIMIT ?');
+    this._stmts.topLooters = this._db.prepare('SELECT steam_id, name, log_loots FROM players WHERE log_loots > 0 ORDER BY log_loots DESC LIMIT ?');
 
     // Clans
     this._stmts.upsertClan = this._db.prepare('INSERT OR REPLACE INTO clans (name, updated_at) VALUES (?, datetime(\'now\'))');
@@ -1963,6 +1966,9 @@ class HumanitZDB {
   topFish(limit = 10) { return this._stmts.topFish.all(limit); }
   topBitten(limit = 10) { return this._stmts.topBitten.all(limit); }
   topPvp(limit = 10) { return this._stmts.topPvp.all(limit); }
+  topBuilders(limit = 10) { return this._stmts.topBuilders.all(limit); }
+  topDeaths(limit = 10) { return this._stmts.topDeaths.all(limit); }
+  topLooters(limit = 10) { return this._stmts.topLooters.all(limit); }
 
   /** Aggregate server totals. */
   getServerTotals() {
