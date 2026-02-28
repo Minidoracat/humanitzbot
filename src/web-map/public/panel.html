@@ -230,6 +230,7 @@
           <li><a href="#" class="nav-link" data-tab="settings" data-min-tier="3"><i data-lucide="settings" class="nav-ico"></i><span class="nav-txt">Settings</span></a></li>
           <li><a href="#" class="nav-link" data-tab="controls" data-min-tier="3"><i data-lucide="power" class="nav-ico"></i><span class="nav-txt">Controls</span></a></li>
           <li><a href="#" class="nav-link" data-tab="database" data-min-tier="3"><i data-lucide="database" class="nav-ico"></i><span class="nav-txt">Database</span></a></li>
+          <li><a href="#" class="nav-link" data-tab="anticheat" data-min-tier="3"><i data-lucide="shield-alert" class="nav-ico"></i><span class="nav-txt">Anticheat</span></a></li>
         </ul>
         <div class="px-3 py-3 border-t border-border">
           <div class="flex items-center gap-2 mb-2 sidebar-user cursor-pointer" id="user-block" data-tippy-content="Toggle view mode">
@@ -616,6 +617,33 @@
             </div>
           </div>
           <div id="db-results" class="overflow-x-auto"></div>
+        </section>
+
+        <!-- ═══ Anticheat ═══ -->
+        <section id="tab-anticheat" class="tab-content hidden p-6 space-y-4">
+          <div class="flex items-center justify-between flex-wrap gap-3">
+            <h2 class="text-lg font-heading font-bold text-text-bright flex items-center gap-2"><i data-lucide="shield-alert" class="w-5 h-5 text-red-400"></i> Anticheat Dashboard</h2>
+            <div class="flex items-center gap-2">
+              <select id="ac-status-filter" class="input-field w-32"><option value="open">Open</option><option value="confirmed">Confirmed</option><option value="dismissed">Dismissed</option><option value="whitelisted">Whitelisted</option><option value="">All</option></select>
+              <select id="ac-severity-filter" class="input-field w-28"><option value="">All Severity</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="info">Info</option></select>
+              <button id="ac-refresh" class="btn-secondary flex items-center gap-1.5 text-xs"><i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Refresh</button>
+            </div>
+          </div>
+          <!-- Risk score overview cards -->
+          <div id="ac-risk-cards" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+          <!-- Flags table -->
+          <div class="card">
+            <div class="card-header flex items-center justify-between">
+              <span class="font-medium text-text-bright">Flags</span>
+              <span id="ac-flag-count" class="text-xs text-muted"></span>
+            </div>
+            <div id="ac-flags-table" class="overflow-x-auto"></div>
+          </div>
+          <!-- Risk scores table -->
+          <div class="card">
+            <div class="card-header"><span class="font-medium text-text-bright">Player Risk Scores</span></div>
+            <div id="ac-risk-table" class="overflow-x-auto"></div>
+          </div>
         </section>
 
         <footer class="px-6 py-3 text-center text-[11px] text-muted/20 border-t border-border/20 mt-auto flex-shrink-0">

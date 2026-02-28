@@ -490,7 +490,7 @@
     });
   }
 
-  var TAB_LABELS = { dashboard:'Dashboard', map:'Live Map', timeline:'Timeline', players:'Players', clans:'Clans', activity:'Activity', chat:'Chat', items:'Items', console:'Console', settings:'Settings', controls:'Controls', database:'Database' };
+  var TAB_LABELS = { dashboard:'Dashboard', map:'Live Map', timeline:'Timeline', players:'Players', clans:'Clans', activity:'Activity', chat:'Chat', items:'Items', console:'Console', settings:'Settings', controls:'Controls', database:'Database', anticheat:'Anticheat' };
   S.breadcrumbs = [];
 
   function setBreadcrumbs(crumbs) {
@@ -556,6 +556,7 @@
       case 'database': loadDatabase(); break;
       case 'items': loadItems(); break;
       case 'timeline': initTimeline(); break;
+      case 'anticheat': loadAnticheat(); break;
     }
   }
 
@@ -2780,6 +2781,198 @@
     }
     return str;
   }
+
+  // ══════════════════════════════════════════════════
+  //  ANTICHEAT
+  // ══════════════════════════════════════════════════
+
+  async function loadAnticheat() {
+    var flagsContainer = $('#ac-flags-table');
+    var riskContainer = $('#ac-risk-table');
+    var cardsContainer = $('#ac-risk-cards');
+    var countEl = $('#ac-flag-count');
+    if (!flagsContainer) return;
+
+    var statusFilter = $('#ac-status-filter') ? $('#ac-status-filter').value : 'open';
+    var severityFilter = $('#ac-severity-filter') ? $('#ac-severity-filter').value : '';
+
+    flagsContainer.innerHTML = '<div class="feed-empty">Loading flags...</div>';
+    riskContainer.innerHTML = '<div class="feed-empty">Loading risk scores...</div>';
+
+    // Load flags + risk scores in parallel
+    try {
+      var params = new URLSearchParams();
+      if (statusFilter) params.set('status', statusFilter);
+      if (severityFilter) params.set('severity', severityFilter);
+      params.set('limit', '100');
+
+      var [flagsRes, riskRes] = await Promise.all([
+        fetch('/api/panel/anticheat/flags?' + params),
+        fetch('/api/panel/anticheat/risk-scores')
+      ]);
+
+      if (!flagsRes.ok || !riskRes.ok) {
+        flagsContainer.innerHTML = '<div class="feed-empty">Failed to load anticheat data (requires admin)</div>';
+        riskContainer.innerHTML = '';
+        cardsContainer.innerHTML = '';
+        return;
+      }
+
+      var flags = await flagsRes.json();
+      var riskScores = await riskRes.json();
+
+      // Render overview cards
+      renderAcCards(cardsContainer, flags, riskScores);
+
+      // Render flags table
+      if (countEl) countEl.textContent = flags.length + ' flag(s)';
+      renderAcFlags(flagsContainer, flags);
+
+      // Render risk scores
+      renderAcRiskScores(riskContainer, riskScores);
+    } catch (e) {
+      flagsContainer.innerHTML = '<div class="feed-empty">Error: ' + esc(e.message) + '</div>';
+      riskContainer.innerHTML = '';
+    }
+  }
+
+  function renderAcCards(container, flags, riskScores) {
+    if (!container) return;
+    var open = flags.filter(function(f) { return f.status === 'open'; }).length;
+    var critical = flags.filter(function(f) { return f.severity === 'critical' || f.severity === 'high'; }).length;
+    var atRisk = riskScores.filter(function(r) { return r.risk_score > 0.5; }).length;
+    var total = flags.length;
+
+    var cards = [
+      { label: 'Open Flags', value: open, color: open > 0 ? 'text-amber-400' : 'text-green-400', icon: 'alert-triangle' },
+      { label: 'Critical/High', value: critical, color: critical > 0 ? 'text-red-400' : 'text-green-400', icon: 'alert-octagon' },
+      { label: 'At Risk Players', value: atRisk, color: atRisk > 0 ? 'text-orange-400' : 'text-green-400', icon: 'user-x' },
+      { label: 'Total Flags', value: total, color: 'text-muted', icon: 'flag' }
+    ];
+
+    container.innerHTML = cards.map(function(c) {
+      return '<div class="card p-3 flex items-center gap-3">' +
+        '<i data-lucide="' + c.icon + '" class="w-6 h-6 ' + c.color + '"></i>' +
+        '<div><div class="text-xl font-bold ' + c.color + '">' + c.value + '</div>' +
+        '<div class="text-xs text-muted">' + c.label + '</div></div></div>';
+    }).join('');
+    if (typeof lucide !== 'undefined') lucide.createIcons({ attrs: { class: '' } });
+  }
+
+  var AC_SEVERITY_COLORS = { critical: 'bg-red-500/20 text-red-400', high: 'bg-orange-500/20 text-orange-400', medium: 'bg-amber-500/20 text-amber-400', low: 'bg-blue-500/20 text-blue-400', info: 'bg-gray-500/20 text-gray-400' };
+  var AC_STATUS_COLORS = { open: 'bg-amber-500/20 text-amber-400', confirmed: 'bg-red-500/20 text-red-400', dismissed: 'bg-gray-500/20 text-gray-400', whitelisted: 'bg-green-500/20 text-green-400' };
+
+  function renderAcFlags(container, flags) {
+    if (!flags.length) { container.innerHTML = '<div class="feed-empty">No flags found</div>'; return; }
+
+    var html = '<table class="db-table"><thead><tr>' +
+      '<th>Severity</th><th>Detector</th><th>Player</th><th>Score</th><th>Status</th><th>Created</th><th>Actions</th>' +
+      '</tr></thead><tbody>';
+
+    for (var i = 0; i < flags.length; i++) {
+      var f = flags[i];
+      var sevClass = AC_SEVERITY_COLORS[f.severity] || '';
+      var statClass = AC_STATUS_COLORS[f.status] || '';
+      var details = '';
+      try { details = typeof f.details === 'string' ? f.details : JSON.stringify(f.details || {}); } catch (e) { details = ''; }
+      var detailsTrunc = details.length > 80 ? details.slice(0, 80) + '...' : details;
+
+      html += '<tr>' +
+        '<td><span class="px-1.5 py-0.5 rounded text-xs font-medium ' + sevClass + '">' + esc(f.severity) + '</span></td>' +
+        '<td class="text-xs font-mono">' + esc(f.detector) + '</td>' +
+        '<td>' + esc(f.player_name || f.steam_id || '-') + '</td>' +
+        '<td class="font-mono text-xs">' + (f.score != null ? f.score.toFixed(3) : '-') + '</td>' +
+        '<td><span class="px-1.5 py-0.5 rounded text-xs font-medium ' + statClass + '">' + esc(f.status) + '</span></td>' +
+        '<td class="text-xs text-muted" title="' + esc(details) + '">' + (f.created_at ? new Date(f.created_at).toLocaleString('en-US', { hour12: false }) : '-') + '</td>' +
+        '<td class="flex gap-1">';
+
+      if (f.status === 'open') {
+        html += '<button class="ac-review-btn btn-secondary text-xs px-1.5 py-0.5" data-id="' + f.id + '" data-action="confirmed" title="Confirm flag">✓</button>';
+        html += '<button class="ac-review-btn btn-secondary text-xs px-1.5 py-0.5" data-id="' + f.id + '" data-action="dismissed" title="Dismiss flag">✗</button>';
+        html += '<button class="ac-review-btn btn-secondary text-xs px-1.5 py-0.5" data-id="' + f.id + '" data-action="whitelisted" title="Whitelist">☆</button>';
+      } else {
+        html += '<span class="text-xs text-muted">' + esc(f.reviewed_by ? 'by ' + f.reviewed_by : '-') + '</span>';
+      }
+      html += '</td></tr>';
+
+      // Expandable details row
+      if (detailsTrunc) {
+        html += '<tr class="bg-surface-50/30"><td colspan="7" class="text-xs text-muted font-mono p-1 pl-4">' + esc(detailsTrunc) + '</td></tr>';
+      }
+    }
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+
+    // Wire review buttons
+    container.querySelectorAll('.ac-review-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var flagId = btn.dataset.id;
+        var action = btn.dataset.action;
+        var notes = '';
+        if (action === 'dismissed') {
+          notes = prompt('Dismissal reason (optional):') || '';
+        }
+        reviewAcFlag(flagId, action, notes);
+      });
+    });
+  }
+
+  function renderAcRiskScores(container, scores) {
+    if (!scores.length) { container.innerHTML = '<div class="feed-empty">No player risk data</div>'; return; }
+
+    var html = '<table class="db-table"><thead><tr>' +
+      '<th>Player</th><th>Risk Score</th><th>Open</th><th>Confirmed</th><th>Dismissed</th><th>Last Flag</th>' +
+      '</tr></thead><tbody>';
+
+    for (var i = 0; i < scores.length; i++) {
+      var s = scores[i];
+      var riskPct = Math.round((s.risk_score || 0) * 100);
+      var riskColor = riskPct >= 70 ? 'text-red-400' : riskPct >= 40 ? 'text-amber-400' : 'text-green-400';
+      var barColor = riskPct >= 70 ? 'bg-red-400' : riskPct >= 40 ? 'bg-amber-400' : 'bg-green-400';
+
+      html += '<tr>' +
+        '<td class="font-medium">' + esc(s.steam_id) + '</td>' +
+        '<td><div class="flex items-center gap-2"><div class="w-16 h-1.5 bg-surface-100 rounded-full overflow-hidden"><div class="h-full ' + barColor + ' rounded-full" style="width:' + riskPct + '%"></div></div><span class="font-mono text-xs ' + riskColor + '">' + riskPct + '%</span></div></td>' +
+        '<td class="font-mono text-xs">' + (s.open_flags || 0) + '</td>' +
+        '<td class="font-mono text-xs">' + (s.confirmed_flags || 0) + '</td>' +
+        '<td class="font-mono text-xs">' + (s.dismissed_flags || 0) + '</td>' +
+        '<td class="text-xs text-muted">' + (s.last_flag_at ? new Date(s.last_flag_at).toLocaleString('en-US', { hour12: false }) : '-') + '</td>' +
+        '</tr>';
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }
+
+  async function reviewAcFlag(flagId, status, notes) {
+    try {
+      var r = await fetch('/api/panel/anticheat/flags/' + flagId + '/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: status, notes: notes || '' })
+      });
+      if (!r.ok) {
+        var err = {};
+        try { err = await r.json(); } catch (e) {  }
+        alert('Review failed: ' + (err.error || r.statusText));
+        return;
+      }
+      // Reload
+      loadAnticheat();
+    } catch (e) {
+      alert('Review failed: ' + e.message);
+    }
+  }
+
+  // Wire anticheat filter controls
+  (function() {
+    var sf = $('#ac-status-filter');
+    var svf = $('#ac-severity-filter');
+    var rb = $('#ac-refresh');
+    if (sf) sf.addEventListener('change', function() { if (S.currentTab === 'anticheat') loadAnticheat(); });
+    if (svf) svf.addEventListener('change', function() { if (S.currentTab === 'anticheat') loadAnticheat(); });
+    if (rb) rb.addEventListener('click', function() { if (S.currentTab === 'anticheat') loadAnticheat(); });
+  })();
 
   // ══════════════════════════════════════════════════
   //  COPY IP

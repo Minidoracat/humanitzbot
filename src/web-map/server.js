@@ -1850,6 +1850,98 @@ class WebMapServer {
     });
 
     // ══════════════════════════════════════════════════════════════════
+    //  Anticheat API — flag browser, risk scores, review
+    // ══════════════════════════════════════════════════════════════════
+
+    /** GET /api/panel/anticheat/flags — list flags with optional filters */
+    app.get('/api/panel/anticheat/flags', requireTier('admin'), rateLimit(10000, 15), (req, res) => {
+      if (!this._db) return res.json([]);
+      try {
+        const { status, severity, steam_id, detector, limit } = req.query;
+        const maxRows = Math.min(parseInt(limit, 10) || 100, 500);
+        let flags;
+
+        if (steam_id) {
+          flags = this._db.getAnticheatFlagsByPlayer(steam_id);
+        } else if (detector) {
+          flags = this._db.getAnticheatFlagsByDetector(detector, maxRows);
+        } else if (status) {
+          flags = this._db.getAnticheatFlagsByStatus(status, maxRows);
+        } else {
+          flags = this._db.getRecentAnticheatFlags(maxRows);
+        }
+
+        // Apply severity filter client-side if both status and severity are set
+        if (severity && flags) {
+          flags = flags.filter(f => f.severity === severity);
+        }
+
+        // Resolve player names from players table
+        const nameMap = {};
+        try {
+          const rows = this._db.db.prepare('SELECT steam_id, name FROM players').all();
+          for (const r of rows) nameMap[r.steam_id] = r.name;
+        } catch { /* */ }
+
+        flags = (flags || []).map(f => ({
+          ...f,
+          player_name: f.player_name || nameMap[f.steam_id] || f.steam_id,
+        }));
+
+        res.json(flags);
+      } catch (err) {
+        res.status(500).json({ error: safeError(err) });
+      }
+    });
+
+    /** GET /api/panel/anticheat/risk-scores — all player risk scores */
+    app.get('/api/panel/anticheat/risk-scores', requireTier('admin'), rateLimit(10000, 10), (req, res) => {
+      if (!this._db) return res.json([]);
+      try {
+        const scores = this._db.getRiskScores() || [];
+        res.json(scores);
+      } catch (err) {
+        res.status(500).json({ error: safeError(err) });
+      }
+    });
+
+    /** POST /api/panel/anticheat/flags/:id/review — confirm, dismiss, or whitelist a flag */
+    app.post('/api/panel/anticheat/flags/:id/review', requireTier('admin'), rateLimit(10000, 10), (req, res) => {
+      if (!this._db) return res.status(500).json({ error: 'Database not available' });
+      try {
+        const flagId = parseInt(req.params.id, 10);
+        if (isNaN(flagId)) return res.status(400).json({ error: 'Invalid flag ID' });
+
+        const { status, notes } = req.body || {};
+        if (!status || !['confirmed', 'dismissed', 'whitelisted'].includes(status)) {
+          return res.status(400).json({ error: 'Invalid status. Must be confirmed, dismissed, or whitelisted' });
+        }
+
+        // Get reviewer identity from session
+        const reviewedBy = req.session?.username || req.session?.discordId || 'admin';
+
+        this._db.reviewAnticheatFlag(flagId, status, reviewedBy, notes || '');
+        res.json({ ok: true, flagId, status });
+      } catch (err) {
+        res.status(500).json({ error: safeError(err) });
+      }
+    });
+
+    /** GET /api/panel/anticheat/stats — summary counts for dashboard */
+    app.get('/api/panel/anticheat/stats', requireTier('admin'), rateLimit(10000, 10), (req, res) => {
+      if (!this._db) return res.json({ open: 0, confirmed: 0, dismissed: 0, total: 0 });
+      try {
+        const open = this._db.countAnticheatFlags({ status: 'open' });
+        const confirmed = this._db.countAnticheatFlags({ status: 'confirmed' });
+        const dismissed = this._db.countAnticheatFlags({ status: 'dismissed' });
+        const total = this._db.countAnticheatFlags({});
+        res.json({ open, confirmed, dismissed, total });
+      } catch (err) {
+        res.status(500).json({ error: safeError(err) });
+      }
+    });
+
+    // ══════════════════════════════════════════════════════════════════
     //  Timeline API — time-scroll playback, entity history, death causes
     // ══════════════════════════════════════════════════════════════════
 
