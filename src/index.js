@@ -31,6 +31,7 @@ const MultiServerManager = require('./server/multi-server');
 const ActivityLog = require('./modules/activity-log');
 const MilestoneTracker = require('./modules/milestone-tracker');
 const RecapService = require('./modules/recap-service');
+const AnticheatIntegration = require('./modules/anticheat-integration');
 const HumanitZDB = require('./db/database');
 const SaveService = require('./parsers/save-service');
 const gameReference = require('./parsers/game-reference');
@@ -171,6 +172,7 @@ let snapshotService; // SnapshotService — timeline recording
 let activityLog;   // ActivityLog instance
 let milestoneTracker; // MilestoneTracker instance
 let recapService;     // RecapService instance
+let anticheatIntegration; // AnticheatIntegration instance
 let adminChannel;  // cached for online/offline notifications
 let stdinConsole;  // interactive stdin console for headless hosts
 const startedAt = new Date();
@@ -708,6 +710,31 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.log('[BOT] Recaps disabled via ENABLE_RECAPS=false');
   }
 
+  // Anticheat — observation-only anomaly detection (requires private @humanitzbot/qs-anticheat package)
+  if (config.enableAnticheat) {
+    if (!db) {
+      setStatus('Anticheat', '🟡 Skipped (no database)');
+    } else {
+      anticheatIntegration = new AnticheatIntegration({ db, config, logWatcher });
+      await anticheatIntegration.start();
+      if (anticheatIntegration.available) {
+        // Wire into save sync for real-time analysis
+        if (saveService) {
+          saveService.on('sync', (result) => {
+            anticheatIntegration.onSaveSync(result).catch(err => {
+              console.error('[BOT] Anticheat save sync error:', err.message);
+            });
+          });
+        }
+        setStatus('Anticheat', '🟢 Active');
+      } else {
+        setStatus('Anticheat', '🟡 Package not installed');
+      }
+    }
+  } else {
+    setStatus('Anticheat', '⚫ Disabled');
+  }
+
   // Player Stats — DB-first reads (SaveService populates DB, PSC reads it)
   if (config.enablePlayerStats) {
     if (!hasFtp() && !db) {
@@ -1044,6 +1071,7 @@ async function shutdown(reason = 'Manual shutdown') {
   if (logWatcher) logWatcher.stop();
   if (playerStatsChannel) playerStatsChannel.stop();
   if (activityLog) activityLog.stop();
+  if (anticheatIntegration) await anticheatIntegration.stop();
   if (saveService) saveService.stop();
   if (multiServerManager) await multiServerManager.stopAll();
   if (stdinConsole) stdinConsole.stop();

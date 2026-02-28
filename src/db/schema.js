@@ -1162,6 +1162,86 @@ CREATE TABLE IF NOT EXISTS bot_state (
 );
 `;
 
+// ─── Anticheat — flag tracking, risk scores, universal fingerprints ─────────
+
+const ANTICHEAT_FLAGS = `
+CREATE TABLE IF NOT EXISTS anticheat_flags (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  steam_id        TEXT NOT NULL,
+  player_name     TEXT DEFAULT '',
+  detector        TEXT NOT NULL,               -- 'teleportation', 'speed_hack', 'impossible_kill_rate', etc.
+  severity        TEXT DEFAULT 'low',          -- 'info', 'low', 'medium', 'high', 'critical'
+  score           REAL DEFAULT 0,              -- anomaly score (0.0–1.0 normalised)
+  details         TEXT DEFAULT '{}',           -- JSON: detector-specific evidence
+  evidence        TEXT DEFAULT '[]',           -- JSON: [{table, id}] references to source rows
+  status          TEXT DEFAULT 'open',         -- 'open', 'confirmed', 'dismissed', 'whitelisted'
+  reviewed_by     TEXT,                        -- discord user ID who reviewed
+  reviewed_at     TEXT,
+  review_notes    TEXT,
+  auto_escalated  INTEGER DEFAULT 0,           -- 1 if severity was auto-increased
+  created_at      TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ac_flags_steam    ON anticheat_flags(steam_id);
+CREATE INDEX IF NOT EXISTS idx_ac_flags_detector ON anticheat_flags(detector);
+CREATE INDEX IF NOT EXISTS idx_ac_flags_status   ON anticheat_flags(status);
+CREATE INDEX IF NOT EXISTS idx_ac_flags_severity ON anticheat_flags(severity);
+CREATE INDEX IF NOT EXISTS idx_ac_flags_created  ON anticheat_flags(created_at);
+`;
+
+const PLAYER_RISK_SCORES = `
+CREATE TABLE IF NOT EXISTS player_risk_scores (
+  steam_id        TEXT PRIMARY KEY,
+  risk_score      REAL DEFAULT 0,              -- 0.0 = clean, 1.0 = almost certainly cheating
+  open_flags      INTEGER DEFAULT 0,
+  confirmed_flags INTEGER DEFAULT 0,
+  dismissed_flags INTEGER DEFAULT 0,
+  last_flag_at    TEXT,
+  last_scored_at  TEXT,
+  baseline_data   TEXT DEFAULT '{}',           -- JSON: per-player baseline metrics
+  updated_at      TEXT DEFAULT (datetime('now'))
+);
+`;
+
+const ENTITY_FINGERPRINTS = `
+CREATE TABLE IF NOT EXISTS entity_fingerprints (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type     TEXT NOT NULL,               -- 'player', 'structure', 'vehicle', 'horse', 'container',
+                                               -- 'companion', 'loot_actor', 'world_drop', 'item'
+  entity_id       TEXT NOT NULL,               -- steam_id, actor_name, instance_id, etc.
+  fingerprint     TEXT NOT NULL,               -- hash of entity state at creation
+  parent_id       INTEGER,                     -- FK: entity that created/spawned this one
+  creator_steam_id TEXT,                       -- player who created this entity (if applicable)
+  created_at      TEXT DEFAULT (datetime('now')),
+  last_validated  TEXT,                        -- last time fingerprint matched expected state
+  tamper_score    REAL DEFAULT 0,              -- 0.0 = clean, 1.0 = definitely tampered
+  metadata        TEXT DEFAULT '{}'            -- JSON: entity-type-specific provenance data
+);
+CREATE INDEX IF NOT EXISTS idx_ef_type          ON entity_fingerprints(entity_type);
+CREATE INDEX IF NOT EXISTS idx_ef_entity        ON entity_fingerprints(entity_id);
+CREATE INDEX IF NOT EXISTS idx_ef_fingerprint   ON entity_fingerprints(fingerprint);
+CREATE INDEX IF NOT EXISTS idx_ef_creator       ON entity_fingerprints(creator_steam_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ef_unique ON entity_fingerprints(entity_type, entity_id);
+`;
+
+const FINGERPRINT_EVENTS = `
+CREATE TABLE IF NOT EXISTS fingerprint_events (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  fingerprint_id  INTEGER REFERENCES entity_fingerprints(id),
+  event_type      TEXT NOT NULL,               -- 'created', 'moved', 'modified', 'damaged',
+                                               -- 'repaired', 'transferred', 'duplicated', 'destroyed'
+  old_state       TEXT,                        -- JSON snapshot before change
+  new_state       TEXT,                        -- JSON snapshot after change
+  attributed_to   TEXT,                        -- steam_id of player who caused the change
+  source          TEXT,                        -- 'save_diff', 'log_event', 'rcon', 'inferred'
+  confidence      REAL DEFAULT 1.0,            -- 1.0 = certain, 0.5 = inferred, 0.0 = unknown
+  created_at      TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_fpe_fingerprint ON fingerprint_events(fingerprint_id);
+CREATE INDEX IF NOT EXISTS idx_fpe_attributed  ON fingerprint_events(attributed_to);
+CREATE INDEX IF NOT EXISTS idx_fpe_type        ON fingerprint_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_fpe_created     ON fingerprint_events(created_at);
+`;
+
 // ─── Indexes ────────────────────────────────────────────────────────────────
 
 const INDEXES = `
@@ -1232,6 +1312,10 @@ const ALL_TABLES = [
   TIMELINE_COMPANIONS,
   TIMELINE_BACKPACKS,
   DEATH_CAUSES,
+  ANTICHEAT_FLAGS,
+  PLAYER_RISK_SCORES,
+  ENTITY_FINGERPRINTS,
+  FINGERPRINT_EVENTS,
   INDEXES,
 ];
 

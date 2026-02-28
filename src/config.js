@@ -235,6 +235,9 @@ const config = {
   enablePlaytime: envBool('ENABLE_PLAYTIME', true),
   enableMilestones: envBool('ENABLE_MILESTONES', false),
   enableRecaps: envBool('ENABLE_RECAPS', false),
+  enableAnticheat: envBool('ENABLE_ANTICHEAT', false),
+  anticheatAnalyzeInterval: parseInt(process.env.ANTICHEAT_ANALYZE_INTERVAL, 10) || 60_000,
+  anticheatBaselineInterval: parseInt(process.env.ANTICHEAT_BASELINE_INTERVAL, 10) || 900_000,
 
   // Howyagarn — dev-only feature incubator (all default off)
   enableDidYouKnow: envBool('ENABLE_DID_YOU_KNOW', false),
