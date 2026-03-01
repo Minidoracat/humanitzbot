@@ -54,6 +54,97 @@ function _pct(value, max) {
 /** Medal array for leaderboards. */
 const MEDALS = ['\u{1F947}', '\u{1F948}', '\u{1F949}', '4\uFE0F\u20E3', '5\uFE0F\u20E3'];
 
+// ─── Category enum → name ────────────────────────────────────────
+const _SKILL_CAT = { 'NewEnumerator0': 'Survival', 'NewEnumerator1': 'Crafting', 'NewEnumerator2': 'Combat' };
+
+/** Build a lookup: { "Survival": [{ tier, column, name }, ...], ... } from SKILL_DETAILS. */
+function _buildSkillLookup() {
+  const byCategory = {};
+  for (const sk of Object.values(gameData.SKILL_DETAILS || {})) {
+    if (!sk.name || sk.levelUnlock < 0) continue; // skip disabled placeholders
+    const cat = sk.category || '';
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push({ tier: sk.tier ?? 0, column: sk.column ?? 0, name: sk.name });
+  }
+  return byCategory;
+}
+
+let _skillLookupCache = null;
+function _getSkillLookup() {
+  if (!_skillLookupCache) _skillLookupCache = _buildSkillLookup();
+  return _skillLookupCache;
+}
+
+/**
+ * Parse skill tree data (from DB skills_data JSON) into a display-friendly structure.
+ * Uses `locked`/`unlockProgress` fields — NOT the unreliable GUID arrays.
+ * @param {Array|string} raw — skillTree array or JSON string from DB
+ * @returns {object|null} { Survival: { unlocked, total, names }, Crafting: ..., Combat: ... }
+ */
+function _parseSkillTree(raw) {
+  if (!raw) return null;
+  let tree = raw;
+  if (typeof raw === 'string') {
+    try { tree = JSON.parse(raw); } catch { return null; }
+  }
+  if (!Array.isArray(tree) || tree.length === 0) return null;
+
+  const lookup = _getSkillLookup();
+  const result = {};
+
+  for (const node of tree) {
+    if (!node || typeof node !== 'object') continue;
+
+    // Resolve category from type enum
+    const typeStr = String(node.type || '');
+    const enumKey = typeStr.replace(/^.*::/, '');
+    const cat = _SKILL_CAT[enumKey];
+    if (!cat) continue;
+
+    const catSkills = lookup[cat];
+    if (!catSkills) continue;
+
+    if (!result[cat]) {
+      result[cat] = { unlocked: 0, total: catSkills.length, names: [] };
+    }
+
+    // For Survival and Crafting: each tree node represents a tier.
+    // unlockProgress array has 3 entries (one per column) — {x, y} where x/y >= 1 means unlocked.
+    if ((cat === 'Survival' || cat === 'Crafting') && Array.isArray(node.unlockProgress)) {
+      const tier = node.index ?? 0;
+      for (let col = 0; col < node.unlockProgress.length; col++) {
+        const prog = node.unlockProgress[col];
+        if (prog && typeof prog === 'object' && prog.x >= prog.y && prog.y > 0) {
+          result[cat].unlocked++;
+          const skill = catSkills.find(s => s.tier === tier && s.column === col);
+          if (skill) result[cat].names.push(skill.name);
+        }
+      }
+    }
+
+    // Combat: flat sequential mapping — each node index = one skill
+    if (cat === 'Combat') {
+      const idx = node.index ?? 0;
+      // Combat skills are ordered column-first, tier-second: col0tier0, col0tier1, ...
+      const col = Math.floor(idx / 4);
+      const tier = idx % 4;
+      if (!node.locked && Array.isArray(node.unlockProgress)) {
+        // Single skill per node in combat; check if the first progress entry is complete
+        const prog = node.unlockProgress[0];
+        if (prog && typeof prog === 'object' && prog.x >= prog.y && prog.y > 0) {
+          result[cat].unlocked++;
+          const skill = catSkills.find(s => s.tier === tier && s.column === col);
+          if (skill) result[cat].names.push(skill.name);
+        }
+      }
+    }
+  }
+
+  // Only return if any data was found
+  const hasData = Object.values(result).some(r => r.unlocked > 0 || r.total > 0);
+  return hasData ? result : null;
+}
+
 
 // ═════════════════════════════════════════════════════════════════════
 //  _buildOverviewEmbed — Persistent channel embed
@@ -446,12 +537,17 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
     if (prof) desc.push(`> *${prof.perk}*`);
   }
 
-  // Level + XP + Gender
+  // Level + XP progress + Skill points + Gender
   const identityBits = [];
   if (save) {
     identityBits.push(save.male ? '\u2642' : '\u2640');
     if (save.level > 0) identityBits.push(`Lv ${save.level}`);
-    if (save.exp > 0) identityBits.push(`${Math.round(save.exp).toLocaleString()} XP`);
+    if (save.expCurrent != null && save.expRequired > 0) {
+      identityBits.push(`\`${_bar(save.expCurrent, save.expRequired)}\` ${_pct(save.expCurrent, save.expRequired)} XP`);
+    } else if (save.exp > 0) {
+      identityBits.push(`${Math.round(save.exp).toLocaleString()} XP`);
+    }
+    if (save.skillPoints > 0) identityBits.push(`\uD83D\uDD39 ${save.skillPoints} SP`);
   }
   if (pt) identityBits.push(`${pt.totalFormatted} playtime`);
   if (identityBits.length > 0) desc.push(identityBits.join(' \u00B7 '));
@@ -558,6 +654,8 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
     if (this._config.showImmunity) vitals.push(`\uD83D\uDEE1\uFE0F \`${_bar(save.infection, save.maxInfection || 100)}\` ${_pct(save.infection, save.maxInfection || 100)}`);
     if (this._config.showBattery && save.battery > 0 && save.battery < 100)
       vitals.push(`\uD83D\uDD0B \`${_bar(save.battery, 100)}\` ${_pct(save.battery, 100)}`);
+    if (save.energy > 0) vitals.push(`\u2728 Energy \`${_bar(save.energy, 100)}\` ${_pct(save.energy, 100)}`);
+    if (save.wellRested) vitals.push(`\uD83D\uDCA4 Well Rested`);
 
     // Status effects (compact single line)
     if (this._config.canShow('showStatusEffects', isAdmin)) {
@@ -688,6 +786,24 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
     }
   }
 
+  // Skill tree — unlocked skills per category
+  if (save) {
+    const tree = _parseSkillTree(save.skillsData || save.skillTree);
+    if (tree) {
+      const catEmoji = { Survival: '\uD83C\uDF3F', Crafting: '\uD83D\uDD27', Combat: '\u2694\uFE0F' };
+      const lines = [];
+      for (const [cat, info] of Object.entries(tree)) {
+        const emoji = catEmoji[cat] || '\u2B50';
+        const bar = `\`${_bar(info.unlocked, info.total)}\``;
+        const names = info.names.length > 0 ? ` ${info.names.join(', ')}` : '';
+        lines.push(`${emoji} **${cat}** ${bar} ${info.unlocked}/${info.total}${names}`);
+      }
+      if (lines.length > 0) {
+        embed.addFields({ name: '\uD83C\uDFAF Skills', value: lines.join('\n').substring(0, 1024) });
+      }
+    }
+  }
+
   // Challenges — completed vs in-progress
   if (save?.hasExtendedStats) {
     const descs = gameData.CHALLENGE_DESCRIPTIONS;
@@ -739,6 +855,31 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
     }
   }
 
+  // Quest progress — mini-quests and completed quest spawners
+  if (save) {
+    const questBits = [];
+    // Completed quest spawners (major story quests like helicopter, radio tower)
+    const doneQuests = Array.isArray(save.questSpawnerDone) ? save.questSpawnerDone.filter(Boolean) : [];
+    if (doneQuests.length > 0) {
+      questBits.push(`\u2705 **${doneQuests.length}** quest${doneQuests.length !== 1 ? 's' : ''} completed`);
+    }
+    // Active mini-quest
+    const mq = typeof save.miniQuest === 'string' ? (() => { try { return JSON.parse(save.miniQuest); } catch { return null; } })() : save.miniQuest;
+    if (mq && typeof mq === 'object') {
+      const questId = mq.QuestID || mq.questID || mq.ID || '';
+      const active = mq.Active ?? mq.active;
+      if (active && questId) {
+        // Try to look up quest name from game data
+        const questRef = gameData.QUEST_DATA?.[questId];
+        const questName = questRef?.name || _clean(questId) || 'Active Quest';
+        questBits.push(`\uD83D\uDCCB ${questName}`);
+      }
+    }
+    if (questBits.length > 0) {
+      embed.addFields({ name: '\uD83D\uDDFA\uFE0F Quests', value: questBits.join(' \u00B7 '), inline: true });
+    }
+  }
+
   // Recipes — counts only
   if (this._config.canShow('showRecipes', isAdmin) && save) {
     const craft = (save.craftingRecipes || []).length;
@@ -751,16 +892,28 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
     }
   }
 
-  // Collections — lore + unique items (counts only)
+  // Collections — lore + unique items (names when available)
   const extraBits = [];
   if (this._config.canShow('showLore', isAdmin) && save?.lore?.length > 0) {
     extraBits.push(`\uD83D\uDCD6 **${save.lore.length}** lore`);
   }
   if (save) {
-    const found = cleanItemArray(save.lootItemUnique || []).length;
-    const crafted = cleanItemArray(save.craftedUniques || []).length;
-    if (found > 0) extraBits.push(`\u2B50 **${found}** unique found`);
-    if (crafted > 0) extraBits.push(`\uD83D\uDD27 **${crafted}** unique crafted`);
+    const foundItems = cleanItemArray(save.lootItemUnique || []);
+    const craftedItems = cleanItemArray(save.craftedUniques || []);
+    if (foundItems.length > 0) {
+      if (foundItems.length <= 5) {
+        extraBits.push(`\u2B50 ${foundItems.join(', ')}`);
+      } else {
+        extraBits.push(`\u2B50 **${foundItems.length}** unique found`);
+      }
+    }
+    if (craftedItems.length > 0) {
+      if (craftedItems.length <= 3) {
+        extraBits.push(`\uD83D\uDD27 ${craftedItems.join(', ')}`);
+      } else {
+        extraBits.push(`\uD83D\uDD27 **${craftedItems.length}** unique crafted`);
+      }
+    }
   }
   if (extraBits.length > 0) {
     embed.addFields({ name: '\uD83D\uDCDA Collections', value: extraBits.join(' \u00B7 '), inline: true });
@@ -811,8 +964,13 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
     if (save.companionData?.length > 0) {
       for (const c of save.companionData) {
         const name = c.displayName || c.name || _clean(c.class || 'Companion');
-        const hp = c.health != null ? ` \u2014 ${Math.round(c.health)} HP` : '';
-        lines.push(`\uD83D\uDC15 **${name}**${hp}`);
+        const bits = [];
+        if (c.health != null) bits.push(`${Math.round(c.health)} HP`);
+        if (c.energy > 0) bits.push(`\u26A1 ${Math.round(c.energy)}`);
+        if (c.command) bits.push(_clean(c.command));
+        if (c.vest > 0) bits.push('\uD83E\uDDBA Vest');
+        const detail = bits.length > 0 ? ` \u2014 ${bits.join(' \u00B7 ')}` : '';
+        lines.push(`\uD83D\uDC15 **${name}**${detail}`);
       }
     }
     if (lines.length > 0) {

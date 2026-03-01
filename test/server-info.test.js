@@ -133,6 +133,14 @@ describe('parsePlayerList', () => {
     assert.equal(r.players[0].steamId, '76561100000000001');
   });
 
+  it('strips trailing metadata (Lv, Clan, DPassed) after SteamID block', () => {
+    const raw = 'torokichi94 (76561198972007341+|0002c7903e0c414cb03d47ccdb007a66) Lv:27 Clan:DRAGONS DPassed:54';
+    const r = parsePlayerList(raw);
+    assert.equal(r.count, 1);
+    assert.equal(r.players[0].name, 'torokichi94');
+    assert.equal(r.players[0].steamId, '76561198972007341');
+  });
+
   it('handles player count header', () => {
     const raw = [
       'Players: 2',

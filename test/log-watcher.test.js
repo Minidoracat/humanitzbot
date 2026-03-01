@@ -22,6 +22,11 @@ const DMG_RE = /^(.+?)\s+took\s+([\d.]+)\s+damage from\s+(.+)$/;
 const LOOT_RE = /^(.+?)\s*\((\d{17})[^)]*\)\s*looted a container\s*\(([^)]+)\)\s*owner by\s*(\d{17})/;
 const ADMIN_RE = /^(.+?)\s+gained admin access!$/;
 const CHEAT_RE = /^(Stack limit detected in drop function|Odd behavior.*?Cheat)\s*\((.+?)\s*-\s*(\d{17})/;
+const DROP_MISMATCH_RE = /^Client drop request count mismatch\s*\([^)]*\)\s*\((.+?)\s*-\s*amount\s*(\d+)/i;
+const SPEED_WARN_RE = /^(.+?)\s+suspected of speed hacking\s+Warn\s*=>\s*(\d+)\/(\d+)/;
+const SPEED_KICK_RE = /^(.+?)\s+will be kicked for speed-hack strong suspicion\s+ID\s*=\s*(\d{17})/;
+const ADMIN_KICK_RE = /^(Kicked (?:for|player for)\s+.+?)(?:\.\s*|$)/;
+const BAD_SPAWN_RE = /^(?:Detected )?[Bb]ad spawn location/i;
 const RAID_RE = /^Building \(([^)]+)\) owned by \((\d{17}[^)]*)\) damaged \([\d.]+\) by (.+?)(?:\((\d{17})[^)]*\))?(\s*\(Destroyed\))?$/;
 
 // Blueprint name cleaner (from _simplifyBlueprintName)
@@ -155,6 +160,86 @@ describe('cheat regex', () => {
     assert.equal(m[1], 'Stack limit detected in drop function');
     assert.equal(m[2], 'TestPlayer');
     assert.equal(m[3], '76561100000000001');
+  });
+
+  it('matches odd behavior cheat', () => {
+    const m = CHEAT_RE.exec('Odd behavior Drop amount Cheat (BadPlayer - 76561100000000002)');
+    assert.ok(m);
+    assert.equal(m[1], 'Odd behavior Drop amount Cheat');
+    assert.equal(m[2], 'BadPlayer');
+    assert.equal(m[3], '76561100000000002');
+  });
+
+  it('matches client drop request count mismatch', () => {
+    const m = DROP_MISMATCH_RE.exec('Client drop request count mismatch (Potential cheat) (Hacker - amount 5)');
+    assert.ok(m);
+    assert.equal(m[1], 'Hacker');
+    assert.equal(m[2], '5');
+  });
+});
+
+describe('speed hack detection', () => {
+  it('matches speed hack warning', () => {
+    const m = SPEED_WARN_RE.exec('TestPlayer suspected of speed hacking Warn => 2/3');
+    assert.ok(m);
+    assert.equal(m[1], 'TestPlayer');
+    assert.equal(m[2], '2');
+    assert.equal(m[3], '3');
+  });
+
+  it('matches first speed hack warning', () => {
+    const m = SPEED_WARN_RE.exec('SomePlayer suspected of speed hacking Warn => 1/3');
+    assert.ok(m);
+    assert.equal(m[1], 'SomePlayer');
+    assert.equal(m[2], '1');
+    assert.equal(m[3], '3');
+  });
+
+  it('matches speed hack kick', () => {
+    const m = SPEED_KICK_RE.exec('TestPlayer will be kicked for speed-hack strong suspicion ID = 76561100000000001');
+    assert.ok(m);
+    assert.equal(m[1], 'TestPlayer');
+    assert.equal(m[2], '76561100000000001');
+  });
+});
+
+describe('admin abuse detection', () => {
+  it('matches unauthorised command kick', () => {
+    const body = 'Kicked for executing unauthorised command';
+    const m = ADMIN_KICK_RE.exec(body);
+    assert.ok(m);
+    assert.ok(/unauthoris/i.test(body));
+  });
+
+  it('matches admin panel kick', () => {
+    const body = 'Kicked for opening admin panel with no admin privilege. Ban would be justified.';
+    const m = ADMIN_KICK_RE.exec(body);
+    assert.ok(m);
+    assert.ok(/admin panel/i.test(body));
+  });
+
+  it('matches system message kick', () => {
+    const body = 'Kicked player for trying to send a system message when not admin. Cheater probably.';
+    const m = ADMIN_KICK_RE.exec(body);
+    assert.ok(m);
+    assert.ok(/system message/i.test(body));
+  });
+
+  it('matches suspicious behavior kick', () => {
+    const body = 'Kicked player for suspicious behavior';
+    const m = ADMIN_KICK_RE.exec(body);
+    assert.ok(m);
+    assert.ok(/suspicious behavior/i.test(body));
+  });
+});
+
+describe('bad spawn detection', () => {
+  it('matches detected bad spawn', () => {
+    assert.ok(BAD_SPAWN_RE.test('Detected bad spawn location, adjusting to coast spawn, sorry for the inconvenience!'));
+  });
+
+  it('matches bad spawn forcing default', () => {
+    assert.ok(BAD_SPAWN_RE.test('Bad spawn location, forcing default coast spawn location'));
   });
 });
 

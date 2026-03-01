@@ -133,12 +133,13 @@ function parsePlayerList(raw) {
     }
 
     // HumanitZ "Players" command returns lines like:
-    //   "PlayerName (76561198000000000_+_|<guid>)"
+    //   "PlayerName (76561198000000000_+_|<guid>) Lv:27 Clan:X DPassed:54"
     //   "PlayerName (76561198xxxxxxxxx)"
     //   or just "PlayerName"
     // Extract the name and the 17-digit SteamID64 from the parenthesized block.
+    // Trailing metadata (Lv, Clan, DPassed) after the closing paren is ignored.
     const playerMatch = line.match(
-      /^(.+?)\s*\((\d{17})[^)]*\)\s*$/
+      /^(.+?)\s*\((\d{17})[^)]*\)/
     );
 
     if (playerMatch) {

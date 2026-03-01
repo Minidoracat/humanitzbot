@@ -573,12 +573,20 @@
 
     $$('.quick-cmd[data-cmd]').forEach(function(btn) {
       btn.addEventListener('click', async function() {
+        var log = $('#controls-log');
+        var time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+        appendLog(log, '[' + time + '] > ' + btn.dataset.cmd, 'text-muted');
         try {
           var r = await apiFetch('/api/panel/rcon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: btn.dataset.cmd }) });
           var d = await r.json();
+          var resp = d.response || d.error || 'No response';
+          appendLog(log, '[' + time + '] ' + resp, d.ok ? 'text-calm' : 'text-red-400');
           appendConsole(btn.dataset.cmd, 'cmd');
-          appendConsole(d.response || d.error || 'No response', d.ok ? 'resp' : 'err');
-        } catch (e) { appendConsole('Error: ' + e.message, 'err'); }
+          appendConsole(resp, d.ok ? 'resp' : 'err');
+        } catch (e) {
+          appendLog(log, '[' + time + '] \u2715 ' + e.message, 'text-red-400');
+          appendConsole('Error: ' + e.message, 'err');
+        }
       });
     });
 

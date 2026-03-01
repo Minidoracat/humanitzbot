@@ -735,8 +735,9 @@ class LogWatcher {
     }
 
     // ── Anti-cheat flags ───────────────────────────────────
-    // Stack limit detected in drop function (PlayerName - SteamID)
-    // Odd behavior Drop amount Cheat (PlayerName - SteamID)
+    // Item manipulation (with SteamID):
+    //   Stack limit detected in drop function (PlayerName - SteamID)
+    //   Odd behavior Drop amount Cheat (PlayerName - SteamID)
     const cheatMatch = body.match(/^(Stack limit detected in drop function|Odd behavior.*?Cheat)\s*\((.+?)\s*-\s*(\d{17})/);
     if (cheatMatch) {
       const type = cheatMatch[1].trim();
@@ -744,8 +745,6 @@ class LogWatcher {
       const steamId = cheatMatch[3];
       this._playerStats.recordCheatFlag(playerName, steamId, type, timestamp);
       this._incDayCount('cheat');
-
-      // DB: log anticheat event
       this._logEvent({ type: 'anticheat_flag', category: 'admin', actorName: playerName, steamId, item: type, timestamp });
 
       const embed = new EmbedBuilder()
@@ -755,6 +754,94 @@ class LogWatcher {
         .setFooter({ text: this._formatTime(timestamp) });
       this._sendToThread(embed);
       return true;
+    }
+
+    // Client drop mismatch (no SteamID in log):
+    //   Client drop request count mismatch (Potential cheat) (PlayerName - amount X)
+    const dropMismatch = body.match(/^Client drop request count mismatch\s*\([^)]*\)\s*\((.+?)\s*-\s*amount\s*(\d+)/i);
+    if (dropMismatch) {
+      const playerName = dropMismatch[1].trim();
+      const amount = dropMismatch[2];
+      const type = `Client drop mismatch (amount ${amount})`;
+      this._incDayCount('cheat');
+      this._logEvent({ type: 'anticheat_flag', category: 'admin', actorName: playerName, item: type, timestamp });
+
+      const embed = new EmbedBuilder()
+        .setAuthor({ name: '🚨 Anti-Cheat Alert' })
+        .setDescription(`**${playerName}**\n\`${type}\``)
+        .setColor(0xe74c3c)
+        .setFooter({ text: this._formatTime(timestamp) });
+      this._sendToThread(embed);
+      return true;
+    }
+
+    // Speed hack detection:
+    //   PlayerName suspected of speed hacking Warn => 2/3
+    const speedWarnMatch = body.match(/^(.+?)\s+suspected of speed hacking\s+Warn\s*=>\s*(\d+)\/(\d+)/);
+    if (speedWarnMatch) {
+      const playerName = speedWarnMatch[1].trim();
+      const current = speedWarnMatch[2];
+      const max = speedWarnMatch[3];
+      const type = `Speed hack warning ${current}/${max}`;
+      this._incDayCount('cheat');
+      this._logEvent({ type: 'anticheat_flag', category: 'admin', actorName: playerName, item: type, timestamp });
+
+      const embed = new EmbedBuilder()
+        .setAuthor({ name: '⚡ Speed Hack Warning' })
+        .setDescription(`**${playerName}** — Warn ${current}/${max}`)
+        .setColor(0xf39c12)
+        .setFooter({ text: this._formatTime(timestamp) });
+      this._sendToThread(embed);
+      return true;
+    }
+
+    // Speed hack kick:
+    //   PlayerName will be kicked for speed-hack strong suspicion ID = SteamID
+    const speedKickMatch = body.match(/^(.+?)\s+will be kicked for speed-hack strong suspicion\s+ID\s*=\s*(\d{17})/);
+    if (speedKickMatch) {
+      const playerName = speedKickMatch[1].trim();
+      const steamId = speedKickMatch[2];
+      const type = 'Speed hack kick';
+      this._playerStats.recordCheatFlag(playerName, steamId, type, timestamp);
+      this._incDayCount('cheat');
+      this._logEvent({ type: 'anticheat_flag', category: 'admin', actorName: playerName, steamId, item: type, timestamp });
+
+      const embed = new EmbedBuilder()
+        .setAuthor({ name: '🚫 Speed Hack Kick' })
+        .setDescription(`**${playerName}** kicked for speed hacking`)
+        .setColor(0xe74c3c)
+        .setFooter({ text: this._formatTime(timestamp) });
+      this._sendToThread(embed);
+      return true;
+    }
+
+    // Admin abuse kicks:
+    //   Kicked for executing unauthorised command
+    //   Kicked for opening admin panel with no admin privilege...
+    //   Kicked player for trying to send a system message when not admin...
+    //   Kicked player for suspicious behavior
+    const adminKickMatch = body.match(/^(Kicked (?:for|player for)\s+.+?)(?:\.\s*|$)/);
+    if (adminKickMatch && /unauthoris|admin panel|system message|suspicious behavior/i.test(body)) {
+      const type = adminKickMatch[1].trim();
+      this._incDayCount('cheat');
+      this._logEvent({ type: 'anticheat_flag', category: 'admin', item: type, timestamp });
+
+      const embed = new EmbedBuilder()
+        .setAuthor({ name: '🔒 Security Kick' })
+        .setDescription(`\`${type}\``)
+        .setColor(0xe74c3c)
+        .setFooter({ text: this._formatTime(timestamp) });
+      this._sendToThread(embed);
+      return true;
+    }
+
+    // Bad spawn detection:
+    //   Detected bad spawn location, adjusting to coast spawn...
+    //   Bad spawn location, forcing default coast spawn location
+    if (/^(?:Detected )?[Bb]ad spawn location/i.test(body)) {
+      this._incDayCount('cheat');
+      this._logEvent({ type: 'anticheat_flag', category: 'admin', item: 'Bad spawn location', timestamp });
+      return true; // log silently — not worth an embed, it auto-corrects
     }
 
     return false;
