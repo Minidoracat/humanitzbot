@@ -285,8 +285,9 @@ class ChatRelay {
   // ── !admin command detection ────────────────────────────────
 
   async _checkAdminCall(line) {
-    // Strip [Admin] prefix so admin players' !admin commands are detected
-    const cleaned = stripAdminPrefix(line);
+    // Strip timestamp prefix (game update March 2026) and [Admin] prefix
+    const stripped = chatParser.stripTimestamp(line);
+    const cleaned = stripAdminPrefix(stripped);
     let m = CHAT_RE.exec(cleaned);
     if (!m) m = PLAIN_CHAT_RE.exec(cleaned);
     if (!m) return;

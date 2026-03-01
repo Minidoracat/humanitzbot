@@ -9,7 +9,7 @@
  * Schema is applied via database.js on first run and auto-migrated on updates.
  */
 
-const SCHEMA_VERSION = 13;
+const SCHEMA_VERSION = 14;
 
 // ─── Player data ────────────────────────────────────────────────────────────
 
@@ -1242,6 +1242,230 @@ CREATE INDEX IF NOT EXISTS idx_fpe_type        ON fingerprint_events(event_type)
 CREATE INDEX IF NOT EXISTS idx_fpe_created     ON fingerprint_events(created_at);
 `;
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  HOWYAGARN — Faction PvP / MMOlite tables
+//  All tables prefixed with hmz_ to avoid collision with core bot tables.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── Faction definitions (3 factions, static-ish but admin-editable) ────────
+
+const HMZ_FACTIONS = `
+CREATE TABLE IF NOT EXISTS hmz_factions (
+  id              TEXT PRIMARY KEY,             -- 'reapers', 'wardens', 'drifters'
+  name            TEXT NOT NULL,                -- 'Reapers'
+  theme           TEXT DEFAULT '',              -- 'Aggressive raiders'
+  color           TEXT DEFAULT '#ffffff',       -- hex color for embeds/map
+  icon            TEXT DEFAULT '',              -- emoji or icon key
+  strength_desc   TEXT DEFAULT '',              -- short description of faction bonus
+  weakness_desc   TEXT DEFAULT '',              -- short description of faction penalty
+  member_count    INTEGER DEFAULT 0,            -- denormalized count (updated on join/leave)
+  total_kills     INTEGER DEFAULT 0,            -- aggregate across all members
+  total_deaths    INTEGER DEFAULT 0,
+  total_playtime  INTEGER DEFAULT 0,            -- seconds
+  territories_held INTEGER DEFAULT 0,           -- denormalized count
+  created_at      TEXT DEFAULT (datetime('now'))
+);
+`;
+
+// ─── Player faction membership (1:1, permanent per wipe) ────────────────────
+
+const HMZ_PLAYERS = `
+CREATE TABLE IF NOT EXISTS hmz_players (
+  steam_id        TEXT PRIMARY KEY,             -- FK to players.steam_id
+  faction_id      TEXT NOT NULL,                -- FK to hmz_factions.id
+  faction_rank    INTEGER DEFAULT 1,            -- 1-20
+  faction_xp      INTEGER DEFAULT 0,            -- cumulative XP toward next rank
+  season_tier     INTEGER DEFAULT 0,            -- 0-50 season pass tier
+  season_xp       INTEGER DEFAULT 0,            -- XP toward next season tier
+  credits         INTEGER DEFAULT 0,            -- faction currency
+  lifetime_credits INTEGER DEFAULT 0,           -- total earned (never decreases)
+  quests_completed INTEGER DEFAULT 0,
+  bounties_claimed INTEGER DEFAULT 0,
+  territories_captured INTEGER DEFAULT 0,
+  pvp_kills_faction INTEGER DEFAULT 0,          -- kills against other factions
+  deaths_faction  INTEGER DEFAULT 0,            -- deaths to other faction members
+  titles          TEXT DEFAULT '[]',            -- JSON array of earned title strings
+  active_title    TEXT DEFAULT '',              -- currently displayed title
+  perks_unlocked  TEXT DEFAULT '[]',            -- JSON array of perk IDs
+  joined_at       TEXT DEFAULT (datetime('now')),
+  last_active     TEXT DEFAULT (datetime('now')),
+  wipe_id         TEXT DEFAULT ''               -- tracks which wipe cycle this belongs to
+);
+CREATE INDEX IF NOT EXISTS idx_hmzp_faction ON hmz_players(faction_id);
+CREATE INDEX IF NOT EXISTS idx_hmzp_rank    ON hmz_players(faction_rank DESC);
+CREATE INDEX IF NOT EXISTS idx_hmzp_credits ON hmz_players(credits DESC);
+`;
+
+// ─── Territory zones (admin-defined map regions) ────────────────────────────
+
+const HMZ_TERRITORIES = `
+CREATE TABLE IF NOT EXISTS hmz_territories (
+  id              TEXT PRIMARY KEY,             -- 'airport', 'military_base', 'harbor', etc.
+  name            TEXT NOT NULL,                -- 'The Airport'
+  description     TEXT DEFAULT '',
+  center_x        REAL NOT NULL,                -- UE4 world X
+  center_y        REAL NOT NULL,                -- UE4 world Y
+  radius          REAL DEFAULT 15000,           -- capture radius in UE4 units (~150m)
+  controlling_faction TEXT,                     -- FK to hmz_factions.id (NULL = contested)
+  control_score_reapers  INTEGER DEFAULT 0,     -- scoring points per faction
+  control_score_wardens  INTEGER DEFAULT 0,
+  control_score_drifters INTEGER DEFAULT 0,
+  last_contested  TEXT,                         -- when control last changed
+  bonus_type      TEXT DEFAULT 'xp',            -- 'xp', 'loot', 'defense', 'speed'
+  bonus_value     REAL DEFAULT 0.1,             -- percentage bonus (0.1 = +10%)
+  tier            INTEGER DEFAULT 1,            -- 1=outpost, 2=strategic, 3=stronghold
+  active          INTEGER DEFAULT 1             -- admin can disable zones
+);
+CREATE INDEX IF NOT EXISTS idx_hmzt_faction ON hmz_territories(controlling_faction);
+`;
+
+// ─── Quest definitions (template library) ───────────────────────────────────
+
+const HMZ_QUESTS = `
+CREATE TABLE IF NOT EXISTS hmz_quests (
+  id              TEXT PRIMARY KEY,             -- 'daily_kill_20', 'faction_reapers_raid_3', 'story_ch1_s1'
+  type            TEXT NOT NULL,                -- 'daily', 'faction', 'story'
+  faction_id      TEXT,                         -- NULL for universal, or specific faction
+  title           TEXT NOT NULL,                -- 'Zombie Cleanup Crew'
+  description     TEXT NOT NULL,                -- 'Kill 20 zombies in any territory.'
+  objective_type  TEXT NOT NULL,                -- 'kill_zombies', 'kill_pvp', 'fish', 'build', 'loot',
+                                                -- 'travel', 'craft', 'capture_territory', 'raid', 'custom'
+  objective_target INTEGER DEFAULT 1,           -- how many to complete
+  objective_params TEXT DEFAULT '{}',           -- JSON: extra filters {zone, item, weapon, etc.}
+  reward_xp       INTEGER DEFAULT 0,            -- faction XP
+  reward_credits  INTEGER DEFAULT 0,            -- faction credits
+  reward_title    TEXT,                         -- title string unlocked on completion (NULL = none)
+  reward_items    TEXT DEFAULT '[]',            -- JSON: [{item, qty}] given via RCON spawnitem
+  prerequisite_quest TEXT,                      -- must complete this quest first (story chains)
+  min_rank        INTEGER DEFAULT 0,            -- minimum faction rank required
+  cooldown_hours  INTEGER DEFAULT 24,           -- hours before this quest can be taken again
+  active          INTEGER DEFAULT 1,
+  sort_order      INTEGER DEFAULT 0             -- display ordering
+);
+CREATE INDEX IF NOT EXISTS idx_hmzq_type    ON hmz_quests(type);
+CREATE INDEX IF NOT EXISTS idx_hmzq_faction ON hmz_quests(faction_id);
+`;
+
+// ─── Per-player quest progress (assigned / in-progress / completed) ─────────
+
+const HMZ_QUEST_PROGRESS = `
+CREATE TABLE IF NOT EXISTS hmz_quest_progress (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  steam_id        TEXT NOT NULL,                -- FK to players.steam_id
+  quest_id        TEXT NOT NULL,                -- FK to hmz_quests.id
+  status          TEXT DEFAULT 'active',        -- 'active', 'completed', 'expired', 'abandoned'
+  progress        INTEGER DEFAULT 0,            -- current count toward objective_target
+  assigned_at     TEXT DEFAULT (datetime('now')),
+  completed_at    TEXT,
+  expires_at      TEXT,                         -- NULL = no expiry, or ISO timestamp
+  reward_claimed  INTEGER DEFAULT 0             -- 1 once rewards issued
+);
+CREATE INDEX IF NOT EXISTS idx_hmzqp_steam  ON hmz_quest_progress(steam_id);
+CREATE INDEX IF NOT EXISTS idx_hmzqp_quest  ON hmz_quest_progress(quest_id);
+CREATE INDEX IF NOT EXISTS idx_hmzqp_status ON hmz_quest_progress(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hmzqp_active ON hmz_quest_progress(steam_id, quest_id)
+  WHERE status = 'active';
+`;
+
+// ─── Bounties (PvP target system) ───────────────────────────────────────────
+
+const HMZ_BOUNTIES = `
+CREATE TABLE IF NOT EXISTS hmz_bounties (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  target_steam_id TEXT NOT NULL,                -- player with the bounty on them
+  target_name     TEXT DEFAULT '',
+  placed_by       TEXT,                         -- steam_id of placer (NULL = system/auto)
+  placed_by_name  TEXT DEFAULT '',
+  reward_credits  INTEGER DEFAULT 0,
+  reason          TEXT DEFAULT '',              -- 'kill_streak', 'territory_defense', 'admin', 'player'
+  status          TEXT DEFAULT 'active',        -- 'active', 'claimed', 'expired', 'cancelled'
+  claimed_by      TEXT,                         -- steam_id of killer who claimed it
+  claimed_by_name TEXT DEFAULT '',
+  created_at      TEXT DEFAULT (datetime('now')),
+  claimed_at      TEXT,
+  expires_at      TEXT                          -- NULL = no expiry
+);
+CREATE INDEX IF NOT EXISTS idx_hmzb_target  ON hmz_bounties(target_steam_id);
+CREATE INDEX IF NOT EXISTS idx_hmzb_status  ON hmz_bounties(status);
+CREATE INDEX IF NOT EXISTS idx_hmzb_placed  ON hmz_bounties(placed_by);
+`;
+
+// ─── Economy transaction log ────────────────────────────────────────────────
+
+const HMZ_TRANSACTIONS = `
+CREATE TABLE IF NOT EXISTS hmz_transactions (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  steam_id        TEXT NOT NULL,
+  type            TEXT NOT NULL,                -- 'quest_reward', 'bounty_reward', 'bounty_place',
+                                                -- 'territory_bonus', 'kill_reward', 'war_fund',
+                                                -- 'trade', 'admin_grant', 'admin_deduct', 'season_reward'
+  amount          INTEGER NOT NULL,             -- positive = earned, negative = spent
+  balance_after   INTEGER DEFAULT 0,            -- snapshot of credits after this transaction
+  description     TEXT DEFAULT '',              -- human-readable reason
+  related_id      TEXT,                         -- quest_id, bounty_id, territory_id, etc.
+  created_at      TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_hmztx_steam  ON hmz_transactions(steam_id);
+CREATE INDEX IF NOT EXISTS idx_hmztx_type   ON hmz_transactions(type);
+CREATE INDEX IF NOT EXISTS idx_hmztx_date   ON hmz_transactions(created_at);
+`;
+
+// ─── Scheduled / completed events ───────────────────────────────────────────
+
+const HMZ_EVENTS = `
+CREATE TABLE IF NOT EXISTS hmz_events (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  type            TEXT NOT NULL,                -- 'territory_war', 'supply_drop', 'assassination',
+                                                -- 'world_boss', 'horde_night', 'custom'
+  name            TEXT NOT NULL,                -- 'Territory War — Round 3'
+  description     TEXT DEFAULT '',
+  status          TEXT DEFAULT 'scheduled',     -- 'scheduled', 'active', 'completed', 'cancelled'
+  territory_id    TEXT,                         -- FK for territory-specific events
+  target_steam_id TEXT,                         -- FK for assassination contracts
+  params          TEXT DEFAULT '{}',            -- JSON: event-specific config
+  rewards         TEXT DEFAULT '{}',            -- JSON: rewards distributed
+  winner_faction  TEXT,                         -- which faction won (after completion)
+  scheduled_at    TEXT,                         -- when the event starts
+  started_at      TEXT,
+  ended_at        TEXT,
+  created_at      TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_hmze_type    ON hmz_events(type);
+CREATE INDEX IF NOT EXISTS idx_hmze_status  ON hmz_events(status);
+CREATE INDEX IF NOT EXISTS idx_hmze_sched   ON hmz_events(scheduled_at);
+`;
+
+// ─── Territory war participation scores per event ───────────────────────────
+
+const HMZ_EVENT_SCORES = `
+CREATE TABLE IF NOT EXISTS hmz_event_scores (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id        INTEGER NOT NULL,             -- FK to hmz_events.id
+  steam_id        TEXT NOT NULL,
+  faction_id      TEXT NOT NULL,
+  score           INTEGER DEFAULT 0,            -- contribution points
+  kills           INTEGER DEFAULT 0,
+  deaths          INTEGER DEFAULT 0,
+  captures        INTEGER DEFAULT 0,
+  created_at      TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_hmzes_event   ON hmz_event_scores(event_id);
+CREATE INDEX IF NOT EXISTS idx_hmzes_steam   ON hmz_event_scores(steam_id);
+CREATE INDEX IF NOT EXISTS idx_hmzes_faction ON hmz_event_scores(faction_id);
+`;
+
+// ─── Wipe tracking (seasons / wipe cycles) ──────────────────────────────────
+
+const HMZ_WIPES = `
+CREATE TABLE IF NOT EXISTS hmz_wipes (
+  id              TEXT PRIMARY KEY,             -- 'wipe_2026_03_01' or uuid
+  name            TEXT DEFAULT '',              -- 'Season 1'
+  started_at      TEXT DEFAULT (datetime('now')),
+  ended_at        TEXT,                         -- NULL = current wipe
+  config          TEXT DEFAULT '{}'             -- JSON: wipe-specific config overrides
+);
+`;
+
 // ─── Indexes ────────────────────────────────────────────────────────────────
 
 const INDEXES = `
@@ -1316,6 +1540,16 @@ const ALL_TABLES = [
   PLAYER_RISK_SCORES,
   ENTITY_FINGERPRINTS,
   FINGERPRINT_EVENTS,
+  HMZ_FACTIONS,
+  HMZ_PLAYERS,
+  HMZ_TERRITORIES,
+  HMZ_QUESTS,
+  HMZ_QUEST_PROGRESS,
+  HMZ_BOUNTIES,
+  HMZ_TRANSACTIONS,
+  HMZ_EVENTS,
+  HMZ_EVENT_SCORES,
+  HMZ_WIPES,
   INDEXES,
 ];
 
