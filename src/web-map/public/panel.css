@@ -619,7 +619,7 @@ body { background: #12100e; color: #c8c2b8; }
 .server-pill-dot.stale { background: #d4a843; }
 
 /* ── Dashboard Server Boxes ── */
-.srv-box { background: #191614; border: 1px solid #302a25; border-radius: 0.75rem; overflow: hidden; transition: border-color 0.15s; }
+.srv-box { background: #191614; border: 1px solid #302a25; border-radius: 0.75rem; overflow: hidden; transition: border-color 0.15s; align-self: start; }
 .srv-box:hover { border-color: #3d3630; }
 .srv-box-header { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; cursor: pointer; user-select: none; transition: background 0.15s; }
 .srv-box-header:hover { background: rgba(255,255,255,0.02); }
@@ -641,10 +641,17 @@ body { background: #12100e; color: #c8c2b8; }
 .srv-box-body .srv-feeds { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; padding: 0.75rem 1rem; border-top: 1px solid rgba(48,42,37,0.3); }
 .srv-box-body .srv-feed { min-height: 0; }
 .srv-box-body .srv-feed-title { font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.05em; color: #5c574f; font-weight: 600; margin-bottom: 0.375rem; }
-.srv-box-body .srv-feed-content { max-height: 200px; overflow-y: auto; }
+.srv-box-body .srv-feed-content { max-height: 180px; overflow-y: auto; }
 
-/* Dashboard grid adapts to multi-server */
-.dash-multi-grid { display: flex; flex-direction: column; gap: 0.75rem; }
+/* Dashboard grid adapts to multi-server — side-by-side when space allows */
+.dash-multi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+@media (max-width: 1024px) {
+  .dash-multi-grid { grid-template-columns: 1fr; }
+}
 
 @media (max-width: 640px) {
   .srv-box-body .srv-feeds { grid-template-columns: 1fr; }

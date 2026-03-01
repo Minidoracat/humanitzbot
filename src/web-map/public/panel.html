@@ -326,9 +326,9 @@
         </div>
 
         <!-- DASHBOARD -->
-        <section id="tab-dashboard" class="tab-content p-6 space-y-4">
+        <section id="tab-dashboard" class="tab-content p-6 space-y-4 flex flex-col min-h-0" style="height:100vh">
           <!-- Single-server dashboard (shown when only one server) -->
-          <div id="dash-single">
+          <div id="dash-single" class="flex flex-col flex-1 min-h-0 space-y-4">
           <div class="flex items-center justify-between">
             <h1 class="page-title">Dashboard</h1>
             <div class="flex items-center gap-3">
@@ -354,13 +354,13 @@
             <div id="schedule-card" class="hidden card"><h3 class="card-title">Difficulty Schedule</h3><div id="schedule-info" class="space-y-2"></div></div>
             <div id="resources-card" class="hidden card" data-min-tier="3"><h3 class="card-title">Server Resources</h3><div id="resources-info" class="space-y-3"></div></div>
           </div>
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4" data-min-tier="1">
-            <div class="card"><h3 class="card-title">Recent Activity</h3><div id="d-activity" class="feed-container max-h-80 overflow-y-auto"></div></div>
-            <div class="card"><h3 class="card-title">Recent Chat</h3><div id="d-chat" class="feed-container max-h-80 overflow-y-auto"></div></div>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0" data-min-tier="1">
+            <div class="card flex flex-col min-h-0"><h3 class="card-title flex-shrink-0">Recent Activity</h3><div id="d-activity" class="feed-container flex-1 overflow-y-auto"></div></div>
+            <div class="card flex flex-col min-h-0"><h3 class="card-title flex-shrink-0">Recent Chat</h3><div id="d-chat" class="feed-container flex-1 overflow-y-auto"></div></div>
           </div>
           </div><!-- /dash-single -->
           <!-- Multi-server dashboard (shown when multiple servers) -->
-          <div id="dash-multi" class="hidden dash-multi-grid"></div>
+          <div id="dash-multi" class="hidden dash-multi-grid flex-1 min-h-0 overflow-y-auto"></div>
         </section>
 
         <!-- MAP -->
