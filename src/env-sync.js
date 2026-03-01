@@ -208,8 +208,13 @@ function syncEnv() {
       }
       
       if (envEntry) {
-        // Preserve existing user value (whether example was commented or not)
-        output.push(`${key}=${envEntry.value}`);
+        // ENV_SCHEMA_VERSION always takes the example value (it's the target, not user data)
+        if (key === ENV_VERSION_KEY) {
+          output.push(`${key}=${exampleEntry.value}`);
+        } else {
+          // Preserve existing user value (whether example was commented or not)
+          output.push(`${key}=${envEntry.value}`);
+        }
       } else if (exampleEntry.commented) {
         // Optional key — keep it commented like in example
         output.push(`#${key}=${exampleEntry.value}`);
