@@ -16,6 +16,8 @@ const path = require('path');
 const SftpClient = require('ssh2-sftp-client');
 const _defaultConfig = require('../config');
 const { RconManager } = require('../rcon/rcon');
+const { PanelRcon } = require('../rcon/panel-rcon');
+const { createPanelApi } = require('./panel-api');
 const { PlayerStats } = require('../tracking/player-stats');
 const { PlaytimeTracker } = require('../tracking/playtime-tracker');
 const { getServerInfo, getPlayerList, sendAdminMessage } = require('../rcon/server-info');
@@ -23,6 +25,7 @@ const { getServerInfo, getPlayerList, sendAdminMessage } = require('../rcon/serv
 // Module classes
 const HumanitZDB = require('../db/database');
 const gameReference = require('../parsers/game-reference');
+const SaveService = require('../parsers/save-service');
 const ServerStatus = require('../modules/server-status');
 const StatusChannels = require('../modules/status-channels');
 const ChatRelay = require('../modules/chat-relay');
@@ -258,6 +261,16 @@ function createServerConfig(serverDef) {
     if (am.discordLink) merged.discordInviteLink = am.discordLink;
   }
 
+  // Panel API overrides (for Pterodactyl-hosted servers like Bisect)
+  if (serverDef.panel) {
+    if (serverDef.panel.serverUrl) merged.panelServerUrl = serverDef.panel.serverUrl;
+    if (serverDef.panel.apiKey) merged.panelApiKey = serverDef.panel.apiKey;
+  } else {
+    // Explicitly break prototype chain — don't inherit primary's panel credentials
+    merged.panelServerUrl = '';
+    merged.panelApiKey = '';
+  }
+
   return merged;
 }
 
@@ -293,12 +306,33 @@ class ServerInstance {
       console.warn(`[MULTI:${label}] Game reference seed failed:`, err.message);
     }
 
-    this.rcon = new RconManager({
-      host: this.config.rconHost,
-      port: this.config.rconPort,
-      password: this.config.rconPassword,
-      label: `RCON:${label}`,
-    });
+    // Per-server Panel API (if configured in servers.json)
+    this.panelApi = null;
+    if (serverDef.panel && serverDef.panel.serverUrl && serverDef.panel.apiKey) {
+      this.panelApi = createPanelApi({
+        serverUrl: serverDef.panel.serverUrl,
+        apiKey: serverDef.panel.apiKey,
+      });
+      if (this.panelApi) {
+        console.log(`[MULTI:${label}] Panel API configured (Pterodactyl)`);
+      }
+    }
+
+    // RCON — use WebSocket transport if Panel API is available, TCP otherwise
+    if (this.panelApi) {
+      this.rcon = new PanelRcon({
+        panelApi: this.panelApi,
+        label: `RCON:${label}`,
+      });
+      console.log(`[MULTI:${label}] Using WebSocket RCON (Panel API)`);
+    } else {
+      this.rcon = new RconManager({
+        host: this.config.rconHost,
+        port: this.config.rconPort,
+        password: this.config.rconPassword,
+        label: `RCON:${label}`,
+      });
+    }
 
     this.playerStats = new PlayerStats({
       dataDir: this.dataDir,
@@ -326,6 +360,7 @@ class ServerInstance {
 
     // Module instances (created on start)
     this._modules = {};
+    this.saveService = null;
   }
 
   /** Whether SFTP is configured for this server. */
@@ -347,9 +382,12 @@ class ServerInstance {
       dataDir: this.dataDir,
       serverId: this.id,
       label: this.name || this.id,
-      // No panel API for additional servers — disable host resource queries
-      // so they don't inherit the primary's Pterodactyl container stats
-      serverResources: { backend: null },
+      panelApi: this.panelApi,
+      // Per-server panel API gets its own resource monitoring if available;
+      // otherwise disable to prevent inheriting primary's Pterodactyl stats
+      serverResources: this.panelApi
+        ? { backend: 'pterodactyl', panelApi: this.panelApi }
+        : { backend: null },
     };
   }
 
@@ -391,6 +429,38 @@ class ServerInstance {
 
     const deps = this._deps;
 
+    // ── Save Service (needs SFTP or Panel API — populates DB with save file data) ──
+    // This is independent of any Discord channel — it just parses the save and writes to DB.
+    if (this.hasSftp || this.panelApi) {
+      try {
+        const sftpConfig = this.hasSftp ? this.config.sftpConnectConfig() : null;
+        this.saveService = new SaveService(this.db, {
+          sftpConfig,
+          savePath: this.config.ftpSavePath,
+          clanSavePath: this.config.ftpSavePath
+            ? this.config.ftpSavePath.replace(/SaveList\/.*$/, 'Save_ClanData.sav')
+            : null,
+          pollInterval: typeof this.config.getEffectiveSavePollInterval === 'function'
+            ? this.config.getEffectiveSavePollInterval()
+            : (this.config.savePollInterval || 300000),
+          agentMode: this.config.agentMode || 'direct',
+          panelApi: this.panelApi || null,
+          label: `SAVE:${label}`,
+        });
+        this.saveService.on('sync', (result) => {
+          console.log(`[MULTI:${label}] Save sync: ${result.playerCount} players, ${result.structureCount} structures (${result.mode}, ${result.elapsed}ms)`);
+        });
+        this.saveService.on('error', (err) => {
+          console.error(`[MULTI:${label}] Save error:`, err.message);
+        });
+        await this.saveService.start();
+        console.log(`[MULTI:${label}] SaveService active (${this.saveService.stats?.mode || 'direct'} mode)`);
+      } catch (err) {
+        console.error(`[MULTI:${label}] SaveService failed:`, err.message);
+        this.saveService = null;
+      }
+    }
+
     // Server Status
     if (this.config.serverStatusChannelId && this.config.rconHost) {
       try {
@@ -403,8 +473,8 @@ class ServerInstance {
       }
     }
 
-    // Log Watcher (needs SFTP)
-    if (this.config.logChannelId && this.hasSftp) {
+    // Log Watcher (needs SFTP — can run headless without Discord channel for DB-only data collection)
+    if (this.hasSftp) {
       try {
         const mod = new LogWatcher(this.client, deps);
         if (_defaultConfig.nukeBot) mod._nukeActive = true;
@@ -416,8 +486,8 @@ class ServerInstance {
       }
     }
 
-    // Chat Relay (needs RCON + chat or admin channel)
-    if ((this.config.chatChannelId || this.config.adminChannelId) && this.config.rconHost) {
+    // Chat Relay (needs RCON — can run headless without Discord channel for DB-only data collection)
+    if (this.config.rconHost) {
       try {
         const mod = new ChatRelay(this.client, deps);
         if (_defaultConfig.nukeBot) mod._nukeActive = true;
@@ -436,8 +506,8 @@ class ServerInstance {
       }
     }
 
-    // Player Stats Channel (needs SFTP + save file)
-    if (this.config.playerStatsChannelId && this.hasSftp) {
+    // Player Stats Channel (needs SFTP or Panel File API — can run headless for save-cache.json)
+    if (this.hasSftp || this.panelApi) {
       try {
         const mod = new PlayerStatsChannel(this.client, this._modules.logWatcher || null, deps);
         await mod.start();
@@ -527,6 +597,7 @@ class ServerInstance {
 
     // Save data
     if (this._playtimeFlushTimer) clearInterval(this._playtimeFlushTimer);
+    try { if (this.saveService) this.saveService.stop(); } catch {}
     try { this.playerStats.stop(); } catch {}
     try { this.playtime.stop(); } catch {}
 

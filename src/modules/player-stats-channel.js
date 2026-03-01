@@ -152,6 +152,7 @@ class PlayerStatsChannel {
     this._killTracker = new KillTracker(deps);
     this._serverSettings = {};  // parsed GameServerSettings.ini
     this._weeklyStats = null;   // cached weekly delta leaderboards
+    this._headless = false;     // true when running without Discord channel (data-only mode)
   }
 
   // ── Cross-validated player resolver ─────────────────────────
@@ -193,43 +194,52 @@ class PlayerStatsChannel {
 
   async start() {
     if (!this._config.playerStatsChannelId) {
-      console.log(`[${this._label}] No PLAYER_STATS_CHANNEL_ID set, skipping.`);
-      return;
+      // No Discord channel — run in headless mode.
+      // Still poll save data to write save-cache.json for the web panel.
+      this._headless = true;
+      console.log(`[${this._label}] No PLAYER_STATS_CHANNEL_ID — running in headless mode (save-cache only)`);
     }
 
-    try {
-      this.channel = await this.client.channels.fetch(this._config.playerStatsChannelId);
-      if (!this.channel) {
-        console.error(`[${this._label}] Channel not found! Check PLAYER_STATS_CHANNEL_ID.`);
+    if (!this._headless) {
+      try {
+        this.channel = await this.client.channels.fetch(this._config.playerStatsChannelId);
+        if (!this.channel) {
+          console.error(`[${this._label}] Channel not found! Check PLAYER_STATS_CHANNEL_ID.`);
+          return;
+        }
+      } catch (err) {
+        console.error(`[${this._label}] Failed to fetch channel:`, err.message);
         return;
       }
-    } catch (err) {
-      console.error(`[${this._label}] Failed to fetch channel:`, err.message);
-      return;
+
+      console.log(`[${this._label}] Posting in #${this.channel.name}`);
+
+      // Load persistent kill tracker
+      this._killTracker.load();
+
+      // Delete previous own message (by saved ID), not all bot messages
+      await this._cleanOwnMessage();
+
+      // Post the initial embed
+      const embed = this._buildOverviewEmbed();
+      const components = [...this._buildPlayerRow(), ...this._buildClanRow()];
+      this.statusMessage = await this.channel.send({
+        embeds: [embed],
+        ...(components.length > 0 && { components }),
+      });
+      this._saveMessageId();
+    } else {
+      // Headless — still load kill tracker for data accumulation
+      this._killTracker.load();
     }
 
-    console.log(`[${this._label}] Posting in #${this.channel.name}`);
-
-    // Load persistent kill tracker
-    this._killTracker.load();
-
-    // Delete previous own message (by saved ID), not all bot messages
-    await this._cleanOwnMessage();
-
-    // Post the initial embed
-    const embed = this._buildOverviewEmbed();
-    const components = [...this._buildPlayerRow(), ...this._buildClanRow()];
-    this.statusMessage = await this.channel.send({
-      embeds: [embed],
-      ...(components.length > 0 && { components }),
-    });
-    this._saveMessageId();
-
-    // Do initial save parse
+    // Do initial save parse (works in both normal and headless mode)
     await this._pollSave();
 
-    // Update the embed after initial parse
-    await this._updateEmbed();
+    // Update the embed after initial parse (skip in headless mode)
+    if (!this._headless) {
+      await this._updateEmbed();
+    }
 
     // Start save poll loop — use faster agent interval if agent mode is active
     const pollMs = typeof this._config.getEffectiveSavePollInterval === 'function'
@@ -237,13 +247,15 @@ class PlayerStatsChannel {
       : Math.max(this._config.savePollInterval || 300000, 60000);
     this.saveInterval = setInterval(() => {
       this._pollSave()
-        .then(() => this._updateEmbed())
+        .then(() => { if (!this._headless) this._updateEmbed(); })
         .catch(err => console.error(`[${this._label}] Save poll error:`, err.message));
     }, pollMs);
-    console.log(`[${this._label}] Save poll every ${pollMs / 1000}s (agent mode: ${this._config.agentMode || 'direct'})`);
+    console.log(`[${this._label}] Save poll every ${pollMs / 1000}s${this._headless ? ' (headless)' : ''}`);
 
-    // Update embed every 60s (for playtime changes etc.)
-    this._embedInterval = setInterval(() => this._updateEmbed(), 60000);
+    // Update embed every 60s (for playtime changes etc.) — skip in headless mode
+    if (!this._headless) {
+      this._embedInterval = setInterval(() => this._updateEmbed(), 60000);
+    }
   }
 
   stop() {
@@ -343,6 +355,20 @@ class PlayerStatsChannel {
       }
 
       console.log(`[${this._label}] DB-first load: ${players.size} players`);
+
+      // Load entity data from DB for save-cache.json (map data)
+      try {
+        this._vehicles = this._db.getAllVehicles?.() || [];
+        this._horses = this._db.getAllWorldHorses?.() || [];
+        this._containers = this._db.getAllContainers?.() || [];
+        this._companions = this._db.getAllCompanions?.() || [];
+        // Structures: read directly from DB (no getAllStructures method — use raw query)
+        try {
+          this._structures = this._db.db?.prepare('SELECT * FROM structures').all() || [];
+        } catch { this._structures = []; }
+      } catch (err) {
+        console.warn(`[${this._label}] Entity load from DB:`, err.message);
+      }
 
       // Accumulate lifetime stats across deaths (kills + survival + activity)
       this._runAccumulate();

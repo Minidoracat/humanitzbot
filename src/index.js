@@ -867,6 +867,11 @@ client.once(Events.ClientReady, async (readyClient) => {
       adminChannel = await readyClient.channels.fetch(config.adminChannelId);
     }
 
+    // Clean previous lifecycle embeds (Bot Online / Bot Offline) to prevent spam
+    if (adminChannel) {
+      await _cleanLifecycleEmbeds(adminChannel, readyClient).catch(() => {});
+    }
+
     // Detect unclean shutdown: if the flag exists from a previous run,
     // the bot crashed or was killed without running the shutdown handler.
     const flagData = db ? db.getStateJSON('bot_running', null) : null;
@@ -1028,6 +1033,37 @@ client.once(Events.ClientReady, async (readyClient) => {
   console.log('[BOT] Ready!');
 });
 
+// ── Lifecycle embed cleanup ─────────────────────────────────
+const LIFECYCLE_TITLES = ['🟢 Bot Online', '🔴 Bot Offline'];
+
+/**
+ * Delete previous lifecycle embeds from the admin channel.
+ * Prevents accumulation across restarts. Deletes ALL matches — no timestamp filter.
+ */
+async function _cleanLifecycleEmbeds(channel, botClient) {
+  try {
+    const messages = await channel.messages.fetch({ limit: 30 });
+    const botId = botClient.user?.id;
+    const toDelete = messages.filter(m =>
+      m.author.id === botId &&
+      m.embeds.length > 0 &&
+      m.embeds.some(e => LIFECYCLE_TITLES.includes(e.title))
+    );
+    if (toDelete.size > 0) {
+      // Use bulkDelete if possible (< 14 days old), otherwise delete individually
+      try {
+        await channel.bulkDelete(toDelete, true);
+      } catch {
+        for (const msg of toDelete.values()) {
+          await msg.delete().catch(() => {});
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[BOT] Could not clean lifecycle embeds:', err.message);
+  }
+}
+
 // ── Graceful shutdown ───────────────────────────────────────
 let shuttingDown = false;
 async function shutdown(reason = 'Manual shutdown') {
@@ -1037,6 +1073,11 @@ async function shutdown(reason = 'Manual shutdown') {
 
   // Post offline notification — try both thread AND admin channel for reliability
   try {
+    // Clean previous lifecycle embeds first
+    if (adminChannel) {
+      await _cleanLifecycleEmbeds(adminChannel, client).catch(() => {});
+    }
+
     const uptime = _formatUptime(Date.now() - startedAt.getTime());
 
     // Summarise module state

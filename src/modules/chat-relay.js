@@ -24,6 +24,7 @@ class ChatRelay {
     this._rolloverFallback = null; // safety timer if LogWatcher callback never fires
     this._nukeActive = false;      // true during NUKE_BOT — suppresses thread creation
     this._healthy = true;           // false if start() failed — module appears active but isn't
+    this._headless = false;          // true when running without a Discord channel (DB-only data collection)
   }
 
   /** Whether the chat relay started successfully. */
@@ -34,37 +35,41 @@ class ChatRelay {
       // ── Admin channel (home for threads + outbound bridge) ──
       const chatId = this._config.chatChannelId || this._config.adminChannelId;
       if (!chatId) {
-        console.log(`[${this._label}] No ADMIN_CHANNEL_ID or CHAT_CHANNEL_ID configured, skipping chat relay.`);
-        this._healthy = false;
-        return;
-      }
-      this.adminChannel = await this.client.channels.fetch(chatId);
-      if (!this.adminChannel) {
-        console.error(`[${this._label}] Chat channel not found! Check ADMIN_CHANNEL_ID / CHAT_CHANNEL_ID.`);
-        this._healthy = false;
-        return;
+        // No Discord channel — run in headless mode (RCON polling + DB writes only).
+        // Used by multi-server instances that only serve the web panel.
+        this._headless = true;
+        console.log(`[${this._label}] No CHAT_CHANNEL_ID — running in headless mode (DB-only, no Discord posting)`);
       }
 
-      console.log(`[${this._label}] Admin bridge: #${this.adminChannel.name} → server`);
-      console.log(`[${this._label}] Chat relay:   server → ${this._config.useChatThreads ? 'daily thread in' : ''} #${this.adminChannel.name}`);
+      if (!this._headless) {
+        this.adminChannel = await this.client.channels.fetch(chatId);
+        if (!this.adminChannel) {
+          console.error(`[${this._label}] Chat channel not found! Check ADMIN_CHANNEL_ID / CHAT_CHANNEL_ID.`);
+          this._healthy = false;
+          return;
+        }
 
-      // Clean old bot starter messages (keep the channel tidy across restarts)
-      await this._cleanOldMessages();
+        console.log(`[${this._label}] Admin bridge: #${this.adminChannel.name} → server`);
+        console.log(`[${this._label}] Chat relay:   server → ${this._config.useChatThreads ? 'daily thread in' : ''} #${this.adminChannel.name}`);
 
-      // Create / find today's chat thread (or use channel directly)
-      // During NUKE_BOT, defer thread creation — nuke phase 2 will recreate it
-      // after activity threads and Bot Online embed so it appears in the right order.
-      if (!this._config.nukeBot) {
-        await this._getOrCreateChatThread();
+        // Clean old bot starter messages (keep the channel tidy across restarts)
+        await this._cleanOldMessages();
+
+        // Create / find today's chat thread (or use channel directly)
+        // During NUKE_BOT, defer thread creation — nuke phase 2 will recreate it
+        // after activity threads and Bot Online embed so it appears in the right order.
+        if (!this._config.nukeBot) {
+          await this._getOrCreateChatThread();
+        }
+
+        // Listen for outbound admin messages
+        this._boundOnMessage = async (message) => {
+          await this._onMessage(message);
+        };
+        this.client.on(Events.MessageCreate, this._boundOnMessage);
       }
 
-      // Listen for outbound admin messages
-      this._boundOnMessage = async (message) => {
-        await this._onMessage(message);
-      };
-      this.client.on(Events.MessageCreate, this._boundOnMessage);
-
-      // Start polling fetchchat
+      // Start polling fetchchat (works in both normal and headless mode)
       const pollMs = this._config.chatPollInterval || 10000;
       this._pollTimer = setInterval(() => this._pollChat(), pollMs);
       console.log(`[${this._label}] Polling fetchchat every ${pollMs / 1000}s`);
@@ -132,6 +137,9 @@ class ChatRelay {
   // ── Daily chat thread management ───────────────────────────
 
   async _getOrCreateChatThread() {
+    // Headless mode — no Discord channel, return null
+    if (this._headless) return null;
+
     // During nuke phase 1→2, suppress thread creation so rebuild controls ordering
     if (this._nukeActive) {
       return this.adminChannel;
@@ -272,7 +280,7 @@ class ChatRelay {
         }
 
         // Check for !admin command (posts to main channel, not thread)
-        await this._checkAdminCall(line);
+        if (!this._headless) await this._checkAdminCall(line);
       }
     } catch (err) {
       // Don't spam on RCON issues — the RCON module already logs

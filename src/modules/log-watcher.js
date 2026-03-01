@@ -17,6 +17,7 @@ class LogWatcher {
 
     this.client = client;
     this.logChannel = null;
+    this._headless = false; // true when running without a Discord channel (web-panel-only data collection)
     this.interval = null;
 
     // HMZLog.log state
@@ -274,22 +275,27 @@ class LogWatcher {
 
     const channelId = this._config.logChannelId || this._config.adminChannelId;
     if (!channelId) {
-      console.log(`[${this._label}] No LOG_CHANNEL_ID or ADMIN_CHANNEL_ID configured, skipping log watcher.`);
-      return;
+      // No Discord channel — run in headless mode (DB writes only, no Discord posting).
+      // This is used by multi-server instances that only serve the web panel.
+      this._headless = true;
+      console.log(`[${this._label}] No LOG_CHANNEL_ID — running in headless mode (DB-only, no Discord posting)`);
     }
-    try {
-      this.logChannel = await this.client.channels.fetch(channelId);
-      if (!this.logChannel) {
-        console.error(`[${this._label}] Log channel not found! Check LOG_CHANNEL_ID.`);
+
+    if (!this._headless) {
+      try {
+        this.logChannel = await this.client.channels.fetch(channelId);
+        if (!this.logChannel) {
+          console.error(`[${this._label}] Log channel not found! Check LOG_CHANNEL_ID.`);
+          return;
+        }
+      } catch (err) {
+        console.error(`[${this._label}] Failed to fetch log channel:`, err.message);
         return;
       }
-    } catch (err) {
-      console.error(`[${this._label}] Failed to fetch log channel:`, err.message);
-      return;
+      console.log(`[${this._label}] Posting events to ${this._config.useActivityThreads ? 'daily threads in' : ''} #${this.logChannel.name}`);
     }
 
     console.log(`[${this._label}] Connecting to ${this._config.ftpHost}:${this._config.ftpPort} for log watching...`);
-    console.log(`[${this._label}] Posting events to ${this._config.useActivityThreads ? 'daily threads in' : ''} #${this.logChannel.name}`);
 
     // First poll — detect HZLogs or legacy, get current file size
     await this._initSize();
@@ -301,7 +307,7 @@ class LogWatcher {
     }
 
     // Initialise today's thread (skip during nuke — phase 2 rebuilds them)
-    if (!this._nukeActive) {
+    if (!this._nukeActive && !this._headless) {
       await this._getOrCreateDailyThread();
     }
 
@@ -310,10 +316,12 @@ class LogWatcher {
 
     // Proactive midnight rollover check — ensures the daily summary posts
     // even if no log events happen around midnight in the configured timezone.
-    this._midnightCheckInterval = setInterval(() => this._checkDayRollover(), 60000);
+    if (!this._headless) {
+      this._midnightCheckInterval = setInterval(() => this._checkDayRollover(), 60000);
+    }
 
-    // Send startup notification (skip during nuke — would appear out of order)
-    if (!this._nukeActive) {
+    // Send startup notification (skip during nuke and headless — would appear out of order)
+    if (!this._nukeActive && !this._headless) {
       const thread = await this._getOrCreateDailyThread();
       const embed = new EmbedBuilder()
         .setDescription('Log watcher connected. Monitoring game server activity.')

@@ -204,6 +204,7 @@ class WebMapServer {
         getPlayerList: require('../rcon/server-info').getPlayerList,
         getServerInfo: require('../rcon/server-info').getServerInfo,
         sendAdminMessage: require('../rcon/server-info').sendAdminMessage,
+        panelApi: require('../server/panel-api'),
         scheduler: this._scheduler,
         dataDir: DATA_DIR,
         idMap: this._idMap,
@@ -224,6 +225,7 @@ class WebMapServer {
       getPlayerList: instance.getPlayerList,
       getServerInfo: instance.getServerInfo,
       sendAdminMessage: instance.sendAdminMessage,
+      panelApi: instance.panelApi || null,
       scheduler: instance._modules?.serverScheduler || null,
       dataDir: instance.dataDir,
       idMap: this._loadIdMapFrom(instance.dataDir),
@@ -456,7 +458,8 @@ class WebMapServer {
     // ── API: Calibration data — all entity positions for map alignment ──
     app.get('/api/calibration-data', requireTier('admin'), (req, res) => {
       try {
-        const cachePath = path.join(DATA_DIR, 'save-cache.json');
+        const srv = req.srv;
+        const cachePath = path.join(srv.dataDir, 'save-cache.json');
         if (!fs.existsSync(cachePath)) return res.json([]);
         const data = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
 
@@ -1188,6 +1191,14 @@ class WebMapServer {
       // Player count from save data
       const players = srv.isPrimary ? this._parseSaveData() : this._parseSaveDataForServer(srv.dataDir);
       result.totalPlayers = players.size;
+
+      // If save-cache has no players, check DB players table
+      if (!result.totalPlayers && srv.db) {
+        try {
+          const cnt = srv.db.db?.prepare('SELECT COUNT(*) as cnt FROM players').get();
+          if (cnt?.cnt) result.totalPlayers = cnt.cnt;
+        } catch { /* db unavailable */ }
+      }
 
       // Online count from RCON
       try {
@@ -1979,15 +1990,15 @@ class WebMapServer {
       const valid = ['start', 'stop', 'restart', 'backup'];
       if (!valid.includes(action)) return res.status(400).json({ error: `Invalid action: ${action}` });
 
-      // Try Pterodactyl API first
-      const panelApi = require('../server/panel-api');
-      if (panelApi.available) {
+      // Try Pterodactyl API first (per-server or primary singleton)
+      const srvPanelApi = req.srv.panelApi;
+      if (srvPanelApi && srvPanelApi.available) {
         try {
           if (action === 'backup') {
-            await panelApi.createBackup();
+            await srvPanelApi.createBackup();
             return res.json({ ok: true, message: 'Backup initiated via panel API' });
           }
-          await panelApi.sendPowerAction(action);
+          await srvPanelApi.sendPowerAction(action);
           return res.json({ ok: true, message: `Server ${action} sent via panel API` });
         } catch (err) {
           return res.status(500).json({ ok: false, error: safeError(err) });
@@ -2020,11 +2031,11 @@ class WebMapServer {
     app.get('/api/panel/backups', requireTier('admin'), rateLimit(10000, 5), async (req, res) => {
       const backups = [];
 
-      // Try Pterodactyl API first
+      // Try Pterodactyl API first (per-server or primary singleton)
       try {
-        const panelApi = require('../server/panel-api');
-        if (panelApi.available) {
-          const list = await panelApi.listBackups();
+        const srvPanelApi = req.srv.panelApi;
+        if (srvPanelApi && srvPanelApi.available) {
+          const list = await srvPanelApi.listBackups();
           if (list && list.length) {
             for (const b of list) {
               backups.push({

@@ -25,6 +25,9 @@ async function _checkDayRollover() {
 //  Daily thread creation / lookup
 // ═════════════════════════════════════════════════════════════════════
 async function _getOrCreateDailyThread() {
+  // Headless mode — no Discord channel, return null
+  if (this._headless) return null;
+
   // During nuke phase 1→2, suppress thread creation so rebuildThreads controls ordering
   if (this._nukeActive) {
     this._dailyThread = this.logChannel;
@@ -162,6 +165,7 @@ async function _getOrCreateDailyThread() {
 //  Daily summary embed
 // ═════════════════════════════════════════════════════════════════════
 async function _postDailySummary() {
+  if (this._headless) return; // headless mode — no Discord posting
   const c = this._dayCounts;
   const logTotal = c.connects + c.disconnects + c.deaths + c.builds + c.damage + c.loots + c.raidHits + c.destroyed + c.cheat + c.admin + c.pvpKills;
 
@@ -350,7 +354,9 @@ function resetThreadCache() {
 }
 
 async function _sendToThread(embed) {
+  if (this._headless) return; // headless mode — no Discord posting
   const thread = await this._getOrCreateDailyThread();
+  if (!thread) return; // safety — no thread available
   try {
     return await thread.send({ embeds: [embed] });
   } catch (err) {
