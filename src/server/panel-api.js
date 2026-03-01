@@ -242,6 +242,7 @@ async function readFile(filePath) {
     throw new Error('Panel API not configured');
   }
 
+  // Try files/contents first (fast, text-based)
   const url = `${_baseUrl}/api/client/servers/${_serverId}/files/contents?file=${encodeURIComponent(filePath)}`;
   const res = await fetch(url, {
     headers: {
@@ -250,11 +251,15 @@ async function readFile(filePath) {
     },
   });
 
-  if (!res.ok) {
-    throw new Error(`Panel file read ${res.status}: ${res.statusText}`);
+  if (res.ok) return res.text();
+
+  // Some hosts disable files/contents (405) — fall back to signed download URL
+  if (res.status === 405 || res.status === 403) {
+    const buf = await downloadFile(filePath);
+    return buf.toString('utf-8');
   }
 
-  return res.text();
+  throw new Error(`Panel file read ${res.status}: ${res.statusText}`);
 }
 
 /**
@@ -281,6 +286,39 @@ async function writeFile(filePath, content) {
   if (!res.ok) {
     throw new Error(`Panel file write ${res.status}: ${res.statusText}`);
   }
+}
+
+// ── File download ───────────────────────────────────────────
+
+/**
+ * Get a signed download URL for a file.
+ * The URL is temporary and can be used with a simple HTTP GET (no auth header needed).
+ * @param {string} filePath - Absolute path on the server (e.g. /HumanitZServer/Saved/SaveGames/SaveList/Default/Save_DedicatedSaveMP.sav)
+ * @returns {Promise<string>} Signed download URL
+ */
+async function getFileDownloadUrl(filePath) {
+  const data = await _request(`files/download?file=${encodeURIComponent(filePath)}`);
+  return data?.attributes?.url || null;
+}
+
+/**
+ * Download a file as a Buffer.
+ * Uses the Panel API to get a signed URL, then fetches the file content.
+ * Ideal for binary files like save files where readFile() (text-based) won't work.
+ * @param {string} filePath - Absolute path on the server
+ * @returns {Promise<Buffer>} File contents as a Buffer
+ */
+async function downloadFile(filePath) {
+  const url = await getFileDownloadUrl(filePath);
+  if (!url) throw new Error(`No download URL returned for: ${filePath}`);
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`File download failed ${res.status}: ${res.statusText}`);
+  }
+
+  const arrayBuf = await res.arrayBuffer();
+  return Buffer.from(arrayBuf);
 }
 
 // ── WebSocket auth ──────────────────────────────────────────
@@ -357,6 +395,8 @@ class PanelApi {
   createBackup = createBackup;
   deleteBackup = deleteBackup;
   getBackupDownloadUrl = getBackupDownloadUrl;
+  getFileDownloadUrl = getFileDownloadUrl;
+  downloadFile = downloadFile;
   listFiles = listFiles;
   readFile = readFile;
   writeFile = writeFile;
@@ -366,10 +406,217 @@ class PanelApi {
   deleteSchedule = deleteSchedule;
 }
 
+// ── Per-server instance factory ─────────────────────────────
+
+/**
+ * Create a standalone PanelApi instance for a specific server.
+ * Used by multi-server to give each managed server its own panel credentials.
+ *
+ * Unlike the singleton (which reads from module-level globals / primary config),
+ * this creates a fully isolated instance with its own URL, server ID, and API key.
+ *
+ * @param {object} options
+ * @param {string} options.serverUrl - Full panel URL (e.g. https://games.bisecthosting.com/server/a1b2c3d4)
+ * @param {string} options.apiKey    - Panel API key
+ * @returns {PanelApi} Standalone instance
+ */
+function createPanelApi({ serverUrl, apiKey }) {
+  if (!serverUrl || !apiKey) return null;
+
+  // Parse URL to extract base + serverId
+  const raw = serverUrl.replace(/\/+$/, '');
+  const lastSlash = raw.lastIndexOf('/');
+  if (lastSlash <= 0) return null;
+
+  const serverId = raw.substring(lastSlash + 1);
+  const parentSlash = raw.lastIndexOf('/', lastSlash - 1);
+  const baseUrl = parentSlash > 0 ? raw.substring(0, parentSlash) : raw.substring(0, lastSlash);
+
+  if (!baseUrl || !serverId) return null;
+
+  // Create a private _request scoped to this server's credentials
+  async function _scopedRequest(endpoint, options = {}) {
+    const path = endpoint.startsWith('/')
+      ? endpoint
+      : `/api/client/servers/${serverId}/${endpoint}`;
+
+    const url = `${baseUrl}${path}`;
+
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Panel API ${res.status} ${res.statusText}: ${body.substring(0, 200)}`);
+    }
+
+    if (res.status === 204) return null;
+
+    const text = await res.text();
+    if (!text) return null;
+    return JSON.parse(text);
+  }
+
+  // Build a scoped instance — each method uses _scopedRequest
+  const api = new PanelApi();
+  api._available = true;
+
+  // Override every method to use scoped request
+  api.getResources = async function () {
+    const data = await _scopedRequest('resources');
+    return getResources._parseResponse ? getResources._parseResponse(data) : (() => {
+      const attrs = data?.attributes || data || {};
+      const r = attrs.resources || attrs;
+      return {
+        cpu: r.cpu_absolute != null ? Math.round(r.cpu_absolute * 10) / 10 : null,
+        memUsed: r.memory_bytes ?? null,
+        memTotal: r.memory_limit_bytes ?? null,
+        memPercent: (r.memory_bytes != null && r.memory_limit_bytes > 0)
+          ? Math.round((r.memory_bytes / r.memory_limit_bytes) * 1000) / 10 : null,
+        diskUsed: r.disk_bytes ?? null,
+        diskTotal: r.disk_limit_bytes ?? null,
+        diskPercent: (r.disk_bytes != null && r.disk_limit_bytes > 0)
+          ? Math.round((r.disk_bytes / r.disk_limit_bytes) * 1000) / 10 : null,
+        uptime: r.uptime != null ? Math.floor(r.uptime / 1000) : null,
+        state: attrs.current_state || null,
+      };
+    })();
+  };
+
+  api.sendPowerAction = async function (signal) {
+    const valid = ['start', 'stop', 'restart', 'kill'];
+    if (!valid.includes(signal)) throw new Error(`Invalid power signal: ${signal}`);
+    await _scopedRequest('power', { method: 'POST', body: JSON.stringify({ signal }) });
+  };
+
+  api.sendCommand = async function (command) {
+    await _scopedRequest('command', { method: 'POST', body: JSON.stringify({ command }) });
+  };
+
+  api.getServerDetails = async function () {
+    const data = await _scopedRequest(`/api/client/servers/${serverId}`);
+    return data?.attributes || data || {};
+  };
+
+  api.listBackups = async function () {
+    const data = await _scopedRequest('backups');
+    const items = data?.data || [];
+    return items.map(b => {
+      const a = b.attributes || b;
+      return {
+        uuid: a.uuid, name: a.name, bytes: a.bytes || 0,
+        created_at: a.created_at, completed_at: a.completed_at,
+        is_successful: a.is_successful ?? true, is_locked: a.is_locked ?? false,
+      };
+    });
+  };
+
+  api.createBackup = async function (name) {
+    const data = await _scopedRequest('backups', {
+      method: 'POST', body: JSON.stringify({ name: name || '' }),
+    });
+    return data?.attributes || data || {};
+  };
+
+  api.deleteBackup = async function (uuid) {
+    await _scopedRequest(`backups/${uuid}`, { method: 'DELETE' });
+  };
+
+  api.getBackupDownloadUrl = async function (uuid) {
+    const data = await _scopedRequest(`backups/${uuid}/download`);
+    return data?.attributes?.url || null;
+  };
+
+  api.getFileDownloadUrl = async function (filePath) {
+    const data = await _scopedRequest(`files/download?file=${encodeURIComponent(filePath)}`);
+    return data?.attributes?.url || null;
+  };
+
+  api.downloadFile = async function (filePath) {
+    const url = await api.getFileDownloadUrl(filePath);
+    if (!url) throw new Error(`No download URL returned for: ${filePath}`);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`File download failed ${res.status}: ${res.statusText}`);
+    const arrayBuf = await res.arrayBuffer();
+    return Buffer.from(arrayBuf);
+  };
+
+  api.listFiles = async function (dir = '/') {
+    const data = await _scopedRequest(`files/list?directory=${encodeURIComponent(dir)}`);
+    const items = data?.data || [];
+    return items.map(f => {
+      const a = f.attributes || f;
+      return {
+        name: a.name, mode: a.mode, size: a.size || 0,
+        is_file: a.is_file ?? true, modified_at: a.modified_at,
+      };
+    });
+  };
+
+  api.readFile = async function (filePath) {
+    // Try files/contents first (fast, text-based)
+    const url = `${baseUrl}/api/client/servers/${serverId}/files/contents?file=${encodeURIComponent(filePath)}`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'text/plain' },
+    });
+    if (res.ok) return res.text();
+
+    // Some hosts disable files/contents (405) — fall back to signed download URL
+    if (res.status === 405 || res.status === 403) {
+      const buf = await api.downloadFile(filePath);
+      return buf.toString('utf-8');
+    }
+
+    throw new Error(`Panel file read ${res.status}: ${res.statusText}`);
+  };
+
+  api.writeFile = async function (filePath, content) {
+    const url = `${baseUrl}/api/client/servers/${serverId}/files/write?file=${encodeURIComponent(filePath)}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'text/plain' },
+      body: content,
+    });
+    if (!res.ok) throw new Error(`Panel file write ${res.status}: ${res.statusText}`);
+  };
+
+  api.getWebsocketAuth = async function () {
+    const data = await _scopedRequest('websocket');
+    return data?.data || {};
+  };
+
+  api.listSchedules = async function () {
+    const data = await _scopedRequest('schedules');
+    const items = data?.data || [];
+    return items.map(s => s.attributes || s);
+  };
+
+  api.createSchedule = async function (params) {
+    const data = await _scopedRequest('schedules', {
+      method: 'POST', body: JSON.stringify(params),
+    });
+    return data?.attributes || data || {};
+  };
+
+  api.deleteSchedule = async function (scheduleId) {
+    await _scopedRequest(`schedules/${scheduleId}`, { method: 'DELETE' });
+  };
+
+  return api;
+}
+
 const instance = new PanelApi();
 
 module.exports = instance;
 module.exports.PanelApi = PanelApi;
+module.exports.createPanelApi = createPanelApi;
 // Export individual functions for direct import
 module.exports.getResources = getResources;
 module.exports.sendPowerAction = sendPowerAction;
@@ -379,6 +626,8 @@ module.exports.listBackups = listBackups;
 module.exports.createBackup = createBackup;
 module.exports.deleteBackup = deleteBackup;
 module.exports.getBackupDownloadUrl = getBackupDownloadUrl;
+module.exports.getFileDownloadUrl = getFileDownloadUrl;
+module.exports.downloadFile = downloadFile;
 module.exports.listFiles = listFiles;
 module.exports.readFile = readFile;
 module.exports.writeFile = writeFile;
