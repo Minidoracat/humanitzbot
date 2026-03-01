@@ -88,8 +88,10 @@ class WebMapServer {
     this._app.use((_req, res, next) => {
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('X-Frame-Options', 'DENY');
-      res.setHeader('X-XSS-Protection', '1; mode=block');
+      res.setHeader('X-XSS-Protection', '0'); // Disabled — modern browsers don't need it, can cause XSS in old ones
       res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+      res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+      res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
       // CSP: allow self + CDN scripts/styles + Google Fonts used by the panel frontend
       res.setHeader('Content-Security-Policy', [
         "default-src 'self'",
@@ -99,6 +101,9 @@ class WebMapServer {
         "connect-src 'self'",
         "font-src 'self' https://fonts.gstatic.com",
         "frame-ancestors 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "object-src 'none'",
       ].join('; '));
       res.removeHeader('X-Powered-By');
       next();
@@ -828,7 +833,25 @@ class WebMapServer {
       const safe = message.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '').replace(/[\r\n]+/g, ' ').trim();
       if (!safe) return res.status(400).json({ error: 'Message is empty after sanitization' });
       try {
-        const result = await req.srv.rcon.send(`say ${safe}`);
+        // Use 'admin' command — 'say' no longer returns a response as of game update March 2026.
+        // Lead with </> to close default yellow, then <CL> for Discord-blue styling.
+        const result = await req.srv.rcon.send(`admin </><CL>${safe}`);
+
+        // Log to DB immediately so the web panel chat feed picks it up on next refresh
+        // (don't rely on fetchchat polling — there's a race condition)
+        if (req.srv.db) {
+          try {
+            req.srv.db.insertChat({
+              type: 'panel_to_game',
+              playerName: '',
+              message: safe,
+              direction: 'outbound',
+              discordUser: req.session?.user?.displayName || 'Panel',
+              isAdmin: true,
+            });
+          } catch (_) {}
+        }
+
         res.json({ ok: true, result });
       } catch (err) {
         res.status(500).json({ error: safeError(err) });

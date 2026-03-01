@@ -8,6 +8,28 @@
  * Mixed into ChatRelay.prototype by chat-relay.js.
  */
 
+// ── Timestamp prefix ─────────────────────────────────────────
+// Game update (March 2026) added timestamps to fetchchat output:
+//   [1/3/2,026 - 15:5] Player Joined (<PN>fabien</>)
+// The format is [D/M/Y,YYY - H:M] — note the comma in the year.
+const TIMESTAMP_RE = /^\[\d{1,2}\/\d{1,2}\/[\d,]+ - \d{1,2}:\d{1,2}\]\s*/;
+
+// ── Rich text tag stripping ─────────────────────────────────
+// Game uses UE4 rich text tags: <SP>, <FO>, <PR>, <CL>, <PN>, </>
+// <PN> tags wrap player names and are handled by the chat regexes.
+// All other tags are visual styling and must be stripped for Discord display.
+const RICH_TEXT_RE = /<\/?(?:SP|FO|PR|CL)>/g;
+
+/** Strip timestamp prefix from fetchchat lines (game update March 2026). */
+function stripTimestamp(line) {
+  return line.replace(TIMESTAMP_RE, '');
+}
+
+/** Strip rich text tags (except <PN>...</>) from a line for Discord display. */
+function stripRichText(text) {
+  return text.replace(RICH_TEXT_RE, '').replace(/<\/>/g, '').trim();
+}
+
 // ── Chat line regexes ────────────────────────────────────────
 // Player chat:   <PN>PlayerName:</>Message text
 // Admin chat:    [Admin]<PN>PlayerName:</>Message text (admin players get this prefix)
@@ -18,6 +40,8 @@ const JOIN_RE = /^Player Joined \(<PN>(.+?)<\/>\)$/;
 const LEFT_RE = /^Player Left \(<PN>(.+?)<\/>\)$/;
 // Player died:   Player Died (<PN>PlayerName</>)
 const DIED_RE = /^Player Died \(<PN>(.+?)<\/>\)$/;
+// Bot admin messages: <SP>Admin: </>... — the bot's own messages echoed back
+const BOT_ADMIN_RE = /^<SP>Admin:\s*<\/>/;
 // Plain chat fallback — admin player lines may lack <PN> tags
 // Must NOT match timestamp-prefixed lines like "[28/2/2,026 - 23:18] ..."
 const PLAIN_CHAT_RE = /^([^\[:<>\n][^:<>\n]{0,31}):\s*(.+)$/;
@@ -35,9 +59,29 @@ function stripAdminPrefix(line) {
  * Returns { formatted, entry } or null if the line should be skipped.
  */
 function _parseLine(line) {
+  // Strip timestamp prefix added by game update (March 2026)
+  const stripped = stripTimestamp(line);
+
+  // Admin broadcast messages: <SP>Admin: </>message content
+  // These are messages sent via the RCON 'admin' command (bot welcome messages,
+  // Discord→game relay, web panel messages, etc.)
+  const adminBroadcast = BOT_ADMIN_RE.exec(stripped);
+  if (adminBroadcast) {
+    const rawText = stripped.replace(BOT_ADMIN_RE, '').trim();
+    const text = stripRichText(rawText);
+    if (!text) return null; // empty admin message — skip
+    // Skip [Discord] and [Panel] messages — they're already logged at the source
+    // (ChatRelay._onMessage and web panel POST /api/admin/message)
+    if (/^\[Discord\]/.test(text) || /^\[Panel\]/.test(text)) return null;
+    return {
+      formatted: `📢 ${text}`,
+      entry: { type: 'admin_broadcast', playerName: '', message: text, direction: 'game', isAdmin: true },
+    };
+  }
+
   // Strip [Admin] prefix so admin players' messages match the regular regexes
-  const cleaned = stripAdminPrefix(line);
-  const isAdmin = cleaned !== line;
+  const cleaned = stripAdminPrefix(stripped);
+  const isAdmin = cleaned !== stripped;
 
   // Player chat (game uses <PN> tags in fetchChat output)
   let m = CHAT_RE.exec(cleaned);
@@ -45,11 +89,11 @@ function _parseLine(line) {
   if (m) {
     const name = m[1].trim();
     const rawText = m[2].trim();
-    const text = this._sanitize(rawText);
+    const text = this._sanitize(stripRichText(rawText));
     const badge = isAdmin ? ' 🛡️' : '';
     return {
       formatted: `💬 **${name}${badge}:** ${text}`,
-      entry: { type: 'player', playerName: name, message: rawText, direction: 'game', isAdmin },
+      entry: { type: 'player', playerName: name, message: stripRichText(rawText), direction: 'game', isAdmin },
     };
   }
 
@@ -150,8 +194,13 @@ module.exports = {
   JOIN_RE,
   LEFT_RE,
   DIED_RE,
+  BOT_ADMIN_RE,
   PLAIN_CHAT_RE,
+  TIMESTAMP_RE,
+  RICH_TEXT_RE,
   stripAdminPrefix,
+  stripTimestamp,
+  stripRichText,
 
   // Prototype methods (mixed into ChatRelay)
   _parseLine,

@@ -2080,6 +2080,9 @@
   window.__loadMoreActivity = function() {
     loadActivity(true);
   };
+  // Wire up the "Load More" button (no inline onclick needed)
+  var _lmBtn = $('#activity-load-more-btn');
+  if (_lmBtn) _lmBtn.addEventListener('click', function() { window.__loadMoreActivity && window.__loadMoreActivity(); });
 
   async function loadActivity(append) {
     var container = $('#activity-feed');

@@ -29,6 +29,13 @@ class LogWatcher {
     this._connectPartialLine = '';
     this._connectInitialised = false;
 
+    // Per-restart rotated logs (HZLogs/ directory — game update Feb 28 2026)
+    // When detected, we tail the latest file in HZLogs/ instead of the old monolithic files.
+    // File naming: {D}-{M}_{H}-{m}_HMZLog.log, Chat/{same}_Chat.log, Login/{same}_ConnectLog.txt
+    this._useRotatedLogs = false;
+    this._hmzLogFile = null;      // current HMZLog file path being tailed
+    this._connectLogFile = null;  // current ConnectLog file path being tailed
+
     // Daily thread
     this._dailyThread = null;
     this._dailyDate = null;   // 'YYYY-MM-DD'
@@ -281,12 +288,17 @@ class LogWatcher {
       return;
     }
 
-    console.log(`[${this._label}] Watching ${this._config.ftpLogPath} on ${this._config.ftpHost}:${this._config.ftpPort}`);
-    console.log(`[${this._label}] Watching ${this._config.ftpConnectLogPath}`);
+    console.log(`[${this._label}] Connecting to ${this._config.ftpHost}:${this._config.ftpPort} for log watching...`);
     console.log(`[${this._label}] Posting events to ${this._config.useActivityThreads ? 'daily threads in' : ''} #${this.logChannel.name}`);
 
-    // First poll — just get current file size so we don't replay old history
+    // First poll — detect HZLogs or legacy, get current file size
     await this._initSize();
+
+    if (this._useRotatedLogs) {
+      console.log(`[${this._label}] Using rotated logs (HZLogs/ per-restart files)`);
+    } else {
+      console.log(`[${this._label}] Using legacy monolithic logs: ${this._config.ftpLogPath}, ${this._config.ftpConnectLogPath}`);
+    }
 
     // Initialise today's thread (skip during nuke — phase 2 rebuilds them)
     if (!this._nukeActive) {
@@ -348,6 +360,9 @@ class LogWatcher {
           return {
             hmzLogSize: typeof raw.hmzLogSize === 'number' ? raw.hmzLogSize : 0,
             connectLogSize: typeof raw.connectLogSize === 'number' ? raw.connectLogSize : 0,
+            hmzLogFile: raw.hmzLogFile || null,
+            connectLogFile: raw.connectLogFile || null,
+            useRotatedLogs: !!raw.useRotatedLogs,
           };
         }
       }
@@ -362,6 +377,9 @@ class LogWatcher {
       const data = {
         hmzLogSize: this.lastSize,
         connectLogSize: this._connectLastSize,
+        useRotatedLogs: this._useRotatedLogs,
+        hmzLogFile: this._hmzLogFile || null,
+        connectLogFile: this._connectLogFile || null,
         savedAt: new Date().toISOString(),
       };
       if (this._db) {
@@ -372,46 +390,162 @@ class LogWatcher {
     }
   }
 
+  /**
+   * Find the latest (newest) file in a directory matching a suffix.
+   * Game names files as {D}-{M}_{H}-{m}_{suffix}, e.g. "1-3_7-0_HMZLog.log".
+   * We parse the timestamp from the filename to sort. Falls back to alphabetical.
+   * @returns {string|null} Full remote path of the newest file, or null if none found.
+   */
+  async _findLatestFile(sftp, dir, suffix) {
+    try {
+      const items = await sftp.list(dir);
+      const matching = items.filter(i => i.type !== 'd' && i.name.endsWith(suffix));
+      if (matching.length === 0) return null;
+
+      // Parse timestamp from filename: D-M_H-m_suffix → sortable date
+      const parsed = matching.map(i => {
+        const m = i.name.match(/^(\d{1,2})-(\d{1,2})_(\d{1,2})-(\d{1,2})_/);
+        let sortKey = 0;
+        if (m) {
+          // Build sortable int: MMDDHHMM (zero-padded mentally, but int comparison works)
+          sortKey = parseInt(m[2], 10) * 1000000 + parseInt(m[1], 10) * 10000 + parseInt(m[3], 10) * 100 + parseInt(m[4], 10);
+        }
+        return { name: i.name, sortKey, modifyTime: i.modifyTime };
+      });
+
+      // Sort by parsed timestamp descending; fall back to modifyTime
+      parsed.sort((a, b) => {
+        if (a.sortKey !== b.sortKey) return b.sortKey - a.sortKey;
+        return (b.modifyTime || 0) - (a.modifyTime || 0);
+      });
+
+      return dir.replace(/\/+$/, '') + '/' + parsed[0].name;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Detect and resolve the HZLogs rotated log directory.
+   * Returns { hmzLogDir, chatLogDir, loginLogDir } or null if HZLogs doesn't exist.
+   */
+  _resolveLogDirs() {
+    // Derive HZLogs path from the configured ftpLogPath.
+    // Old path: .../HumanitZServer/Saved/Logs/HMZLog.log  →  HZLogs is at .../HumanitZServer/HZLogs
+    // New path: .../HumanitZServer/HMZLog.log              →  HZLogs is at .../HumanitZServer/HZLogs
+    // We need the HumanitZServer/ root, so we walk up from the log file path.
+    const logPath = this._config.ftpLogPath || '/HumanitZServer/HMZLog.log';
+    let serverRoot = logPath.substring(0, logPath.lastIndexOf('/')) || '/HumanitZServer';
+    // If the log is under Saved/Logs/, walk up two levels to get to HumanitZServer/
+    if (serverRoot.endsWith('/Saved/Logs') || serverRoot.endsWith('/Saved/Logs/')) {
+      serverRoot = serverRoot.replace(/\/Saved\/Logs\/?$/, '');
+    }
+    return {
+      hmzLogDir: serverRoot + '/HZLogs',
+      chatLogDir: serverRoot + '/HZLogs/Chat',
+      loginLogDir: serverRoot + '/HZLogs/Login',
+    };
+  }
+
   async _initSize() {
     const saved = this._loadOffsets();
     const sftp = new SftpClient();
     try {
       await sftp.connect(this._config.sftpConnectConfig());
+
+      // ── Detect HZLogs rotated log directory (game update Feb 28 2026) ──
+      const dirs = this._resolveLogDirs();
+      let rotatedHmz = null;
+      let rotatedConnect = null;
       try {
-        const stat = await sftp.stat(this._config.ftpLogPath);
-        if (saved && saved.hmzLogSize > 0 && saved.hmzLogSize <= stat.size) {
-          this.lastSize = saved.hmzLogSize;
-          this.initialised = true;
-          const behind = stat.size - saved.hmzLogSize;
-          console.log(`[${this._label}] HMZLog: resuming from saved offset ${this.lastSize} (${behind} bytes to catch up)`);
-        } else {
-          this.lastSize = stat.size;
-          this.initialised = true;
-          console.log(`[${this._label}] HMZLog size: ${this.lastSize} bytes — tailing from here`);
-        }
-      } catch (err) {
-        console.warn(`[${this._label}] HMZLog.log not found, will retry:`, err.message);
-        this.lastSize = 0;
-        this.initialised = false;
+        await sftp.stat(dirs.hmzLogDir);
+        rotatedHmz = await this._findLatestFile(sftp, dirs.hmzLogDir, '_HMZLog.log');
+        rotatedConnect = await this._findLatestFile(sftp, dirs.loginLogDir, '_ConnectLog.txt');
+      } catch {
+        // HZLogs directory doesn't exist — old-style monolithic logs
       }
 
-      // PlayerConnectedLog.txt
-      try {
-        const stat2 = await sftp.stat(this._config.ftpConnectLogPath);
-        if (saved && saved.connectLogSize > 0 && saved.connectLogSize <= stat2.size) {
-          this._connectLastSize = saved.connectLogSize;
-          this._connectInitialised = true;
-          const behind = stat2.size - saved.connectLogSize;
-          console.log(`[${this._label}] ConnectLog: resuming from saved offset ${this._connectLastSize} (${behind} bytes to catch up)`);
-        } else {
-          this._connectLastSize = stat2.size;
-          this._connectInitialised = true;
-          console.log(`[${this._label}] ConnectLog size: ${this._connectLastSize} bytes — tailing from here`);
+      if (rotatedHmz) {
+        // ── Per-restart rotated logs mode ──
+        this._useRotatedLogs = true;
+        this._hmzLogFile = rotatedHmz;
+        this._connectLogFile = rotatedConnect;
+        console.log(`[${this._label}] Detected HZLogs directory — using per-restart log files`);
+        console.log(`[${this._label}]   HMZLog: ${rotatedHmz}`);
+        if (rotatedConnect) console.log(`[${this._label}]   ConnectLog: ${rotatedConnect}`);
+
+        // If saved offsets match the same file, resume; otherwise start fresh
+        try {
+          const stat = await sftp.stat(rotatedHmz);
+          if (saved && saved.hmzLogFile === rotatedHmz && saved.hmzLogSize > 0 && saved.hmzLogSize <= stat.size) {
+            this.lastSize = saved.hmzLogSize;
+            this.initialised = true;
+            console.log(`[${this._label}] HMZLog: resuming from saved offset ${this.lastSize} (${stat.size - this.lastSize} bytes to catch up)`);
+          } else {
+            this.lastSize = stat.size;
+            this.initialised = true;
+            console.log(`[${this._label}] HMZLog: tailing from ${this.lastSize} bytes`);
+          }
+        } catch {
+          this.lastSize = 0;
+          this.initialised = false;
         }
-      } catch (err) {
-        console.warn(`[${this._label}] PlayerConnectedLog.txt not found, will retry:`, err.message);
-        this._connectLastSize = 0;
-        this._connectInitialised = false;
+
+        if (rotatedConnect) {
+          try {
+            const stat2 = await sftp.stat(rotatedConnect);
+            if (saved && saved.connectLogFile === rotatedConnect && saved.connectLogSize > 0 && saved.connectLogSize <= stat2.size) {
+              this._connectLastSize = saved.connectLogSize;
+              this._connectInitialised = true;
+              console.log(`[${this._label}] ConnectLog: resuming from saved offset ${this._connectLastSize} (${stat2.size - this._connectLastSize} bytes to catch up)`);
+            } else {
+              this._connectLastSize = stat2.size;
+              this._connectInitialised = true;
+              console.log(`[${this._label}] ConnectLog: tailing from ${this._connectLastSize} bytes`);
+            }
+          } catch {
+            this._connectLastSize = 0;
+            this._connectInitialised = false;
+          }
+        }
+      } else {
+        // ── Legacy monolithic log mode ──
+        try {
+          const stat = await sftp.stat(this._config.ftpLogPath);
+          if (saved && saved.hmzLogSize > 0 && saved.hmzLogSize <= stat.size) {
+            this.lastSize = saved.hmzLogSize;
+            this.initialised = true;
+            const behind = stat.size - saved.hmzLogSize;
+            console.log(`[${this._label}] HMZLog: resuming from saved offset ${this.lastSize} (${behind} bytes to catch up)`);
+          } else {
+            this.lastSize = stat.size;
+            this.initialised = true;
+            console.log(`[${this._label}] HMZLog size: ${this.lastSize} bytes — tailing from here`);
+          }
+        } catch (err) {
+          console.warn(`[${this._label}] HMZLog.log not found, will retry:`, err.message);
+          this.lastSize = 0;
+          this.initialised = false;
+        }
+
+        // PlayerConnectedLog.txt
+        try {
+          const stat2 = await sftp.stat(this._config.ftpConnectLogPath);
+          if (saved && saved.connectLogSize > 0 && saved.connectLogSize <= stat2.size) {
+            this._connectLastSize = saved.connectLogSize;
+            this._connectInitialised = true;
+            const behind = stat2.size - saved.connectLogSize;
+            console.log(`[${this._label}] ConnectLog: resuming from saved offset ${this._connectLastSize} (${behind} bytes to catch up)`);
+          } else {
+            this._connectLastSize = stat2.size;
+            this._connectInitialised = true;
+            console.log(`[${this._label}] ConnectLog size: ${this._connectLastSize} bytes — tailing from here`);
+          }
+        } catch (err) {
+          console.warn(`[${this._label}] PlayerConnectedLog.txt not found, will retry:`, err.message);
+          this._connectLastSize = 0;
+          this._connectInitialised = false;
+        }
       }
     } catch (err) {
       console.error(`[${this._label}] SFTP init failed:`, err.message);
@@ -434,31 +568,95 @@ class LogWatcher {
     try {
       await sftp.connect(this._config.sftpConnectConfig());
 
-      // ── HMZLog.log ──────────────────────────────────
-      await this._pollFile(sftp, {
-        path: this._config.ftpLogPath,
-        label: 'HMZLog',
-        getSize: () => this.lastSize,
-        setSize: (s) => { this.lastSize = s; },
-        getInit: () => this.initialised,
-        setInit: (v) => { this.initialised = v; },
-        getPartial: () => this.partialLine,
-        setPartial: (p) => { this.partialLine = p; },
-        processLine: (line) => this._processLine(line),
-      });
+      // ── Resolve current log file paths ──────────────
+      let hmzPath, connectPath;
+      if (this._useRotatedLogs) {
+        const dirs = this._resolveLogDirs();
 
-      // ── PlayerConnectedLog.txt ──────────────────────
-      await this._pollFile(sftp, {
-        path: this._config.ftpConnectLogPath,
-        label: 'ConnectLog',
-        getSize: () => this._connectLastSize,
-        setSize: (s) => { this._connectLastSize = s; },
-        getInit: () => this._connectInitialised,
-        setInit: (v) => { this._connectInitialised = v; },
-        getPartial: () => this._connectPartialLine,
-        setPartial: (p) => { this._connectPartialLine = p; },
-        processLine: (line) => this._processConnectLine(line),
-      });
+        // Check for new rotated file (server restart → new file appeared)
+        const latestHmz = await this._findLatestFile(sftp, dirs.hmzLogDir, '_HMZLog.log');
+        const latestConnect = await this._findLatestFile(sftp, dirs.loginLogDir, '_ConnectLog.txt');
+
+        if (latestHmz && latestHmz !== this._hmzLogFile) {
+          // Server restarted — new log file. Read remaining from old, then switch.
+          if (this._hmzLogFile) {
+            console.log(`[${this._label}] HMZLog rotated: ${this._hmzLogFile} → ${latestHmz}`);
+            // Flush remaining bytes from old file first
+            await this._pollFile(sftp, {
+              path: this._hmzLogFile,
+              label: 'HMZLog(old)',
+              getSize: () => this.lastSize,
+              setSize: (s) => { this.lastSize = s; },
+              getInit: () => this.initialised,
+              setInit: (v) => { this.initialised = v; },
+              getPartial: () => this.partialLine,
+              setPartial: (p) => { this.partialLine = p; },
+              processLine: (line) => this._processLine(line),
+            });
+          }
+          this._hmzLogFile = latestHmz;
+          this.lastSize = 0;
+          this.partialLine = '';
+          this.initialised = true; // Read from byte 0, don't skip
+        }
+
+        if (latestConnect && latestConnect !== this._connectLogFile) {
+          if (this._connectLogFile) {
+            console.log(`[${this._label}] ConnectLog rotated: ${this._connectLogFile} → ${latestConnect}`);
+            await this._pollFile(sftp, {
+              path: this._connectLogFile,
+              label: 'ConnectLog(old)',
+              getSize: () => this._connectLastSize,
+              setSize: (s) => { this._connectLastSize = s; },
+              getInit: () => this._connectInitialised,
+              setInit: (v) => { this._connectInitialised = v; },
+              getPartial: () => this._connectPartialLine,
+              setPartial: (p) => { this._connectPartialLine = p; },
+              processLine: (line) => this._processConnectLine(line),
+            });
+          }
+          this._connectLogFile = latestConnect;
+          this._connectLastSize = 0;
+          this._connectPartialLine = '';
+          this._connectInitialised = true;
+        }
+
+        hmzPath = this._hmzLogFile;
+        connectPath = this._connectLogFile;
+      } else {
+        hmzPath = this._config.ftpLogPath;
+        connectPath = this._config.ftpConnectLogPath;
+      }
+
+      // ── HMZLog ──────────────────────────────────────
+      if (hmzPath) {
+        await this._pollFile(sftp, {
+          path: hmzPath,
+          label: 'HMZLog',
+          getSize: () => this.lastSize,
+          setSize: (s) => { this.lastSize = s; },
+          getInit: () => this.initialised,
+          setInit: (v) => { this.initialised = v; },
+          getPartial: () => this.partialLine,
+          setPartial: (p) => { this.partialLine = p; },
+          processLine: (line) => this._processLine(line),
+        });
+      }
+
+      // ── ConnectLog ──────────────────────────────────
+      if (connectPath) {
+        await this._pollFile(sftp, {
+          path: connectPath,
+          label: 'ConnectLog',
+          getSize: () => this._connectLastSize,
+          setSize: (s) => { this._connectLastSize = s; },
+          getInit: () => this._connectInitialised,
+          setInit: (v) => { this._connectInitialised = v; },
+          getPartial: () => this._connectPartialLine,
+          setPartial: (p) => { this._connectPartialLine = p; },
+          processLine: (line) => this._processConnectLine(line),
+        });
+      }
 
       // ── PlayerIDMapped.txt (name→SteamID resolver) ─────
       await this._refreshIdMap(sftp);

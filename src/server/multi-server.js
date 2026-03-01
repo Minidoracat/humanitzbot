@@ -78,6 +78,9 @@ const DISCOVERY_TARGETS = [
   'WelcomeMessage.txt',
 ];
 
+/** Directory names to discover (for per-restart rotated logs). */
+const DISCOVERY_DIR_TARGETS = ['HZLogs'];
+
 /**
  * Recursively search an SFTP server for target files.
  * @param {SftpClient} sftp - connected SFTP client
@@ -93,12 +96,16 @@ async function _discoverFiles(sftp, dir, depth, maxDepth, found) {
   for (const item of items) {
     const fullPath = dir === '/' ? `/${item.name}` : `${dir}/${item.name}`;
     if (item.type === 'd') {
+      // Track discovery-target directories (e.g. HZLogs)
+      if (DISCOVERY_DIR_TARGETS.includes(item.name) && !found.has(item.name)) {
+        found.set(item.name, fullPath);
+      }
       if (/^(\.|node_modules|__pycache__|Engine|Content|Binaries|linux64|steamapps|proc|sys|run|tmp|lost\+found|snap|boot|usr)$/i.test(item.name)) continue;
       await _discoverFiles(sftp, fullPath, depth + 1, maxDepth, found);
     } else if (DISCOVERY_TARGETS.includes(item.name) && !found.has(item.name)) {
       found.set(item.name, fullPath);
     }
-    if (found.size >= DISCOVERY_TARGETS.length) return;
+    if (found.size >= DISCOVERY_TARGETS.length + DISCOVERY_DIR_TARGETS.length) return;
   }
 }
 
@@ -142,6 +149,15 @@ async function discoverPaths(sftpConfig, label = 'DISCOVER') {
     if (found.has('Save_DedicatedSaveMP.sav')) paths.savePath = found.get('Save_DedicatedSaveMP.sav');
     if (found.has('GameServerSettings.ini'))   paths.settingsPath = found.get('GameServerSettings.ini');
     if (found.has('WelcomeMessage.txt'))       paths.welcomePath = found.get('WelcomeMessage.txt');
+
+    // If HZLogs found but no HMZLog.log (new server, only has per-restart logs),
+    // derive ftpLogPath from HZLogs parent so LogWatcher can find the directory.
+    if (found.has('HZLogs') && !found.has('HMZLog.log')) {
+      const hzLogsDir = found.get('HZLogs');
+      const parentDir = hzLogsDir.substring(0, hzLogsDir.lastIndexOf('/'));
+      paths.logPath = parentDir + '/HMZLog.log'; // LogWatcher derives HZLogs/ from this parent
+      console.log(`[${label}] HZLogs directory found at ${hzLogsDir} — using per-restart log files`);
+    }
 
     const foundCount = Object.keys(paths).length;
     const fileNames = Object.values(paths).map(p => path.basename(p));

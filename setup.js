@@ -173,6 +173,8 @@ const DISCOVERY_TARGETS = {
   'GameServerSettings.ini':  'FTP_SETTINGS_PATH',
   'WelcomeMessage.txt':      'FTP_WELCOME_PATH',
 };
+// Directory targets (for per-restart rotated logs — game update Feb 28 2026)
+const DISCOVERY_DIR_TARGETS = ['HZLogs'];
 
 /**
  * Recursively search an SFTP server for the target files.
@@ -185,6 +187,11 @@ async function discoverFiles(sftp, dir, depth, maxDepth, found) {
   for (const item of items) {
     const fullPath = dir === '/' ? `/${item.name}` : `${dir}/${item.name}`;
     if (item.type === 'd') {
+      // Track HZLogs directory (per-restart rotated logs)
+      if (DISCOVERY_DIR_TARGETS.includes(item.name) && !found.has(item.name)) {
+        found.set(item.name, fullPath);
+        console.log(`  Found ${item.name}/ directory → ${fullPath}`);
+      }
       // Skip obviously irrelevant directories for faster discovery
       if (/^(\.|node_modules|__pycache__|Engine|Content|Binaries|proc|sys|run|tmp|lost\+found|snap|boot|usr)$/i.test(item.name)) continue;
       // Prioritize game server directories (check them first)
@@ -197,7 +204,7 @@ async function discoverFiles(sftp, dir, depth, maxDepth, found) {
       console.log(`  Found ${item.name} → ${fullPath}`);
     }
     // Early exit if all targets found
-    if (found.size >= Object.keys(DISCOVERY_TARGETS).length) return;
+    if (found.size >= Object.keys(DISCOVERY_TARGETS).length + DISCOVERY_DIR_TARGETS.length) return;
   }
 }
 
@@ -228,6 +235,21 @@ async function autoDiscoverPaths(sftp) {
     } catch { /* not there, will search */ }
   }
 
+  // Quick check for HZLogs directory (per-restart rotated logs)
+  // HZLogs is at the HumanitZServer/ root, not inside Saved/Logs/
+  let serverRoot = ftpLogPath.substring(0, ftpLogPath.lastIndexOf('/')) || '/HumanitZServer';
+  if (serverRoot.endsWith('/Saved/Logs') || serverRoot.endsWith('/Saved/Logs/')) {
+    serverRoot = serverRoot.replace(/\/Saved\/Logs\/?$/, '');
+  }
+  const hzLogsDir = serverRoot + '/HZLogs';
+  try {
+    const stat = await sftp.stat(hzLogsDir);
+    if (stat) {
+      found.set('HZLogs', hzLogsDir);
+      console.log(`  ✓ HZLogs/ — per-restart log directory at ${hzLogsDir}`);
+    }
+  } catch { /* not there */ }
+
   // Search for any files we didn't find at the default locations
   if (found.size < Object.keys(DISCOVERY_TARGETS).length) {
     const missing = Object.keys(DISCOVERY_TARGETS).filter(n => !found.has(n));
@@ -244,6 +266,18 @@ async function autoDiscoverPaths(sftp) {
     ftpSettingsPath:   found.get('GameServerSettings.ini')  || ftpSettingsPath,
     ftpWelcomePath:    found.get('WelcomeMessage.txt')      || ftpWelcomePath,
   };
+
+  // If HZLogs found but no HMZLog.log (new server with only per-restart logs),
+  // set ftpLogPath to parent so LogWatcher can derive HZLogs/ from it
+  if (found.has('HZLogs') && !found.has('HMZLog.log')) {
+    const hzDir = found.get('HZLogs');
+    const parent = hzDir.substring(0, hzDir.lastIndexOf('/'));
+    results.ftpLogPath = parent + '/HMZLog.log';
+    console.log(`  ℹ No monolithic HMZLog.log — using HZLogs/ per-restart logs (LogWatcher auto-detects)`);
+  }
+  if (found.has('HZLogs')) {
+    console.log(`  ℹ Per-restart log rotation detected — LogWatcher will auto-switch to newest file`);
+  }
 
   const notFound = Object.keys(DISCOVERY_TARGETS).filter(n => !found.has(n));
   if (notFound.length > 0) {
