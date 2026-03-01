@@ -261,9 +261,6 @@ class PanelChannel {
       if (interaction.customId.startsWith('panel_srv_settings:')) {
         return this._handleSrvGameSettingsSelect(interaction);
       }
-      if (interaction.customId === SELECT.SERVER) {
-        return this._handleServerSelect(interaction);
-      }
       return false;
     }
 

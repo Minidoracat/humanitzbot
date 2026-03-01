@@ -78,6 +78,15 @@ async function _probeSftp(hasSftp) {
     let hasLog = false;
     try { await sftp.stat(config.ftpSavePath); hasSave = true; } catch { /* missing */ }
     try { await sftp.stat(config.ftpLogPath); hasLog = true; } catch { /* missing */ }
+    // Also check HZLogs/ directory (per-restart rotated logs, game update March 2026)
+    if (!hasLog) {
+      try {
+        let serverRoot = (config.ftpLogPath || '').replace(/\/[^/]+$/, '') || '/HumanitZServer';
+        if (serverRoot.endsWith('/Saved/Logs')) serverRoot = serverRoot.replace(/\/Saved\/Logs$/, '');
+        await sftp.stat(serverRoot + '/HZLogs');
+        hasLog = true;
+      } catch { /* no HZLogs either */ }
+    }
     await sftp.end();
     return { status: 'ok', latency: Date.now() - start, hasSave, hasLog };
   } catch (err) {
