@@ -28,7 +28,7 @@
 </p>
 
 <p align="center">
-  <a href="https://play.qs-zuq.com/"><strong>🌐 Live Demo</strong></a>
+  <a href="https://play.qs-zuq.com/"><strong>🌐 See it in action</strong></a> — public web panel on a live server (survivor permissions)
 </p>
 
 ## What It Does
