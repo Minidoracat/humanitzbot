@@ -228,14 +228,14 @@ class WebMapServer {
       panelApi: instance.panelApi || null,
       scheduler: instance._modules?.serverScheduler || null,
       dataDir: instance.dataDir,
-      idMap: this._loadIdMapFrom(instance.dataDir),
+      idMap: this._loadIdMapFrom(instance.dataDir, instance.db),
       isPrimary: false,
       serverId,
     };
   }
 
-  /** Load player ID map from a specific data directory. */
-  _loadIdMapFrom(dataDir) {
+  /** Load player ID map from a specific data directory, falling back to DB names. */
+  _loadIdMapFrom(dataDir, db) {
     const map = {};
     try {
       const raw = fs.readFileSync(path.join(dataDir, 'logs', 'PlayerIDMapped.txt'), 'utf8');
@@ -244,6 +244,16 @@ class WebMapServer {
         if (m) map[m[1]] = m[2].trim();
       }
     } catch { /* file may not exist for this server */ }
+
+    // Fall back to DB player names if file was empty/missing
+    if (Object.keys(map).length === 0 && db) {
+      try {
+        const rows = db._db.prepare('SELECT steam_id, name FROM players WHERE name != \'\'').all();
+        for (const row of rows) {
+          if (row.steam_id && row.name) map[row.steam_id] = row.name;
+        }
+      } catch { /* DB may not have players yet */ }
+    }
     return map;
   }
 

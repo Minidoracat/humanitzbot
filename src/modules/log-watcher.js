@@ -1,5 +1,6 @@
 const { EmbedBuilder } = require('discord.js');
 const SftpClient = require('ssh2-sftp-client');
+const path = require('path');
 const _defaultConfig = require('../config');
 const { addAdminMembers } = require('../config');
 const { cleanName } = require('../parsers/ue4-names');
@@ -14,6 +15,7 @@ class LogWatcher {
     this._playerStats = deps.playerStats || _defaultPlayerStats;
     this._db = deps.db || null;
     this._label = deps.label || 'LOGS';
+    this._dataDir = deps.dataDir || null;
 
     this.client = client;
     this.logChannel = null;
@@ -1174,6 +1176,16 @@ class LogWatcher {
       }
       if (entries.length > 0) {
         this._playerStats.loadIdMap(entries);
+
+        // Cache locally so the web panel can resolve names without SFTP
+        if (this._dataDir) {
+          try {
+            const logsDir = path.join(this._dataDir, 'logs');
+            const fs = require('fs');
+            if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+            fs.writeFileSync(path.join(logsDir, 'PlayerIDMapped.txt'), text, 'utf8');
+          } catch (_) { /* non-critical — web panel will fall back to DB names */ }
+        }
 
         // Notify external listeners (SaveService, WebMap, etc.) with steamId→name map
         if (this._onIdMapRefresh) {
