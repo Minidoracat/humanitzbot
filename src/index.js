@@ -714,7 +714,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.log('[BOT] Recaps disabled via ENABLE_RECAPS=false');
   }
 
-  // Anticheat — observation-only anomaly detection (requires private @humanitzbot/qs-anticheat package)
+  // Anticheat — observation-only anomaly detection (optional private package)
   if (config.enableAnticheat) {
     if (!db) {
       setStatus('Anticheat', '🟡 Skipped (no database)');
