@@ -279,7 +279,7 @@
           <h2 class="text-base font-heading font-bold text-text-bright sidebar-full tracking-wide truncate">HumanitZ</h2>
           <span class="text-base sidebar-mini hidden font-heading font-bold text-text-bright">H</span>
         </div>
-        <!-- Server selector (multi-server) -->
+        <!-- Server selector (multi-server) — now a bar of pills inside main content -->
         <div id="server-selector" class="hidden px-3 py-2 border-b border-border">
           <select id="server-select" class="w-full text-xs bg-surface-100 border border-border rounded px-2 py-1.5 text-text-bright cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent truncate">
             <option value="primary">Primary Server</option>
@@ -319,8 +319,16 @@
       <!-- Main Content -->
       <main class="flex-1 overflow-y-auto bg-surface-300 flex flex-col">
 
+        <!-- Multi-server bar (pills) — shown above all tabs when multi-server active -->
+        <div id="server-bar" class="server-bar hidden">
+          <span class="server-bar-label">Server</span>
+          <div id="server-pills" class="flex items-center gap-1.5 flex-wrap"></div>
+        </div>
+
         <!-- DASHBOARD -->
         <section id="tab-dashboard" class="tab-content p-6 space-y-4">
+          <!-- Single-server dashboard (shown when only one server) -->
+          <div id="dash-single">
           <div class="flex items-center justify-between">
             <h1 class="page-title">Dashboard</h1>
             <div class="flex items-center gap-3">
@@ -350,6 +358,9 @@
             <div class="card"><h3 class="card-title">Recent Activity</h3><div id="d-activity" class="feed-container max-h-80 overflow-y-auto"></div></div>
             <div class="card"><h3 class="card-title">Recent Chat</h3><div id="d-chat" class="feed-container max-h-80 overflow-y-auto"></div></div>
           </div>
+          </div><!-- /dash-single -->
+          <!-- Multi-server dashboard (shown when multiple servers) -->
+          <div id="dash-multi" class="hidden dash-multi-grid"></div>
         </section>
 
         <!-- MAP -->

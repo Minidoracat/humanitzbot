@@ -8,6 +8,9 @@
     currentTab: 'dashboard',
     currentServer: 'primary',
     multiServer: false,
+    serverList: [],
+    serverStatuses: {},
+    srvBoxCollapsed: {},
     players: [],
     toggles: {},
     worldBounds: null,
@@ -791,45 +794,106 @@
     switchTab('dashboard');
   }
 
-  /** Load server list and populate the server selector dropdown */
+  /** Load server list and populate the server bar pills + legacy dropdown */
   async function loadServerList() {
     try {
       var r = await fetch('/api/servers');
       if (!r.ok) return;
       var d = await r.json();
       S.multiServer = d.multiServer || false;
+      S.serverList = d.servers || [];
       if (!S.multiServer || !d.servers || d.servers.length <= 1) return;
 
+      // Legacy dropdown (kept for compat, hidden by CSS in sidebar)
       var sel = $('#server-select');
       var wrap = $('#server-selector');
-      if (!sel || !wrap) return;
+      if (sel && wrap) {
+        sel.innerHTML = '';
+        for (var i = 0; i < d.servers.length; i++) {
+          var opt = document.createElement('option');
+          opt.value = d.servers[i].id;
+          opt.textContent = d.servers[i].name;
+          sel.appendChild(opt);
+        }
+        sel.value = S.currentServer;
+        wrap.classList.remove('hidden');
 
-      sel.innerHTML = '';
-      for (var i = 0; i < d.servers.length; i++) {
-        var opt = document.createElement('option');
-        opt.value = d.servers[i].id;
-        opt.textContent = d.servers[i].name;
-        sel.appendChild(opt);
-      }
-      sel.value = S.currentServer;
-      wrap.classList.remove('hidden');
-
-      sel.addEventListener('change', function() {
-        S.currentServer = sel.value;
-        // Reset cached data
-        S.players = [];
-        S.dashHistory = { online: [], events: [] };
-        Object.keys(S.sparkCharts).forEach(function(k) {
-          if (S.sparkCharts[k]) { S.sparkCharts[k].destroy(); delete S.sparkCharts[k]; }
+        sel.addEventListener('change', function() {
+          switchServer(sel.value);
         });
-        S.settingsOriginal = {};
-        S.settingsChanged = {};
-        S.mapReady = false;
-        // Reload current tab
-        loadPlayersInBackground();
-        switchTab(S.currentTab);
-      });
+      }
+
+      // Server bar pills (main content area)
+      renderServerBar(d.servers);
     } catch (e) { /* non-critical */ }
+  }
+
+  /** Render server pills in the main content bar */
+  function renderServerBar(servers) {
+    var bar = $('#server-bar');
+    var container = $('#server-pills');
+    if (!bar || !container) return;
+
+    container.innerHTML = '';
+    for (var i = 0; i < servers.length; i++) {
+      var s = servers[i];
+      var pill = el('button', 'server-pill' + (s.id === S.currentServer ? ' active' : ''));
+      pill.dataset.serverId = s.id;
+      pill.innerHTML = '<span class="server-pill-dot" data-srv-dot="' + s.id + '"></span>' + esc(s.name);
+      pill.addEventListener('click', (function(id) {
+        return function() { switchServer(id); };
+      })(s.id));
+      container.appendChild(pill);
+    }
+    bar.classList.remove('hidden');
+    // Fetch status to color the dots
+    updateServerBarStatus();
+  }
+
+  /** Update server bar pill status dots based on landing API */
+  async function updateServerBarStatus() {
+    try {
+      var r = await fetch('/api/landing');
+      if (!r.ok) return;
+      var d = await r.json();
+      var allServers = [];
+      if (d.primary) allServers.push(d.primary);
+      if (d.servers) for (var i = 0; i < d.servers.length; i++) allServers.push(d.servers[i]);
+      S.serverStatuses = {};
+      for (var j = 0; j < allServers.length; j++) {
+        var s = allServers[j];
+        var id = s.id || 'primary';
+        S.serverStatuses[id] = s;
+        var dot = document.querySelector('[data-srv-dot="' + id + '"]');
+        if (dot) {
+          dot.classList.remove('online', 'stale');
+          if (s.status === 'online') dot.classList.add('online');
+          else if (s.status === 'stale') dot.classList.add('stale');
+        }
+      }
+    } catch (e) { /* non-critical */ }
+  }
+
+  /** Switch active server across all tabs */
+  function switchServer(id) {
+    S.currentServer = id;
+    // Update pills
+    $$('.server-pill').forEach(function(p) { p.classList.toggle('active', p.dataset.serverId === id); });
+    // Update legacy dropdown
+    var sel = $('#server-select');
+    if (sel) sel.value = id;
+    // Reset cached data
+    S.players = [];
+    S.dashHistory = { online: [], events: [] };
+    Object.keys(S.sparkCharts).forEach(function(k) {
+      if (S.sparkCharts[k]) { S.sparkCharts[k].destroy(); delete S.sparkCharts[k]; }
+    });
+    S.settingsOriginal = {};
+    S.settingsChanged = {};
+    S.mapReady = false;
+    // Reload current tab
+    loadPlayersInBackground();
+    switchTab(S.currentTab);
   }
 
   async function loadPlayersInBackground() {
@@ -965,6 +1029,20 @@
   }
 
   async function loadDashboard() {
+    if (S.multiServer && S.serverList.length > 1) {
+      loadMultiDashboard();
+      return;
+    }
+    // Single-server dashboard (original behavior)
+    var singleEl = $('#dash-single');
+    var multiEl = $('#dash-multi');
+    if (singleEl) singleEl.classList.remove('hidden');
+    if (multiEl) multiEl.classList.add('hidden');
+    await loadSingleDashboard();
+  }
+
+  /** Single-server dashboard — the original loadDashboard logic */
+  async function loadSingleDashboard() {
     try {
       var results = await Promise.all([apiFetch('/api/panel/status'), apiFetch('/api/panel/stats')]);
       var status = results[0].ok ? await results[0].json() : {};
@@ -1072,6 +1150,159 @@
     } catch (e) {
       console.error('Dashboard error:', e);
     }
+  }
+
+  /** Multi-server dashboard — renders a collapsible box per server */
+  async function loadMultiDashboard() {
+    var singleEl = $('#dash-single');
+    var multiEl = $('#dash-multi');
+    if (singleEl) singleEl.classList.add('hidden');
+    if (!multiEl) return;
+    multiEl.classList.remove('hidden');
+
+    // Track collapsed state across refreshes
+    if (!S.srvBoxCollapsed) S.srvBoxCollapsed = {};
+
+    // Fetch all servers' data in parallel
+    var servers = S.serverList;
+    var fetches = servers.map(function(srv) {
+      var q = srv.id === 'primary' ? '' : '?server=' + encodeURIComponent(srv.id);
+      return Promise.all([
+        fetch('/api/panel/status' + q).then(function(r) { return r.ok ? r.json() : {}; }).catch(function() { return {}; }),
+        fetch('/api/panel/stats' + q).then(function(r) { return r.ok ? r.json() : {}; }).catch(function() { return {}; }),
+        fetch('/api/panel/scheduler' + q).then(function(r) { return r.ok ? r.json() : {}; }).catch(function() { return {}; }),
+        fetch('/api/panel/activity' + q + (q ? '&' : '?') + 'limit=8').then(function(r) { return r.ok ? r.json() : {}; }).catch(function() { return {}; }),
+        fetch('/api/panel/chat' + q + (q ? '&' : '?') + 'limit=8').then(function(r) { return r.ok ? r.json() : {}; }).catch(function() { return {}; }),
+      ]);
+    });
+
+    var allData;
+    try { allData = await Promise.all(fetches); }
+    catch (e) { console.error('Multi-dashboard fetch error:', e); return; }
+
+    // Get landing data for connect addresses
+    var landingData = {};
+    try {
+      var lr = await fetch('/api/landing');
+      if (lr.ok) {
+        var ld = await lr.json();
+        if (ld.primary) landingData[ld.primary.id || 'primary'] = ld.primary;
+        if (ld.servers) for (var li = 0; li < ld.servers.length; li++) landingData[ld.servers[li].id] = ld.servers[li];
+      }
+    } catch (e) {  }
+
+    multiEl.innerHTML = '';
+
+    for (var si = 0; si < servers.length; si++) {
+      var srv = servers[si];
+      var srvId = srv.id;
+      var data = allData[si];
+      var status = data[0] || {};
+      var stats = data[1] || {};
+      var sched = data[2] || {};
+      var actData = data[3] || {};
+      var chatData = data[4] || {};
+      var landing = landingData[srvId] || {};
+
+      var isOn = status.serverState === 'running';
+      var isCollapsed = !!S.srvBoxCollapsed[srvId];
+
+      // Create the box
+      var box = el('div', 'srv-box');
+      box.dataset.serverId = srvId;
+
+      // Header
+      var statusLabel = isOn ? 'Online' : 'Offline';
+      var statusColor = isOn ? 'bg-calm' : 'bg-muted';
+      var statusText = isOn ? 'text-calm' : 'text-muted';
+      var onlineStr = stats.onlinePlayers != null ? stats.onlinePlayers + '/' + (status.maxPlayers || '?') : '-';
+
+      var hdr = el('div', 'srv-box-header');
+      hdr.innerHTML = '<span class="srv-box-dot ' + statusColor + (isOn ? ' pulse-dot' : '') + '"></span>'
+        + '<span class="srv-box-name">' + esc(srv.name) + '</span>'
+        + '<span class="srv-box-meta">'
+        + '<span class="' + statusText + '">' + statusLabel + '</span>'
+        + '<span>' + onlineStr + ' players</span>'
+        + '</span>'
+        + '<i data-lucide="chevron-down" class="w-4 h-4 srv-box-toggle' + (isCollapsed ? ' collapsed' : '') + '"></i>';
+
+      // Toggle collapse on header click
+      (function(id) {
+        hdr.addEventListener('click', function() {
+          S.srvBoxCollapsed[id] = !S.srvBoxCollapsed[id];
+          var body = box.querySelector('.srv-box-body');
+          var toggle = box.querySelector('.srv-box-toggle');
+          if (body) body.classList.toggle('collapsed', S.srvBoxCollapsed[id]);
+          if (toggle) toggle.classList.toggle('collapsed', S.srvBoxCollapsed[id]);
+        });
+      })(srvId);
+
+      box.appendChild(hdr);
+
+      // Body
+      var body = el('div', 'srv-box-body' + (isCollapsed ? ' collapsed' : ''));
+
+      // Stats row
+      var statsRow = el('div', 'srv-stats');
+      var worldStr = '-';
+      if (status.gameDay != null) {
+        var dps = status.daysPerSeason || 28;
+        var dayInSeason = (status.gameDay % dps) + 1;
+        var year = Math.floor(status.gameDay / (dps * 4)) + 1;
+        var seasonNames = ['Spring', 'Summer', 'Autumn', 'Winter'];
+        var seasonNum = Math.floor((status.gameDay % (dps * 4)) / dps);
+        worldStr = 'Day ' + dayInSeason + ' ' + (status.season || seasonNames[seasonNum]) + ', Y' + year;
+        if (status.gameTime) worldStr = status.gameTime + ' · ' + worldStr;
+      }
+      var addr = landing.host ? (landing.gamePort ? landing.host + ':' + landing.gamePort : landing.host) : '';
+
+      statsRow.innerHTML = '<div class="srv-stat"><div class="srv-stat-value">' + onlineStr + '</div><div class="srv-stat-label">Players</div></div>'
+        + '<div class="srv-stat"><div class="srv-stat-value">' + (stats.totalPlayers || 0) + '</div><div class="srv-stat-label">Total</div></div>'
+        + '<div class="srv-stat"><div class="srv-stat-value">' + fmtNum(stats.eventsToday || 0) + '</div><div class="srv-stat-label">Events</div></div>'
+        + '<div class="srv-stat"><div class="srv-stat-value text-sm">' + esc(worldStr) + '</div><div class="srv-stat-label">World</div></div>'
+        + (addr ? '<div class="srv-stat"><div class="srv-stat-value font-mono text-sm">' + esc(addr) + '</div><div class="srv-stat-label">Connect</div></div>' : '');
+      body.appendChild(statsRow);
+
+      // Schedule section (if available)
+      if (sched.active && sched.todaySchedule) {
+        var schedSection = el('div', 'srv-section');
+        schedSection.innerHTML = '<div class="srv-section-title">Difficulty Schedule</div>';
+        var schedContent = el('div', 'space-y-0.5');
+        renderSchedule(schedContent, sched, 'dashboard');
+        if (sched.rotateDaily && sched.tomorrowSchedule) {
+          renderTomorrowSchedule(schedContent, sched);
+        }
+        schedSection.appendChild(schedContent);
+        body.appendChild(schedSection);
+      }
+
+      // Activity + Chat feeds side by side
+      if (S.tier >= 1) {
+        var feedsRow = el('div', 'srv-feeds');
+
+        var actFeed = el('div', 'srv-feed');
+        actFeed.innerHTML = '<div class="srv-feed-title">Recent Activity</div>';
+        var actContent = el('div', 'srv-feed-content feed-container');
+        renderActivityFeed(actContent, (actData.events || []), true);
+        actFeed.appendChild(actContent);
+        feedsRow.appendChild(actFeed);
+
+        var chatFeed = el('div', 'srv-feed');
+        chatFeed.innerHTML = '<div class="srv-feed-title">Recent Chat</div>';
+        var chatContent = el('div', 'srv-feed-content feed-container');
+        renderChatFeed(chatContent, (chatData.messages || []), true);
+        chatFeed.appendChild(chatContent);
+        feedsRow.appendChild(chatFeed);
+
+        body.appendChild(feedsRow);
+      }
+
+      box.appendChild(body);
+      multiEl.appendChild(box);
+    }
+
+    // Re-init Lucide icons for the newly created elements
+    if (window.lucide) lucide.createIcons();
   }
 
   function renderSchedule(container, sched, context) {

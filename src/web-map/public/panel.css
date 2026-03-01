@@ -608,10 +608,54 @@ body { background: #12100e; color: #c8c2b8; }
 .pc-stat-val { display: block; font-size: 0.875rem; font-weight: 600; color: var(--color-text, #e8e0d8); }
 .pc-stat-lbl { display: block; font-size: 0.625rem; color: var(--color-muted, #7a7067); text-transform: uppercase; letter-spacing: 0.04em; }
 
+/* ── Multi-Server Bar ── */
+.server-bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: #12100e; border-bottom: 1px solid #302a25; flex-shrink: 0; }
+.server-bar-label { font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.06em; color: #5c574f; font-weight: 600; margin-right: 0.25rem; white-space: nowrap; }
+.server-pill { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.3rem 0.65rem; border-radius: 9999px; font-size: 0.6875rem; font-weight: 500; background: rgba(255,255,255,0.03); color: #7a746c; border: 1px solid #302a25; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+.server-pill:hover { color: #c8c2b8; background: rgba(255,255,255,0.06); border-color: #3d3630; }
+.server-pill.active { color: #e8e3db; background: rgba(212,145,92,0.12); border-color: rgba(212,145,92,0.35); }
+.server-pill-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: #5c574f; }
+.server-pill-dot.online { background: #6dba82; }
+.server-pill-dot.stale { background: #d4a843; }
+
+/* ── Dashboard Server Boxes ── */
+.srv-box { background: #191614; border: 1px solid #302a25; border-radius: 0.75rem; overflow: hidden; transition: border-color 0.15s; }
+.srv-box:hover { border-color: #3d3630; }
+.srv-box-header { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; cursor: pointer; user-select: none; transition: background 0.15s; }
+.srv-box-header:hover { background: rgba(255,255,255,0.02); }
+.srv-box-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; flex-shrink: 0; }
+.srv-box-name { font-size: 0.8125rem; font-weight: 600; color: #e8e3db; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.srv-box-status { font-size: 0.6875rem; font-weight: 500; flex-shrink: 0; }
+.srv-box-meta { display: flex; align-items: center; gap: 0.75rem; font-size: 0.6875rem; color: #7a746c; flex-shrink: 0; }
+.srv-box-toggle { color: #5c574f; transition: transform 0.2s, color 0.15s; flex-shrink: 0; }
+.srv-box-header:hover .srv-box-toggle { color: #c8c2b8; }
+.srv-box-toggle.collapsed { transform: rotate(-90deg); }
+.srv-box-body { border-top: 1px solid rgba(48,42,37,0.5); }
+.srv-box-body.collapsed { display: none; }
+.srv-box-body .srv-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 0.5rem; padding: 0.75rem 1rem; }
+.srv-box-body .srv-stat { text-align: center; }
+.srv-box-body .srv-stat-label { font-size: 0.5625rem; color: #5c574f; text-transform: uppercase; letter-spacing: 0.04em; }
+.srv-box-body .srv-stat-value { font-size: 0.9375rem; font-weight: 600; color: #e8e3db; }
+.srv-box-body .srv-section { padding: 0.75rem 1rem; border-top: 1px solid rgba(48,42,37,0.3); }
+.srv-box-body .srv-section-title { font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.05em; color: #5c574f; font-weight: 600; margin-bottom: 0.5rem; }
+.srv-box-body .srv-feeds { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; padding: 0.75rem 1rem; border-top: 1px solid rgba(48,42,37,0.3); }
+.srv-box-body .srv-feed { min-height: 0; }
+.srv-box-body .srv-feed-title { font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.05em; color: #5c574f; font-weight: 600; margin-bottom: 0.375rem; }
+.srv-box-body .srv-feed-content { max-height: 200px; overflow-y: auto; }
+
+/* Dashboard grid adapts to multi-server */
+.dash-multi-grid { display: flex; flex-direction: column; gap: 0.75rem; }
+
+@media (max-width: 640px) {
+  .srv-box-body .srv-feeds { grid-template-columns: 1fr; }
+  .srv-box-body .srv-stats { grid-template-columns: repeat(2, 1fr); }
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .stat-card { padding: 0.625rem; }
   .stat-value { font-size: 0.9375rem; }
   #map-sidebar { display: none; }
+  .server-bar { flex-wrap: wrap; }
 }
 
