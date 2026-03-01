@@ -215,6 +215,7 @@ class SaveService extends EventEmitter {
       agentDeployed: this._agentDeployed,
       agentCapable: this._agentCapable,
       panelCapable: this._panelCapable,
+      panelFileApi: this._hasPanelApi(),
       trigger: this._resolvedTrigger || this._agentTrigger,
     };
   }
@@ -404,7 +405,7 @@ class SaveService extends EventEmitter {
   }
 
   /**
-   * Direct mode: download full .sav via SFTP (or local), parse, sync.
+   * Direct mode: download full .sav via SFTP, Panel File API, or local file, then parse and sync.
    */
   async _pollDirect(force) {
     let buf = null;
@@ -417,6 +418,11 @@ class SaveService extends EventEmitter {
       }
     } else if (this._sftpConfig && this._savePath) {
       const result = await this._readSftp(force);
+      buf = result.saveBuf;
+      clanBuf = result.clanBuf;
+    } else if (this._hasPanelApi() && this._savePath) {
+      // No SFTP credentials — try Panel File API (Bisect Hosting, etc.)
+      const result = await this._readPanelApi(force);
       buf = result.saveBuf;
       clanBuf = result.clanBuf;
     }
@@ -631,15 +637,137 @@ class SaveService extends EventEmitter {
   }
 
   /**
-   * Read the agent's JSON cache file from SFTP.
+   * Check if the Panel File API is available for downloading files.
+   * Lazy-loads panel-api if not injected.
+   */
+  _hasPanelApi() {
+    if (this._panelApi) return this._panelApi.available !== false;
+    try {
+      this._panelApi = require('../server/panel-api');
+      return !!this._panelApi.available;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Read save file via Panel File API (Pterodactyl hosts like Bisect).
+   *
+   * Uses the Panel API file list to check mtime (avoiding unnecessary
+   * downloads), then downloads the save as a binary buffer via a signed URL.
+   *
+   * This is the fallback when SFTP isn't configured but the Panel API is.
+   * @param {boolean} force - Skip mtime check and always download
+   * @returns {Promise<{saveBuf: Buffer|null, clanBuf: Buffer|null}>}
+   */
+  async _readPanelApi(force) {
+    const api = this._panelApi;
+    if (!api || !api.available) {
+      throw new Error('Panel API not available');
+    }
+
+    // Check mtime via file list to avoid downloading unchanged files
+    const saveDir = this._savePath.replace(/[/\\][^/\\]+$/, '') || '/';
+    const saveFilename = this._savePath.split(/[/\\]/).pop();
+
+    if (!force) {
+      try {
+        const files = await api.listFiles(saveDir);
+        const saveFile = files.find(f => f.name === saveFilename);
+        if (saveFile && saveFile.modified_at) {
+          const mtime = new Date(saveFile.modified_at).getTime();
+          if (this._lastMtime && mtime === this._lastMtime) {
+            return { saveBuf: null, clanBuf: null };
+          }
+          // Store mtime for next check — set BEFORE download so a failed
+          // download doesn't cause an infinite retry loop
+          this._lastMtime = mtime;
+        }
+      } catch (err) {
+        console.warn(`[${this._label}] Panel file list failed (will download anyway):`, err.message);
+      }
+    }
+
+    console.log(`[${this._label}] Downloading save file via Panel API (direct mode)...`);
+    const saveBuf = await api.downloadFile(this._savePath);
+    if (!saveBuf || saveBuf.length === 0) {
+      throw new Error('Empty save file downloaded from Panel API');
+    }
+
+    // Update mtime after successful download if force was used
+    if (force) {
+      try {
+        const files = await api.listFiles(saveDir);
+        const saveFile = files.find(f => f.name === saveFilename);
+        if (saveFile && saveFile.modified_at) {
+          this._lastMtime = new Date(saveFile.modified_at).getTime();
+        }
+      } catch { /* non-critical */ }
+    }
+
+    // Try to download clan save too
+    let clanBuf = null;
+    if (this._clanSavePath) {
+      try {
+        const clanDir = this._clanSavePath.replace(/[/\\][^/\\]+$/, '') || '/';
+        const clanFilename = this._clanSavePath.split(/[/\\]/).pop();
+
+        let shouldDownload = true;
+        if (!force) {
+          try {
+            const clanFiles = await api.listFiles(clanDir);
+            const clanFile = clanFiles.find(f => f.name === clanFilename);
+            if (clanFile && clanFile.modified_at) {
+              const mtime = new Date(clanFile.modified_at).getTime();
+              if (this._lastClanMtime && mtime === this._lastClanMtime) {
+                shouldDownload = false;
+              } else {
+                this._lastClanMtime = mtime;
+              }
+            }
+          } catch { /* download anyway */ }
+        }
+
+        if (shouldDownload) {
+          clanBuf = await api.downloadFile(this._clanSavePath);
+        }
+      } catch {
+        // Clan file may not exist — that's fine
+      }
+    }
+
+    const sizeMB = (saveBuf.length / 1024 / 1024).toFixed(2);
+    console.log(`[${this._label}] Downloaded ${sizeMB}MB save via Panel API`);
+    return { saveBuf, clanBuf };
+  }
+
+  /**
+   * Read the agent's JSON cache file from SFTP or Panel File API.
    * Returns the parsed cache object if the cache is fresh, or null.
    */
   async _readCacheFromSftp(force) {
-    if (!this._sftpConfig || !this._cachePath) return null;
+    // Try SFTP first (preferred — faster, no URL signing overhead)
+    if (this._sftpConfig && this._cachePath) {
+      const result = await this._readCacheViaSftp(force);
+      if (result !== undefined) return result; // null = no changes, object = cache data
+    }
 
+    // Fallback to Panel File API
+    if (this._hasPanelApi() && this._cachePath) {
+      return this._readCacheViaPanelApi(force);
+    }
+
+    return null;
+  }
+
+  /**
+   * Read cache file via SFTP.
+   * @returns {Promise<object|null|undefined>} cache object, null (no changes), or undefined (SFTP not available)
+   */
+  async _readCacheViaSftp(force) {
     let SFTPClient;
     try { SFTPClient = require('ssh2-sftp-client'); }
-    catch { return null; }
+    catch { return undefined; }
 
     const sftp = new SFTPClient();
     try {
@@ -661,25 +789,102 @@ class SaveService extends EventEmitter {
       const buf = await sftp.get(this._cachePath);
       const json = buf.toString('utf-8');
 
-      let cache;
-      try { cache = JSON.parse(json); }
-      catch (err) { console.warn(`[${this._label}] Invalid cache JSON: ${err.message}`); return null; }
-
-      // Validate cache version — accept any v >= 1 for forward-compatibility
-      // (host-managed agents may lag behind the bot's version)
-      if (!cache || typeof cache.v !== 'number' || cache.v < 1) {
-        console.warn(`[${this._label}] Invalid or missing cache version (got ${cache?.v})`);
-        return null;
-      }
-
-      this._lastCacheMtime = mtime;
-      const sizeMB = (json.length / 1024 / 1024).toFixed(2);
-      console.log(`[${this._label}] Downloaded cache: ${sizeMB}MB (${Object.keys(cache.players || {}).length} players)`);
-
-      return cache;
+      return this._parseCache(json, mtime);
     } finally {
       sftp.end();
     }
+  }
+
+  /**
+   * Read cache file via Panel File API.
+   * @returns {Promise<object|null>} cache object or null
+   */
+  async _readCacheViaPanelApi(force) {
+    const api = this._panelApi;
+    if (!api || !api.available) return null;
+
+    try {
+      // Check mtime via file list
+      const cacheDir = this._cachePath.replace(/[/\\][^/\\]+$/, '') || '/';
+      const cacheFilename = this._cachePath.split(/[/\\]/).pop();
+
+      const files = await api.listFiles(cacheDir);
+      const cacheFile = files.find(f => f.name === cacheFilename);
+      if (!cacheFile) return null;
+
+      const mtime = cacheFile.modified_at ? new Date(cacheFile.modified_at).getTime() : null;
+      if (!force && mtime && this._lastCacheMtime && mtime === this._lastCacheMtime) {
+        return null;
+      }
+
+      // Cache files are small text JSON — use readFile (text) instead of downloadFile (binary)
+      const json = await api.readFile(this._cachePath);
+      return this._parseCache(json, mtime);
+    } catch (err) {
+      console.warn(`[${this._label}] Panel cache read failed:`, err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Parse and validate a cache JSON string.
+   * @returns {object|null} Parsed cache object or null on invalid data
+   */
+  _parseCache(json, mtime) {
+    let cache;
+    try { cache = JSON.parse(json); }
+    catch (err) { console.warn(`[${this._label}] Invalid cache JSON: ${err.message}`); return null; }
+
+    // Validate cache version — accept any v >= 1 for forward-compatibility
+    if (!cache || typeof cache.v !== 'number' || cache.v < 1) {
+      console.warn(`[${this._label}] Invalid or missing cache version (got ${cache?.v})`);
+      return null;
+    }
+
+    if (mtime) this._lastCacheMtime = mtime;
+    const sizeMB = (json.length / 1024 / 1024).toFixed(2);
+    console.log(`[${this._label}] Downloaded cache: ${sizeMB}MB (${Object.keys(cache.players || {}).length} players)`);
+
+    return cache;
+  }
+
+  /**
+   * Fetch clan save data via SFTP or Panel API.
+   * Used by _syncFromCache when clan save path is set.
+   * @returns {Promise<Array>} Parsed clan data or empty array
+   */
+  async _fetchClanData() {
+    // Try SFTP first
+    if (this._sftpConfig) {
+      let SFTPClient;
+      try { SFTPClient = require('ssh2-sftp-client'); } catch { /* ignore */ }
+      if (SFTPClient) {
+        const sftp = new SFTPClient();
+        try {
+          await sftp.connect(this._sftpConfig);
+          const clanStat = await sftp.stat(this._clanSavePath);
+          if (!this._lastClanMtime || clanStat.modifyTime !== this._lastClanMtime) {
+            const clanBuf = await sftp.get(this._clanSavePath);
+            this._lastClanMtime = clanStat.modifyTime;
+            return parseClanData(clanBuf);
+          }
+        } catch { /* Clan file may not exist */ }
+        finally { try { await sftp.end(); } catch { /* ignore */ } }
+        return [];
+      }
+    }
+
+    // Fallback to Panel File API
+    if (this._hasPanelApi()) {
+      try {
+        const clanBuf = await this._panelApi.downloadFile(this._clanSavePath);
+        if (clanBuf && clanBuf.length > 0) {
+          return parseClanData(clanBuf);
+        }
+      } catch { /* Clan file may not exist */ }
+    }
+
+    return [];
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -710,24 +915,10 @@ class SaveService extends EventEmitter {
       horses: cache.horses || [],
     };
 
-    // Agent cache doesn't include clan data — fetch it separately via SFTP
+    // Agent cache doesn't include clan data — fetch it separately via SFTP or Panel API
     let clans = [];
-    if (this._clanSavePath && this._sftpConfig) {
-      let SFTPClient;
-      try { SFTPClient = require('ssh2-sftp-client'); } catch { /* ignore */ }
-      if (SFTPClient) {
-        const sftp = new SFTPClient();
-        try {
-          await sftp.connect(this._sftpConfig);
-          const clanStat = await sftp.stat(this._clanSavePath);
-          if (!this._lastClanMtime || clanStat.modifyTime !== this._lastClanMtime) {
-            const clanBuf = await sftp.get(this._clanSavePath);
-            this._lastClanMtime = clanStat.modifyTime;
-            clans = parseClanData(clanBuf);
-          }
-        } catch { /* Clan file may not exist */ }
-        finally { try { await sftp.end(); } catch { /* ignore */ } }
-      }
+    if (this._clanSavePath) {
+      clans = await this._fetchClanData();
     }
 
     await this._syncParsedData(parsed, clans);
