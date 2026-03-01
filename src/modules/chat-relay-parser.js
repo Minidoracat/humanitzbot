@@ -12,7 +12,8 @@
 // Game update (March 2026) added timestamps to fetchchat output:
 //   [1/3/2,026 - 15:5] Player Joined (<PN>fabien</>)
 // The format is [D/M/Y,YYY - H:M] — note the comma in the year.
-const TIMESTAMP_RE = /^\[\d{1,2}\/\d{1,2}\/[\d,]+ - \d{1,2}:\d{1,2}\]\s*/;
+// The game inconsistently adds spaces around the colon (e.g. "21: 45").
+const TIMESTAMP_RE = /^\[\d{1,2}\/\d{1,2}\/[\d,]+ ?- ?\d{1,2}\s*:\s*\d{1,2}\]\s*/;
 
 // ── Rich text tag stripping ─────────────────────────────────
 // Game uses UE4 rich text tags: <SP>, <FO>, <PR>, <CL>, <PN>, </>

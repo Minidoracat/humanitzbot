@@ -474,10 +474,9 @@ for (const key of required) {
 config.needsSetup = !config.rconHost || !config.rconPassword || config.rconHost.startsWith('your_') || config.rconPassword.startsWith('your_');
 
 if (!config.panelChannelId) {
-  console.error('[CONFIG] PANEL_CHANNEL_ID is required.');
-  console.error('         The panel channel is the bot\'s admin dashboard — all configuration');
-  console.error('         and control flows through it. Set a channel ID in .env to continue.');
-  process.exit(1);
+  console.warn('[CONFIG] PANEL_CHANNEL_ID not set — panel channel will be disabled.');
+  console.warn('         The panel channel is the bot\'s admin dashboard. Set a channel ID in .env');
+  console.warn('         to enable the setup wizard, server controls, and settings editor.');
 }
 
 // ── Timezone-aware date helpers ─────────────────────────────
@@ -578,23 +577,25 @@ console.log(`[CONFIG] Timezone: ${config.botTimezone}, Log timezone: ${config.lo
 // Used by: log-watcher, player-stats-channel, pvp-scheduler, multi-server
 
 config.sftpConnectConfig = function () {
+  // Use 'this' so multi-server merged configs resolve their own SFTP settings
+  const self = this && this.ftpHost ? this : config;
   const cfg = {
-    host: config.ftpHost,
-    port: config.ftpPort,
-    username: config.ftpUser,
+    host: self.ftpHost,
+    port: self.ftpPort,
+    username: self.ftpUser,
   };
-  if (config.ftpPrivateKeyPath) {
+  if (self.ftpPrivateKeyPath) {
     try {
-      cfg.privateKey = _cfgFs.readFileSync(config.ftpPrivateKeyPath);
+      cfg.privateKey = _cfgFs.readFileSync(self.ftpPrivateKeyPath);
       // If a password is also set, use it as the passphrase for the key
-      if (config.ftpPassword) cfg.passphrase = config.ftpPassword;
+      if (self.ftpPassword) cfg.passphrase = self.ftpPassword;
     } catch (err) {
-      console.error(`[CONFIG] Could not read SSH private key at ${config.ftpPrivateKeyPath}:`, err.message);
+      console.error(`[CONFIG] Could not read SSH private key at ${self.ftpPrivateKeyPath}:`, err.message);
       // Fall back to password auth
-      cfg.password = config.ftpPassword;
+      cfg.password = self.ftpPassword;
     }
   } else {
-    cfg.password = config.ftpPassword;
+    cfg.password = self.ftpPassword;
   }
   return cfg;
 };

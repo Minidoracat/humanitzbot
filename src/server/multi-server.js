@@ -198,7 +198,9 @@ function createServerConfig(serverDef) {
     if (serverDef.sftp.port) merged.ftpPort = serverDef.sftp.port;
     if (serverDef.sftp.user) merged.ftpUser = serverDef.sftp.user;
     if (serverDef.sftp.password) merged.ftpPassword = serverDef.sftp.password;
-    if (serverDef.sftp.privateKeyPath) merged.ftpPrivateKeyPath = serverDef.sftp.privateKeyPath;
+    // Explicitly set privateKeyPath — if not provided, clear it so the merged
+    // config doesn't inherit the primary server's SSH key via prototype chain
+    merged.ftpPrivateKeyPath = serverDef.sftp.privateKeyPath || '';
   }
 
   // SFTP paths (falls back to primary defaults)
@@ -227,17 +229,22 @@ function createServerConfig(serverDef) {
   if (serverDef.botTimezone) merged.botTimezone = serverDef.botTimezone;
   if (serverDef.logTimezone) merged.logTimezone = serverDef.logTimezone;
 
-  // Docker container name (for restart commands)
-  if (serverDef.dockerContainer) merged.dockerContainer = serverDef.dockerContainer;
+  // Docker container name (for restart commands) — explicit to prevent
+  // inheriting primary's container name and accidentally restarting it
+  merged.dockerContainer = serverDef.dockerContainer || '';
 
-  // Server scheduler overrides
-  if (serverDef.restartTimes) merged.restartTimes = serverDef.restartTimes;
-  if (serverDef.restartProfiles) merged.restartProfiles = serverDef.restartProfiles;
-  if (serverDef.restartProfileSettings) merged.restartProfileSettings = serverDef.restartProfileSettings;
-  if (serverDef.enableServerScheduler !== undefined) merged.enableServerScheduler = serverDef.enableServerScheduler;
+  // Server scheduler overrides — explicitly break prototype chain so managed
+  // servers don't inherit the primary server's schedule by default
+  merged.restartTimes = serverDef.restartTimes || null;
+  merged.restartProfiles = serverDef.restartProfiles || null;
+  merged.restartProfileSettings = serverDef.restartProfileSettings || null;
+  merged.enableServerScheduler = serverDef.enableServerScheduler ?? false;
 
-  // PvP settings overrides (applied when PvP turns on, e.g. OnDeath=2)
-  if (serverDef.pvpSettingsOverrides) merged.pvpSettingsOverrides = serverDef.pvpSettingsOverrides;
+  // PvP overrides — same pattern: don't inherit primary's PvP config
+  merged.pvpSettingsOverrides = serverDef.pvpSettingsOverrides || null;
+  merged.pvpStartMinutes = serverDef.pvpStartMinutes ?? null;
+  merged.pvpEndMinutes = serverDef.pvpEndMinutes ?? null;
+  merged.pvpDayHours = serverDef.pvpDayHours || null;
 
   // Auto-message overrides (per-server welcome + broadcast config)
   const am = serverDef.autoMessages;

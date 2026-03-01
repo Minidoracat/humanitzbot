@@ -441,6 +441,9 @@ client.once(Events.ClientReady, async (readyClient) => {
       await panelChannel.start();
     } else {
       console.error('[BOT] Cannot start setup wizard — PANEL_CHANNEL_ID not set.');
+      console.error('      Set PANEL_CHANNEL_ID in .env to a text channel ID where the bot has');
+      console.error('      Send Messages + Manage Messages permissions, then restart the bot.');
+      console.error('      The setup wizard will guide you through configuring RCON and SFTP.');
     }
   } else {
 
