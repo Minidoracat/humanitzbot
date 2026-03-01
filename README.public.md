@@ -19,11 +19,17 @@
   <img src="https://img.shields.io/badge/Tests-1058_passing-brightgreen" alt="Tests" />
 </p>
 
-## Support
+<p align="center">
+  Want to support the project?
+  <br />
+  <a href="https://buymeacoffee.com/qszuq">
+    <img src="https://img.shields.io/badge/%E2%80%8B-Buy_Me_a_Coffee-FF6D00?logo=buymeacoffee&logoColor=white" alt="Buy Me a Coffee" />
+  </a>
+</p>
 
-If this project is useful to you, consider [buying me a coffee](https://buymeacoffee.com/qszuq).
-
----
+<p align="center">
+  <a href="https://play.qs-zuq.com/"><strong>🌐 Live Demo</strong></a>
+</p>
 
 ## What It Does
 
