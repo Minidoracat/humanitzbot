@@ -259,6 +259,7 @@ const config = {
   restartDelay: parseInt(process.env.RESTART_DELAY, 10) || 10, // countdown minutes before restart
   restartRotateDaily: envBool('RESTART_ROTATE_DAILY', true), // shift profile order each day
   dockerContainer: process.env.DOCKER_CONTAINER || '',    // Docker container name for restart commands
+  serverNameTemplate: process.env.SERVER_NAME_TEMPLATE || '', // e.g. "[EU1] My Server PVE | Current Mode: {mode} | Dynamic Difficulty"
 
   // Activity log — tracks item movements, horse changes, world events from save diffs
   enableActivityLog: envBool('ENABLE_ACTIVITY_LOG', true),

@@ -24,19 +24,22 @@ const { EmbedBuilder } = require('discord.js');
 const SftpClient = require('ssh2-sftp-client');
 const _defaultConfig = require('../config');
 const _defaultRcon = require('../rcon/rcon');
+const _defaultPanelApi = require('../server/panel-api');
 const { getDayOffset, getRotatedProfileIndex, getTodaySchedule } = require('./schedule-utils');
 const { buildWelcomeContent } = require('./auto-messages');
 
 const WARNINGS = [10, 5, 3, 2, 1]; // countdown warnings in minutes
 
 // Profile name → RCON color tag for in-game messages
-const PROFILE_COLORS = { calm: 'PR', surge: 'SP', horde: 'PN' };
+// NOTE: Never use PN — that's the player name tag, chat parser treats it specially
+const PROFILE_COLORS = { calm: 'PR', surge: 'SP', horde: 'CL' };
 function profileTag(name) { return PROFILE_COLORS[name] || 'FO'; }
 
 class ServerScheduler {
   constructor(client, logWatcher, deps = {}) {
     this._config = deps.config || _defaultConfig;
     this._rcon = deps.rcon || _defaultRcon;
+    this._panelApi = deps.panelApi || _defaultPanelApi;
     this._label = deps.label || 'SCHEDULER';
     this._client = client;
     this._logWatcher = logWatcher || null;
@@ -240,9 +243,7 @@ class ServerScheduler {
         msg += ` \u2014 switching to ${display}`;
         const tag = profileTag(profileName);
         const { name: pName, desc: pDesc } = this._getProfileParts(profileName);
-        rconMsg = `</><FO>Server restart in ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''} \u2014 switching to </><${tag}>${pName}</><FO>${pDesc}<FO>`;
-      } else {
-        rconMsg += '<FO>';
+        rconMsg = `</><FO>Server restart in ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''} \u2014 switching to </><${tag}>${pName}</><FO>${pDesc}`;
       }
 
       this._announce(msg, 0xf39c12);
@@ -369,9 +370,22 @@ class ServerScheduler {
     const msg = `Server restarting \u2014 ${displayName}`;
     const tag = profileTag(profileName);
     const { name: pName, desc: pDesc } = this._getProfileParts(profileName);
-    const rconMsg = `</><FO>Server restarting \u2014 </><${tag}>${pName}</><FO>${pDesc}<FO>`;
+    const rconMsg = `</><FO>Server restarting \u2014 </><${tag}>${pName}</><FO>${pDesc}`;
     this._announce(msg, 0x3498db);
     await this._rcon.send(`admin ${rconMsg}`).catch(() => {});
+
+    // Update server name via Panel API (Bisect/Pterodactyl overrides INI with
+    // the -steamservername= command-line arg, so SFTP writes don't affect it)
+    if (this._panelApi.available && this._config.serverNameTemplate) {
+      try {
+        const capName = profileName.charAt(0).toUpperCase() + profileName.slice(1);
+        const serverName = this._config.serverNameTemplate.replace('{mode}', capName);
+        await this._panelApi.updateStartupVariable('SERVER_NAME', serverName);
+        console.log(`[${this._label}] Panel API: SERVER_NAME → ${serverName}`);
+      } catch (err) {
+        console.warn(`[${this._label}] Panel API server name update failed:`, err.message);
+      }
+    }
 
     // Write WelcomeMessage.txt before restart so the game reads fresh content on boot
     if (this._config.enableWelcomeFile && this._config.ftpHost) {
@@ -431,7 +445,18 @@ class ServerScheduler {
       }
     }
 
-    // Fallback: RCON restart (non-Docker setups, or if Docker failed)
+    // Fallback: Panel API restart (Bisect/Pterodactyl — no Docker needed)
+    if (!restartSucceeded && this._panelApi.available) {
+      try {
+        await this._panelApi.sendPowerAction('restart');
+        console.log(`[${this._label}] Restart via Panel API`);
+        restartSucceeded = true;
+      } catch (err) {
+        console.warn(`[${this._label}] Panel API restart failed:`, err.message);
+      }
+    }
+
+    // Fallback: RCON restart (non-Docker, non-Panel setups, or if above failed)
     if (!restartSucceeded) {
       try {
         await this._rcon.send('RestartNow');
@@ -455,10 +480,8 @@ class ServerScheduler {
 
       // Post-restart RCON health check — if RCON doesn't reconnect within 90s,
       // the game server likely failed to bind the RCON port.
-      // Trigger a LinuxGSM restart (or docker stop+start) to recover.
-      if (container) {
-        this._scheduleRconHealthCheck(container);
-      }
+      // Trigger a recovery restart via Docker, Panel API, or RCON.
+      this._scheduleRconHealthCheck(container);
     }
 
     this._transitioning = false;
@@ -488,7 +511,7 @@ class ServerScheduler {
   /**
    * After a restart, poll RCON connectivity for up to 90s.
    * If RCON doesn't come back, the game server likely failed to bind the port.
-   * Trigger a LinuxGSM restart (or docker stop+start fallback) to recover.
+   * Trigger a recovery restart via Docker, Panel API, or RCON.
    */
   _scheduleRconHealthCheck(container) {
     const checkInterval = 10_000; // check every 10s
@@ -508,23 +531,39 @@ class ServerScheduler {
       if (Date.now() - start >= maxWait) {
         clearInterval(timer);
         console.warn(`[${this._label}] RCON health check FAILED — no connection after ${maxWait / 1000}s, restarting game process`);
-        try {
-          const { exec } = require('child_process');
-          // Try LinuxGSM first, fall back to docker stop+start
-          await new Promise((resolve, reject) => {
-            exec(`docker exec -u linuxgsm ${container} /app/hzserver restart`, { timeout: 120000 }, (err) => {
-              if (err) {
-                // Fallback: full container stop+start
-                exec(`docker stop ${container} && docker start ${container}`, { timeout: 120000 }, (err2) => {
-                  if (err2) reject(err2); else resolve();
-                });
-              } else resolve();
+
+        // Try Docker first (if configured)
+        if (container) {
+          try {
+            const { exec } = require('child_process');
+            await new Promise((resolve, reject) => {
+              exec(`docker exec -u linuxgsm ${container} /app/hzserver restart`, { timeout: 120000 }, (err) => {
+                if (err) {
+                  exec(`docker stop ${container} && docker start ${container}`, { timeout: 120000 }, (err2) => {
+                    if (err2) reject(err2); else resolve();
+                  });
+                } else resolve();
+              });
             });
-          });
-          console.log(`[${this._label}] Recovery restart sent (${container})`);
-        } catch (err) {
-          console.error(`[${this._label}] Recovery restart failed:`, err.message);
+            console.log(`[${this._label}] Recovery restart sent (${container})`);
+            return;
+          } catch (err) {
+            console.error(`[${this._label}] Docker recovery restart failed:`, err.message);
+          }
         }
+
+        // Try Panel API (Bisect/Pterodactyl)
+        if (this._panelApi.available) {
+          try {
+            await this._panelApi.sendPowerAction('restart');
+            console.log(`[${this._label}] Recovery restart sent via Panel API`);
+            return;
+          } catch (err) {
+            console.error(`[${this._label}] Panel API recovery restart failed:`, err.message);
+          }
+        }
+
+        console.error(`[${this._label}] All recovery restart methods exhausted`);
       }
     }, checkInterval);
   }
