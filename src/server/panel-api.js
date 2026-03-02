@@ -365,6 +365,23 @@ async function deleteSchedule(scheduleId) {
   await _request(`schedules/${scheduleId}`, { method: 'DELETE' });
 }
 
+// ── Startup variables ───────────────────────────────────────
+
+/**
+ * Update a startup variable (e.g. SERVER_NAME, MAX_PLAYERS).
+ * Bisect/Pterodactyl passes these as command-line args, overriding INI values.
+ * @param {string} key - Environment variable name (e.g. 'SERVER_NAME')
+ * @param {string} value - New value
+ * @returns {Promise<object>} Updated variable attributes
+ */
+async function updateStartupVariable(key, value) {
+  const data = await _request('startup/variable', {
+    method: 'PUT',
+    body: JSON.stringify({ key, value }),
+  });
+  return data?.attributes || data || {};
+}
+
 // ── Singleton class ─────────────────────────────────────────
 
 class PanelApi {
@@ -404,6 +421,7 @@ class PanelApi {
   listSchedules = listSchedules;
   createSchedule = createSchedule;
   deleteSchedule = deleteSchedule;
+  updateStartupVariable = updateStartupVariable;
 }
 
 // ── Per-server instance factory ─────────────────────────────
