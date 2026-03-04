@@ -40,6 +40,8 @@ const { writeAgent } = require('./parsers/agent-builder');
 const WebMapServer = require('./web-map/server');
 const SnapshotService = require('./tracking/snapshot-service');
 const StdinConsole = require('./stdin-console');
+let hzmodWebPlugin;
+try { hzmodWebPlugin = require('./modules/howyagarn/web-plugin'); } catch { /* optional module */ }
 
 // ── Create Discord client ───────────────────────────────────
 const intents = [
@@ -81,7 +83,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const handled = await panelChannel.handleInteraction(interaction);
         if (handled) return;
       } catch (err) {
-        console.error('[BOT] Panel interaction error:', err.message);
+        const cid = interaction.customId || interaction.commandName || 'unknown';
+        console.error(`[BOT] Panel interaction error [${cid}]:`, err.message);
+        console.error(err.stack);
       }
     }
   }
@@ -169,6 +173,7 @@ let serverScheduler;
 let panelChannel;
 let multiServerManager;
 let webMapServer;  // Web map server instance
+let hzmodPlugin;   // Howyagarn web plugin result (for cleanup)
 let db;            // HumanitZDB instance
 let saveService;   // SaveService instance
 let playtimeFlushTimer; // periodic playtime → DB flush
@@ -177,7 +182,7 @@ let activityLog;   // ActivityLog instance
 let milestoneTracker; // MilestoneTracker instance
 let recapService;     // RecapService instance
 let anticheatIntegration; // AnticheatIntegration instance
-let adminChannel;  // cached for online/offline notifications
+// Bot lifecycle embeds (online/offline) go to panel channel — game server status goes to activity thread
 let stdinConsole;  // interactive stdin console for headless hosts
 const startedAt = new Date();
 
@@ -268,15 +273,6 @@ client.once(Events.ClientReady, async (readyClient) => {
   // ── RCON lifecycle events — log game server restarts ──
   rcon.on('disconnect', ({ reason }) => {
     console.log(`[BOT] Game server disconnected: ${reason}`);
-    if (adminChannel) {
-      const embed = new EmbedBuilder()
-        .setTitle('🟡 Game Server Disconnected')
-        .setDescription(reason || 'RCON connection lost')
-        .setColor(0xf39c12)
-        .setTimestamp();
-      adminChannel.send({ embeds: [embed] }).catch(() => {});
-    }
-    // Also post to activity thread if available
     if (logWatcher) {
       const embed = new EmbedBuilder()
         .setDescription('🟡 Game server disconnected — RCON connection lost')
@@ -288,14 +284,6 @@ client.once(Events.ClientReady, async (readyClient) => {
   rcon.on('reconnect', ({ downtime }) => {
     const downtimeStr = downtime ? _formatUptime(downtime) : 'unknown';
     console.log(`[BOT] Game server reconnected (downtime: ${downtimeStr})`);
-    if (adminChannel) {
-      const embed = new EmbedBuilder()
-        .setTitle('🟢 Game Server Reconnected')
-        .setDescription(`RCON connection restored after ${downtimeStr} downtime.`)
-        .setColor(0x2ecc71)
-        .setTimestamp();
-      adminChannel.send({ embeds: [embed] }).catch(() => {});
-    }
     if (logWatcher) {
       const embed = new EmbedBuilder()
         .setDescription(`🟢 Game server reconnected (downtime: ${downtimeStr})`)
@@ -334,6 +322,32 @@ client.once(Events.ClientReady, async (readyClient) => {
     writeAgent();
   } catch (err) {
     console.warn('[BOT] Could not generate humanitz-agent.js:', err.message);
+  }
+
+  // ── Web panel — start EARLY so it's reachable while modules initialise ──
+  const webMapPort = parseInt(process.env.WEB_MAP_PORT, 10);
+  if (webMapPort) {
+    if (!config.discordClientSecret && !process.env.WEB_PANEL_ALLOW_NO_AUTH) {
+      setStatus('WebMap', '⚠️ Requires Discord OAuth (set DISCORD_OAUTH_SECRET + WEB_MAP_CALLBACK_URL)');
+      console.warn('[BOT] Web panel requires Discord OAuth — set DISCORD_OAUTH_SECRET and WEB_MAP_CALLBACK_URL in .env');
+      console.warn('[BOT] To run without auth (dev only), set WEB_PANEL_ALLOW_NO_AUTH=true');
+    } else {
+      try {
+        if (!config.discordClientSecret) {
+          console.warn('[BOT] Web panel starting WITHOUT Discord OAuth — all routes unprotected (dev mode)');
+        }
+        webMapServer = new WebMapServer(readyClient, { db });
+        await webMapServer.start();
+        setStatus('WebMap', `🟢 Running on http://localhost:${webMapPort}`);
+        console.log(`[BOT] Web panel started: http://localhost:${webMapPort}`);
+      } catch (err) {
+        setStatus('WebMap', `⚠️ Failed to start: ${err.message}`);
+        console.error('[BOT] Web panel failed to start:', err.message);
+      }
+    }
+  } else {
+    setStatus('WebMap', '⚫ Disabled (no WEB_MAP_PORT)');
+    console.log('[BOT] Web panel disabled — set WEB_MAP_PORT in .env to enable');
   }
 
   // ── Wipe saved message IDs on FIRST_RUN ──
@@ -606,6 +620,7 @@ client.once(Events.ClientReady, async (readyClient) => {
       console.error('[BOT] Save service error:', err.message);
     });
     await saveService.start();
+    if (webMapServer) webMapServer.setSaveService(saveService);
     const saveSource = hasFtp() ? '' : ' via Panel API';
     setStatus('Save Service', `🟢 Active (${saveService.stats.mode} mode${saveSource})`);
 
@@ -795,6 +810,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     } else {
       serverScheduler = new ServerScheduler(readyClient, logWatcher);
       await serverScheduler.start();
+      if (webMapServer) webMapServer.setScheduler(serverScheduler);
       const status = serverScheduler.getStatus();
       const profileInfo = status.profiles.length > 1 ? ` (${status.profiles.join(' → ')})` : '';
       setStatus('Server Scheduler', `🟢 Active — ${status.restartTimes.join(', ')}${profileInfo}`);
@@ -809,6 +825,17 @@ client.once(Events.ClientReady, async (readyClient) => {
     // Multi-server manager (before panel, so panel can reference it)
     multiServerManager = new MultiServerManager(readyClient);
     await multiServerManager.startAll();
+    if (webMapServer) {
+      webMapServer.setMultiServerManager(multiServerManager);
+      // Register hzmod web plugin now that multiServerManager is available
+      if (hzmodWebPlugin) {
+        try {
+          hzmodPlugin = hzmodWebPlugin.register(webMapServer, config);
+        } catch (err) {
+          console.error('[BOT] hzmod plugin registration failed:', err.message);
+        }
+      }
+    }
 
     if (config.panelChannelId) {
       panelChannel = new PanelChannel(readyClient, { moduleStatus, startedAt, multiServerManager, db, saveService, logWatcher });
@@ -832,32 +859,6 @@ client.once(Events.ClientReady, async (readyClient) => {
 
   } // end of !config.needsSetup block
 
-  // ── Web map server ──────────────────────────────────────────
-  const webMapPort = parseInt(process.env.WEB_MAP_PORT, 10);
-  if (webMapPort) {
-    if (!config.discordClientSecret && !process.env.WEB_PANEL_ALLOW_NO_AUTH) {
-      setStatus('WebMap', '⚠️ Requires Discord OAuth (set DISCORD_OAUTH_SECRET + WEB_MAP_CALLBACK_URL)');
-      console.warn('[BOT] Web panel requires Discord OAuth — set DISCORD_OAUTH_SECRET and WEB_MAP_CALLBACK_URL in .env');
-      console.warn('[BOT] To run without auth (dev only), set WEB_PANEL_ALLOW_NO_AUTH=true');
-    } else {
-      try {
-        if (!config.discordClientSecret) {
-          console.warn('[BOT] Web panel starting WITHOUT Discord OAuth — all routes unprotected (dev mode)');
-        }
-        webMapServer = new WebMapServer(readyClient, { db, scheduler: serverScheduler, saveService, multiServerManager });
-        await webMapServer.start();
-        setStatus('WebMap', `🟢 Running on http://localhost:${webMapPort}`);
-        console.log(`[BOT] Web panel started: http://localhost:${webMapPort}`);
-      } catch (err) {
-        setStatus('WebMap', `⚠️ Failed to start: ${err.message}`);
-        console.error('[BOT] Web panel failed to start:', err.message);
-      }
-    }
-  } else {
-    setStatus('WebMap', '⚫ Disabled (no WEB_MAP_PORT)');
-    console.log('[BOT] Web panel disabled — set WEB_MAP_PORT in .env to enable');
-  }
-
   // ── Stdin console (for headless hosts like Bisect) ──────────
   if (config.enableStdinConsole) {
     stdinConsole = new StdinConsole({ db, writable: config.stdinConsoleWritable });
@@ -866,79 +867,20 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.log(`[BOT] Stdin console active${config.stdinConsoleWritable ? ' (writable)' : ' (read-only)'}`);
   }
 
-  // ── Post online notification to admin channel ──
+  // ── Post online notification to panel channel (self-cleaning) ──
   try {
-    if (config.adminChannelId) {
-      adminChannel = await readyClient.channels.fetch(config.adminChannelId);
-    }
-
-    // Clean previous lifecycle embeds (Bot Online / Bot Offline) to prevent spam
-    if (adminChannel) {
-      await _cleanLifecycleEmbeds(adminChannel, readyClient).catch(() => {});
-    }
-
-    // Detect unclean shutdown: if the flag exists from a previous run,
-    // the bot crashed or was killed without running the shutdown handler.
-    const flagData = db ? db.getStateJSON('bot_running', null) : null;
-    if (adminChannel && flagData) {
-      try {
-        const lastStarted = flagData.startedAt ? new Date(flagData.startedAt) : null;
-        const uptime = lastStarted ? _formatUptime(Date.now() - lastStarted.getTime()) : 'unknown';
-        const offlineEmbed = new EmbedBuilder()
-          .setTitle('🔴 Bot Offline')
-          .setDescription('Unexpected shutdown (process was killed)')
-          .addFields(
-            { name: 'Uptime', value: uptime, inline: true },
-          )
-          .setColor(0xe74c3c)
-          .setTimestamp(lastStarted || new Date());
-        await adminChannel.send({ embeds: [offlineEmbed] }).catch(() => {});
-      } catch (_) { /* ignore parse errors */ }
-    }
-    // Write flag — removed on clean shutdown
+    // Write running flag — removed on clean shutdown (used to detect crashes)
     if (db) {
       try { db.setStateJSON('bot_running', { startedAt: startedAt.toISOString() }); } catch (_) {}
     }
 
-    // Build status lines grouped by state
-    const active   = [];
-    const disabled = [];
-    const skipped  = [];
-    for (const [name, status] of Object.entries(moduleStatus)) {
-      if (status.startsWith('🟢')) active.push(`🟢 ${name}`);
-      else if (status.startsWith('⚫')) disabled.push(`⚫ ${name}`);
-      else if (status.startsWith('🟡')) skipped.push(status.replace('🟡 Skipped', `🟡 ${name} — skipped`));
-    }
-
-    const statusLines = [];
-    if (active.length)   statusLines.push(active.join('\n'));
-    if (disabled.length) statusLines.push(disabled.join('\n'));
-    if (skipped.length)  statusLines.push(skipped.join('\n'));
-
-    const allGood = skipped.length === 0 && disabled.length === 0;
-    const description = allGood
-      ? 'All systems operational.'
-      : skipped.length > 0
-        ? 'Some modules were skipped due to missing configuration.'
-        : 'Running with selected modules.';
-
-    const embed = new EmbedBuilder()
-      .setTitle('🟢 Bot Online')
-      .setDescription(description)
-      .addFields(
-        { name: 'Module Status', value: statusLines.join('\n') || 'None', inline: false },
-      )
-      .setColor(0x2ecc71)
-      .setTimestamp();
-
-    // Post to admin channel only (not activity thread — keep threads for game events)
-    if (adminChannel) {
-      await adminChannel.send({ embeds: [embed] }).catch(err => {
-        console.error('[BOT] Could not post online notification:', err.message);
-      });
+    const panelCh = panelChannel?.channel;
+    if (panelCh) {
+      // Clean previous offline embeds — bot is back, no need to show old downtime notices
+      await _cleanOfflineEmbeds(panelCh, readyClient).catch(() => {});
     }
   } catch (err) {
-    console.error('[BOT] Failed to post online notification:', err.message);
+    console.error('[BOT] Failed to clean lifecycle embeds:', err.message);
   }
 
   // ── NUKE_BOT phase 2: rebuild activity threads from log history ──
@@ -1039,23 +981,21 @@ client.once(Events.ClientReady, async (readyClient) => {
 });
 
 // ── Lifecycle embed cleanup ─────────────────────────────────
-const LIFECYCLE_TITLES = ['🟢 Bot Online', '🔴 Bot Offline'];
 
 /**
- * Delete previous lifecycle embeds from the admin channel.
- * Prevents accumulation across restarts. Deletes ALL matches — no timestamp filter.
+ * Delete previous "Bot Offline" embeds from the admin channel.
+ * On startup the bot self-cleans old offline notices — the bot being online is the default state.
  */
-async function _cleanLifecycleEmbeds(channel, botClient) {
+async function _cleanOfflineEmbeds(channel, botClient) {
   try {
     const messages = await channel.messages.fetch({ limit: 30 });
     const botId = botClient.user?.id;
     const toDelete = messages.filter(m =>
       m.author.id === botId &&
       m.embeds.length > 0 &&
-      m.embeds.some(e => LIFECYCLE_TITLES.includes(e.title))
+      m.embeds.some(e => e.title === '🔴 Bot Offline')
     );
     if (toDelete.size > 0) {
-      // Use bulkDelete if possible (< 14 days old), otherwise delete individually
       try {
         await channel.bulkDelete(toDelete, true);
       } catch {
@@ -1065,7 +1005,7 @@ async function _cleanLifecycleEmbeds(channel, botClient) {
       }
     }
   } catch (err) {
-    console.warn('[BOT] Could not clean lifecycle embeds:', err.message);
+    console.warn('[BOT] Could not clean offline embeds:', err.message);
   }
 }
 
@@ -1076,33 +1016,27 @@ async function shutdown(reason = 'Manual shutdown') {
   shuttingDown = true;
   console.log('\n[BOT] Shutting down...');
 
-  // Post offline notification — try both thread AND admin channel for reliability
+  // Post offline notification to panel channel (self-cleaning)
   try {
-    // Clean previous lifecycle embeds first
-    if (adminChannel) {
-      await _cleanLifecycleEmbeds(adminChannel, client).catch(() => {});
-    }
+    const panelCh = panelChannel?.channel;
+    if (panelCh) {
+      const uptime = _formatUptime(Date.now() - startedAt.getTime());
+      const activeCount  = Object.values(moduleStatus).filter(s => s.startsWith('🟢')).length;
+      const totalCount   = Object.keys(moduleStatus).length;
 
-    const uptime = _formatUptime(Date.now() - startedAt.getTime());
+      const embed = new EmbedBuilder()
+        .setTitle('🔴 Bot Offline')
+        .setDescription(reason)
+        .addFields(
+          { name: 'Uptime', value: uptime, inline: true },
+          { name: 'Modules', value: `${activeCount}/${totalCount} active`, inline: true },
+        )
+        .setColor(0xe74c3c)
+        .setTimestamp();
 
-    // Summarise module state
-    const activeCount  = Object.values(moduleStatus).filter(s => s.startsWith('🟢')).length;
-    const totalCount   = Object.keys(moduleStatus).length;
-
-    const embed = new EmbedBuilder()
-      .setTitle('🔴 Bot Offline')
-      .setDescription(reason)
-      .addFields(
-        { name: 'Uptime', value: uptime, inline: true },
-        { name: 'Modules', value: `${activeCount}/${totalCount} active`, inline: true },
-      )
-      .setColor(0xe74c3c)
-      .setTimestamp();
-
-    // Race the notification against a timeout so shutdown never hangs
-    if (adminChannel) {
+      // Race the notification against a timeout so shutdown never hangs
       await Promise.race([
-        adminChannel.send({ embeds: [embed] }).catch(() => {}),
+        panelCh.send({ embeds: [embed] }).catch(() => {}),
         new Promise(resolve => setTimeout(resolve, 5000)),
       ]);
     }
@@ -1118,6 +1052,7 @@ async function shutdown(reason = 'Manual shutdown') {
   if (serverScheduler) serverScheduler.stop();
   if (panelChannel) panelChannel.stop();
   if (webMapServer) webMapServer.stop();
+  if (hzmodPlugin?.ipcClient) hzmodPlugin.ipcClient.destroy();
   if (logWatcher) logWatcher.stop();
   if (playerStatsChannel) playerStatsChannel.stop();
   if (activityLog) activityLog.stop();
@@ -1178,11 +1113,12 @@ process.on('unhandledRejection', (reason) => {
 });
 
 /**
- * Post a hard-error embed to the admin channel for visibility.
- * Silently ignores failures (admin channel may not be initialised yet).
+ * Post a hard-error embed to the panel channel for visibility.
+ * Silently ignores failures (panel channel may not be initialised yet).
  */
 async function _postErrorEmbed(title, err) {
-  if (!adminChannel) return;
+  const ch = panelChannel?.channel;
+  if (!ch) return;
   try {
     const raw = err instanceof Error
       ? (err.stack?.slice(0, 1000) || err.message)
@@ -1193,7 +1129,7 @@ async function _postErrorEmbed(title, err) {
       .setColor(0xff0000)
       .setTimestamp();
     await Promise.race([
-      adminChannel.send({ embeds: [embed] }),
+      ch.send({ embeds: [embed] }),
       new Promise(resolve => setTimeout(resolve, 3000)),
     ]);
   } catch (_) { /* best-effort */ }

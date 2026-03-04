@@ -10,7 +10,6 @@
     multiServer: false,
     serverList: [],
     serverStatuses: {},
-    srvBoxCollapsed: {},
     players: [],
     toggles: {},
     worldBounds: null,
@@ -341,6 +340,66 @@
     }
   }
 
+  // ── Landing carousel state ──
+  var _landingSlideIdx = 0;
+  var _landingSlideCount = 0;
+  var _landingAutoTimer = null;
+  var _landingAutoDelay = 12000; // 12s per slide
+
+  function _landingGoTo(idx) {
+    var slides = document.querySelectorAll('.landing-slide');
+    var tabs = document.querySelectorAll('.landing-tab');
+    if (!slides.length) return;
+    idx = ((idx % slides.length) + slides.length) % slides.length;
+    if (idx === _landingSlideIdx) return;
+    var prev = _landingSlideIdx;
+
+    // Old slide: add exit-left so it slides out to the left
+    if (slides[prev]) {
+      slides[prev].classList.remove('active');
+      slides[prev].classList.add('exit-left');
+    }
+    if (tabs[prev]) tabs[prev].classList.remove('active');
+
+    // Clear any other stale states
+    for (var i = 0; i < slides.length; i++) {
+      if (i !== prev && i !== idx) {
+        slides[i].classList.remove('active', 'exit-left');
+      }
+      if (i !== idx && tabs[i]) tabs[i].classList.remove('active');
+    }
+
+    // New slide: force it to start from the right (no transition), then activate
+    slides[idx].classList.remove('active', 'exit-left');
+    slides[idx].style.transition = 'none';
+    slides[idx].style.transform = 'translateX(60px)';
+    slides[idx].style.opacity = '0';
+    void slides[idx].offsetWidth; // reflow
+    slides[idx].style.transition = '';
+    slides[idx].style.transform = '';
+    slides[idx].style.opacity = '';
+    slides[idx].classList.add('active');
+    if (tabs[idx]) tabs[idx].classList.add('active');
+    _landingSlideIdx = idx;
+
+    // Clean up exit-left after transition ends
+    setTimeout(function() {
+      if (slides[prev]) slides[prev].classList.remove('exit-left');
+    }, 600);
+  }
+
+  function _landingStartAuto() {
+    _landingStopAuto();
+    if (_landingSlideCount <= 1) return;
+    _landingAutoTimer = setInterval(function() {
+      _landingGoTo((_landingSlideIdx + 1) % _landingSlideCount);
+    }, _landingAutoDelay);
+  }
+
+  function _landingStopAuto() {
+    if (_landingAutoTimer) { clearInterval(_landingAutoTimer); _landingAutoTimer = null; }
+  }
+
   async function loadLanding() {
     try {
       const r = await fetch('/api/landing');
@@ -356,7 +415,7 @@
       txt.textContent = anyOnline ? 'Online' : 'Offline';
       txt.className = 'text-xs ' + (anyOnline ? 'text-calm' : 'text-muted');
 
-      // Build unified server list: primary first, then additional
+      // Build unified server list
       var allServers = [];
       allServers.push({
         name: p.name || 'Primary Server',
@@ -369,81 +428,150 @@
         gameTime: p.gameTime,
         host: p.host,
         gamePort: p.gamePort,
+        daysPerSeason: p.daysPerSeason,
         schedule: d.schedule || null,
+        settings: p.settings || null,
+        id: '',
       });
       if (d.servers) {
         for (var ai = 0; ai < d.servers.length; ai++) allServers.push(d.servers[ai]);
       }
 
-      // Render server cards
-      var container = $('#server-cards');
-      container.innerHTML = '';
+      // Build server tabs + carousel slides
+      var tabsContainer = $('#landing-server-tabs');
+      var slidesContainer = $('#landing-slides');
+      tabsContainer.innerHTML = '';
+      slidesContainer.innerHTML = '';
+      _landingSlideCount = allServers.length;
+
+      if (allServers.length <= 1) tabsContainer.classList.add('single');
+      else tabsContainer.classList.remove('single');
+
       for (var si = 0; si < allServers.length; si++) {
         var s = allServers[si];
         var sOn = s.status === 'online';
         var stale = s.status === 'stale';
-        var statusLabel = sOn ? 'Online' : stale ? 'Stale' : 'Offline';
-        var statusColor = sOn ? 'bg-calm' : stale ? 'bg-yellow-500' : 'bg-muted';
-        var statusText = sOn ? 'text-calm' : stale ? 'text-yellow-500' : 'text-muted';
+        var statusColor = sOn ? 'online' : stale ? 'stale' : 'offline';
+        var statusBg = sOn ? 'bg-calm' : stale ? 'bg-yellow-500' : 'bg-muted';
         var addr = s.host ? (s.gamePort ? s.host + ':' + s.gamePort : s.host) : '';
-        var card = el('div', 'server-card');
 
-        var html = '<div class="server-card-header">';
-        html += '<span class="server-card-dot ' + statusColor + (sOn ? ' pulse-dot' : '') + '"></span>';
-        html += '<span class="server-card-name">' + esc(s.name) + '</span>';
-        html += '<span class="server-card-status ' + statusText + '">' + statusLabel + '</span>';
-        html += '</div>';
+        // ── Tab button ──
+        var tab = el('button', 'landing-tab' + (si === 0 ? ' active' : ''));
+        tab.setAttribute('data-idx', '' + si);
+        tab.innerHTML = '<span class="landing-tab-dot ' + statusColor + '"></span>' + esc(s.name);
+        tab.addEventListener('click', function() {
+          var idx = parseInt(this.getAttribute('data-idx'), 10);
+          _landingGoTo(idx);
+          _landingStartAuto(); // reset timer on manual click
+        });
+        tabsContainer.appendChild(tab);
 
-        // Stats row
-        html += '<div class="server-card-stats">';
-        html += '<span>' + (sOn ? s.onlineCount : '-') + '</span><span class="text-muted/50">/</span><span>' + (s.maxPlayers || '?') + '</span>';
-        html += '<span class="text-muted/50">players</span>';
-        html += '<span class="text-border">&middot;</span><span>' + (s.totalPlayers || 0) + ' total</span>';
-        html += '</div>';
+        // ── Slide ──
+        var slide = el('div', 'landing-slide' + (si === 0 ? ' active' : ''));
+        var card = el('div', 'landing-server-slide');
+        card.setAttribute('data-server-id', s.id || '');
 
-        // World info
+        // Identity row: name + inline meta
+        var identity = '<div class="slide-identity">';
+        identity += '<div class="slide-server-name"><span class="slide-status-dot ' + statusBg + (sOn ? ' pulse-dot' : '') + '"></span>' + esc(s.name) + '</div>';
+        identity += '<div class="slide-meta">';
+
+        // Players
+        identity += '<div class="slide-meta-row"><i data-lucide="users" class="slide-meta-icon"></i>';
+        identity += '<span class="slide-meta-val">' + (sOn ? s.onlineCount : '-') + '</span> / ' + (s.maxPlayers || '?') + '</div>';
+        identity += '<div class="slide-meta-row"><i data-lucide="user-check" class="slide-meta-icon"></i>';
+        identity += '<span class="slide-meta-val">' + (s.totalPlayers || 0) + '</span> total</div>';
+
+        // World
         if (s.gameDay != null) {
-          var wp = [];
-          if (s.gameTime) wp.push(s.gameTime);
           var dps = s.daysPerSeason || 28, seasonNames = ['Spring', 'Summer', 'Autumn', 'Winter'];
           var seasonNum = Math.floor((s.gameDay % (dps * 4)) / dps);
           var dayInSeason = (s.gameDay % dps) + 1;
           var year = Math.floor(s.gameDay / (dps * 4)) + 1;
-          wp.push('Day ' + dayInSeason + ' ' + (s.season || seasonNames[seasonNum]) + ', Year ' + year);
-          html += '<div class="server-card-world">' + wp.join(' · ') + '</div>';
+          var worldStr = '';
+          if (s.gameTime) worldStr += s.gameTime + ' · ';
+          worldStr += 'Day ' + dayInSeason + ' ' + (s.season || seasonNames[seasonNum]) + ', Y' + year;
+          identity += '<div class="slide-meta-row"><i data-lucide="globe" class="slide-meta-icon"></i>';
+          identity += '<span class="slide-meta-val">' + worldStr + '</span></div>';
         }
 
         // Address
-        if (addr) html += '<div class="server-card-addr">' + esc(addr) + '</div>';
+        if (addr) {
+          identity += '<div class="slide-meta-row"><i data-lucide="link" class="slide-meta-icon"></i>';
+          identity += '<span class="slide-addr">' + esc(addr) + '</span></div>';
+        }
 
-        // Schedule (embedded in card)
+        identity += '</div>'; // /slide-meta
+        identity += '</div>'; // /slide-identity
+
+        // Divider
+        var divider = '<div class="slide-divider"></div>';
+
+        // Schedule (if active)
+        var schedHtml = '';
         var sched = s.schedule;
         if (sched && sched.active) {
-          html += '<div class="server-card-schedule">';
-          html += '<div class="server-card-schedule-header">';
-          html += '<span class="text-[10px] font-heading font-semibold text-text-bright uppercase tracking-wider">Schedule</span>';
-          if (sched.timezone) html += '<span class="text-[9px] text-muted font-mono">' + esc(sched.timezone) + '</span>';
-          html += '</div>';
-          html += '<div class="server-card-schedule-list" data-server-idx="' + si + '"></div>';
+          schedHtml += '<div class="slide-schedule">';
+          schedHtml += '<div class="slide-section-title">Schedule';
+          if (sched.timezone) schedHtml += ' <span class="text-[9px] text-muted/50 font-mono normal-case tracking-normal">' + esc(sched.timezone) + '</span>';
+          schedHtml += '</div>';
+          schedHtml += '<div class="slide-schedule-list" data-server-idx="' + si + '"></div>';
           if (sched.nextRestart) {
             var mins = sched.minutesUntilRestart;
             var hrs = Math.floor(mins / 60);
             var m = mins % 60;
             var untilStr = hrs > 0 ? hrs + 'h ' + m + 'm' : m + 'm';
-            html += '<div class="text-[10px] text-muted mt-1.5">Next transition in ' + untilStr + ' at ' + sched.nextRestart + '</div>';
+            schedHtml += '<div class="text-[10px] text-muted mt-1">Next transition in ' + untilStr + ' at ' + sched.nextRestart + '</div>';
           }
-          if (sched.rotateDaily) {
-            html += '<div class="text-[9px] text-muted/40 mt-0.5">Schedule rotates daily</div>';
-          }
-          html += '</div>';
+          if (sched.rotateDaily) schedHtml += '<div class="text-[9px] text-muted/40 mt-0.5">Schedule rotates daily</div>';
+          schedHtml += '</div>';
         }
 
-        card.innerHTML = html;
-        container.appendChild(card);
+        // Server info (rules, threats, loot, world stats)
+        var infoHtml = '';
+        if (s.settings) {
+          infoHtml += '<div class="slide-info"><div class="srv-info-panel">';
+          infoHtml += renderServerInfo(s.settings, s);
+          infoHtml += '</div></div>';
+        }
 
-        // Render schedule slots into the card's schedule list container (needs DOM element)
+        // Active modules (feature pills)
+        var modsHtml = '';
+        var mods = s.modules || [];
+        if (mods.length) {
+          var modLabels = {
+            rcon:     { icon: 'terminal', label: 'RCON', tip: 'Live server console' },
+            db:       { icon: 'database', label: 'Database', tip: 'SQLite tracking & analytics' },
+            sftp:     { icon: 'hard-drive', label: 'SFTP', tip: 'Save file parsing & log monitoring' },
+            schedule: { icon: 'calendar-clock', label: 'Schedule', tip: 'Automated difficulty schedule' },
+            logs:     { icon: 'scroll-text', label: 'Logs', tip: 'Activity log watcher' },
+            chat:     { icon: 'message-square', label: 'Chat', tip: 'Bidirectional chat relay' },
+            anticheat:{ icon: 'shield-check', label: 'Anticheat', tip: 'Anomaly detection active' },
+            hzmod:    { icon: 'cpu', label: 'Plugin', tip: 'Native game plugin (hzmod)' },
+          };
+          modsHtml += '<div class="slide-modules">';
+          for (var mi = 0; mi < mods.length; mi++) {
+            var m = modLabels[mods[mi]] || { icon: 'circle', label: mods[mi], tip: '' };
+            modsHtml += '<span class="slide-mod-pill" data-tippy-content="' + esc(m.tip) + '">';
+            modsHtml += '<i data-lucide="' + m.icon + '"></i>' + m.label + '</span>';
+          }
+          modsHtml += '</div>';
+        }
+
+        // Assemble card: identity → divider → modules → schedule → info
+        var cardContent = identity;
+        if (modsHtml || schedHtml || infoHtml) cardContent += divider;
+        if (modsHtml) cardContent += modsHtml;
+        if (schedHtml) cardContent += schedHtml;
+        if (infoHtml) cardContent += infoHtml;
+        card.innerHTML = cardContent;
+
+        slide.appendChild(card);
+        slidesContainer.appendChild(slide);
+
+        // Render schedule slots (needs DOM)
         if (sched && sched.active) {
-          var schedList = card.querySelector('.server-card-schedule-list');
+          var schedList = card.querySelector('.slide-schedule-list');
           if (schedList) {
             renderSchedule(schedList, sched, 'landing');
             if (sched.rotateDaily && sched.tomorrowSchedule) {
@@ -452,9 +580,50 @@
           }
         }
 
-        // Store primary schedule for dashboard reuse
+        // Plugin content (hzmod) embedded in matching slide
+        if (s.id && window.__panelPlugins?.hzmod?.renderLandingCard && d.hzmod) {
+          var hzServerId = d.hzmodServerId || 'vps_dev';
+          if (s.id === hzServerId) {
+            var pluginDiv = el('div', 'mt-2 pt-2 border-t border-border/50');
+            pluginDiv.innerHTML = window.__panelPlugins.hzmod.renderLandingCard(d.hzmod);
+            card.appendChild(pluginDiv);
+          }
+        }
+
+        // Activate Lucide + Tippy inside card
+        if (window.lucide) lucide.createIcons({ nodes: [card] });
+        if (window.tippy) {
+          card.querySelectorAll('[data-tippy-content]').forEach(function(n) {
+            tippy(n, { theme: 'translucent', placement: 'top', delay: [200, 0], duration: [150, 100] });
+          });
+        }
+
+        // Store primary schedule for dashboard
         if (si === 0 && sched && sched.active) S.scheduleData = sched;
       }
+
+      // Tab tooltips
+      if (window.tippy) {
+        tabsContainer.querySelectorAll('.landing-tab').forEach(function(n) {
+          // No tooltip needed — the name is already visible in the tab
+        });
+      }
+
+      // Pause auto-rotate on hover over the slide area
+      var carouselEl = $('#landing-carousel');
+      if (carouselEl) {
+        carouselEl.addEventListener('mouseenter', function() { _landingStopAuto(); carouselEl.classList.add('paused'); });
+        carouselEl.addEventListener('mouseleave', function() { carouselEl.classList.remove('paused'); _landingStartAuto(); });
+      }
+      // Also pause on tab hover
+      tabsContainer.addEventListener('mouseenter', function() { _landingStopAuto(); if (carouselEl) carouselEl.classList.add('paused'); });
+      tabsContainer.addEventListener('mouseleave', function() { if (carouselEl) carouselEl.classList.remove('paused'); _landingStartAuto(); });
+
+      // Set CSS custom property for progress bar duration to match JS timer
+      if (carouselEl) carouselEl.style.setProperty('--landing-delay', (_landingAutoDelay / 1000) + 's');
+
+      // Start auto-rotation
+      _landingStartAuto();
 
       var discordLink = $('#link-discord');
       if (discordLink) {
@@ -463,7 +632,6 @@
           var fullUrl = inviteUrl.startsWith('http') ? inviteUrl : 'https://' + inviteUrl;
           discordLink.href = fullUrl;
           $('#landing-links').classList.remove('hidden');
-          // Update auth button for non-guild members to point to invite
           var authBtn = $('#landing-auth-btn');
           if (authBtn && S.user.authenticated && S.tier < 1) authBtn.href = fullUrl;
         } else {
@@ -480,6 +648,7 @@
 
   function showPanel() {
     if (S._refreshPoll) { clearInterval(S._refreshPoll); S._refreshPoll = null; }
+    _landingStopAuto(); // stop landing carousel
     $('#landing').classList.add('hidden');
     $('#panel').classList.remove('hidden');
     const skyBg = $('#skyline-bg');
@@ -700,7 +869,7 @@
     var sdModal = $('#settings-diff-modal');
     if (sdModal) sdModal.addEventListener('click', function(e) { if (e.target === sdModal) sdModal.classList.add('hidden'); });
 
-    // Settings mode toggle (Game Server / Bot Config)
+    // Settings mode toggle (Game Server / Bot Config / Schedule)
     $$('.settings-mode-btn').forEach(function(btn) {
       btn.addEventListener('click', function() {
         var mode = btn.dataset.mode;
@@ -711,7 +880,19 @@
         if (searchEl) searchEl.value = '';
         var restartBadge = $('#settings-restart-badge');
         if (restartBadge) restartBadge.classList.add('hidden');
+        // Hide/show settings-specific toolbar items based on mode
+        var saveBtn = $('#settings-save-btn');
+        var resetBtn = $('#settings-reset-btn');
+        var changeCount = $('#settings-change-count');
+        var settingsCount = $('#settings-count');
+        var isSchedule = mode === 'schedule';
+        if (saveBtn) saveBtn.classList.toggle('hidden', isSchedule);
+        if (resetBtn) resetBtn.classList.toggle('hidden', isSchedule);
+        if (changeCount) changeCount.classList.toggle('hidden', isSchedule);
+        if (settingsCount) settingsCount.classList.toggle('hidden', isSchedule);
+        if (searchEl) searchEl.parentElement.classList.toggle('hidden', isSchedule);
         if (mode === 'game') { loadSettings(); }
+        else if (mode === 'schedule') { loadScheduleEditor(); }
         else { loadBotConfig(); }
       });
     });
@@ -794,7 +975,7 @@
     switchTab('dashboard');
   }
 
-  /** Load server list and populate the server bar pills + legacy dropdown */
+  /** Load server list and build the carousel switcher */
   async function loadServerList() {
     try {
       var r = await fetch('/api/servers');
@@ -804,54 +985,58 @@
       S.serverList = d.servers || [];
       if (!S.multiServer || !d.servers || d.servers.length <= 1) return;
 
-      // Legacy dropdown (kept for compat, hidden by CSS in sidebar)
-      var sel = $('#server-select');
-      var wrap = $('#server-selector');
-      if (sel && wrap) {
-        sel.innerHTML = '';
-        for (var i = 0; i < d.servers.length; i++) {
-          var opt = document.createElement('option');
-          opt.value = d.servers[i].id;
-          opt.textContent = d.servers[i].name;
-          sel.appendChild(opt);
-        }
-        sel.value = S.currentServer;
-        wrap.classList.remove('hidden');
-
-        sel.addEventListener('change', function() {
-          switchServer(sel.value);
-        });
-      }
-
-      // Server bar pills (main content area)
-      renderServerBar(d.servers);
+      // Build carousel
+      renderServerCarousel(d.servers);
     } catch (e) { /* non-critical */ }
   }
 
-  /** Render server pills in the main content bar */
-  function renderServerBar(servers) {
+  /** Render the server carousel (left/right arrows + server name) */
+  function renderServerCarousel(servers) {
     var bar = $('#server-bar');
-    var container = $('#server-pills');
-    if (!bar || !container) return;
+    if (!bar || servers.length <= 1) return;
 
-    container.innerHTML = '';
+    // Find current index
+    var idx = 0;
     for (var i = 0; i < servers.length; i++) {
-      var s = servers[i];
-      var pill = el('button', 'server-pill' + (s.id === S.currentServer ? ' active' : ''));
-      pill.dataset.serverId = s.id;
-      pill.innerHTML = '<span class="server-pill-dot" data-srv-dot="' + s.id + '"></span>' + esc(s.name);
-      pill.addEventListener('click', (function(id) {
-        return function() { switchServer(id); };
-      })(s.id));
-      container.appendChild(pill);
+      if (servers[i].id === S.currentServer) { idx = i; break; }
     }
+
+    function updateDisplay() {
+      var srv = servers[idx];
+      var nameEl = $('#srv-carousel-name');
+      var countEl = $('#srv-carousel-count');
+      var dotEl = $('#srv-carousel-dot');
+      if (nameEl) nameEl.textContent = srv.name || srv.id;
+      if (countEl) countEl.textContent = (idx + 1) + '/' + servers.length;
+      // Update dot status from cached statuses
+      if (dotEl) {
+        dotEl.classList.remove('online', 'stale');
+        var st = S.serverStatuses[srv.id];
+        if (st && st.status === 'online') dotEl.classList.add('online');
+        else if (st && st.status === 'stale') dotEl.classList.add('stale');
+      }
+    }
+
+    $('#srv-prev').addEventListener('click', function() {
+      idx = (idx - 1 + servers.length) % servers.length;
+      updateDisplay();
+      switchServer(servers[idx].id);
+    });
+    $('#srv-next').addEventListener('click', function() {
+      idx = (idx + 1) % servers.length;
+      updateDisplay();
+      switchServer(servers[idx].id);
+    });
+
     bar.classList.remove('hidden');
-    // Fetch status to color the dots
-    updateServerBarStatus();
+    updateDisplay();
+
+    // Fetch status to color the dot
+    updateServerCarouselStatus();
   }
 
-  /** Update server bar pill status dots based on landing API */
-  async function updateServerBarStatus() {
+  /** Update server carousel dot based on landing API statuses */
+  async function updateServerCarouselStatus() {
     try {
       var r = await fetch('/api/landing');
       if (!r.ok) return;
@@ -862,14 +1047,15 @@
       S.serverStatuses = {};
       for (var j = 0; j < allServers.length; j++) {
         var s = allServers[j];
-        var id = s.id || 'primary';
-        S.serverStatuses[id] = s;
-        var dot = document.querySelector('[data-srv-dot="' + id + '"]');
-        if (dot) {
-          dot.classList.remove('online', 'stale');
-          if (s.status === 'online') dot.classList.add('online');
-          else if (s.status === 'stale') dot.classList.add('stale');
-        }
+        S.serverStatuses[s.id || 'primary'] = s;
+      }
+      // Refresh dot for the currently displayed server
+      var dotEl = $('#srv-carousel-dot');
+      var st = S.serverStatuses[S.currentServer];
+      if (dotEl) {
+        dotEl.classList.remove('online', 'stale');
+        if (st && st.status === 'online') dotEl.classList.add('online');
+        else if (st && st.status === 'stale') dotEl.classList.add('stale');
       }
     } catch (e) { /* non-critical */ }
   }
@@ -877,20 +1063,76 @@
   /** Switch active server across all tabs */
   function switchServer(id) {
     S.currentServer = id;
-    // Update pills
-    $$('.server-pill').forEach(function(p) { p.classList.toggle('active', p.dataset.serverId === id); });
-    // Update legacy dropdown
-    var sel = $('#server-select');
-    if (sel) sel.value = id;
-    // Reset cached data
+    // Update carousel dot status
+    var dotEl = $('#srv-carousel-dot');
+    if (dotEl) {
+      dotEl.classList.remove('online', 'stale');
+      var st = S.serverStatuses[id];
+      if (st && st.status === 'online') dotEl.classList.add('online');
+      else if (st && st.status === 'stale') dotEl.classList.add('stale');
+    }
+
+    // ── Reset ALL server-specific cached state ──
+    // Player data
     S.players = [];
+    S.toggles = {};
+    S.worldBounds = null;
+
+    // Dashboard
     S.dashHistory = { online: [], events: [] };
     Object.keys(S.sparkCharts).forEach(function(k) {
       if (S.sparkCharts[k]) { S.sparkCharts[k].destroy(); delete S.sparkCharts[k]; }
     });
+    S.scheduleData = null;
+
+    // Map
+    S.mapReady = false;
+
+    // Settings
     S.settingsOriginal = {};
     S.settingsChanged = {};
-    S.mapReady = false;
+    // Bot config — must reset to prevent cross-server saves
+    S.botConfigOriginal = {};
+    S.botConfigChanged = {};
+    S.botConfigSections = [];
+
+    // Activity tab — reset charts flag so they reload for new server
+    S.activityCategory = '';
+    S.activityChartsLoaded = false;
+    if (S.activityCharts) {
+      Object.keys(S.activityCharts).forEach(function(k) {
+        if (S.activityCharts[k] && S.activityCharts[k].destroy) S.activityCharts[k].destroy();
+      });
+    }
+    S.activityCharts = {};
+    S.activityStats = null;
+    // Reset activity paging (module-level vars)
+    resetActivityPaging();
+
+    // Console — clear output so old server responses don't bleed through
+    S.consoleBuf = [];
+    var consoleEl = $('#console-output');
+    if (consoleEl) consoleEl.innerHTML = '';
+
+    // Database tab
+    S.dbLastResult = null;
+    S.dbTablesLive = [];
+    S.dbSchemaCache = {};
+
+    // Items tab (module-level vars)
+    _itemsData = { instances: [], groups: [], locations: [], counts: {} };
+    _itemsMovements = [];
+
+    // Timeline — stop playback and reset state
+    if (TL.playing) tlStop();
+    TL.snapshots = [];
+    TL.idx = -1;
+    TL.data = null;
+
+    // Dashboard cards — hide all so they don't carry between servers
+    var hideDash = ['schedule-card', 'resources-card', 'hzmod-card', 'dashboard-connect'];
+    hideDash.forEach(function(id) { var el = document.getElementById(id); if (el) el.classList.add('hidden'); });
+
     // Reload current tab
     loadPlayersInBackground();
     switchTab(S.currentTab);
@@ -981,7 +1223,7 @@
       case 'clans': loadClans(); break;
       case 'activity': loadActivity(); if (!S.activityChartsLoaded) { loadActivityStats(); S.activityChartsLoaded = true; } break;
       case 'chat': loadChat(); S.pollTimers.push(setInterval(loadChat, 8000)); break;
-      case 'settings': if (S.settingsMode === 'bot') loadBotConfig(); else loadSettings(); break;
+      case 'settings': if (S.settingsMode === 'bot') loadBotConfig(); else if (S.settingsMode === 'schedule') loadScheduleEditor(); else loadSettings(); break;
       case 'controls': loadBackupList(); break;
       case 'database': loadDatabase(); break;
       case 'items': loadItems(); break;
@@ -1029,24 +1271,23 @@
   }
 
   async function loadDashboard() {
-    if (S.multiServer && S.serverList.length > 1) {
-      loadMultiDashboard();
-      return;
-    }
-    // Single-server dashboard (original behavior)
+    // Always use full single-server dashboard — carousel handles server switching
     var singleEl = $('#dash-single');
-    var multiEl = $('#dash-multi');
     if (singleEl) singleEl.classList.remove('hidden');
-    if (multiEl) multiEl.classList.add('hidden');
     await loadSingleDashboard();
   }
 
   /** Single-server dashboard — the original loadDashboard logic */
   async function loadSingleDashboard() {
     try {
-      var results = await Promise.all([apiFetch('/api/panel/status'), apiFetch('/api/panel/stats')]);
+      var results = await Promise.all([
+        apiFetch('/api/panel/status'),
+        apiFetch('/api/panel/stats'),
+        apiFetch('/api/panel/capabilities')
+      ]);
       var status = results[0].ok ? await results[0].json() : {};
       var stats = results[1].ok ? await results[1].json() : {};
+      var caps = results[2].ok ? await results[2].json() : {};
 
       var isOn = status.serverState === 'running';
       var stEl = $('#d-status');
@@ -1101,7 +1342,6 @@
       try {
         var landing = await fetch('/api/landing');
         var ld = await landing.json();
-        // Find the correct server's connect info based on current selection
         var srvData = null;
         if (S.currentServer === 'primary') {
           srvData = ld.primary;
@@ -1118,191 +1358,239 @@
           var dc = $('#dashboard-connect');
           if (dc) dc.classList.remove('hidden');
         }
+
+        // Server Info card — reuse landing settings + status data
+        var infoCol = $('#dash-info-col');
+        var infoBox = $('#dash-server-info');
+        if (infoCol && infoBox && srvData.settings) {
+          var infoHtml = renderServerInfo(srvData.settings, {
+            gameDay: status.gameDay,
+            season: status.season,
+            gameTime: status.gameTime,
+            daysPerSeason: srvData.daysPerSeason || status.daysPerSeason
+          });
+          if (infoHtml) {
+            infoBox.innerHTML = '<div class="srv-info-panel">' + infoHtml + '</div>';
+            infoCol.classList.remove('hidden');
+            if (window.lucide) lucide.createIcons({ nodes: [infoBox] });
+            if (window.tippy) tippy(infoBox.querySelectorAll('[data-tippy-content]'), { theme: 'translucent', placement: 'top', delay: [150, 0] });
+          } else { infoCol.classList.add('hidden'); }
+        } else if (infoCol) { infoCol.classList.add('hidden'); }
       } catch (e) {  }
 
-      try {
-        var schedRes = await apiFetch('/api/panel/scheduler');
-        var sched = await schedRes.json();
-        if (sched.active) {
-          S.scheduleData = sched;
-          var sc = $('#schedule-card');
-          if (sc) sc.classList.remove('hidden');
-          renderSchedule($('#schedule-info'), sched, 'dashboard');
-          if (sched.rotateDaily && sched.tomorrowSchedule) {
-            renderTomorrowSchedule($('#schedule-info'), sched);
+      // Schedule card — only if this server has a scheduler
+      var sc = $('#schedule-card');
+      if (caps.scheduler) {
+        try {
+          var schedRes = await apiFetch('/api/panel/scheduler');
+          var sched = await schedRes.json();
+          if (sched.active) {
+            S.scheduleData = sched;
+            if (sc) sc.classList.remove('hidden');
+            renderSchedule($('#schedule-info'), sched, 'dashboard');
+            if (sched.rotateDaily && sched.tomorrowSchedule) {
+              renderTomorrowSchedule($('#schedule-info'), sched);
+            }
+          } else {
+            if (sc) sc.classList.add('hidden');
           }
+        } catch (e) {
+          if (sc) sc.classList.add('hidden');
         }
-      } catch (e) {  }
-
-      if (status.resources && S.tier >= 3 && S.viewMode === 'admin') {
-        var rc = $('#resources-card');
-        if (rc) rc.classList.remove('hidden');
-        renderResources(status.resources, status.uptime);
+      } else {
+        if (sc) sc.classList.add('hidden');
       }
 
-      try {
-        var feeds = await Promise.all([apiFetch('/api/panel/activity?limit=15'), apiFetch('/api/panel/chat?limit=15')]);
-        var act = await feeds[0].json();
-        var chat = await feeds[1].json();
-        renderActivityFeed($('#d-activity'), act.events, true);
-        renderChatFeed($('#d-chat'), chat.messages, true);
-      } catch (e) {  }
+      // Plugin dashboard hooks — only if this server has hzmod
+      if (caps.hzmod && window.__panelPlugins?.hzmod?.onDashboardLoad) {
+        try { await window.__panelPlugins.hzmod.onDashboardLoad(apiFetch, $); } catch (e) {  }
+      }
+
+      // Resources card — only if this server exposes resources
+      var rc = $('#resources-card');
+      if (caps.resources && status.resources && S.tier >= 3 && S.viewMode === 'admin') {
+        if (rc) rc.classList.remove('hidden');
+        renderResources(status.resources, status.uptime);
+      } else if (rc) { rc.classList.add('hidden'); }
+
     } catch (e) {
       console.error('Dashboard error:', e);
     }
   }
 
-  /** Multi-server dashboard — renders a collapsible box per server */
-  async function loadMultiDashboard() {
-    var singleEl = $('#dash-single');
-    var multiEl = $('#dash-multi');
-    if (singleEl) singleEl.classList.add('hidden');
-    if (!multiEl) return;
-    multiEl.classList.remove('hidden');
+  // ═══════════════════════════════════════════════════
+  // Server Info Panel — dynamic info for landing cards
+  // ═══════════════════════════════════════════════════
 
-    // Track collapsed state across refreshes
-    if (!S.srvBoxCollapsed) S.srvBoxCollapsed = {};
+  var INFO_DIFF = { 1: 'Low', 2: 'Normal', 3: 'High', 4: 'Very High', 5: 'Nightmare' };
+  var INFO_LOOT = { 1: 'Scarce', 2: 'Normal', 3: 'Plenty', 4: 'Abundant' };
+  var INFO_DEATH = { 0: 'Keep Items', 1: 'Drop Items', 2: 'Destroy Items' };
+  var INFO_FF = { 0: 'Off', 1: 'Individual', 2: 'All' };
 
-    // Fetch all servers' data in parallel
-    var servers = S.serverList;
-    var fetches = servers.map(function(srv) {
-      var q = srv.id === 'primary' ? '' : '?server=' + encodeURIComponent(srv.id);
-      return Promise.all([
-        fetch('/api/panel/status' + q).then(function(r) { return r.ok ? r.json() : {}; }).catch(function() { return {}; }),
-        fetch('/api/panel/stats' + q).then(function(r) { return r.ok ? r.json() : {}; }).catch(function() { return {}; }),
-        fetch('/api/panel/scheduler' + q).then(function(r) { return r.ok ? r.json() : {}; }).catch(function() { return {}; }),
-        fetch('/api/panel/activity' + q + (q ? '&' : '?') + 'limit=8').then(function(r) { return r.ok ? r.json() : {}; }).catch(function() { return {}; }),
-        fetch('/api/panel/chat' + q + (q ? '&' : '?') + 'limit=8').then(function(r) { return r.ok ? r.json() : {}; }).catch(function() { return {}; }),
-      ]);
-    });
+  /**
+   * Render dynamic server info panel for a landing card.
+   * Uses Lucide icons (data-lucide) and Tippy tooltips (data-tippy-content).
+   * @param {object} st — settings from _extractLandingSettings()
+   * @param {object} srv — full server data (gameDay, season, gameTime etc.)
+   * @returns {string} HTML string
+   */
+  function renderServerInfo(st, srv) {
+    if (!st) return '';
+    var h = '';
 
-    var allData;
-    try { allData = await Promise.all(fetches); }
-    catch (e) { console.error('Multi-dashboard fetch error:', e); return; }
-
-    // Get landing data for connect addresses
-    var landingData = {};
-    try {
-      var lr = await fetch('/api/landing');
-      if (lr.ok) {
-        var ld = await lr.json();
-        if (ld.primary) landingData[ld.primary.id || 'primary'] = ld.primary;
-        if (ld.servers) for (var li = 0; li < ld.servers.length; li++) landingData[ld.servers[li].id] = ld.servers[li];
+    // ── Day/Night Cycle ──
+    var dayLen = st.dayLength || 40, nightLen = st.nightLength || 20;
+    var totalCycle = dayLen + nightLen;
+    var dayPct = Math.round((dayLen / totalCycle) * 100);
+    var isNight = false;
+    if (srv.gameTime) {
+      var tp = srv.gameTime.match(/(\d+):(\d+)/);
+      if (tp) {
+        var hr = parseInt(tp[1], 10);
+        isNight = hr >= 20 || hr < 6;
       }
-    } catch (e) {  }
+    }
+    var cycleIcon = isNight ? 'moon' : 'sun';
+    var cycleLabel = isNight ? 'Night' : 'Day';
+    h += '<div class="srv-info-section">';
+    h += '<div class="srv-info-row">';
+    h += '<span class="srv-info-item" data-tippy-content="Day ' + dayLen + 'min / Night ' + nightLen + 'min cycle">';
+    h += '<i data-lucide="' + cycleIcon + '" class="srv-ico"></i>';
+    h += '<span class="srv-info-label">' + cycleLabel + '</span>';
+    h += '<span class="srv-info-val">' + dayLen + '/' + nightLen + 'm</span>';
+    h += '</span>';
 
-    multiEl.innerHTML = '';
-
-    for (var si = 0; si < servers.length; si++) {
-      var srv = servers[si];
-      var srvId = srv.id;
-      var data = allData[si];
-      var status = data[0] || {};
-      var stats = data[1] || {};
-      var sched = data[2] || {};
-      var actData = data[3] || {};
-      var chatData = data[4] || {};
-      var landing = landingData[srvId] || {};
-
-      var isOn = status.serverState === 'running';
-      var isCollapsed = !!S.srvBoxCollapsed[srvId];
-
-      // Create the box
-      var box = el('div', 'srv-box');
-      box.dataset.serverId = srvId;
-
-      // Header
-      var statusLabel = isOn ? 'Online' : 'Offline';
-      var statusColor = isOn ? 'bg-calm' : 'bg-muted';
-      var statusText = isOn ? 'text-calm' : 'text-muted';
-      var onlineStr = stats.onlinePlayers != null ? stats.onlinePlayers + '/' + (status.maxPlayers || '?') : '-';
-
-      var hdr = el('div', 'srv-box-header');
-      hdr.innerHTML = '<span class="srv-box-dot ' + statusColor + (isOn ? ' pulse-dot' : '') + '"></span>'
-        + '<span class="srv-box-name">' + esc(srv.name) + '</span>'
-        + '<span class="srv-box-meta">'
-        + '<span class="' + statusText + '">' + statusLabel + '</span>'
-        + '<span>' + onlineStr + ' players</span>'
-        + '</span>'
-        + '<i data-lucide="chevron-down" class="w-4 h-4 srv-box-toggle' + (isCollapsed ? ' collapsed' : '') + '"></i>';
-
-      // Toggle collapse on header click
-      (function(id) {
-        hdr.addEventListener('click', function() {
-          S.srvBoxCollapsed[id] = !S.srvBoxCollapsed[id];
-          var body = box.querySelector('.srv-box-body');
-          var toggle = box.querySelector('.srv-box-toggle');
-          if (body) body.classList.toggle('collapsed', S.srvBoxCollapsed[id]);
-          if (toggle) toggle.classList.toggle('collapsed', S.srvBoxCollapsed[id]);
-        });
-      })(srvId);
-
-      box.appendChild(hdr);
-
-      // Body
-      var body = el('div', 'srv-box-body' + (isCollapsed ? ' collapsed' : ''));
-
-      // Stats row
-      var statsRow = el('div', 'srv-stats');
-      var worldStr = '-';
-      if (status.gameDay != null) {
-        var dps = status.daysPerSeason || 28;
-        var dayInSeason = (status.gameDay % dps) + 1;
-        var year = Math.floor(status.gameDay / (dps * 4)) + 1;
-        var seasonNames = ['Spring', 'Summer', 'Autumn', 'Winter'];
-        var seasonNum = Math.floor((status.gameDay % (dps * 4)) / dps);
-        worldStr = 'Day ' + dayInSeason + ' ' + (status.season || seasonNames[seasonNum]) + ', Y' + year;
-        if (status.gameTime) worldStr = status.gameTime + ' · ' + worldStr;
-      }
-      var addr = landing.host ? (landing.gamePort ? landing.host + ':' + landing.gamePort : landing.host) : '';
-
-      statsRow.innerHTML = '<div class="srv-stat"><div class="srv-stat-value">' + onlineStr + '</div><div class="srv-stat-label">Players</div></div>'
-        + '<div class="srv-stat"><div class="srv-stat-value">' + (stats.totalPlayers || 0) + '</div><div class="srv-stat-label">Total</div></div>'
-        + '<div class="srv-stat"><div class="srv-stat-value">' + fmtNum(stats.eventsToday || 0) + '</div><div class="srv-stat-label">Events</div></div>'
-        + '<div class="srv-stat"><div class="srv-stat-value text-sm">' + esc(worldStr) + '</div><div class="srv-stat-label">World</div></div>'
-        + (addr ? '<div class="srv-stat"><div class="srv-stat-value font-mono text-sm">' + esc(addr) + '</div><div class="srv-stat-label">Connect</div></div>' : '');
-      body.appendChild(statsRow);
-
-      // Schedule section (if available)
-      if (sched.active && sched.todaySchedule) {
-        var schedSection = el('div', 'srv-section');
-        schedSection.innerHTML = '<div class="srv-section-title">Difficulty Schedule</div>';
-        var schedContent = el('div', 'space-y-0.5');
-        renderSchedule(schedContent, sched, 'dashboard');
-        if (sched.rotateDaily && sched.tomorrowSchedule) {
-          renderTomorrowSchedule(schedContent, sched);
-        }
-        schedSection.appendChild(schedContent);
-        body.appendChild(schedSection);
-      }
-
-      // Activity + Chat feeds side by side
-      if (S.tier >= 1) {
-        var feedsRow = el('div', 'srv-feeds');
-
-        var actFeed = el('div', 'srv-feed');
-        actFeed.innerHTML = '<div class="srv-feed-title">Recent Activity</div>';
-        var actContent = el('div', 'srv-feed-content feed-container');
-        renderActivityFeed(actContent, (actData.events || []), true);
-        actFeed.appendChild(actContent);
-        feedsRow.appendChild(actFeed);
-
-        var chatFeed = el('div', 'srv-feed');
-        chatFeed.innerHTML = '<div class="srv-feed-title">Recent Chat</div>';
-        var chatContent = el('div', 'srv-feed-content feed-container');
-        renderChatFeed(chatContent, (chatData.messages || []), true);
-        chatFeed.appendChild(chatContent);
-        feedsRow.appendChild(chatFeed);
-
-        body.appendChild(feedsRow);
-      }
-
-      box.appendChild(body);
-      multiEl.appendChild(box);
+    // XP Multiplier
+    if (st.xpMultiplier && st.xpMultiplier !== 1) {
+      h += '<span class="srv-info-item" data-tippy-content="XP earn rate multiplier">';
+      h += '<i data-lucide="trending-up" class="srv-ico"></i>';
+      h += '<span class="srv-info-label">XP</span>';
+      h += '<span class="srv-info-val">' + st.xpMultiplier + 'x</span>';
+      h += '</span>';
     }
 
-    // Re-init Lucide icons for the newly created elements
-    if (window.lucide) lucide.createIcons();
+    // Max vehicles
+    if (st.maxVehicles) {
+      h += '<span class="srv-info-item" data-tippy-content="Max vehicles per player">';
+      h += '<i data-lucide="car" class="srv-ico"></i>';
+      h += '<span class="srv-info-label">Vehicles</span>';
+      h += '<span class="srv-info-val">' + st.maxVehicles + '/player</span>';
+      h += '</span>';
+    }
+    h += '</div></div>';
+
+    // ── Rules ──
+    var rules = [];
+    rules.push({ icon: st.pvp ? 'swords' : 'shield', label: st.pvp ? 'PvP On' : 'PvE', cls: st.pvp ? 'rule-pvp' : 'rule-pve', tip: st.pvp ? 'Player vs Player enabled' : 'Player vs Environment — no PvP' });
+    rules.push({ icon: 'skull', label: INFO_DEATH[st.onDeath] || 'Drop Items', cls: st.onDeath === 0 ? 'rule-easy' : st.onDeath === 2 ? 'rule-hard' : 'rule-mid', tip: 'On death: ' + (INFO_DEATH[st.onDeath] || 'Drop Items') });
+    if (st.friendlyFire) rules.push({ icon: 'users', label: 'FF: ' + (INFO_FF[st.friendlyFire] || 'On'), cls: 'rule-mid', tip: 'Friendly fire: ' + (INFO_FF[st.friendlyFire] || 'On') });
+    if (st.lootRespawn) rules.push({ icon: 'refresh-cw', label: 'Loot Respawn', cls: 'rule-on', tip: 'Loot respawns in containers over time' });
+    if (st.airDrops) rules.push({ icon: 'package', label: 'Air Drops', cls: 'rule-on', tip: 'Air drops are enabled' });
+    if (st.dogCompanion) rules.push({ icon: 'dog', label: 'Companion', cls: 'rule-on', tip: 'Dog companion enabled' });
+    if (st.weaponBreak) rules.push({ icon: 'wrench', label: 'Durability', cls: 'rule-mid', tip: 'Weapons break at zero durability' });
+
+    h += '<div class="srv-info-section">';
+    h += '<div class="srv-info-rules">';
+    for (var ri = 0; ri < rules.length; ri++) {
+      var r = rules[ri];
+      h += '<span class="srv-rule ' + r.cls + '" data-tippy-content="' + esc(r.tip) + '">';
+      h += '<i data-lucide="' + r.icon + '" class="srv-rule-ico"></i>';
+      h += r.label;
+      h += '</span>';
+    }
+    h += '</div></div>';
+
+    // ── Threat Level (zombies & bandits) ──
+    h += '<div class="srv-info-section">';
+    h += '<div class="srv-info-threats">';
+    h += _renderThreatBar('Zombies', st.zombieHealth, st.zombieDamage, st.zombieSpeed, st.zombieAmount, 'skull');
+    h += _renderThreatBar('Bandits', st.banditHealth, st.banditDamage, null, st.banditAmount, 'crosshair');
+    h += '</div></div>';
+
+    // ── Loot Rarity ──
+    var lootItems = [
+      { key: 'rarityFood', label: 'Food', icon: 'apple' },
+      { key: 'rarityDrink', label: 'Drinks', icon: 'droplets' },
+      { key: 'rarityMelee', label: 'Melee', icon: 'axe' },
+      { key: 'rarityRanged', label: 'Ranged', icon: 'target' },
+      { key: 'rarityAmmo', label: 'Ammo', icon: 'zap' },
+      { key: 'rarityArmor', label: 'Armor', icon: 'shield' },
+      { key: 'rarityResources', label: 'Resources', icon: 'hammer' },
+    ];
+    var hasLoot = false;
+    for (var li = 0; li < lootItems.length; li++) { if (st[lootItems[li].key]) { hasLoot = true; break; } }
+    if (hasLoot) {
+      h += '<div class="srv-info-section">';
+      h += '<div class="srv-info-loot">';
+      for (var li = 0; li < lootItems.length; li++) {
+        var lt = lootItems[li], val = st[lt.key] || 2;
+        var lootLabel = INFO_LOOT[val] || 'Normal';
+        var lootCls = val <= 1 ? 'loot-scarce' : val >= 4 ? 'loot-abundant' : val >= 3 ? 'loot-plenty' : 'loot-normal';
+        h += '<span class="srv-loot ' + lootCls + '" data-tippy-content="' + lt.label + ': ' + lootLabel + '">';
+        h += '<i data-lucide="' + lt.icon + '" class="srv-loot-ico"></i>';
+        h += '<span class="srv-loot-label">' + lt.label + '</span>';
+        h += '</span>';
+      }
+      h += '</div></div>';
+    }
+
+    // ── World Stats (if available from save data) ──
+    var stats = [];
+    if (st.worldStructures) stats.push({ icon: 'building', val: st.worldStructures, label: 'Structures', tip: 'Total structures on the map' });
+    if (st.worldVehicles) stats.push({ icon: 'car', val: st.worldVehicles, label: 'Vehicles', tip: 'Total vehicles on the map' });
+    if (st.worldCompanions) stats.push({ icon: 'dog', val: st.worldCompanions, label: 'Companions', tip: 'Active companions' });
+    if (st.totalKills) stats.push({ icon: 'skull', val: _formatK(st.totalKills), label: 'Kills', tip: 'Total lifetime kills across all players' });
+    if (stats.length) {
+      h += '<div class="srv-info-section">';
+      h += '<div class="srv-info-stats">';
+      for (var wi = 0; wi < stats.length; wi++) {
+        var ws = stats[wi];
+        h += '<span class="srv-stat" data-tippy-content="' + esc(ws.tip) + '">';
+        h += '<i data-lucide="' + ws.icon + '" class="srv-stat-ico"></i>';
+        h += '<span class="srv-stat-val">' + ws.val + '</span>';
+        h += '<span class="srv-stat-label">' + ws.label + '</span>';
+        h += '</span>';
+      }
+      h += '</div></div>';
+    }
+
+    return h;
+  }
+
+  /** Render a compact threat bar for zombies/bandits */
+  function _renderThreatBar(label, health, damage, speed, amount, icon) {
+    // Average threat score: 1-4 scale (from the difficulty values)
+    var vals = [health || 2, damage || 2];
+    if (speed != null) vals.push(speed);
+    var avg = 0;
+    for (var i = 0; i < vals.length; i++) avg += vals[i];
+    avg = avg / vals.length;
+    var pct = Math.round(((avg - 1) / 3) * 100); // 1=0%, 4=100%
+    var amtStr = amount ? (amount === 1 ? '1x' : amount + 'x') : '';
+    var threatCls = avg <= 1.5 ? 'threat-low' : avg >= 3 ? 'threat-high' : 'threat-mid';
+
+    var parts = [];
+    parts.push('Health: ' + (INFO_DIFF[health] || 'Normal'));
+    parts.push('Damage: ' + (INFO_DIFF[damage] || 'Normal'));
+    if (speed != null) parts.push('Speed: ' + (INFO_DIFF[speed] || 'Normal'));
+    if (amtStr) parts.push('Amount: ' + amtStr);
+    var tip = label + ' — ' + parts.join(', ');
+
+    var h = '<div class="srv-threat ' + threatCls + '" data-tippy-content="' + esc(tip) + '">';
+    h += '<div class="srv-threat-head">';
+    h += '<i data-lucide="' + icon + '" class="srv-threat-ico"></i>';
+    h += '<span class="srv-threat-label">' + label + '</span>';
+    if (amtStr) h += '<span class="srv-threat-amt">' + amtStr + '</span>';
+    h += '</div>';
+    h += '<div class="srv-threat-track"><div class="srv-threat-fill" style="width:' + pct + '%"></div></div>';
+    h += '</div>';
+    return h;
+  }
+
+  /** Format large numbers: 1000 → 1K, 15000 → 15K */
+  function _formatK(n) {
+    if (n >= 1000) return Math.round(n / 1000) + 'K';
+    return '' + n;
   }
 
   function renderSchedule(container, sched, context) {
@@ -1384,6 +1672,7 @@
     RarityFood: 'Food Loot', RarityDrink: 'Drink Loot', RarityMelee: 'Melee Loot',
     RarityRanged: 'Ranged Loot', RarityAmmo: 'Ammo Loot', RarityArmor: 'Armor Loot',
     RarityResources: 'Resource Loot', RarityOther: 'Other Loot',
+    PVP: 'PvP', MaxPlayers: 'Max Players',
   };
   var DIFF_LEVELS = { '1': 'Low', '2': 'Normal', '3': 'High', '4': 'Very High' };
   var RARITY_LEVELS = { '1': 'Scarce', '2': 'Normal', '3': 'Plenty', '4': 'Abundant' };
@@ -1394,6 +1683,7 @@
     if (/Multi$|Multiplier$/.test(key)) return parseFloat(s) !== 1 ? s + 'x' : '1x (default)';
     if (key === 'AIEvent') return DIFF_LEVELS[s] || s;
     if (key === 'OnDeath') { var od = { '0': 'Keep Items', '1': 'Drop Items', '2': 'Destroy Items' }; return od[s] || s; }
+    if (key === 'PVP') return s === '1' || s === 'true' ? 'On' : 'Off';
     return s;
   }
   function buildScheduleTip(name, colorCls, ps) {
@@ -1432,6 +1722,434 @@
       return new Date().toLocaleTimeString('en-US', { timeZone: tz, hour12: false, hour: '2-digit', minute: '2-digit' });
     } catch (e) { return new Date().toTimeString().slice(0, 5); }
   }
+
+  // ═══════════════════════════════════════════════════════════
+  //  Schedule Editor
+  // ═══════════════════════════════════════════════════════════
+
+  var _schedEdit = { times: [], profiles: [], settings: {}, rotateDaily: false, serverNameTemplate: '' };
+
+  // Known game settings that profiles can modify
+  var SCHED_SETTING_GROUPS = [
+    { header: 'Zombies', icon: 'skull', items: [
+      { key: 'ZombieAmountMulti', label: 'Amount', type: 'number', step: '0.1' },
+      { key: 'ZombieDiffHealth', label: 'Health', type: 'select', opts: { '1': 'Low', '2': 'Normal', '3': 'High', '4': 'Very High' } },
+      { key: 'ZombieDiffDamage', label: 'Damage', type: 'select', opts: { '1': 'Low', '2': 'Normal', '3': 'High', '4': 'Very High' } },
+      { key: 'ZombieDiffSpeed', label: 'Speed', type: 'select', opts: { '1': 'Low', '2': 'Normal', '3': 'High', '4': 'Very High' } },
+    ]},
+    { header: 'Enemies', icon: 'swords', items: [
+      { key: 'HumanAmountMulti', label: 'Bandits', type: 'number', step: '0.1' },
+      { key: 'AnimalMulti', label: 'Animals', type: 'number', step: '0.1' },
+      { key: 'AIEvent', label: 'AI Events', type: 'select', opts: { '1': 'Low', '2': 'Normal', '3': 'High', '4': 'Very High' } },
+    ]},
+    { header: 'Loot', icon: 'package', items: [
+      { key: 'RarityFood', label: 'Food', type: 'select', opts: { '1': 'Scarce', '2': 'Normal', '3': 'Plenty', '4': 'Abundant' } },
+      { key: 'RarityDrink', label: 'Drink', type: 'select', opts: { '1': 'Scarce', '2': 'Normal', '3': 'Plenty', '4': 'Abundant' } },
+      { key: 'RarityMelee', label: 'Melee', type: 'select', opts: { '1': 'Scarce', '2': 'Normal', '3': 'Plenty', '4': 'Abundant' } },
+      { key: 'RarityRanged', label: 'Ranged', type: 'select', opts: { '1': 'Scarce', '2': 'Normal', '3': 'Plenty', '4': 'Abundant' } },
+      { key: 'RarityAmmo', label: 'Ammo', type: 'select', opts: { '1': 'Scarce', '2': 'Normal', '3': 'Plenty', '4': 'Abundant' } },
+      { key: 'RarityArmor', label: 'Armor', type: 'select', opts: { '1': 'Scarce', '2': 'Normal', '3': 'Plenty', '4': 'Abundant' } },
+      { key: 'RarityResources', label: 'Resources', type: 'select', opts: { '1': 'Scarce', '2': 'Normal', '3': 'Plenty', '4': 'Abundant' } },
+      { key: 'RarityOther', label: 'Other', type: 'select', opts: { '1': 'Scarce', '2': 'Normal', '3': 'Plenty', '4': 'Abundant' } },
+    ]},
+    { header: 'Gameplay', icon: 'settings', items: [
+      { key: 'PVP', label: 'PvP', type: 'select', opts: { '0': 'Off', '1': 'On' } },
+      { key: 'OnDeath', label: 'On Death', type: 'select', opts: { '0': 'Keep Items', '1': 'Drop Items', '2': 'Destroy Items' } },
+      { key: 'XpMultiplier', label: 'XP Multiplier', type: 'number', step: '0.1' },
+      { key: 'MaxPlayers', label: 'Max Players', type: 'number', step: '1' },
+    ]},
+  ];
+  // Flat list for backward compat
+  var SCHED_SETTING_OPTIONS = SCHED_SETTING_GROUPS.reduce(function(a, g) { return a.concat(g.items); }, []);
+
+  async function loadScheduleEditor() {
+    var container = $('#settings-grid');
+    if (!container) return;
+    container.innerHTML = '<div class="feed-empty">Loading schedule...</div>';
+
+    try {
+      var r = await apiFetch('/api/panel/scheduler');
+      var sched = await r.json();
+      S.scheduleData = sched;
+    } catch (e) {
+      S.scheduleData = null;
+    }
+
+    var data = S.scheduleData || {};
+    _schedEdit.times = (data.restartTimes || []).slice();
+    _schedEdit.profiles = (data.profiles || []).slice();
+    _schedEdit.settings = {};
+    var ps = data.profileSettings || {};
+    for (var i = 0; i < _schedEdit.profiles.length; i++) {
+      var n = _schedEdit.profiles[i];
+      _schedEdit.settings[n] = ps[n] ? Object.assign({}, ps[n]) : {};
+    }
+    _schedEdit.rotateDaily = !!data.rotateDaily;
+    _schedEdit.serverNameTemplate = data.serverNameTemplate || '';
+    if (!_schedEdit.serverNameTemplate) {
+      for (var pi = 0; pi < _schedEdit.profiles.length; pi++) {
+        var pSettings = _schedEdit.settings[_schedEdit.profiles[pi]] || {};
+        var sn = pSettings.ServerName;
+        if (sn) {
+          sn = sn.replace(/^"|"$/g, '');
+          var pName = _schedEdit.profiles[pi];
+          var capName = pName.charAt(0).toUpperCase() + pName.slice(1);
+          if (sn.includes(capName)) {
+            _schedEdit.serverNameTemplate = sn.replace(capName, '{mode}');
+          }
+          break;
+        }
+      }
+    }
+
+    _renderScheduleInline(container, data);
+  }
+
+  function _renderScheduleInline(container, data) {
+    container.innerHTML = '';
+
+    // Status banner
+    var isActive = data && data.active;
+    var banner = el('div', 'flex items-center gap-2 text-xs px-3 py-2 rounded-lg border ' +
+      (isActive ? 'bg-accent/5 border-accent/20 text-accent' : 'bg-surface-50 border-border text-muted'));
+    banner.innerHTML = '<i data-lucide="' + (isActive ? 'check-circle' : 'info') + '" class="w-3.5 h-3.5"></i>' +
+      (isActive ? 'Schedule is active — ' + (_schedEdit.profiles.length || 0) + ' profile(s), ' + (_schedEdit.times.length || 0) + ' restart time(s)' : 'No schedule configured — add restart times and profiles below');
+    container.appendChild(banner);
+
+    // Current schedule preview (read-only, if active)
+    if (isActive) {
+      var preview = el('div', 'card');
+      var prevHdr = el('div', 'flex items-center justify-between mb-3');
+      prevHdr.innerHTML = '<h3 class="card-title mb-0">Current Schedule</h3>';
+      preview.appendChild(prevHdr);
+      var prevBody = el('div', 'space-y-2');
+      prevBody.id = 'sched-inline-preview';
+      renderSchedule(prevBody, data, 'dashboard');
+      if (data.rotateDaily && data.tomorrowSchedule) {
+        renderTomorrowSchedule(prevBody, data);
+      }
+      preview.appendChild(prevBody);
+      container.appendChild(preview);
+    }
+
+    // Editor section (always shown for admin)
+    if (S.tier < 3) {
+      if (!isActive) container.innerHTML = '<div class="feed-empty">No schedule configured for this server</div>';
+      lucide.createIcons({ attrs: { class: '' } });
+      return;
+    }
+
+    var editorWrap = el('div', 'space-y-5');
+
+    // ── Restart Times ──
+    var timesSection = el('div', 'card');
+    timesSection.innerHTML = '<h3 class="card-title flex items-center gap-2"><i data-lucide="clock" class="w-4 h-4 text-muted"></i> Restart Times</h3>' +
+      '<p class="text-[10px] text-muted mb-3">Server restarts at these times daily. Profiles rotate through these slots.</p>';
+    var timesList = el('div', 'flex flex-wrap gap-2 mb-3');
+    timesList.id = 'sched-times-list';
+    timesSection.appendChild(timesList);
+    var addTimeRow = el('div', 'flex items-center gap-2');
+    addTimeRow.innerHTML = '<input type="time" id="sched-add-time" class="input-field w-28 text-xs py-1">' +
+      '<button id="sched-add-time-btn" class="text-xs px-2.5 py-1 rounded bg-accent/20 text-accent hover:bg-accent/30 transition-colors">+ Add</button>';
+    timesSection.appendChild(addTimeRow);
+    editorWrap.appendChild(timesSection);
+
+    // ── Profiles ──
+    var profilesSection = el('div', 'card');
+    profilesSection.innerHTML = '<h3 class="card-title flex items-center gap-2"><i data-lucide="layers" class="w-4 h-4 text-muted"></i> Profiles</h3>' +
+      '<p class="text-[10px] text-muted mb-3">Profiles cycle through restart slots. Each profile applies different game settings.</p>';
+    var profilesList = el('div', '');
+    profilesList.id = 'sched-profiles-list';
+    profilesSection.appendChild(profilesList);
+    var addProfileRow = el('div', 'flex items-center gap-2 mt-3');
+    addProfileRow.innerHTML = '<input type="text" id="sched-add-profile" placeholder="Profile name" class="input-field w-40 text-xs py-1">' +
+      '<button id="sched-add-profile-btn" class="text-xs px-2.5 py-1 rounded bg-accent/20 text-accent hover:bg-accent/30 transition-colors">+ Add Profile</button>';
+    profilesSection.appendChild(addProfileRow);
+    editorWrap.appendChild(profilesSection);
+
+    // ── Server Name Template ──
+    var nameSection = el('div', 'card');
+    nameSection.innerHTML = '<h3 class="card-title flex items-center gap-2"><i data-lucide="type" class="w-4 h-4 text-muted"></i> Server Name Template</h3>' +
+      '<p class="text-[10px] text-muted mb-3">Use <code class="text-accent/80 bg-surface-50 px-1 rounded text-[9px]">{mode}</code> where the profile name should appear. Leave empty to skip.</p>' +
+      '<input type="text" id="sched-name-template" placeholder="[EU1] My Server | {mode} | Dynamic Difficulty" class="input-field w-full text-xs py-1.5 font-mono" value="' + esc(_schedEdit.serverNameTemplate) + '">';
+    editorWrap.appendChild(nameSection);
+
+    // ── Options ──
+    var optSection = el('div', 'card');
+    var rotateLabel = el('label', 'flex items-center gap-2 text-xs text-text cursor-pointer select-none');
+    rotateLabel.innerHTML = '<input type="checkbox" id="sched-rotate-daily" class="accent-accent rounded w-3.5 h-3.5"' + (_schedEdit.rotateDaily ? ' checked' : '') + '> Rotate profiles daily (shifts schedule by one slot each day)';
+    optSection.appendChild(rotateLabel);
+    editorWrap.appendChild(optSection);
+
+    // ── Save bar ──
+    var saveBar = el('div', 'flex items-center justify-end gap-3 pt-2');
+    saveBar.innerHTML = '<span id="sched-editor-status" class="text-[10px] text-muted"></span>' +
+      '<button id="sched-editor-save" class="btn-primary flex items-center gap-1.5"><i data-lucide="save" class="w-3.5 h-3.5"></i> Save Schedule</button>';
+    editorWrap.appendChild(saveBar);
+
+    container.appendChild(editorWrap);
+
+    // Render dynamic lists
+    _renderSchedTimes();
+    _renderSchedProfiles();
+
+    // Wire up inline events
+    _wireScheduleEvents();
+    lucide.createIcons({ attrs: { class: '' } });
+  }
+
+  function _wireScheduleEvents() {
+    var addTimeBtn = $('#sched-add-time-btn');
+    if (addTimeBtn) addTimeBtn.onclick = function() {
+      var inp = $('#sched-add-time');
+      var val = inp.value;
+      if (!val) return;
+      var parts = val.split(':');
+      var t = String(parseInt(parts[0], 10)).padStart(2, '0') + ':' + String(parseInt(parts[1], 10) || 0).padStart(2, '0');
+      if (_schedEdit.times.indexOf(t) === -1) _schedEdit.times.push(t);
+      inp.value = '';
+      _renderSchedTimes();
+    };
+
+    var addProfileBtn = $('#sched-add-profile-btn');
+    if (addProfileBtn) addProfileBtn.onclick = function() {
+      var inp = $('#sched-add-profile');
+      var name = inp.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      if (!name) return;
+      if (_schedEdit.profiles.indexOf(name) === -1) {
+        _schedEdit.profiles.push(name);
+        _schedEdit.settings[name] = {};
+      }
+      inp.value = '';
+      _renderSchedProfiles();
+    };
+
+    var rotateCb = $('#sched-rotate-daily');
+    if (rotateCb) rotateCb.onchange = function() { _schedEdit.rotateDaily = rotateCb.checked; };
+
+    var tplInput = $('#sched-name-template');
+    if (tplInput) tplInput.oninput = function() { _schedEdit.serverNameTemplate = tplInput.value; };
+
+    var saveBtn = $('#sched-editor-save');
+    if (saveBtn) saveBtn.onclick = _saveSchedule;
+  }
+
+  function openScheduleEditor() {
+    var sched = S.scheduleData;
+    if (!sched) return;
+    _schedEdit.times = (sched.restartTimes || []).slice();
+    _schedEdit.profiles = (sched.profiles || []).slice();
+    _schedEdit.settings = {};
+    var ps = sched.profileSettings || {};
+    for (var i = 0; i < _schedEdit.profiles.length; i++) {
+      var n = _schedEdit.profiles[i];
+      _schedEdit.settings[n] = ps[n] ? Object.assign({}, ps[n]) : {};
+    }
+    _schedEdit.rotateDaily = !!sched.rotateDaily;
+    // Extract server name template from existing profile ServerName values
+    _schedEdit.serverNameTemplate = sched.serverNameTemplate || '';
+    if (!_schedEdit.serverNameTemplate) {
+      // Try to infer from first profile's ServerName
+      for (var pi = 0; pi < _schedEdit.profiles.length; pi++) {
+        var pSettings = _schedEdit.settings[_schedEdit.profiles[pi]] || {};
+        var sn = pSettings.ServerName;
+        if (sn) {
+          // Strip outer quotes if present
+          sn = sn.replace(/^"|"$/g, '');
+          // Replace profile name with {mode} placeholder
+          var pName = _schedEdit.profiles[pi];
+          var capName = pName.charAt(0).toUpperCase() + pName.slice(1);
+          if (sn.includes(capName)) {
+            _schedEdit.serverNameTemplate = sn.replace(capName, '{mode}');
+          }
+          break;
+        }
+      }
+    }
+    $('#sched-rotate-daily').checked = _schedEdit.rotateDaily;
+    var tplInput = $('#sched-name-template');
+    if (tplInput) tplInput.value = _schedEdit.serverNameTemplate;
+    _renderSchedTimes();
+    _renderSchedProfiles();
+    $('#sched-editor-modal').classList.remove('hidden');
+    $('#sched-editor-status').textContent = '';
+    lucide.createIcons({ attrs: { class: '' } });
+  }
+
+  function _renderSchedTimes() {
+    var c = $('#sched-times-list');
+    c.innerHTML = '';
+    _schedEdit.times.sort();
+    for (var i = 0; i < _schedEdit.times.length; i++) {
+      (function(idx) {
+        var t = _schedEdit.times[idx];
+        var chip = el('div', 'flex items-center gap-1.5 bg-surface-50 border border-border rounded px-2.5 py-1 text-xs font-mono');
+        chip.innerHTML = '<span>' + esc(t) + '</span>';
+        var btn = el('button', 'text-muted hover:text-horde transition-colors');
+        btn.innerHTML = '<i data-lucide="x" class="w-3 h-3"></i>';
+        btn.onclick = function() {
+          _schedEdit.times.splice(idx, 1);
+          _renderSchedTimes();
+        };
+        chip.appendChild(btn);
+        c.appendChild(chip);
+      })(i);
+    }
+    lucide.createIcons({ attrs: { class: '' } });
+  }
+
+  function _renderSchedProfiles() {
+    var c = $('#sched-profiles-list');
+    c.innerHTML = '';
+    for (var i = 0; i < _schedEdit.profiles.length; i++) {
+      (function(idx) {
+        var name = _schedEdit.profiles[idx];
+        var settings = _schedEdit.settings[name] || {};
+
+        var card = el('div', 'sched-profile-card');
+        var hdr = el('div', 'sched-profile-hdr');
+        var colorCls = name.includes('calm') ? 'text-calm' : name.includes('surge') ? 'text-surge' : name.includes('horde') ? 'text-horde' : 'text-accent';
+        hdr.innerHTML = '<span class="text-sm font-medium ' + colorCls + '">' + esc(name.charAt(0).toUpperCase() + name.slice(1)) + '</span>';
+        var actions = el('div', 'flex items-center gap-2');
+        // Duplicate button
+        var dupeBtn = el('button', 'text-[10px] text-muted hover:text-accent transition-colors');
+        dupeBtn.textContent = 'Duplicate';
+        dupeBtn.onclick = function() {
+          var newName = name + '-copy';
+          var suffix = 2;
+          while (_schedEdit.profiles.indexOf(newName) >= 0) { newName = name + '-copy' + suffix++; }
+          _schedEdit.profiles.push(newName);
+          _schedEdit.settings[newName] = Object.assign({}, _schedEdit.settings[name] || {});
+          delete _schedEdit.settings[newName].ServerName;
+          _renderSchedProfiles();
+        };
+        actions.appendChild(dupeBtn);
+        var removeBtn = el('button', 'text-[10px] text-muted hover:text-horde transition-colors');
+        removeBtn.textContent = 'Remove';
+        removeBtn.onclick = function() {
+          _schedEdit.profiles.splice(idx, 1);
+          delete _schedEdit.settings[name];
+          _renderSchedProfiles();
+        };
+        actions.appendChild(removeBtn);
+        hdr.appendChild(actions);
+        card.appendChild(hdr);
+
+        // Grouped settings
+        for (var gi = 0; gi < SCHED_SETTING_GROUPS.length; gi++) {
+          (function(group) {
+            var section = el('div', 'sched-settings-group');
+            var groupHdr = el('div', 'sched-group-hdr');
+            groupHdr.innerHTML = '<i data-lucide="' + group.icon + '" class="w-3 h-3"></i><span>' + group.header + '</span>';
+            section.appendChild(groupHdr);
+
+            var grid = el('div', 'sched-settings-grid');
+            for (var si = 0; si < group.items.length; si++) {
+              (function(opt) {
+                var row = el('div', 'sched-setting-row');
+                var lbl = el('span', 'sched-setting-label');
+                lbl.textContent = opt.label;
+                row.appendChild(lbl);
+
+                var curVal = settings[opt.key] != null ? String(settings[opt.key]) : '';
+                var input;
+                if (opt.type === 'select') {
+                  input = document.createElement('select');
+                  input.className = 'input-field text-[10px] py-0.5 px-1.5 w-24';
+                  var emptyOpt = document.createElement('option');
+                  emptyOpt.value = '';
+                  emptyOpt.textContent = '— default —';
+                  input.appendChild(emptyOpt);
+                  for (var val in opt.opts) {
+                    var o = document.createElement('option');
+                    o.value = val;
+                    o.textContent = opt.opts[val];
+                    if (val === curVal) o.selected = true;
+                    input.appendChild(o);
+                  }
+                } else {
+                  input = document.createElement('input');
+                  input.type = 'number';
+                  input.step = opt.step || '1';
+                  input.min = '0';
+                  input.className = 'input-field text-[10px] py-0.5 px-1.5 w-20';
+                  input.placeholder = 'default';
+                  if (curVal) input.value = curVal;
+                }
+                input.onchange = function() {
+                  if (!_schedEdit.settings[name]) _schedEdit.settings[name] = {};
+                  if (input.value === '') {
+                    delete _schedEdit.settings[name][opt.key];
+                  } else {
+                    _schedEdit.settings[name][opt.key] = input.value;
+                  }
+                };
+                row.appendChild(input);
+                grid.appendChild(row);
+              })(group.items[si]);
+            }
+            section.appendChild(grid);
+            card.appendChild(section);
+          })(SCHED_SETTING_GROUPS[gi]);
+        }
+        c.appendChild(card);
+      })(i);
+    }
+    lucide.createIcons({ attrs: { class: '' } });
+  }
+
+  function _saveSchedule() {
+    var statusEl = $('#sched-editor-status');
+    statusEl.textContent = 'Saving...';
+    statusEl.style.color = '#d4a843';
+
+    // Auto-generate per-profile ServerName from template
+    var tpl = ($('#sched-name-template') || {}).value || '';
+    if (tpl) {
+      for (var pi = 0; pi < _schedEdit.profiles.length; pi++) {
+        var pn = _schedEdit.profiles[pi];
+        var capName = pn.charAt(0).toUpperCase() + pn.slice(1);
+        if (!_schedEdit.settings[pn]) _schedEdit.settings[pn] = {};
+        _schedEdit.settings[pn].ServerName = '"' + tpl.replace(/\{mode\}/gi, capName) + '"';
+      }
+    }
+
+    var payload = {
+      restartTimes: _schedEdit.times,
+      profiles: _schedEdit.profiles,
+      profileSettings: _schedEdit.settings,
+      rotateDaily: $('#sched-rotate-daily').checked,
+      serverNameTemplate: tpl,
+    };
+
+    apiFetch('/api/panel/scheduler', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      if (data.ok) {
+        statusEl.textContent = 'Saved — restart required';
+        statusEl.style.color = '#6dba82';
+        // Refresh the inline view after save
+        setTimeout(function() { loadScheduleEditor(); }, 1200);
+      } else {
+        statusEl.textContent = data.error || 'Save failed';
+        statusEl.style.color = '#c45a4a';
+      }
+    }).catch(function(e) {
+      statusEl.textContent = 'Network error';
+      statusEl.style.color = '#c45a4a';
+    });
+  }
+
+  // Wire up schedule editor modal close buttons (modal is still used from legacy openScheduleEditor)
+  (function() {
+    var closeBtn = $('#sched-editor-close');
+    if (closeBtn) closeBtn.onclick = function() { $('#sched-editor-modal').classList.add('hidden'); };
+
+    var cancelBtn = $('#sched-editor-cancel');
+    if (cancelBtn) cancelBtn.onclick = function() { $('#sched-editor-modal').classList.add('hidden'); };
+  })();
 
   function renderResources(res, uptime) {
     var container = $('#resources-info');

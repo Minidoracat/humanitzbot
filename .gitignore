@@ -18,9 +18,6 @@ data/*
 .dev/
 .dev
 
-# Internal dev notes and Copilot context (private — never tracked)
-.github/
-
 # Auto-generated changelog JSON (README.md is the user-facing doc)
 CHANGELOG.json
 
@@ -35,17 +32,11 @@ src/web-map/public/island-shape.svg
 src/web-map/public/map-*.png
 src/web-map/public/map-*.jpg
 
-# Private anticheat engine (optional — not required)
+# Private anticheat engine (separate package — detection logic never in this repo)
 qs-anticheat/
-src/modules/anticheat-integration.js
-test/anticheat.test.js
-
-# Custom RCON mod (private — separate project)
-src/modules/howyagarn/
-test/howyagarn.test.js
 
 # Development / extraction utility scripts & cached data
-tools/
+# tools/ — tracked in howyagarn (private), gitignored in staging/public repos
 GameServerSettings.ini
 .tmp-*
 

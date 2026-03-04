@@ -21,6 +21,7 @@ const config = require('../config');
 const SftpClient = require('ssh2-sftp-client');
 const { createServerConfig } = require('../server/multi-server');
 const { GAME_SETTINGS_CATEGORIES } = require('./panel-constants');
+const { _detectSshKey } = require('./panel-setup-wizard');
 
 /** Safely build a modal title within Discord's 45-char limit. */
 function _modalTitle(prefix, name, suffix) {
@@ -125,6 +126,9 @@ async function _handleAddSftpButton(interaction, customId) {
     .setCustomId(`panel_add_sftp_modal:${userId}`)
     .setTitle('Add Server — SFTP Connection');
 
+  // Auto-detect SSH keys on the bot host
+  const detectedKey = _detectSshKey();
+
   modal.addComponents(
     new ActionRowBuilder().addComponents(
       new TextInputBuilder().setCustomId('sftp_host').setLabel('SFTP Host').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('e.g. atlas.realm.se')
@@ -136,7 +140,12 @@ async function _handleAddSftpButton(interaction, customId) {
       new TextInputBuilder().setCustomId('sftp_user').setLabel('SFTP Username').setStyle(TextInputStyle.Short).setRequired(true)
     ),
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('sftp_password').setLabel('SFTP Password').setStyle(TextInputStyle.Short).setRequired(true)
+      new TextInputBuilder().setCustomId('sftp_password').setLabel('SFTP Password (blank if using SSH key)').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('Leave blank if using key auth')
+    ),
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder().setCustomId('sftp_key_path').setLabel('SSH Key Path on bot host (optional)').setStyle(TextInputStyle.Short).setRequired(false)
+        .setValue(detectedKey)
+        .setPlaceholder(detectedKey ? `Detected: ${detectedKey}` : 'No keys found — use password instead')
     ),
   );
 
@@ -158,14 +167,18 @@ async function _handleAddSftpModal(interaction) {
   const port = parseInt(interaction.fields.getTextInputValue('sftp_port'), 10) || 22;
   const user = interaction.fields.getTextInputValue('sftp_user').trim();
   const password = interaction.fields.getTextInputValue('sftp_password').trim();
+  const privateKeyPath = interaction.fields.getTextInputValue('sftp_key_path').trim();
 
-  if (!host || !user || !password) {
-    await interaction.reply({ content: '❌ SFTP host, username, and password are required.', flags: MessageFlags.Ephemeral });
+  if (!host || !user || (!password && !privateKeyPath)) {
+    await interaction.reply({ content: '❌ SFTP host, username, and either a password or SSH key path are required.', flags: MessageFlags.Ephemeral });
     return true;
   }
 
   // Store SFTP config on the pending server definition
-  pending.sftp = { host, port, user, password };
+  const sftp = { host, port, user };
+  if (password) sftp.password = password;
+  if (privateKeyPath) sftp.privateKeyPath = privateKeyPath;
+  pending.sftp = sftp;
 
   // Show continue/skip buttons
   const continueBtn = new ButtonBuilder()
@@ -239,8 +252,6 @@ async function _handleAddServerStep2Modal(interaction) {
     return true;
   }
 
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
   const channels = {};
   const chStatus = interaction.fields.getTextInputValue('ch_status').trim();
   const chStats = interaction.fields.getTextInputValue('ch_stats').trim();
@@ -257,15 +268,20 @@ async function _handleAddServerStep2Modal(interaction) {
   const serverDef = { ...pending, channels, enabled: true };
   this._pendingServers.delete(userId);
 
-  try {
-    if (!this.multiServerManager) {
-      await interaction.editReply('❌ Multi-server manager not available.');
-      return true;
-    }
+  if (!this.multiServerManager) {
+    await interaction.editReply('❌ Multi-server manager not available.');
+    return true;
+  }
 
-    const saved = await this.multiServerManager.addServer(serverDef);
-    const channelCount = Object.keys(channels).length;
+  const channelCount = Object.keys(channels).length;
 
+  // Reply immediately — addServer triggers SFTP auto-discovery which can take 60s+
+  await interaction.editReply(
+    `⏳ **${serverDef.name}** saved — starting up (SFTP discovery may take a moment)...`
+  );
+
+  // Run the long operation in the background so the user isn't staring at "thinking..."
+  this.multiServerManager.addServer(serverDef).then(async (saved) => {
     // Post a per-server management embed
     try {
       const instance = this.multiServerManager.getInstance(saved.id);
@@ -278,19 +294,23 @@ async function _handleAddServerStep2Modal(interaction) {
       console.error(`[PANEL CH] Failed to post embed for new server ${saved.name}:`, embedErr.message);
     }
 
-    await interaction.editReply(
-      `✅ **${saved.name}** added and started!\n` +
-      `• RCON: \`${saved.rcon.host}:${saved.rcon.port}\`\n` +
-      `• Game Port: \`${saved.gamePort}\`\n` +
-      `• Channels: ${channelCount} configured\n` +
-      `• SFTP: Inherited from primary server`
-    );
+    try {
+      await interaction.editReply(
+        `✅ **${saved.name}** added and started!\n` +
+        `• RCON: \`${saved.rcon.host}:${saved.rcon.port}\`\n` +
+        `• Game Port: \`${saved.gamePort}\`\n` +
+        `• Channels: ${channelCount} configured\n` +
+        `• SFTP: ${serverDef.sftp ? 'Configured' : 'Inherited from primary server'}`
+      );
+    } catch { /* interaction may have expired after 15 min */ }
 
     // Refresh the bot controls embed
     setTimeout(() => this._update(true), 1000);
-  } catch (err) {
-    await interaction.editReply(`❌ Failed to add server: ${err.message}`);
-  }
+  }).catch(async (err) => {
+    try {
+      await interaction.editReply(`❌ Failed to add server: ${err.message}`);
+    } catch { /* interaction may have expired */ }
+  });
 
   return true;
 }
@@ -559,6 +579,7 @@ async function _handleServerAction(interaction, customId) {
       }
 
       const sftp = server.sftp || {};
+      const detectedKey = sftp.privateKeyPath || _detectSshKey();
       const modal = new ModalBuilder()
         .setCustomId(`panel_srv_sftp_modal:${serverId}`)
         .setTitle(_modalTitle('SFTP: ', server.name, ' (🔄 Server Restart)'));
@@ -576,6 +597,11 @@ async function _handleServerAction(interaction, customId) {
         new ActionRowBuilder().addComponents(
           new TextInputBuilder().setCustomId('sftp_password').setLabel('SFTP Password (blank = inherit primary)').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder(sftp.password ? '(unchanged)' : 'blank = inherit')
         ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('sftp_key_path').setLabel('SSH Key Path on bot host (optional)').setStyle(TextInputStyle.Short).setRequired(false)
+            .setValue(detectedKey)
+            .setPlaceholder(detectedKey ? `Detected: ${detectedKey}` : 'No keys found — use password')
+        ),
       );
 
       await interaction.showModal(modal);
@@ -591,25 +617,28 @@ async function _handleServerAction(interaction, customId) {
         return true;
       }
 
-      const srvConfig = createServerConfig(server);
-      if (!srvConfig.ftpHost || !srvConfig.ftpUser || (!srvConfig.ftpPassword && !srvConfig.ftpPrivateKeyPath)) {
+      const sftpCfg = _getSrvSftpConfig(server);
+      if (!sftpCfg) {
         await interaction.reply({ content: '❌ No SFTP credentials configured for this server.', flags: MessageFlags.Ephemeral });
         return true;
       }
 
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
+      // We need to fetch the current welcome message via SFTP before showing the modal.
+      // Since modals must be shown within 3s and SFTP may be slow, we show the modal
+      // immediately with empty content, and the user can paste/type their message.
+      // Store server ID in pending state so we can pre-fill if needed.
       let currentContent = '';
       try {
+        // Try a quick SFTP fetch — if it takes too long, the modal will be empty
         const sftp = new SftpClient();
-        await sftp.connect({ host: srvConfig.ftpHost, port: srvConfig.ftpPort, username: srvConfig.ftpUser, password: srvConfig.ftpPassword });
-        const welcomePath = srvConfig.ftpWelcomePath || config.ftpWelcomePath;
+        const { settingsPath: _s, welcomePath, ...connectOpts } = sftpCfg;
+        await sftp.connect(connectOpts);
         const buf = await sftp.get(welcomePath);
         currentContent = buf.toString('utf8');
         await sftp.end().catch(() => {});
       } catch (err) {
-        await interaction.editReply(`❌ Could not read WelcomeMessage.txt: ${err.message}`);
-        return true;
+        // Couldn't read — show modal with empty content, user can still type
+        currentContent = '';
       }
 
       // Discord modal text inputs max 4000 chars
@@ -632,7 +661,6 @@ async function _handleServerAction(interaction, customId) {
       );
 
       await interaction.showModal(modal);
-      await interaction.deleteReply().catch(() => {});
       return true;
     }
 
@@ -793,11 +821,13 @@ async function _handleEditSftpModal(interaction) {
     const port = interaction.fields.getTextInputValue('sftp_port').trim();
     const user = interaction.fields.getTextInputValue('sftp_user').trim();
     const password = interaction.fields.getTextInputValue('sftp_password').trim();
+    const privateKeyPath = interaction.fields.getTextInputValue('sftp_key_path').trim();
 
     if (host) sftp.host = host;
     if (port) sftp.port = parseInt(port, 10) || 22;
     if (user) sftp.user = user;
     if (password) sftp.password = password;
+    if (privateKeyPath) sftp.privateKeyPath = privateKeyPath;
 
     // If SFTP host changed, clear old paths so auto-discovery re-runs on restart
     const servers = this.multiServerManager.getAllServers();
@@ -825,14 +855,25 @@ async function _handleEditSftpModal(interaction) {
 function _getSrvSftpConfig(serverDef) {
   const srvConfig = createServerConfig(serverDef);
   if (!srvConfig.ftpHost || !srvConfig.ftpUser || (!srvConfig.ftpPassword && !srvConfig.ftpPrivateKeyPath)) return null;
-  return {
+  const cfg = {
     host: srvConfig.ftpHost,
     port: srvConfig.ftpPort,
     username: srvConfig.ftpUser,
-    password: srvConfig.ftpPassword,
     settingsPath: srvConfig.ftpSettingsPath || config.ftpSettingsPath,
     welcomePath: srvConfig.ftpWelcomePath || config.ftpWelcomePath,
   };
+  if (srvConfig.ftpPrivateKeyPath) {
+    try {
+      cfg.privateKey = require('fs').readFileSync(srvConfig.ftpPrivateKeyPath);
+      if (srvConfig.ftpPassword) cfg.passphrase = srvConfig.ftpPassword;
+    } catch (err) {
+      console.error(`[MULTI-SRV] Could not read SSH key at ${srvConfig.ftpPrivateKeyPath}:`, err.message);
+      cfg.password = srvConfig.ftpPassword;
+    }
+  } else {
+    cfg.password = srvConfig.ftpPassword;
+  }
+  return cfg;
 }
 
 async function _handleSrvGameSettingsSelect(interaction) {
@@ -913,11 +954,12 @@ async function _handleSrvGameSettingsModal(interaction) {
 
   try {
     const sftp = new SftpClient();
-    await sftp.connect({ host: sftpCfg.host, port: sftpCfg.port, username: sftpCfg.username, password: sftpCfg.password });
+    const { settingsPath, welcomePath: _w, ...connectOpts } = sftpCfg;
+    await sftp.connect(connectOpts);
 
     let content;
     try {
-      content = (await sftp.get(sftpCfg.settingsPath)).toString('utf8');
+      content = (await sftp.get(settingsPath)).toString('utf8');
     } catch (readErr) {
       await sftp.end().catch(() => {});
       throw new Error(`Could not read settings file: ${readErr.message}`);
@@ -948,7 +990,7 @@ async function _handleSrvGameSettingsModal(interaction) {
       return true;
     }
 
-    await sftp.put(Buffer.from(content, 'utf8'), sftpCfg.settingsPath);
+    await sftp.put(Buffer.from(content, 'utf8'), settingsPath);
     await sftp.end().catch(() => {});
 
     if (this._db) try { this._db.setStateJSON(`server_settings_${serverId}`, cached); } catch (_) {}
@@ -990,8 +1032,9 @@ async function _handleSrvWelcomeModal(interaction) {
   try {
     const newContent = interaction.fields.getTextInputValue('welcome_content');
     const sftp = new SftpClient();
-    await sftp.connect({ host: sftpCfg.host, port: sftpCfg.port, username: sftpCfg.username, password: sftpCfg.password });
-    await sftp.put(Buffer.from(newContent, 'utf8'), sftpCfg.welcomePath);
+    const { settingsPath: _s, welcomePath, ...connectOpts } = sftpCfg;
+    await sftp.connect(connectOpts);
+    await sftp.put(Buffer.from(newContent, 'utf8'), welcomePath);
     await sftp.end().catch(() => {});
 
     await interaction.editReply(`✅ **${serverDef.name}** welcome message updated (${newContent.length} chars).`);

@@ -34,6 +34,8 @@ const LogWatcher = require('../modules/log-watcher');
 const PlayerStatsChannel = require('../modules/player-stats-channel');
 const PvpScheduler = require('../modules/pvp-scheduler');
 const ServerScheduler = require('../modules/server-scheduler');
+let AnticheatIntegration;
+try { AnticheatIntegration = require('../modules/anticheat-integration'); } catch { /* optional module */ }
 
 const SERVERS_FILE = path.join(__dirname, '..', '..', 'data', 'servers.json');
 const SERVERS_DIR = path.join(__dirname, '..', '..', 'data', 'servers');
@@ -122,16 +124,25 @@ async function _discoverFiles(sftp, dir, depth, maxDepth, found) {
  * @returns {Promise<object|null>} paths object or null if discovery fails
  */
 async function discoverPaths(sftpConfig, label = 'DISCOVER') {
-  if (!sftpConfig?.host || !sftpConfig?.user || !sftpConfig?.password) return null;
+  if (!sftpConfig?.host || !sftpConfig?.user || (!sftpConfig?.password && !sftpConfig?.privateKey && !sftpConfig?.privateKeyPath)) return null;
 
   const sftp = new SftpClient();
   try {
-    await sftp.connect({
+    const connectOpts = {
       host: sftpConfig.host,
       port: sftpConfig.port || 22,
       username: sftpConfig.user,
-      password: sftpConfig.password,
-    });
+    };
+    if (sftpConfig.privateKey) {
+      connectOpts.privateKey = sftpConfig.privateKey;
+      if (sftpConfig.passphrase) connectOpts.passphrase = sftpConfig.passphrase;
+    } else if (sftpConfig.privateKeyPath) {
+      connectOpts.privateKey = require('fs').readFileSync(sftpConfig.privateKeyPath);
+      if (sftpConfig.password) connectOpts.passphrase = sftpConfig.password;
+    } else {
+      connectOpts.password = sftpConfig.password;
+    }
+    await sftp.connect(connectOpts);
 
     console.log(`[${label}] Auto-discovering file paths on ${sftpConfig.host}...`);
     const found = new Map();
@@ -225,6 +236,9 @@ function createServerConfig(serverDef) {
     merged.adminChannelId = serverDef.channels.admin || '';
   }
 
+  // Public host for connect address in embeds (don't inherit primary's host)
+  merged.publicHost = serverDef.publicHost || serverDef.rcon?.host || '';
+
   // Server name for thread labels and logging
   merged.serverName = serverDef.name || serverDef.id || '';
 
@@ -242,6 +256,9 @@ function createServerConfig(serverDef) {
   merged.restartProfiles = serverDef.restartProfiles || null;
   merged.restartProfileSettings = serverDef.restartProfileSettings || null;
   merged.enableServerScheduler = serverDef.enableServerScheduler ?? false;
+
+  // Anticheat — per-server toggle (inherits from primary if not set)
+  if (serverDef.enableAnticheat !== undefined) merged.enableAnticheat = serverDef.enableAnticheat;
 
   // PvP overrides — same pattern: don't inherit primary's PvP config
   merged.pvpSettingsOverrides = serverDef.pvpSettingsOverrides || null;
@@ -564,6 +581,25 @@ class ServerInstance {
         console.log(`[MULTI:${label}] ServerScheduler active`);
       } catch (err) {
         console.error(`[MULTI:${label}] ServerScheduler failed:`, err.message);
+      }
+    }
+
+    // Anticheat — observation-only anomaly detection (optional private package)
+    if (this.config.enableAnticheat && AnticheatIntegration && this.db) {
+      try {
+        const mod = new AnticheatIntegration({ db: this.db, config: this.config, logWatcher: this._modules.logWatcher || null });
+        await mod.start();
+        if (mod.available && this.saveService) {
+          this.saveService.on('sync', (result) => {
+            mod.onSaveSync(result).catch(err => {
+              console.error(`[MULTI:${label}] Anticheat save sync error:`, err.message);
+            });
+          });
+        }
+        this._modules.anticheat = mod;
+        console.log(`[MULTI:${label}] Anticheat ${mod.available ? 'active' : 'shim only (package not installed)'}`);
+      } catch (err) {
+        console.error(`[MULTI:${label}] Anticheat failed:`, err.message);
       }
     }
 

@@ -64,6 +64,60 @@ const SERVERS_FILE = path.join(DATA_DIR, 'servers.json');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const CALIBRATION_FILE = path.join(DATA_DIR, 'map-calibration.json');
 
+/**
+ * Extract a curated subset of server settings for the landing page info panel.
+ * Keeps the response small — only settings that make sense to display publicly.
+ * @param {object} ss — Full server_settings object from bot_state
+ * @returns {object} Curated settings for frontend rendering
+ */
+function _extractLandingSettings(ss) {
+  if (!ss || typeof ss !== 'object') return null;
+  const n = (k, fb) => { const v = parseFloat(ss[k]); return isNaN(v) ? fb : v; };
+  const i = (k, fb) => { const v = parseInt(ss[k], 10); return isNaN(v) ? fb : v; };
+  return {
+    // PvP & death
+    pvp: i('PVP', 0),
+    onDeath: i('OnDeath', 1),
+    friendlyFire: i('FriendlyFire', 0),
+    // Difficulty
+    zombieHealth: i('ZombieDiffHealth', 2),
+    zombieSpeed: i('ZombieDiffSpeed', 2),
+    zombieDamage: i('ZombieDiffDamage', 2),
+    zombieAmount: n('ZombieAmountMulti', 1),
+    banditHealth: i('HumanDiffHealth', 2),
+    banditDamage: i('HumanDiffDamage', 2),
+    banditAmount: n('HumanAmountMulti', 1),
+    aiEvents: i('AIEvent', 2),
+    // Loot
+    rarityFood: i('RarityFood', 2),
+    rarityDrink: i('RarityDrink', 2),
+    rarityMelee: i('RarityMelee', 2),
+    rarityRanged: i('RarityRanged', 2),
+    rarityAmmo: i('RarityAmmo', 2),
+    rarityArmor: i('RarityArmor', 2),
+    rarityResources: i('RarityResources', 2),
+    // World
+    xpMultiplier: n('XpMultiplier', 1),
+    dayLength: i('DayLength', 40),
+    nightLength: i('NightLength', 20),
+    daysPerSeason: i('DaysPerSeason', 28),
+    startSeason: i('StartSeason', 3),
+    // Features
+    lootRespawn: i('LootRespawn', 1),
+    airDrops: i('AirDrop', 1),
+    dogCompanion: i('DogEnabled', 1),
+    weaponBreak: i('WeaponBreak', 1),
+    foodDecay: i('FoodDecay', 1),
+    buildingDecay: i('BuildingDecay', 14),
+    maxVehicles: i('MaxVehiclePerPlayer', 2),
+    // Enriched world stats (injected by save-service)
+    worldStructures: i('hmz_totalStructures', 0) || undefined,
+    worldVehicles: i('hmz_totalVehicles', 0) || undefined,
+    worldCompanions: i('hmz_totalCompanions', 0) || undefined,
+    totalKills: i('hmz_totalKills', 0) || undefined,
+  };
+}
+
 class WebMapServer {
   constructor(client, opts = {}) {
     this._client = client;
@@ -75,9 +129,21 @@ class WebMapServer {
     this._scheduler = opts.scheduler || null;
     this._saveService = opts.saveService || null;
     this._multiServerManager = opts.multiServerManager || null;
+    this._plugins = [];  // Registered plugins (private modules)
 
     // World coordinate bounds — loaded from calibration file or defaults
     this._worldBounds = this._loadCalibration();
+
+    // Setter methods — allow late-binding of dependencies that start after the web panel
+    /** @param {object} scheduler ServerScheduler instance */
+    this.setScheduler = (scheduler) => { this._scheduler = scheduler; };
+    /** @param {object} saveService SaveService instance */
+    this.setSaveService = (saveService) => { this._saveService = saveService; };
+    /** @param {object} msm MultiServerManager instance */
+    this.setMultiServerManager = (msm) => { this._multiServerManager = msm; };
+
+    // Response cache — keyed by "endpoint:serverId", entries = { data, ts }
+    this._responseCache = new Map();
 
     // Cache: last parsed save data
     this._playerCache = new Map();
@@ -147,6 +213,42 @@ class WebMapServer {
     } catch (err) {
       console.error('[WEB MAP] Failed to save calibration:', err.message);
     }
+  }
+
+  /**
+   * Server-side response cache — prevents repeated RCON/DB/file hits for the same data.
+   * Keyed by "endpoint:serverId". Returns cached JSON or null if expired/missing.
+   */
+  _getCached(endpoint, serverId, maxAgeMs = 15000) {
+    const key = `${endpoint}:${serverId || 'primary'}`;
+    const entry = this._responseCache.get(key);
+    if (entry && (Date.now() - entry.ts) < maxAgeMs) return entry.data;
+    return null;
+  }
+
+  /** Store a response in the cache. */
+  _setCache(endpoint, serverId, data) {
+    const key = `${endpoint}:${serverId || 'primary'}`;
+    this._responseCache.set(key, { data, ts: Date.now() });
+  }
+
+  /**
+   * Register a plugin that provides routes, assets, and data hooks.
+   * Private modules (e.g. howyagarn/web-plugin) call this to extend the panel.
+   * @param {object} plugin — { name, css[], js[], dashboardHtml, registerRoutes(app, helpers), getLandingData() }
+   */
+  registerPlugin(plugin) {
+    if (!plugin || !plugin.name) return;
+    this._plugins.push(plugin);
+    // If the server is already running, register routes immediately
+    if (this._server && typeof plugin.registerRoutes === 'function') {
+      try {
+        plugin.registerRoutes(this._app, { rateLimit, requireTier });
+      } catch (err) {
+        console.error(`[WEB MAP] Plugin ${plugin.name} late route registration failed:`, err.message);
+      }
+    }
+    console.log(`[WEB MAP] Plugin registered: ${plugin.name}`);
   }
 
   /** Load player ID map from file. */
@@ -437,8 +539,21 @@ class WebMapServer {
     app.use(authMiddleware);
 
     // ── Root page → panel.html (must come before static middleware) ──
+    // If plugins are registered, inject their CSS/JS/HTML before serving
     app.get('/', (req, res) => {
-      res.sendFile(path.join(PUBLIC_DIR, 'panel.html'));
+      if (!this._plugins.length) {
+        return res.sendFile(path.join(PUBLIC_DIR, 'panel.html'));
+      }
+      // Read panel.html and inject plugin assets
+      let html;
+      try { html = fs.readFileSync(path.join(PUBLIC_DIR, 'panel.html'), 'utf8'); } catch { return res.sendFile(path.join(PUBLIC_DIR, 'panel.html')); }
+      const cssLinks = this._plugins.flatMap(p => (p.css || []).map(href => `<link rel="stylesheet" href="${href}"`)).join('\n    ');
+      const jsScripts = this._plugins.flatMap(p => (p.js || []).map(src => `<script src="${src}"></script>`)).join('\n    ');
+      const dashHtml = this._plugins.map(p => p.dashboardHtml || '').filter(Boolean).join('\n            ');
+      if (cssLinks) html = html.replace('</head>', `    ${cssLinks}\n  </head>`);
+      if (jsScripts) html = html.replace('</body>', `    ${jsScripts}\n  </body>`);
+      if (dashHtml) html = html.replace('<!-- plugin-dashboard-slot -->', dashHtml);
+      res.type('text/html').send(html);
     });
 
     // Serve static files (HTML, JS, CSS, map images)
@@ -873,8 +988,12 @@ class WebMapServer {
 
     // ── API: Get RCON player list (online status) ──
     app.get('/api/online', requireTier('survivor'), async (req, res) => {
+      // Serve from background-polled player cache — instant response
+      const cached = this._getCached('online', req.srv.serverId, 30000);
+      if (cached) return res.json({ players: cached });
       try {
         const list = await req.srv.getPlayerList();
+        this._setCache('online', req.srv.serverId, list);
         res.json({ players: list });
       } catch (err) {
         res.status(500).json({ error: safeError(err) });
@@ -890,351 +1009,101 @@ class WebMapServer {
      * public landing page. No authentication needed.
      */
     app.get('/api/landing', rateLimit(30000, 20), async (req, res) => {
-      const result = {
-        primary: {
-          name: config.serverName || 'HumanitZ Server',
-          host: config.publicHost || '',
-          gamePort: config.gamePort || '',
-          status: 'unknown',
-          onlineCount: 0,
-          maxPlayers: null,
-          totalPlayers: 0,
-          gameDay: null,
-          season: null,
-          gameTime: null,
-          timezone: config.botTimezone || 'UTC',
-        },
-        servers: [],
-        schedule: null,
-      };
-
-      // Primary server status via RCON
+      // Serve from background-polled cache — instant response
+      const cached = this._getCached('landing', 'global', 30000);
+      if (cached) return res.json(cached);
+      // First request before background poller has run — build on demand
       try {
-        const { getServerInfo, getPlayerList } = require('../rcon/server-info');
-        const info = await getServerInfo();
-        if (info) {
-          result.primary.status = 'online';
-          result.primary.maxPlayers = info.maxPlayers || null;
-          result.primary.gameDay = info.day || null;
-          if (info.season) result.primary.season = info.season;
-          if (info.name) result.primary.rconName = info.name;
-          if (info.time) result.primary.gameTime = info.time;
-        }
-        const list = await getPlayerList();
-        const playerArr = list?.players || (Array.isArray(list) ? list : []);
-        result.primary.onlineCount = playerArr.length;
-      } catch {
-        result.primary.status = 'offline';
-      }
-
-      // Total players — DB first, save data fallback
-      if (this._db) {
-        try {
-          const cnt = this._db.db?.prepare('SELECT COUNT(*) as cnt FROM players').get();
-          if (cnt?.cnt) result.primary.totalPlayers = cnt.cnt;
-        } catch { /* db unavailable */ }
-      }
-      if (!result.primary.totalPlayers) {
-        const players = this._parseSaveData();
-        result.primary.totalPlayers = players.size;
-      }
-
-      // Fallback: maxPlayers + game day from DB first (authoritative)
-      if (this._db) {
-        try {
-          if (!result.primary.maxPlayers) {
-            const settingsRow = this._db.db?.prepare("SELECT value FROM bot_state WHERE key = 'server_settings'").get();
-            if (settingsRow?.value) {
-              const settings = JSON.parse(settingsRow.value);
-              if (settings.MaxPlayers) result.primary.maxPlayers = parseInt(settings.MaxPlayers, 10) || null;
-              if (settings.DaysPerSeason) result.primary.daysPerSeason = parseInt(settings.DaysPerSeason, 10) || 28;
-            }
-          }
-          const ws = this._db.getAllWorldState?.() || {};
-          if (!result.primary.gameDay && ws.day) result.primary.gameDay = ws.day;
-          if (!result.primary.season && ws.season) result.primary.season = ws.season;
-        } catch { /* db unavailable */ }
-      }
-
-      // Last-resort fallback: file-based server-settings.json + save-cache
-      if (!result.primary.maxPlayers) {
-        try {
-          const settingsFile = path.join(DATA_DIR, 'server-settings.json');
-          if (fs.existsSync(settingsFile)) {
-            const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
-            if (settings.MaxPlayers) result.primary.maxPlayers = parseInt(settings.MaxPlayers, 10) || null;
-          }
-        } catch { /* ignore */ }
-      }
-
-      if (!result.primary.gameDay) {
-        try {
-          const cachePath = path.join(DATA_DIR, 'save-cache.json');
-          if (fs.existsSync(cachePath)) {
-            const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-            if (cache.worldState?.daysPassed != null) {
-              result.primary.gameDay = cache.worldState.daysPassed;
-            }
-          }
-        } catch { /* save-cache unavailable */ }
-      }
-
-      // Scheduler info (public)
-      if (this._scheduler && this._scheduler.isActive()) {
-        try {
-          result.schedule = this._scheduler.getStatus();
-        } catch { /* scheduler unavailable */ }
-      }
-
-      // Multi-server status — use RCON via resolved instances when available
-      const additional = this._loadServerList();
-      for (const s of additional) {
-        const dir = this._getServerDataDir(s.id);
-        if (!dir) continue;
-        const serverInfo = {
-          id: s.id,
-          name: s.name || s.id,
-          host: s.publicHost || s.host || config.publicHost || '',
-          gamePort: s.gamePort || '',
-          status: 'unknown',
-          onlineCount: 0,
-          totalPlayers: 0,
-        };
-
-        // Try RCON for live status (same as primary server)
-        const srv = this._resolveServer(s.id);
-        if (srv) {
-          try {
-            const info = await srv.getServerInfo();
-            if (info) {
-              serverInfo.status = 'online';
-              serverInfo.maxPlayers = info.maxPlayers || null;
-              serverInfo.gameDay = info.day || null;
-              if (info.season) serverInfo.season = info.season;
-              if (info.name) serverInfo.rconName = info.name;
-              if (info.time) serverInfo.gameTime = info.time;
-            }
-            const list = await srv.getPlayerList();
-            const playerArr = list?.players || (Array.isArray(list) ? list : []);
-            serverInfo.onlineCount = playerArr.length;
-          } catch {
-            serverInfo.status = 'offline';
-          }
-        }
-
-        // Use DB for total players + fallback data when RCON didn't provide everything
-        if (srv?.db) {
-          try {
-            // Total players from DB
-            const playerCount = srv.db.db?.prepare('SELECT COUNT(*) as cnt FROM players').get();
-            if (playerCount?.cnt) serverInfo.totalPlayers = playerCount.cnt;
-
-            // MaxPlayers from server_settings in bot_state
-            if (!serverInfo.maxPlayers) {
-              const settingsRow = srv.db.db?.prepare("SELECT value FROM bot_state WHERE key = 'server_settings'").get();
-              if (settingsRow?.value) {
-                const settings = JSON.parse(settingsRow.value);
-                if (settings.MaxPlayers) serverInfo.maxPlayers = parseInt(settings.MaxPlayers, 10) || null;
-                if (settings.DaysPerSeason) serverInfo.daysPerSeason = parseInt(settings.DaysPerSeason, 10) || 28;
-              }
-            }
-
-            // Game day from world_state or save-cache in bot_state
-            if (!serverInfo.gameDay) {
-              const ws = srv.db.getAllWorldState?.() || {};
-              if (ws.day) serverInfo.gameDay = ws.day;
-              if (!serverInfo.season && ws.season) serverInfo.season = ws.season;
-            }
-          } catch { /* DB unavailable — non-critical */ }
-        }
-
-        // Fallback: total players from save data if DB didn't have them
-        if (!serverInfo.totalPlayers) {
-          try {
-            const saveData = this._parseSaveDataForServer(dir);
-            serverInfo.totalPlayers = saveData?.size || 0;
-          } catch { /* non-critical */ }
-        }
-
-        // Last-resort fallback: save-cache file for game day + status
-        if (!serverInfo.gameDay) {
-          const cacheFile = path.join(dir, 'save-cache.json');
-          try {
-            if (fs.existsSync(cacheFile)) {
-              const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
-              if (cache.worldState?.daysPassed != null) {
-                serverInfo.gameDay = cache.worldState.daysPassed;
-              }
-              if (serverInfo.status === 'unknown') {
-                const age = Date.now() - fs.statSync(cacheFile).mtimeMs;
-                serverInfo.status = age < 600_000 ? 'online' : 'stale';
-              }
-            }
-          } catch { /* non-critical */ }
-        }
-
-        // Scheduler info for this server
-        if (srv?.scheduler && srv.scheduler.isActive?.()) {
-          try {
-            serverInfo.schedule = srv.scheduler.getStatus();
-          } catch { /* scheduler unavailable */ }
-        }
-
-        result.servers.push(serverInfo);
-      }
-
-      // Discord invite link
-      result.primary.discordInvite = config.discordInviteLink || '';
-
-      res.json(result);
+        const rconTimeout = (promise) =>
+          Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('RCON timeout')), 5000))]);
+        await this._buildLandingData(rconTimeout);
+        const built = this._getCached('landing', 'global', 30000);
+        if (built) return res.json(built);
+      } catch { /* build failed */ }
+      res.json({ primary: { name: config.serverName || 'HumanitZ Server', status: 'unknown', onlineCount: 0, totalPlayers: 0 }, servers: [] });
     });
+
+    // Plugin-registered routes
+    for (const plugin of this._plugins) {
+      if (typeof plugin.registerRoutes === 'function') {
+        try { plugin.registerRoutes(app, { rateLimit, requireTier }); } catch (err) {
+          console.error(`[WEB MAP] Plugin ${plugin.name} route registration failed:`, err.message);
+        }
+      }
+    }
 
     // ═══════════════════════════════════════════════════════
     // Panel API routes — server management, activity, chat, RCON console, settings
     // ═══════════════════════════════════════════════════════
 
-    // ── Panel: Server status (RCON info + resources) ──
+    // ── Panel: Server status (RCON info + resources) — served from background cache ──
     app.get('/api/panel/status', requireTier('survivor'), async (req, res) => {
       const srv = req.srv;
-      const result = { serverState: 'unknown', uptime: null, maxPlayers: null, onlineCount: 0, fps: null, gameDay: null, season: null, gameTime: null, timezone: srv.config.botTimezone || 'UTC', resources: null };
-
-      // RCON server info
+      // Serve from background-polled cache — instant response
+      const cached = this._getCached('status', srv.serverId, 30000);
+      if (cached) return res.json(cached);
+      // Fallback: build on demand if background poller hasn't run yet
       try {
-        const info = await srv.getServerInfo();
-        if (info) {
-          result.serverState = 'running';
-          result.fps = info.fps || null;
-          result.gameDay = info.day || null;
-          result.maxPlayers = info.maxPlayers || null;
-          if (info.season) result.season = info.season;
-          if (info.time) result.gameTime = info.time;
-        }
-        const list = await srv.getPlayerList();
-        const playerArr = list?.players || (Array.isArray(list) ? list : []);
-        result.onlineCount = playerArr.length;
-      } catch {
-        result.serverState = 'offline';
-      }
-
-      // Fallback: maxPlayers from server settings if RCON didn't provide it
-      if (!result.maxPlayers) {
-        try {
-          const settingsFile = path.join(srv.dataDir, 'server-settings.json');
-          if (fs.existsSync(settingsFile)) {
-            const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
-            if (settings.MaxPlayers) result.maxPlayers = parseInt(settings.MaxPlayers, 10) || null;
-          }
-        } catch { /* ignore */ }
-      }
-
-      // System resources (SSH or Pterodactyl) — primary only for now
-      if (srv.isPrimary) {
-        try {
-          const resources = await serverResources.getResources();
-          if (resources) {
-            result.resources = {
-              cpu: resources.cpu,
-              memPercent: resources.memPercent,
-              memFormatted: resources.memUsed != null && resources.memTotal != null
-                ? `${formatBytes(resources.memUsed)} / ${formatBytes(resources.memTotal)}`
-                : null,
-              diskPercent: resources.diskPercent,
-              diskFormatted: resources.diskUsed != null && resources.diskTotal != null
-                ? `${formatBytes(resources.diskUsed)} / ${formatBytes(resources.diskTotal)}`
-                : null,
-            };
-            if (resources.uptime != null) {
-              result.uptime = formatUptime(resources.uptime);
-            }
-          }
-        } catch { /* resources unavailable */ }
-      }
-
-      // Game day from save-cache (RCON doesn't return Day)
-      if (!result.gameDay) {
-        try {
-          const cachePath = path.join(srv.dataDir, 'save-cache.json');
-          if (fs.existsSync(cachePath)) {
-            const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-            if (cache.worldState?.daysPassed != null) {
-              result.gameDay = cache.worldState.daysPassed;
-            }
-          }
-        } catch { /* save-cache unavailable */ }
-      }
-
-      // Season from RCON (already set above), then DB fallback
-      if (srv.db) {
-        try {
-          const ws = srv.db.getAllWorldState?.() || {};
-          if (!result.gameDay && ws.day) result.gameDay = ws.day;
-          if (!result.season && ws.season) result.season = ws.season;
-        } catch { /* db unavailable */ }
-      }
-
-      // Include DaysPerSeason from server settings so frontend doesn't hardcode it
-      try {
-        const settingsFile = path.join(srv.dataDir, 'server-settings.json');
-        if (fs.existsSync(settingsFile)) {
-          const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
-          if (settings.DaysPerSeason) result.daysPerSeason = parseInt(settings.DaysPerSeason, 10) || 28;
-        }
-      } catch { /* ignore */ }
-      if (!result.daysPerSeason && srv.db) {
-        try {
-          const settingsRow = srv.db.db?.prepare("SELECT value FROM bot_state WHERE key = 'server_settings'").get();
-          if (settingsRow?.value) {
-            const s = JSON.parse(settingsRow.value);
-            if (s.DaysPerSeason) result.daysPerSeason = parseInt(s.DaysPerSeason, 10) || 28;
-          }
-        } catch { /* db unavailable */ }
-      }
-
-      res.json(result);
+        const rconTimeout = (promise) =>
+          Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('RCON timeout')), 5000))]);
+        await this._buildStatusCache(srv, rconTimeout);
+        const built = this._getCached('status', srv.serverId, 30000);
+        if (built) return res.json(built);
+      } catch { /* build failed */ }
+      res.json({ serverState: 'unknown', onlineCount: 0, timezone: srv.config.botTimezone || 'UTC' });
     });
 
-    // ── Panel: Quick stats ──
+    // ── Panel: Quick stats — served from background cache ──
     app.get('/api/panel/stats', requireTier('survivor'), async (req, res) => {
       const srv = req.srv;
-      const result = { totalPlayers: 0, onlinePlayers: 0, eventsToday: 0, chatsToday: 0 };
-
-      // Player count from save data
-      const players = srv.isPrimary ? this._parseSaveData() : this._parseSaveDataForServer(srv.dataDir);
-      result.totalPlayers = players.size;
-
-      // If save-cache has no players, check DB players table
-      if (!result.totalPlayers && srv.db) {
-        try {
-          const cnt = srv.db.db?.prepare('SELECT COUNT(*) as cnt FROM players').get();
-          if (cnt?.cnt) result.totalPlayers = cnt.cnt;
-        } catch { /* db unavailable */ }
-      }
-
-      // Online count from RCON
+      // Serve from background-polled cache — instant response
+      const cached = this._getCached('stats', srv.serverId, 30000);
+      if (cached) return res.json(cached);
+      // Fallback: build on demand if background poller hasn't run yet
       try {
-        const list = await srv.getPlayerList();
-        const playerArr = list?.players || (Array.isArray(list) ? list : []);
-        result.onlinePlayers = playerArr.length;
-      } catch { /* RCON unavailable */ }
+        const rconTimeout = (promise) =>
+          Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('RCON timeout')), 5000))]);
+        await this._buildStatsCache(srv, rconTimeout);
+        const built = this._getCached('stats', srv.serverId, 30000);
+        if (built) return res.json(built);
+      } catch { /* build failed */ }
+      res.json({ totalPlayers: 0, onlinePlayers: 0, eventsToday: 0, chatsToday: 0 });
+    });
 
-      // DB counts for today (timezone-aware using BOT_TIMEZONE)
-      if (srv.db) {
-        try {
-          const tz = srv.config.botTimezone || 'UTC';
-          const nowStr = new Date().toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
-          const todayMidnight = new Date(`${nowStr}T00:00:00`);
-          const tzDate = new Date(todayMidnight.toLocaleString('en-US', { timeZone: 'UTC' }));
-          const localDate = new Date(todayMidnight.toLocaleString('en-US', { timeZone: tz }));
-          const offsetMs = tzDate - localDate;
-          const todayIso = new Date(todayMidnight.getTime() + offsetMs).toISOString();
-          const activities = srv.db.getActivitySince?.(todayIso) || [];
-          result.eventsToday = activities.length;
-          const chats = srv.db.getChatSince?.(todayIso) || [];
-          result.chatsToday = chats.length;
-        } catch { /* db unavailable */ }
+    // ── Panel: Server capabilities — tells the client what this server has ──
+    app.get('/api/panel/capabilities', requireTier('survivor'), (req, res) => {
+      const srv = req.srv;
+      const cached = this._getCached('caps', srv.serverId, 30000);
+      if (cached) return res.json(cached);
+
+      const caps = {
+        db: !!srv.db,
+        rcon: !!srv.rcon,
+        scheduler: !!(srv.scheduler && srv.scheduler.isActive?.()),
+        saveService: srv.isPrimary ? !!this._saveService : !!srv.db,
+        resources: srv.isPrimary && !!serverResources,
+        hasPlugin: this._plugins.some(p => {
+          // Check if this plugin is associated with this server
+          if (srv.isPrimary) return false; // plugins are typically non-primary
+          return !!p.name;
+        }),
+        isPrimary: srv.isPrimary,
+        serverId: srv.serverId,
+        serverName: srv.config?.serverName || '',
+      };
+      // Check if this is the hzmod-enabled server
+      for (const plugin of this._plugins) {
+        if (plugin.name === 'hzmod') {
+          // hzmod is registered with a serverId — only show on that server's dashboard
+          const pluginSrv = plugin.serverId;
+          if (!pluginSrv) { caps.hzmod = true; break; }            // no serverId set → show everywhere
+          if (pluginSrv === srv.serverId) { caps.hzmod = true; }   // matches this server
+          else if (srv.isPrimary && !pluginSrv) { caps.hzmod = true; } // primary fallback
+          break;
+        }
       }
-
-      res.json(result);
+      this._setCache('caps', srv.serverId, caps);
+      res.json(caps);
     });
 
     // ── Panel: Activity feed from DB ──
@@ -2214,8 +2083,147 @@ class WebMapServer {
       }
     });
 
+    // ── Schedule Editor: save restart times, profiles, and per-profile settings ──
+    app.post('/api/panel/scheduler', requireTier('admin'), rateLimit(30000, 3), (req, res) => {
+      const { restartTimes, profiles, profileSettings, rotateDaily, serverNameTemplate } = req.body;
+      if (!restartTimes || !Array.isArray(restartTimes)) {
+        return res.status(400).json({ error: 'restartTimes must be an array of HH:MM strings' });
+      }
+      // Validate restart times format
+      for (const t of restartTimes) {
+        if (!/^\d{1,2}:\d{2}$/.test(t)) {
+          return res.status(400).json({ error: `Invalid time format: ${t} (expected HH:MM)` });
+        }
+      }
+      // Validate profiles
+      const profileList = Array.isArray(profiles) ? profiles.filter(p => typeof p === 'string' && p.trim()) : [];
+      const settings = (profileSettings && typeof profileSettings === 'object') ? profileSettings : {};
+
+      // Validate profile settings are JSON-safe objects
+      for (const [name, val] of Object.entries(settings)) {
+        if (typeof val !== 'object' || Array.isArray(val)) {
+          return res.status(400).json({ error: `Profile settings for '${name}' must be an object` });
+        }
+        // Ensure all values are strings (game server INI format)
+        for (const [k, v] of Object.entries(val)) {
+          if (typeof v !== 'string' && typeof v !== 'number') {
+            return res.status(400).json({ error: `Invalid value type for ${name}.${k}` });
+          }
+        }
+      }
+
+      const timesStr = restartTimes.join(',');
+      const profilesStr = profileList.map(p => p.trim().toLowerCase()).join(',');
+
+      // ── Non-primary: write to servers.json ──
+      if (!req.srv.isPrimary) {
+        try {
+          const serverId = req.srv.serverId;
+          const ok = _saveServerDef(serverId, (serverDef) => {
+            serverDef.restartTimes = timesStr;
+            serverDef.restartProfiles = profilesStr;
+            serverDef.enableServerScheduler = restartTimes.length > 0;
+            if (rotateDaily !== undefined) serverDef.restartRotateDaily = !!rotateDaily;
+            if (typeof serverNameTemplate === 'string') serverDef.serverNameTemplate = serverNameTemplate;
+            if (profileList.length > 0) {
+              serverDef.restartProfileSettings = {};
+              for (const name of profileList) {
+                const key = name.trim().toLowerCase();
+                if (settings[key]) serverDef.restartProfileSettings[key] = settings[key];
+              }
+            } else {
+              delete serverDef.restartProfileSettings;
+            }
+          });
+          if (!ok) return res.status(404).json({ error: 'Server not found' });
+          return res.json({ ok: true, restartRequired: true, message: 'Schedule saved to servers.json. Restart the bot for changes to take effect.' });
+        } catch (err) {
+          return res.status(500).json({ error: `Failed to save: ${safeError(err)}` });
+        }
+      }
+
+      // ── Primary: write to .env ──
+      try {
+        const envPath = path.join(__dirname, '..', '..', '.env');
+        if (!fs.existsSync(envPath)) return res.status(404).json({ error: '.env file not found' });
+
+        const content = fs.readFileSync(envPath, 'utf8');
+        const lines = content.split('\n');
+        const updated = new Set();
+
+        // Build the changes map
+        const changes = {
+          ENABLE_SERVER_SCHEDULER: restartTimes.length > 0 ? 'true' : 'false',
+          RESTART_TIMES: timesStr,
+          RESTART_PROFILES: profilesStr,
+        };
+        if (rotateDaily !== undefined) changes.RESTART_ROTATE_DAILY = rotateDaily ? 'true' : 'false';
+        if (typeof serverNameTemplate === 'string') changes.SERVER_NAME_TEMPLATE = serverNameTemplate;
+
+        // Add profile settings as RESTART_PROFILE_<NAME>=JSON
+        for (const name of profileList) {
+          const key = name.trim().toLowerCase();
+          const envKey = `RESTART_PROFILE_${key.toUpperCase()}`;
+          if (settings[key] && Object.keys(settings[key]).length > 0) {
+            changes[envKey] = JSON.stringify(settings[key]);
+          }
+        }
+
+        // Remove old RESTART_PROFILE_* that are no longer in the profile list
+        const activeProfileKeys = new Set(profileList.map(p => `RESTART_PROFILE_${p.trim().toUpperCase()}`));
+
+        const newLines = lines.map(line => {
+          const trimmed = line.trim();
+          const eq = trimmed.indexOf('=');
+          if (eq > 0 && !trimmed.startsWith('#') && !trimmed.startsWith(';')) {
+            const key = trimmed.substring(0, eq).trim();
+            if (key in changes) {
+              updated.add(key);
+              return `${key}=${changes[key]}`;
+            }
+            // Comment out old profile keys that are no longer active
+            if (key.startsWith('RESTART_PROFILE_') && !activeProfileKeys.has(key)) {
+              updated.add(key);
+              return `#${line}`;
+            }
+          }
+          // Uncomment if it's a key we want to set
+          if (trimmed.startsWith('#')) {
+            const m = trimmed.match(/^#\s*([A-Z][A-Z0-9_]*)=(.*)/);
+            if (m && m[1] in changes) {
+              updated.add(m[1]);
+              return `${m[1]}=${changes[m[1]]}`;
+            }
+          }
+          return line;
+        });
+
+        // Append any keys not found
+        for (const key of Object.keys(changes)) {
+          if (!updated.has(key) && String(changes[key]) !== '') {
+            newLines.push(`${key}=${changes[key]}`);
+            updated.add(key);
+          }
+        }
+
+        const tmpPath = envPath + '.tmp';
+        fs.writeFileSync(tmpPath, newLines.join('\n'));
+        fs.renameSync(tmpPath, envPath);
+
+        res.json({
+          ok: true,
+          updated: [...updated],
+          restartRequired: true,
+          message: `Schedule saved (${updated.size} keys). Restart the bot for changes to take effect.`,
+        });
+      } catch (err) {
+        res.status(500).json({ error: `Failed to save schedule: ${safeError(err)}` });
+      }
+    });
+
     // ══════════════════════════════════════════════════════════════════
-    //  Bot Configuration API — read/write .env file
+    //  Bot Configuration API — read/write .env file (primary) or
+    //  servers.json entry (non-primary / multi-server)
     // ══════════════════════════════════════════════════════════════════
 
     // Keys that contain credentials — values are NEVER sent to the client.
@@ -2229,6 +2237,158 @@ class WebMapServer {
     const ENV_READONLY_KEYS = new Set([
       'ENV_SCHEMA_VERSION',
     ]);
+
+    // ── Per-server bot config (servers.json) helpers ──────────────
+
+    /**
+     * Mapping from .env keys to servers.json nested paths.
+     * Each entry: { jsonPath, sensitive?, readOnly?, label? }
+     * jsonPath uses dot notation: 'rcon.host', 'channels.serverStatus', etc.
+     */
+    const ENV_TO_SERVERDEF = {
+      // Identity
+      SERVER_NAME:                { jsonPath: 'name' },
+      PUBLIC_HOST:                { jsonPath: 'publicHost' },
+      GAME_PORT:                  { jsonPath: 'gamePort' },
+      // RCON
+      RCON_HOST:                  { jsonPath: 'rcon.host' },
+      RCON_PORT:                  { jsonPath: 'rcon.port' },
+      RCON_PASSWORD:              { jsonPath: 'rcon.password', sensitive: true },
+      // SFTP
+      FTP_HOST:                   { jsonPath: 'sftp.host' },
+      FTP_PORT:                   { jsonPath: 'sftp.port' },
+      FTP_USER:                   { jsonPath: 'sftp.user' },
+      FTP_PASSWORD:               { jsonPath: 'sftp.password', sensitive: true },
+      FTP_PRIVATE_KEY_PATH:       { jsonPath: 'sftp.privateKeyPath', sensitive: true },
+      // Channels
+      PANEL_CHANNEL_ID:           { jsonPath: 'channels.panel' },
+      SERVER_STATUS_CHANNEL_ID:   { jsonPath: 'channels.serverStatus' },
+      PLAYER_STATS_CHANNEL_ID:    { jsonPath: 'channels.playerStats' },
+      CHAT_CHANNEL_ID:            { jsonPath: 'channels.chat' },
+      LOG_CHANNEL_ID:             { jsonPath: 'channels.log' },
+      ADMIN_CHANNEL_ID:           { jsonPath: 'channels.admin' },
+      // SFTP paths
+      FTP_LOG_PATH:               { jsonPath: 'paths.logPath' },
+      FTP_CONNECT_LOG_PATH:       { jsonPath: 'paths.connectLogPath' },
+      FTP_ID_MAP_PATH:            { jsonPath: 'paths.idMapPath' },
+      FTP_SAVE_PATH:              { jsonPath: 'paths.savePath' },
+      FTP_SETTINGS_PATH:          { jsonPath: 'paths.settingsPath' },
+      FTP_WELCOME_PATH:           { jsonPath: 'paths.welcomePath' },
+      // Timezones
+      BOT_TIMEZONE:               { jsonPath: 'botTimezone' },
+      LOG_TIMEZONE:               { jsonPath: 'logTimezone' },
+      // Docker / restart
+      DOCKER_CONTAINER:           { jsonPath: 'dockerContainer' },
+      ENABLE_SERVER_SCHEDULER:    { jsonPath: 'enableServerScheduler' },
+      RESTART_TIMES:              { jsonPath: 'restartTimes' },
+      RESTART_PROFILES:           { jsonPath: 'restartProfiles' },
+      // PvP
+      PVP_START_TIME:             { jsonPath: 'pvpStartTime' },
+      PVP_END_TIME:               { jsonPath: 'pvpEndTime' },
+      PVP_SETTINGS_OVERRIDES:     { jsonPath: 'pvpSettingsOverrides' },
+      // Auto messages
+      ENABLE_WELCOME_MSG:         { jsonPath: 'autoMessages.enableWelcomeMsg' },
+      ENABLE_WELCOME_FILE:        { jsonPath: 'autoMessages.enableWelcomeFile' },
+      ENABLE_AUTO_MSG_LINK:       { jsonPath: 'autoMessages.enableAutoMsgLink' },
+      ENABLE_AUTO_MSG_PROMO:      { jsonPath: 'autoMessages.enableAutoMsgPromo' },
+      AUTO_MSG_LINK_TEXT:         { jsonPath: 'autoMessages.linkText' },
+      AUTO_MSG_PROMO_TEXT:        { jsonPath: 'autoMessages.promoText' },
+      DISCORD_INVITE_LINK:        { jsonPath: 'autoMessages.discordLink' },
+      // Panel API
+      PANEL_SERVER_URL:           { jsonPath: 'panel.serverUrl' },
+      PANEL_API_KEY:              { jsonPath: 'panel.apiKey', sensitive: true },
+      // Module toggles (stored in modules.* in servers.json)
+      ENABLE_SERVER_STATUS:       { jsonPath: 'modules.serverStatus' },
+      ENABLE_CHAT_RELAY:          { jsonPath: 'modules.chatRelay' },
+      ENABLE_AUTO_MESSAGES:       { jsonPath: 'modules.autoMessages' },
+      ENABLE_LOG_WATCHER:         { jsonPath: 'modules.logWatcher' },
+      ENABLE_PLAYER_STATS:        { jsonPath: 'modules.playerStats' },
+      // Server enabled
+      ENABLED:                    { jsonPath: 'enabled' },
+    };
+
+    /** Read a nested value from an object using dot-path: 'rcon.host' → obj.rcon.host */
+    function _getNestedValue(obj, dotPath) {
+      const parts = dotPath.split('.');
+      let cur = obj;
+      for (const p of parts) {
+        if (cur == null || typeof cur !== 'object') return undefined;
+        cur = cur[p];
+      }
+      return cur;
+    }
+
+    /** Set a nested value on an object using dot-path, creating intermediary objects. */
+    function _setNestedValue(obj, dotPath, value) {
+      const parts = dotPath.split('.');
+      let cur = obj;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (cur[parts[i]] == null || typeof cur[parts[i]] !== 'object') cur[parts[i]] = {};
+        cur = cur[parts[i]];
+      }
+      cur[parts[parts.length - 1]] = value;
+    }
+
+    /** Build categorized bot-config sections from a servers.json serverDef entry. */
+    function _buildServerDefSections(serverDef) {
+      const categories = [
+        { label: 'Server Identity', keys: ['SERVER_NAME', 'PUBLIC_HOST', 'GAME_PORT', 'ENABLED'] },
+        { label: 'RCON', keys: ['RCON_HOST', 'RCON_PORT', 'RCON_PASSWORD'] },
+        { label: 'SFTP', keys: ['FTP_HOST', 'FTP_PORT', 'FTP_USER', 'FTP_PASSWORD', 'FTP_PRIVATE_KEY_PATH'] },
+        { label: 'Channel IDs', keys: ['PANEL_CHANNEL_ID', 'SERVER_STATUS_CHANNEL_ID', 'PLAYER_STATS_CHANNEL_ID', 'CHAT_CHANNEL_ID', 'LOG_CHANNEL_ID', 'ADMIN_CHANNEL_ID'] },
+        { label: 'SFTP File Paths', keys: ['FTP_LOG_PATH', 'FTP_CONNECT_LOG_PATH', 'FTP_ID_MAP_PATH', 'FTP_SAVE_PATH', 'FTP_SETTINGS_PATH', 'FTP_WELCOME_PATH'] },
+        { label: 'Timezones', keys: ['BOT_TIMEZONE', 'LOG_TIMEZONE'] },
+        { label: 'Server Scheduler', keys: ['ENABLE_SERVER_SCHEDULER', 'RESTART_TIMES', 'RESTART_PROFILES', 'DOCKER_CONTAINER'] },
+        { label: 'PvP Scheduler', keys: ['PVP_START_TIME', 'PVP_END_TIME', 'PVP_SETTINGS_OVERRIDES'] },
+        { label: 'Auto Messages', keys: ['ENABLE_WELCOME_MSG', 'ENABLE_WELCOME_FILE', 'ENABLE_AUTO_MSG_LINK', 'ENABLE_AUTO_MSG_PROMO', 'AUTO_MSG_LINK_TEXT', 'AUTO_MSG_PROMO_TEXT', 'DISCORD_INVITE_LINK'] },
+        { label: 'Module Toggles', keys: ['ENABLE_SERVER_STATUS', 'ENABLE_CHAT_RELAY', 'ENABLE_AUTO_MESSAGES', 'ENABLE_LOG_WATCHER', 'ENABLE_PLAYER_STATS'] },
+        { label: 'Panel API', keys: ['PANEL_SERVER_URL', 'PANEL_API_KEY'] },
+      ];
+
+      const sections = [];
+      for (const cat of categories) {
+        const keys = [];
+        for (const envKey of cat.keys) {
+          const mapping = ENV_TO_SERVERDEF[envKey];
+          if (!mapping) continue;
+          const raw = _getNestedValue(serverDef, mapping.jsonPath);
+          const value = raw != null ? String(raw) : '';
+          const isSensitive = !!(mapping.sensitive || ENV_SENSITIVE_KEYS.has(envKey));
+          keys.push({
+            key: envKey,
+            value: isSensitive ? '' : value,
+            sensitive: isSensitive,
+            readOnly: false,
+            hasValue: isSensitive ? (value.length > 0) : undefined,
+            commented: !value && !isSensitive, // show as "not set" if empty
+          });
+        }
+        if (keys.length) sections.push({ label: cat.label, keys });
+      }
+      return sections;
+    }
+
+    /** Find a server entry in servers.json by id (loads fresh from disk). */
+    function _getServerDef(serverId) {
+      try {
+        if (!fs.existsSync(SERVERS_FILE)) return null;
+        const servers = JSON.parse(fs.readFileSync(SERVERS_FILE, 'utf8'));
+        return servers.find(s => s.id === serverId) || null;
+      } catch { return null; }
+    }
+
+    /** Write an updated server entry back to servers.json. */
+    function _saveServerDef(serverId, updater) {
+      if (!fs.existsSync(SERVERS_FILE)) return false;
+      const servers = JSON.parse(fs.readFileSync(SERVERS_FILE, 'utf8'));
+      const idx = servers.findIndex(s => s.id === serverId);
+      if (idx < 0) return false;
+      updater(servers[idx]);
+      const tmpPath = SERVERS_FILE + '.tmp';
+      fs.writeFileSync(tmpPath, JSON.stringify(servers, null, 2));
+      fs.renameSync(tmpPath, SERVERS_FILE);
+      return true;
+    }
 
     /** Parse a .env file into structured entries preserving comments and order */
     function parseEnvFile(content) {
@@ -2272,9 +2432,18 @@ class WebMapServer {
       return entries;
     }
 
-    /** GET /api/panel/bot-config — read .env as categorized settings */
+    /** GET /api/panel/bot-config — read .env (primary) or servers.json entry (non-primary) */
     app.get('/api/panel/bot-config', requireTier('admin'), rateLimit(10000, 10), (req, res) => {
       try {
+        // ── Non-primary: read from servers.json ──
+        if (!req.srv.isPrimary) {
+          const serverDef = _getServerDef(req.srv.serverId);
+          if (!serverDef) return res.status(404).json({ error: 'Server not found in servers.json' });
+          const sections = _buildServerDefSections(serverDef);
+          return res.json({ sections, source: 'servers.json' });
+        }
+
+        // ── Primary: read from .env ──
         const envPath = path.join(__dirname, '..', '..', '.env');
         if (!fs.existsSync(envPath)) {
           return res.status(404).json({ error: '.env file not found' });
@@ -2325,7 +2494,7 @@ class WebMapServer {
       }
     });
 
-    /** POST /api/panel/bot-config — update .env keys */
+    /** POST /api/panel/bot-config — update .env (primary) or servers.json entry (non-primary) */
     app.post('/api/panel/bot-config', requireTier('admin'), rateLimit(30000, 3), (req, res) => {
       const { changes } = req.body;
       if (!changes || typeof changes !== 'object' || Array.isArray(changes)) {
@@ -2349,6 +2518,54 @@ class WebMapServer {
         }
       }
 
+      // ── Non-primary: write to servers.json ──
+      if (!req.srv.isPrimary) {
+        try {
+          const serverId = req.srv.serverId;
+          const updated = new Set();
+          const ok = _saveServerDef(serverId, (serverDef) => {
+            for (const [envKey, value] of Object.entries(changes)) {
+              const mapping = ENV_TO_SERVERDEF[envKey];
+              if (!mapping) continue; // ignore keys not in the mapping
+              const val = String(value);
+              // Convert booleans for boolean-like fields
+              let coerced = val;
+              if (val === 'true') coerced = true;
+              else if (val === 'false') coerced = false;
+              else if (/^\d+$/.test(val) && !envKey.includes('ID') && !envKey.includes('PATH') && !envKey.includes('NAME') && !envKey.includes('TEXT') && !envKey.includes('HOST') && !envKey.includes('USER') && !envKey.includes('PASSWORD') && !envKey.includes('KEY') && !envKey.includes('LINK') && !envKey.includes('URL') && !envKey.includes('CONTAINER') && !envKey.includes('TIMEZONE') && !envKey.includes('OVERRIDES') && !envKey.includes('PROFILES') && !envKey.includes('TIMES')) {
+                coerced = parseInt(val, 10);
+              }
+              // Empty string → remove the key (so it falls through to primary defaults via prototype)
+              if (val === '') {
+                // Delete the nested key
+                const parts = mapping.jsonPath.split('.');
+                let cur = serverDef;
+                for (let i = 0; i < parts.length - 1; i++) {
+                  if (cur[parts[i]] == null) break;
+                  cur = cur[parts[i]];
+                }
+                if (cur && typeof cur === 'object') delete cur[parts[parts.length - 1]];
+              } else {
+                _setNestedValue(serverDef, mapping.jsonPath, coerced);
+              }
+              updated.add(envKey);
+            }
+          });
+
+          if (!ok) return res.status(404).json({ error: 'Server not found in servers.json' });
+
+          return res.json({
+            ok: true,
+            updated: [...updated],
+            restartRequired: true,
+            message: `Updated ${updated.size} setting${updated.size !== 1 ? 's' : ''} in servers.json. Restart the bot for changes to take effect.`,
+          });
+        } catch (err) {
+          return res.status(500).json({ error: `Failed to save server config: ${safeError(err)}` });
+        }
+      }
+
+      // ── Primary: write to .env ──
       try {
         const envPath = path.join(__dirname, '..', '..', '.env');
         if (!fs.existsSync(envPath)) {
@@ -2669,11 +2886,410 @@ class WebMapServer {
     });
   }
 
+  /**
+   * Background polling — proactively builds cached responses for all endpoints.
+   * Runs every 15s so client requests are always served from cache instantly.
+   * All RCON calls for multiple servers run in parallel.
+   */
+  _startBackgroundPolling() {
+    const POLL_INTERVAL = 15000;
+    const RCON_TIMEOUT = 5000;
+    const rconTimeout = (promise) =>
+      Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('RCON timeout')), RCON_TIMEOUT))]);
+
+    const poll = async () => {
+      try {
+        // ── Build landing data (all servers in parallel) ──
+        await this._buildLandingData(rconTimeout);
+
+        // ── Build per-server status + stats caches ──
+        const serverIds = ['primary'];
+        const additional = this._loadServerList();
+        for (const s of additional) serverIds.push(s.id);
+
+        const statusPromises = serverIds.map(async (id) => {
+          try {
+            const srv = this._resolveServer(id === 'primary' ? '' : id);
+            if (!srv) return;
+            await this._buildStatusCache(srv, rconTimeout);
+            await this._buildStatsCache(srv, rconTimeout);
+          } catch { /* non-critical — individual server poll failure */ }
+        });
+        await Promise.all(statusPromises);
+      } catch (err) {
+        console.error('[WEB MAP] Background poll error:', err.message);
+      }
+    };
+
+    // Initial poll (immediate, don't await — let server start)
+    poll();
+    this._pollTimer = setInterval(poll, POLL_INTERVAL);
+    this._pollTimer.unref();
+    console.log('[WEB MAP] Background polling started (every ' + (POLL_INTERVAL / 1000) + 's)');
+  }
+
+  /** Build and cache the landing page data. All RCON calls parallelised. */
+  async _buildLandingData(rconTimeout) {
+    const result = {
+      primary: {
+        name: config.serverName || 'HumanitZ Server',
+        host: config.publicHost || '',
+        gamePort: config.gamePort || '',
+        status: 'unknown',
+        onlineCount: 0,
+        maxPlayers: null,
+        totalPlayers: 0,
+        gameDay: null,
+        season: null,
+        gameTime: null,
+        timezone: config.botTimezone || 'UTC',
+      },
+      servers: [],
+      schedule: null,
+    };
+
+    // Gather all RCON promises in parallel
+    const additional = this._loadServerList();
+    const primaryRcon = (async () => {
+      try {
+        const { getServerInfo, getPlayerList } = require('../rcon/server-info');
+        const [info, list] = await Promise.all([
+          rconTimeout(getServerInfo()),
+          rconTimeout(getPlayerList()),
+        ]);
+        if (info) {
+          result.primary.status = 'online';
+          result.primary.maxPlayers = info.maxPlayers || null;
+          result.primary.gameDay = info.day || null;
+          if (info.season) result.primary.season = info.season;
+          if (info.name) result.primary.rconName = info.name;
+          if (info.time) result.primary.gameTime = info.time;
+        }
+        const playerArr = list?.players || (Array.isArray(list) ? list : []);
+        result.primary.onlineCount = playerArr.length;
+      } catch {
+        result.primary.status = 'offline';
+      }
+    })();
+
+    const serverRcons = additional.map(async (s) => {
+      const dir = this._getServerDataDir(s.id);
+      if (!dir) return null;
+      const serverInfo = {
+        id: s.id,
+        name: s.name || s.id,
+        host: s.publicHost || s.host || config.publicHost || '',
+        gamePort: s.gamePort || '',
+        status: 'unknown',
+        onlineCount: 0,
+        totalPlayers: 0,
+      };
+
+      const srv = this._resolveServer(s.id);
+      if (srv) {
+        try {
+          const [info, list] = await Promise.all([
+            rconTimeout(srv.getServerInfo()),
+            rconTimeout(srv.getPlayerList()),
+          ]);
+          if (info) {
+            serverInfo.status = 'online';
+            serverInfo.maxPlayers = info.maxPlayers || null;
+            serverInfo.gameDay = info.day || null;
+            if (info.season) serverInfo.season = info.season;
+            if (info.name) serverInfo.rconName = info.name;
+            if (info.time) serverInfo.gameTime = info.time;
+          }
+          const playerArr = list?.players || (Array.isArray(list) ? list : []);
+          serverInfo.onlineCount = playerArr.length;
+        } catch {
+          serverInfo.status = 'offline';
+        }
+      }
+
+      // DB/file enrichment (fast, no RCON)
+      if (srv?.db) {
+        try {
+          const cnt = srv.db.db?.prepare('SELECT COUNT(*) as cnt FROM players').get();
+          if (cnt?.cnt) serverInfo.totalPlayers = cnt.cnt;
+          if (!serverInfo.maxPlayers) {
+            const settingsRow = srv.db.db?.prepare("SELECT value FROM bot_state WHERE key = 'server_settings'").get();
+            if (settingsRow?.value) {
+              const settings = JSON.parse(settingsRow.value);
+              if (settings.MaxPlayers) serverInfo.maxPlayers = parseInt(settings.MaxPlayers, 10) || null;
+              if (settings.DaysPerSeason) serverInfo.daysPerSeason = parseInt(settings.DaysPerSeason, 10) || 28;
+            }
+          }
+          if (!serverInfo.gameDay) {
+            const ws = srv.db.getAllWorldState?.() || {};
+            if (ws.day) serverInfo.gameDay = ws.day;
+            if (!serverInfo.season && ws.season) serverInfo.season = ws.season;
+          }
+        } catch { /* DB unavailable */ }
+      }
+      if (!serverInfo.totalPlayers) {
+        try {
+          const saveData = this._parseSaveDataForServer(dir);
+          serverInfo.totalPlayers = saveData?.size || 0;
+        } catch { /* non-critical */ }
+      }
+      if (!serverInfo.gameDay) {
+        const cacheFile = path.join(dir, 'save-cache.json');
+        try {
+          if (fs.existsSync(cacheFile)) {
+            const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+            if (cache.worldState?.daysPassed != null) serverInfo.gameDay = cache.worldState.daysPassed;
+            if (serverInfo.status === 'unknown') {
+              const age = Date.now() - fs.statSync(cacheFile).mtimeMs;
+              serverInfo.status = age < 600_000 ? 'online' : 'stale';
+            }
+          }
+        } catch { /* non-critical */ }
+      }
+      if (srv?.scheduler && srv.scheduler.isActive?.()) {
+        try { serverInfo.schedule = srv.scheduler.getStatus(); } catch { /* scheduler unavailable */ }
+      }
+      if (srv?.db) {
+        try {
+          const settingsRow = srv.db.db?.prepare("SELECT value FROM bot_state WHERE key = 'server_settings'").get();
+          if (settingsRow?.value) serverInfo.settings = _extractLandingSettings(JSON.parse(settingsRow.value));
+        } catch { /* non-critical */ }
+      }
+      if (!serverInfo.settings) {
+        try {
+          const settingsFile = path.join(dir, 'server-settings.json');
+          if (fs.existsSync(settingsFile)) serverInfo.settings = _extractLandingSettings(JSON.parse(fs.readFileSync(settingsFile, 'utf8')));
+        } catch { /* non-critical */ }
+      }
+      if (srv) {
+        const mods = [];
+        if (srv.rcon?.connected) mods.push('rcon');
+        if (srv.db) mods.push('db');
+        const inst = this._multiServerManager?.getInstance(s.id);
+        if (inst?.saveService || inst?.hasSftp) mods.push('sftp');
+        if (srv.scheduler && srv.scheduler.isActive?.()) mods.push('schedule');
+        if (inst?._modules?.logWatcher) mods.push('logs');
+        if (inst?._modules?.chatRelay) mods.push('chat');
+        if (inst?._modules?.anticheat?.available) mods.push('anticheat');
+        if (this._plugins.some(p => p.name === 'hzmod' && (p.serverId === s.id || (!p.serverId && s.id === 'vps_dev')))) mods.push('hzmod');
+        serverInfo.modules = mods;
+      }
+      return serverInfo;
+    });
+
+    // Run ALL RCON calls in parallel
+    const [, ...serverResults] = await Promise.all([primaryRcon, ...serverRcons]);
+    for (const si of serverResults) { if (si) result.servers.push(si); }
+
+    // Non-RCON enrichment for primary (fast)
+    if (this._db) {
+      try {
+        const cnt = this._db.db?.prepare('SELECT COUNT(*) as cnt FROM players').get();
+        if (cnt?.cnt) result.primary.totalPlayers = cnt.cnt;
+      } catch { /* db unavailable */ }
+    }
+    if (!result.primary.totalPlayers) {
+      const players = this._parseSaveData();
+      result.primary.totalPlayers = players.size;
+    }
+    if (this._db) {
+      try {
+        if (!result.primary.maxPlayers) {
+          const settingsRow = this._db.db?.prepare("SELECT value FROM bot_state WHERE key = 'server_settings'").get();
+          if (settingsRow?.value) {
+            const settings = JSON.parse(settingsRow.value);
+            if (settings.MaxPlayers) result.primary.maxPlayers = parseInt(settings.MaxPlayers, 10) || null;
+            if (settings.DaysPerSeason) result.primary.daysPerSeason = parseInt(settings.DaysPerSeason, 10) || 28;
+          }
+        }
+        const ws = this._db.getAllWorldState?.() || {};
+        if (!result.primary.gameDay && ws.day) result.primary.gameDay = ws.day;
+        if (!result.primary.season && ws.season) result.primary.season = ws.season;
+      } catch { /* db unavailable */ }
+    }
+    if (!result.primary.maxPlayers) {
+      try {
+        const settingsFile = path.join(DATA_DIR, 'server-settings.json');
+        if (fs.existsSync(settingsFile)) {
+          const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+          if (settings.MaxPlayers) result.primary.maxPlayers = parseInt(settings.MaxPlayers, 10) || null;
+        }
+      } catch { /* ignore */ }
+    }
+    if (!result.primary.gameDay) {
+      try {
+        const cachePath = path.join(DATA_DIR, 'save-cache.json');
+        if (fs.existsSync(cachePath)) {
+          const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+          if (cache.worldState?.daysPassed != null) result.primary.gameDay = cache.worldState.daysPassed;
+        }
+      } catch { /* save-cache unavailable */ }
+    }
+    if (this._db) {
+      try {
+        const settingsRow = this._db.db?.prepare("SELECT value FROM bot_state WHERE key = 'server_settings'").get();
+        if (settingsRow?.value) result.primary.settings = _extractLandingSettings(JSON.parse(settingsRow.value));
+      } catch { /* non-critical */ }
+    }
+    if (!result.primary.settings) {
+      try {
+        const settingsFile = path.join(DATA_DIR, 'server-settings.json');
+        if (fs.existsSync(settingsFile)) result.primary.settings = _extractLandingSettings(JSON.parse(fs.readFileSync(settingsFile, 'utf8')));
+      } catch { /* non-critical */ }
+    }
+    if (this._scheduler && this._scheduler.isActive()) {
+      try { result.schedule = this._scheduler.getStatus(); } catch { /* scheduler unavailable */ }
+    }
+    {
+      const mods = [];
+      if (rcon?.connected) mods.push('rcon');
+      if (this._db) mods.push('db');
+      if (this._saveService) mods.push('sftp');
+      if (this._scheduler && this._scheduler.isActive()) mods.push('schedule');
+      if (this._plugins.some(p => p.name === 'hzmod')) mods.push('hzmod');
+      result.primary.modules = mods;
+    }
+    result.primary.discordInvite = config.discordInviteLink || '';
+    for (const plugin of this._plugins) {
+      if (typeof plugin.getLandingData === 'function') {
+        try { Object.assign(result, plugin.getLandingData() || {}); } catch { /* plugin error */ }
+      }
+    }
+    this._setCache('landing', 'global', result);
+  }
+
+  /** Build and cache status data for a single server. */
+  async _buildStatusCache(srv, rconTimeout) {
+    const result = { serverState: 'unknown', uptime: null, maxPlayers: null, onlineCount: 0, fps: null, gameDay: null, season: null, gameTime: null, timezone: srv.config.botTimezone || 'UTC', resources: null };
+    try {
+      const [info, list] = await Promise.all([
+        rconTimeout(srv.getServerInfo()),
+        rconTimeout(srv.getPlayerList()),
+      ]);
+      if (info) {
+        result.serverState = 'running';
+        result.fps = info.fps || null;
+        result.gameDay = info.day || null;
+        result.maxPlayers = info.maxPlayers || null;
+        if (info.season) result.season = info.season;
+        if (info.time) result.gameTime = info.time;
+      }
+      const playerArr = list?.players || (Array.isArray(list) ? list : []);
+      result.onlineCount = playerArr.length;
+      // Also cache the player list for /api/online
+      this._setCache('online', srv.serverId, list);
+    } catch {
+      result.serverState = 'offline';
+    }
+    if (!result.maxPlayers) {
+      try {
+        const settingsFile = path.join(srv.dataDir, 'server-settings.json');
+        if (fs.existsSync(settingsFile)) {
+          const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+          if (settings.MaxPlayers) result.maxPlayers = parseInt(settings.MaxPlayers, 10) || null;
+        }
+      } catch { /* ignore */ }
+    }
+    if (srv.isPrimary) {
+      try {
+        const resources = await serverResources.getResources();
+        if (resources) {
+          result.resources = {
+            cpu: resources.cpu,
+            memPercent: resources.memPercent,
+            memFormatted: resources.memUsed != null && resources.memTotal != null
+              ? `${formatBytes(resources.memUsed)} / ${formatBytes(resources.memTotal)}`
+              : null,
+            diskPercent: resources.diskPercent,
+            diskFormatted: resources.diskUsed != null && resources.diskTotal != null
+              ? `${formatBytes(resources.diskUsed)} / ${formatBytes(resources.diskTotal)}`
+              : null,
+          };
+          if (resources.uptime != null) result.uptime = formatUptime(resources.uptime);
+        }
+      } catch { /* resources unavailable */ }
+    }
+    if (!result.gameDay) {
+      try {
+        const cachePath = path.join(srv.dataDir, 'save-cache.json');
+        if (fs.existsSync(cachePath)) {
+          const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+          if (cache.worldState?.daysPassed != null) result.gameDay = cache.worldState.daysPassed;
+        }
+      } catch { /* save-cache unavailable */ }
+    }
+    if (srv.db) {
+      try {
+        const ws = srv.db.getAllWorldState?.() || {};
+        if (!result.gameDay && ws.day) result.gameDay = ws.day;
+        if (!result.season && ws.season) result.season = ws.season;
+      } catch { /* db unavailable */ }
+    }
+    try {
+      const settingsFile = path.join(srv.dataDir, 'server-settings.json');
+      if (fs.existsSync(settingsFile)) {
+        const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+        if (settings.DaysPerSeason) result.daysPerSeason = parseInt(settings.DaysPerSeason, 10) || 28;
+      }
+    } catch { /* ignore */ }
+    if (!result.daysPerSeason && srv.db) {
+      try {
+        const settingsRow = srv.db.db?.prepare("SELECT value FROM bot_state WHERE key = 'server_settings'").get();
+        if (settingsRow?.value) {
+          const s = JSON.parse(settingsRow.value);
+          if (s.DaysPerSeason) result.daysPerSeason = parseInt(s.DaysPerSeason, 10) || 28;
+        }
+      } catch { /* db unavailable */ }
+    }
+    this._setCache('status', srv.serverId, result);
+  }
+
+  /** Build and cache stats data for a single server. */
+  async _buildStatsCache(srv, rconTimeout) {
+    const result = { totalPlayers: 0, onlinePlayers: 0, eventsToday: 0, chatsToday: 0 };
+    const players = srv.isPrimary ? this._parseSaveData() : this._parseSaveDataForServer(srv.dataDir);
+    result.totalPlayers = players.size;
+    if (!result.totalPlayers && srv.db) {
+      try {
+        const cnt = srv.db.db?.prepare('SELECT COUNT(*) as cnt FROM players').get();
+        if (cnt?.cnt) result.totalPlayers = cnt.cnt;
+      } catch { /* db unavailable */ }
+    }
+    // Use status cache for online count (already built)
+    const statusCache = this._getCached('status', srv.serverId, 30000);
+    if (statusCache) {
+      result.onlinePlayers = statusCache.onlineCount || 0;
+    } else {
+      try {
+        const list = await rconTimeout(srv.getPlayerList());
+        const playerArr = list?.players || (Array.isArray(list) ? list : []);
+        result.onlinePlayers = playerArr.length;
+      } catch { /* RCON unavailable */ }
+    }
+    if (srv.db) {
+      try {
+        const tz = srv.config.botTimezone || 'UTC';
+        const nowStr = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+        const todayMidnight = new Date(`${nowStr}T00:00:00`);
+        const tzDate = new Date(todayMidnight.toLocaleString('en-US', { timeZone: 'UTC' }));
+        const localDate = new Date(todayMidnight.toLocaleString('en-US', { timeZone: tz }));
+        const offsetMs = tzDate - localDate;
+        const todayIso = new Date(todayMidnight.getTime() + offsetMs).toISOString();
+        const activities = srv.db.getActivitySince?.(todayIso) || [];
+        result.eventsToday = activities.length;
+        const chats = srv.db.getChatSince?.(todayIso) || [];
+        result.chatsToday = chats.length;
+      } catch { /* db unavailable */ }
+    }
+    this._setCache('stats', srv.serverId, result);
+  }
+
   start() {
     this._addErrorHandler();
     return new Promise((resolve, reject) => {
       this._server = this._app.listen(this._port, () => {
         console.log(`[WEB MAP] Interactive map running at http://localhost:${this._port}`);
+        this._startBackgroundPolling();
         resolve();
       });
       this._server.on('error', (err) => {
@@ -2685,6 +3301,7 @@ class WebMapServer {
 
   /** Stop the server. */
   stop() {
+    if (this._pollTimer) { clearInterval(this._pollTimer); this._pollTimer = null; }
     if (this._server) {
       this._server.close();
       this._server = null;

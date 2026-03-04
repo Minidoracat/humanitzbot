@@ -368,6 +368,26 @@ async function deleteSchedule(scheduleId) {
 // ── Startup variables ───────────────────────────────────────
 
 /**
+ * List all startup variables for this server.
+ * Pterodactyl returns env vars like SERVER_NAME, MAX_PLAYERS, RCON_PASSWORD, etc.
+ * @returns {Promise<Array<{env_variable: string, server_value: string, default_value: string, name: string, description: string}>>}
+ */
+async function getStartupVariables() {
+  const data = await _request('startup');
+  const items = data?.data || [];
+  return items.map(v => {
+    const a = v.attributes || v;
+    return {
+      env_variable: a.env_variable,
+      server_value: a.server_value ?? a.default_value ?? '',
+      default_value: a.default_value ?? '',
+      name: a.name || a.env_variable || '',
+      description: a.description || '',
+    };
+  });
+}
+
+/**
  * Update a startup variable (e.g. SERVER_NAME, MAX_PLAYERS).
  * Bisect/Pterodactyl passes these as command-line args, overriding INI values.
  * @param {string} key - Environment variable name (e.g. 'SERVER_NAME')
@@ -422,6 +442,7 @@ class PanelApi {
   createSchedule = createSchedule;
   deleteSchedule = deleteSchedule;
   updateStartupVariable = updateStartupVariable;
+  getStartupVariables = getStartupVariables;
 }
 
 // ── Per-server instance factory ─────────────────────────────
@@ -627,6 +648,28 @@ function createPanelApi({ serverUrl, apiKey }) {
     await _scopedRequest(`schedules/${scheduleId}`, { method: 'DELETE' });
   };
 
+  api.getStartupVariables = async function () {
+    const data = await _scopedRequest('startup');
+    const items = data?.data || [];
+    return items.map(v => {
+      const a = v.attributes || v;
+      return {
+        env_variable: a.env_variable,
+        server_value: a.server_value ?? a.default_value ?? '',
+        default_value: a.default_value ?? '',
+        name: a.name || a.env_variable || '',
+        description: a.description || '',
+      };
+    });
+  };
+
+  api.updateStartupVariable = async function (key, value) {
+    const data = await _scopedRequest('startup/variable', {
+      method: 'PUT', body: JSON.stringify({ key, value }),
+    });
+    return data?.attributes || data || {};
+  };
+
   return api;
 }
 
@@ -653,3 +696,5 @@ module.exports.getWebsocketAuth = getWebsocketAuth;
 module.exports.listSchedules = listSchedules;
 module.exports.createSchedule = createSchedule;
 module.exports.deleteSchedule = deleteSchedule;
+module.exports.getStartupVariables = getStartupVariables;
+module.exports.updateStartupVariable = updateStartupVariable;

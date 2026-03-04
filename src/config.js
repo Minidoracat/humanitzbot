@@ -208,14 +208,15 @@ const config = {
   agentCachePath: process.env.AGENT_CACHE_PATH || '',        // explicit path to humanitz-cache.json (for host-managed agents)
   agentTimeout: Math.max(parseInt(process.env.AGENT_TIMEOUT, 10) || 120000, 10000),  // max wait for agent exec
 
-  // Agent trigger — how the bot tells the game server to run the parser.
-  // 'auto'  = try panel command first (if panel API configured), then SSH, then skip
+  // Agent trigger — how the bot tells the game server to generate the cache.
+  // 'auto'  = try RCON (if connected), then SSH, then skip
+  // 'rcon'  = RCON/console command only (e.g. createHZSocket on Bisect Hosting)
+  // 'panel' = Pterodactyl panel console command (sends via websocket console)
   // 'ssh'   = SSH exec only
-  // 'panel' = Pterodactyl panel console command only (for hosts like BisectHosting)
   // 'none'  = don't trigger — assume host runs the agent externally
   agentTrigger: (process.env.AGENT_TRIGGER || 'auto').toLowerCase(),
-  agentPanelCommand: process.env.AGENT_PANEL_COMMAND || 'parse-save',  // console command the host wrapper listens for
-  agentPanelDelay: Math.max(parseInt(process.env.AGENT_PANEL_DELAY, 10) || 5000, 1000),  // ms to wait after sending command before checking for cache
+  agentPanelCommand: process.env.AGENT_PANEL_COMMAND || 'createHZSocket',  // RCON/console command to trigger cache generation
+  agentPanelDelay: Math.max(parseInt(process.env.AGENT_PANEL_DELAY, 10) || 3000, 500),  // ms to wait after sending command before checking for cache
 
   // Agent poll interval — used instead of SAVE_POLL_INTERVAL when agent mode is active.
   // Agent downloads a ~200-500KB cache vs the full ~60MB .sav, so faster polling is safe.
@@ -244,6 +245,11 @@ const config = {
   enablePlayerCards: envBool('ENABLE_PLAYER_CARDS', false),
   enableNewspaper: envBool('ENABLE_NEWSPAPER', false),
 
+  // hzmod native plugin (private — howyagarn repo only)
+  hzmodServerId: process.env.HZMOD_SERVER_ID || '',       // multi-server id the plugin belongs to
+  hzmodSocketPath: process.env.HZMOD_SOCKET_PATH || '',   // Unix socket path for IPC
+  hzmodStatusPath: process.env.HZMOD_STATUS_PATH || '',   // JSON status file written by plugin
+
   // Thread mode — when true (default), chat/activity go into daily threads.
   // When false, messages post directly to the channel.
   useChatThreads: envBool('USE_CHAT_THREADS', true),
@@ -259,7 +265,7 @@ const config = {
   restartDelay: parseInt(process.env.RESTART_DELAY, 10) || 10, // countdown minutes before restart
   restartRotateDaily: envBool('RESTART_ROTATE_DAILY', true), // shift profile order each day
   dockerContainer: process.env.DOCKER_CONTAINER || '',    // Docker container name for restart commands
-  serverNameTemplate: process.env.SERVER_NAME_TEMPLATE || '', // e.g. "[EU1] My Server PVE | Current Mode: {mode} | Dynamic Difficulty"
+  serverNameTemplate: process.env.SERVER_NAME_TEMPLATE || '', // e.g. "[EU1] Howyagarn PVE | Current Mode: {mode} | Dynamic Difficulty"
 
   // Activity log — tracks item movements, horse changes, world events from save diffs
   enableActivityLog: envBool('ENABLE_ACTIVITY_LOG', true),

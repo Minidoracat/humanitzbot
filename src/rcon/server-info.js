@@ -151,7 +151,9 @@ function parsePlayerList(raw) {
     } else {
       // Fallback: line might just be a plain name
       const name = line.replace(/^[\d#.)\s]+/, '').trim();
-      if (name && name !== '-' && !name.toLowerCase().startsWith('player') && !name.startsWith('=') && !name.startsWith('-') && !/no\s+players?/i.test(name)) {
+      // Reject lines that look like RCON admin messages or chat contamination
+      if (name && name !== '-' && !name.toLowerCase().startsWith('player') && !name.startsWith('=') && !name.startsWith('-') && !/no\s+players?/i.test(name)
+          && !/<(?:SP|FO|FR|CL|PR|FC|BG)>/.test(name) && !/\[\d+\/\d+\/\d/.test(name) && !/Admin:\s/.test(name) && !/Welcome/.test(name)) {
         players.push({ name, steamId: 'N/A' });
       }
     }

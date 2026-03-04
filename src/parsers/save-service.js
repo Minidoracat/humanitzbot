@@ -11,13 +11,15 @@
  *                         server doesn't have Node.js or SSH exec support.
  *
  * Agent execution strategies (agentTrigger):
- *   **ssh**:   Bot uploads agent via SFTP, executes via SSH exec.
+ *   **rcon**:  Bot sends an RCON/console command (e.g. `createHZSocket` on Bisect)
+ *              that tells the server to write a pre-parsed JSON cache file.
+ *              Fastest path — no SFTP or SSH needed.  (Bisect Hosting)
  *   **panel**: Bot sends a console command through the Pterodactyl wrapper API.
  *              The host intercepts it and runs the parser. (BisectHosting model)
+ *   **ssh**:   Bot uploads agent via SFTP, executes via SSH exec.
  *   **none**:  Bot never triggers the agent — assumes the host runs it externally
  *              (cron, systemd, Pterodactyl schedule, etc.).
- *   **auto**:  Tries panel command first (if Panel API configured), then SSH,
- *              then treats as 'none' (just checks for existing cache).
+ *   **auto**:  Tries RCON (if connected) → SSH → none.
  *
  * Usage:
  *   const SaveService = require('./save-service');
@@ -51,9 +53,9 @@ class SaveService extends EventEmitter {
    * @param {string}  [options.agentCachePath]   - Explicit remote path to humanitz-cache.json (for host-managed agents)
    * @param {object}  [options.sshConfig]        - { host, port, username, password } for SSH exec (optional; defaults to SFTP creds)
    * @param {number}  [options.agentTimeout]     - Max ms to wait for agent execution (default: 120000)
-   * @param {string}  [options.agentTrigger]     - 'auto' | 'ssh' | 'panel' | 'none' (default: 'auto')
-   * @param {string}  [options.agentPanelCommand] - Console command for panel trigger (default: 'parse-save')
-   * @param {number}  [options.agentPanelDelay]   - ms to wait after panel command before reading cache (default: 5000)
+   * @param {string}  [options.agentTrigger]     - 'auto' | 'rcon' | 'ssh' | 'panel' | 'none' (default: 'auto')
+   * @param {string}  [options.agentPanelCommand] - Console/RCON command for trigger (default: 'createHZSocket')
+   * @param {number}  [options.agentPanelDelay]   - ms to wait after trigger command before reading cache (default: 3000)
    * @param {object}  [options.panelApi]          - PanelApi instance for panel trigger (optional; auto-loaded if available)
    */
   constructor(db, options = {}) {
@@ -81,10 +83,11 @@ class SaveService extends EventEmitter {
     this._agentTimeout = options.agentTimeout || 120_000;
 
     // Agent trigger strategy
-    this._agentTrigger = options.agentTrigger || 'auto';  // 'auto' | 'ssh' | 'panel' | 'none'
-    this._agentPanelCommand = options.agentPanelCommand || 'parse-save';
-    this._agentPanelDelay = options.agentPanelDelay ?? 5000;
+    this._agentTrigger = options.agentTrigger || 'auto';  // 'auto' | 'rcon' | 'ssh' | 'panel' | 'none'
+    this._agentPanelCommand = options.agentPanelCommand || 'createHZSocket';
+    this._agentPanelDelay = options.agentPanelDelay ?? 3000;
     this._panelApi = options.panelApi || null;  // lazy-loaded if null
+    this._rcon = null;  // lazy-loaded rcon singleton
 
     // Internal state
     this._timer = null;
@@ -467,7 +470,9 @@ class SaveService extends EventEmitter {
       const trigger = await this._resolveTrigger();
 
       // ── Step 3: Trigger the agent based on strategy ──
-      if (trigger === 'panel') {
+      if (trigger === 'rcon') {
+        await this._triggerViaRcon();
+      } else if (trigger === 'panel') {
         await this._triggerViaPanel();
       } else if (trigger === 'ssh') {
         if (!this._agentDeployed) await this.deployAgent();
@@ -497,12 +502,17 @@ class SaveService extends EventEmitter {
 
   /**
    * Resolve which trigger strategy to use.  Called once and cached.
-   * @returns {Promise<'panel'|'ssh'|'none'>}
+   * @returns {Promise<'rcon'|'panel'|'ssh'|'none'>}
    */
   async _resolveTrigger() {
     if (this._resolvedTrigger) return this._resolvedTrigger;
 
     const requested = this._agentTrigger;
+
+    if (requested === 'rcon') {
+      this._resolvedTrigger = this._isRconAvailable() ? 'rcon' : 'none';
+      return this._resolvedTrigger;
+    }
 
     if (requested === 'panel') {
       this._resolvedTrigger = 'panel';
@@ -521,17 +531,23 @@ class SaveService extends EventEmitter {
     }
 
     // ── 'auto' — probe in priority order ──
-    // Auto mode does NOT auto-select panel — it must be explicitly set via AGENT_TRIGGER=panel.
 
-    // 1. Try SSH
+    // 1. Try RCON (fastest — game server writes cache directly)
+    if (this._isRconAvailable()) {
+      console.log(`[${this._label}] Auto-selected RCON trigger (createHZSocket)`);
+      this._resolvedTrigger = 'rcon';
+      return 'rcon';
+    }
+
+    // 2. Try SSH
     if (this._agentCapable === null) await this.checkNodeAvailable();
     if (this._agentCapable) {
       this._resolvedTrigger = 'ssh';
       return 'ssh';
     }
 
-    // 2. Neither available — just check for cache (host-managed)
-    console.log(`[${this._label}] No SSH available — will check for host-managed cache only`);
+    // 3. Neither available — just check for cache (host-managed)
+    console.log(`[${this._label}] No RCON or SSH available — will check for host-managed cache only`);
     this._resolvedTrigger = 'none';
     return 'none';
   }
@@ -550,6 +566,34 @@ class SaveService extends EventEmitter {
 
     this._panelCapable = !!this._panelApi.available;
     return this._panelCapable;
+  }
+
+  /**
+   * Check if RCON is connected and can send commands.
+   */
+  _isRconAvailable() {
+    if (!this._rcon) {
+      try { this._rcon = require('../rcon/rcon'); } catch { return false; }
+    }
+    return this._rcon && this._rcon.connected;
+  }
+
+  /**
+   * Trigger cache generation via RCON command (e.g. createHZSocket).
+   * The game server writes humanitz-cache.json directly — fastest path.
+   * We wait a configurable delay for the server to finish writing the cache.
+   */
+  async _triggerViaRcon() {
+    if (!this._rcon) {
+      try { this._rcon = require('../rcon/rcon'); } catch { throw new Error('RCON module not available'); }
+    }
+    console.log(`[${this._label}] Sending RCON command: "${this._agentPanelCommand}"`);
+    await this._rcon.send(this._agentPanelCommand);
+
+    // Wait for the server to write the cache file
+    if (this._agentPanelDelay > 0) {
+      await new Promise(r => setTimeout(r, this._agentPanelDelay));
+    }
   }
 
   /**

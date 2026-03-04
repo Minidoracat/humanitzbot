@@ -171,4 +171,18 @@ describe('parsePlayerList', () => {
     assert.equal(r.count, 0);
     assert.deepEqual(r.players, []);
   });
+
+  it('rejects RCON admin message contamination', () => {
+    // When RCON response for Players gets contaminated with admin/chat messages
+    const raw = [
+      'Players: 1',
+      'Zuq (76561198012345678)',
+      '[4/3/2,026 - 11:23] <SP>Admin: </><FO>Welcome, </>Zuq<FO>!</><SP> | play.howyagarn.online</>',
+      '<FO>Welcome back, </>TestPlayer<FO>!</>',
+    ].join('\n');
+    const r = parsePlayerList(raw);
+    assert.equal(r.players.length, 1);
+    assert.equal(r.players[0].name, 'Zuq');
+    assert.equal(r.players[0].steamId, '76561198012345678');
+  });
 });

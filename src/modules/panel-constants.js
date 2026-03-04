@@ -45,6 +45,10 @@ const SETUP = {
   RCON_MODAL:     'setup_rcon_modal',
   SFTP_MODAL:     'setup_sftp_modal',
   CHANNELS_MODAL: 'setup_channels_modal',
+  // Bisect auto-detection flow
+  PANEL_BTN:      'setup_panel_btn',
+  PANEL_MODAL:    'setup_panel_modal',
+  PANEL_MANUAL_BTN: 'setup_panel_manual',
 };
 
 // ── Env categories ──────────────────────────────────────────
