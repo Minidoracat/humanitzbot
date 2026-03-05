@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Redirecting to Server Panel...</title>
+  <!--
+    HumanitZ Bot — Bisect Web Hosting Bridge
+    ==========================================
+    Upload this file to your Bisect cPanel web hosting (public_html/).
+    It redirects visitors to your bot server's web panel.
+
+    SETUP: Replace BOT_PANEL_URL below with your bot server's web panel URL.
+    Example: https://your-bot-server.example.com:25577
+
+    To find your bot server's web panel URL:
+    1. Go to your Bisect bot server panel (games.bisecthosting.com)
+    2. Go to Network → find the web panel port allocation
+    3. The URL is: http://<bot-server-ip>:<web-panel-port>
+
+    Or run this bot command in Discord: /panel info
+  -->
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a12;
+      color: #e0e0e0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .card {
+      background: #12121a;
+      border: 1px solid #2a2a3a;
+      border-radius: 12px;
+      padding: 2rem 3rem;
+      text-align: center;
+      max-width: 480px;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: #fff; }
+    p { color: #888; margin-bottom: 1.5rem; line-height: 1.5; }
+    a {
+      display: inline-block;
+      background: #5865F2;
+      color: #fff;
+      padding: 0.75rem 2rem;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+    a:hover { background: #4752C4; }
+    .spinner {
+      width: 24px; height: 24px;
+      border: 3px solid #333;
+      border-top-color: #5865F2;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 1rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error { display: none; color: #ff6b6b; margin-top: 1rem; font-size: 0.9rem; }
+  </style>
+  <script>
+    // ════════════════════════════════════════════════════
+    // CONFIGURE: Set your bot server's web panel URL here
+    // ════════════════════════════════════════════════════
+    var BOT_PANEL_URL = ''; // e.g. 'http://123.456.789.0:25577'
+
+    (function() {
+      if (!BOT_PANEL_URL) {
+        document.addEventListener('DOMContentLoaded', function() {
+          document.querySelector('.spinner').style.display = 'none';
+          document.querySelector('p').textContent = 'Web panel URL not configured. Edit index.html and set BOT_PANEL_URL.';
+          document.querySelector('.error').style.display = 'block';
+          document.querySelector('.error').textContent = 'Server admin: open index.html in a text editor and set the BOT_PANEL_URL variable.';
+          document.querySelector('a').href = '#';
+          document.querySelector('a').textContent = 'Not Configured';
+          document.querySelector('a').style.background = '#555';
+        });
+        return;
+      }
+      // Auto-redirect after a brief moment (allows the page to render)
+      setTimeout(function() { window.location.href = BOT_PANEL_URL; }, 1500);
+    })();
+  </script>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner"></div>
+    <h1>HumanitZ Server Panel</h1>
+    <p>Redirecting you to the server management panel...</p>
+    <a id="manual-link" href="#" onclick="if(BOT_PANEL_URL) window.location.href=BOT_PANEL_URL;">Open Panel</a>
+    <p class="error"></p>
+  </div>
+  <script>
+    // Set the manual link href after DOM load
+    if (BOT_PANEL_URL) {
+      document.getElementById('manual-link').href = BOT_PANEL_URL;
+    }
+  </script>
+</body>
+</html>

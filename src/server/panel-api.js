@@ -365,6 +365,89 @@ async function deleteSchedule(scheduleId) {
   await _request(`schedules/${scheduleId}`, { method: 'DELETE' });
 }
 
+// ── Network allocations ─────────────────────────────────────
+
+/**
+ * List all network allocations for this server.
+ * Returns IPs and ports assigned to the server (primary + additional).
+ * @returns {Promise<Array<{id: number, ip: string, ip_alias: string|null, port: number, is_default: boolean}>>}
+ */
+async function listAllocations() {
+  const data = await _request('network/allocations');
+  const items = data?.data || [];
+  return items.map(a => {
+    const attrs = a.attributes || a;
+    return {
+      id: attrs.id,
+      ip: attrs.ip || '',
+      ip_alias: attrs.ip_alias || null,
+      port: attrs.port || 0,
+      is_default: attrs.is_default ?? false,
+    };
+  });
+}
+
+// ── List all servers ────────────────────────────────────────
+
+/**
+ * List all servers accessible with this API key.
+ * Uses the /api/client endpoint (no server ID needed).
+ * Useful for auto-discovery — find game server + bot server from a single API key.
+ * @returns {Promise<Array<{identifier: string, uuid: string, name: string, description: string, node: string,
+ *           sftp_details: {ip: string, port: number}, allocations: Array}>>}
+ */
+async function listServers() {
+  _parseServerUrl();
+  if (!_baseUrl || !config.panelApiKey) {
+    throw new Error('Panel API not configured (PANEL_SERVER_URL + PANEL_API_KEY required)');
+  }
+
+  const allServers = [];
+  let page = 1;
+  let totalPages = 1;
+
+  while (page <= totalPages) {
+    const url = `${_baseUrl}/api/client?page=${page}`;
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${config.panelApiKey}`,
+        Accept: 'application/json',
+      },
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Panel API ${res.status} ${res.statusText}: ${body.substring(0, 200)}`);
+    }
+    const data = await res.json();
+    const items = data?.data || [];
+    for (const item of items) {
+      const a = item.attributes || item;
+      allServers.push({
+        identifier: a.identifier || '',
+        uuid: a.uuid || '',
+        name: a.name || '',
+        description: a.description || '',
+        node: a.node || '',
+        sftp_details: a.sftp_details || {},
+        allocations: (a.relationships?.allocations?.data || []).map(al => {
+          const attrs = al.attributes || al;
+          return {
+            id: attrs.id, ip: attrs.ip || '', ip_alias: attrs.ip_alias || null,
+            port: attrs.port || 0, is_default: attrs.is_default ?? false,
+          };
+        }),
+        egg: a.egg || 0,
+        docker_image: a.docker_image || '',
+        limits: a.limits || {},
+      });
+    }
+    totalPages = data?.meta?.pagination?.total_pages || 1;
+    page++;
+  }
+
+  return allServers;
+}
+
 // ── Startup variables ───────────────────────────────────────
 
 /**
@@ -443,6 +526,8 @@ class PanelApi {
   deleteSchedule = deleteSchedule;
   updateStartupVariable = updateStartupVariable;
   getStartupVariables = getStartupVariables;
+  listAllocations = listAllocations;
+  listServers = listServers;
 }
 
 // ── Per-server instance factory ─────────────────────────────
@@ -670,6 +755,53 @@ function createPanelApi({ serverUrl, apiKey }) {
     return data?.attributes || data || {};
   };
 
+  api.listAllocations = async function () {
+    const data = await _scopedRequest('network/allocations');
+    const items = data?.data || [];
+    return items.map(a => {
+      const attrs = a.attributes || a;
+      return {
+        id: attrs.id, ip: attrs.ip || '', ip_alias: attrs.ip_alias || null,
+        port: attrs.port || 0, is_default: attrs.is_default ?? false,
+      };
+    });
+  };
+
+  api.listServers = async function () {
+    const allServers = [];
+    let page = 1;
+    let totalPages = 1;
+    while (page <= totalPages) {
+      const url = `${baseUrl}/api/client?page=${page}`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`Panel API ${res.status} ${res.statusText}: ${body.substring(0, 200)}`);
+      }
+      const data = await res.json();
+      const items = data?.data || [];
+      for (const item of items) {
+        const a = item.attributes || item;
+        allServers.push({
+          identifier: a.identifier || '', uuid: a.uuid || '', name: a.name || '',
+          description: a.description || '', node: a.node || '',
+          sftp_details: a.sftp_details || {},
+          allocations: (a.relationships?.allocations?.data || []).map(al => {
+            const attrs = al.attributes || al;
+            return { id: attrs.id, ip: attrs.ip || '', ip_alias: attrs.ip_alias || null,
+              port: attrs.port || 0, is_default: attrs.is_default ?? false };
+          }),
+          egg: a.egg || 0, docker_image: a.docker_image || '', limits: a.limits || {},
+        });
+      }
+      totalPages = data?.meta?.pagination?.total_pages || 1;
+      page++;
+    }
+    return allServers;
+  };
+
   return api;
 }
 
@@ -698,3 +830,5 @@ module.exports.createSchedule = createSchedule;
 module.exports.deleteSchedule = deleteSchedule;
 module.exports.getStartupVariables = getStartupVariables;
 module.exports.updateStartupVariable = updateStartupVariable;
+module.exports.listAllocations = listAllocations;
+module.exports.listServers = listServers;

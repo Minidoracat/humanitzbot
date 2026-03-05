@@ -188,6 +188,13 @@ const config = {
   enableSshResources: envBool('ENABLE_SSH_RESOURCES', false),
   sshPort: parseInt(process.env.SSH_PORT, 10) || 0,   // 0 = use FTP_PORT
 
+  // Trust proxy setting for the web panel Express app.
+  // Default 'loopback' trusts Caddy/nginx on localhost.
+  // Set to '1' or 'uniquelocal' for Pterodactyl Docker networking (Bisect bot hosting).
+  // Set to a CIDR (e.g. '172.16.0.0/12') for specific Docker subnets.
+  // See: https://expressjs.com/en/guide/behind-proxies.html
+  webMapTrustProxy: process.env.WEB_MAP_TRUST_PROXY || 'loopback',
+
   // Interactive stdin console for headless hosts (Bisect, etc.)
   enableStdinConsole: envBool('ENABLE_STDIN_CONSOLE', false),
   stdinConsoleWritable: envBool('STDIN_CONSOLE_WRITABLE', false),
@@ -209,7 +216,7 @@ const config = {
   agentTimeout: Math.max(parseInt(process.env.AGENT_TIMEOUT, 10) || 120000, 10000),  // max wait for agent exec
 
   // Agent trigger — how the bot tells the game server to generate the cache.
-  // 'auto'  = try RCON (if connected), then SSH, then skip
+  // 'auto'  = try RCON+Panel API (Pterodactyl/Bisect), then SSH, then skip
   // 'rcon'  = RCON/console command only (e.g. createHZSocket on Bisect Hosting)
   // 'panel' = Pterodactyl panel console command (sends via websocket console)
   // 'ssh'   = SSH exec only
@@ -244,6 +251,10 @@ const config = {
   enableDidYouKnow: envBool('ENABLE_DID_YOU_KNOW', false),
   enablePlayerCards: envBool('ENABLE_PLAYER_CARDS', false),
   enableNewspaper: envBool('ENABLE_NEWSPAPER', false),
+
+  // Howyagarn MMOlite — faction PvP / territory control system
+  enableHowyagarn: envBool('ENABLE_HOWYAGARN', false),
+  howyagarnChannelId: process.env.HOWYAGARN_CHANNEL_ID || '',
 
   // hzmod native plugin (private — howyagarn repo only)
   hzmodServerId: process.env.HZMOD_SERVER_ID || '',       // multi-server id the plugin belongs to

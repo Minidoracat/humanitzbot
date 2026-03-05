@@ -122,7 +122,11 @@ class WebMapServer {
   constructor(client, opts = {}) {
     this._client = client;
     this._app = express();
-    this._app.set('trust proxy', 'loopback'); // Trust Caddy reverse proxy on localhost
+    // Trust proxy — 'loopback' for local reverse proxy (Caddy/nginx),
+    // '1' or 'uniquelocal' for Pterodactyl Docker networking (Bisect bot hosting).
+    // Configurable via WEB_MAP_TRUST_PROXY env var.
+    const trustProxy = config.webMapTrustProxy;
+    this._app.set('trust proxy', /^\d+$/.test(trustProxy) ? parseInt(trustProxy, 10) : trustProxy);
     this._server = null;
     this._port = parseInt(process.env.WEB_MAP_PORT, 10) || 3000;
     this._db = opts.db || null;

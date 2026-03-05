@@ -86,7 +86,7 @@ class SaveService extends EventEmitter {
     this._agentTrigger = options.agentTrigger || 'auto';  // 'auto' | 'rcon' | 'ssh' | 'panel' | 'none'
     this._agentPanelCommand = options.agentPanelCommand || 'createHZSocket';
     this._agentPanelDelay = options.agentPanelDelay ?? 3000;
-    this._panelApi = options.panelApi || null;  // lazy-loaded if null
+    this._panelApi = options.panelApi || null;  // must be explicitly injected; null = no Panel API
     this._rcon = null;  // lazy-loaded rcon singleton
 
     // Internal state
@@ -531,23 +531,33 @@ class SaveService extends EventEmitter {
     }
 
     // ── 'auto' — probe in priority order ──
+    // RCON trigger (createHZSocket) only works on Pterodactyl hosts (Bisect) where
+    // the panel wrapper intercepts the command. On a VPS/self-hosted server, RCON is
+    // connected but the game server doesn't understand createHZSocket — so we only
+    // pick RCON trigger when a Panel API is also configured (strong signal of Pterodactyl).
 
-    // 1. Try RCON (fastest — game server writes cache directly)
-    if (this._isRconAvailable()) {
-      console.log(`[${this._label}] Auto-selected RCON trigger (createHZSocket)`);
+    // 1. Try RCON trigger — but only if Panel API is configured (Pterodactyl/Bisect)
+    if (this._isRconAvailable() && this._checkPanelAvailable()) {
+      console.log(`[${this._label}] Auto-selected RCON trigger (Panel API detected — Pterodactyl host)`);
       this._resolvedTrigger = 'rcon';
       return 'rcon';
     }
 
-    // 2. Try SSH
+    // 2. Try SSH (VPS / self-hosted — the normal agent path)
     if (this._agentCapable === null) await this.checkNodeAvailable();
     if (this._agentCapable) {
+      console.log(`[${this._label}] Auto-selected SSH trigger`);
       this._resolvedTrigger = 'ssh';
       return 'ssh';
     }
 
-    // 3. Neither available — just check for cache (host-managed)
-    console.log(`[${this._label}] No RCON or SSH available — will check for host-managed cache only`);
+    // 3. RCON available but no Panel API and no SSH — skip agent entirely.
+    //    Don't try createHZSocket on a non-Pterodactyl server.
+    if (this._isRconAvailable()) {
+      console.log(`[${this._label}] RCON available but no Panel API or SSH — agent trigger skipped`);
+    } else {
+      console.log(`[${this._label}] No RCON, Panel API, or SSH available — will check for host-managed cache only`);
+    }
     this._resolvedTrigger = 'none';
     return 'none';
   }
@@ -558,10 +568,13 @@ class SaveService extends EventEmitter {
   _checkPanelAvailable() {
     if (this._panelCapable !== null) return this._panelCapable;
 
-    // Lazy-load panel-api if not injected
+    // Only use an explicitly-injected panel API. Do NOT auto-require the module
+    // singleton here — it would return `.available = true` on any host where
+    // PANEL_API_KEY is configured (e.g. VPS with RCON), causing the RCON trigger
+    // to be selected instead of SSH even though there is no Pterodactyl panel.
     if (!this._panelApi) {
-      try { this._panelApi = require('../server/panel-api'); }
-      catch { this._panelCapable = false; return false; }
+      this._panelCapable = false;
+      return false;
     }
 
     this._panelCapable = !!this._panelApi.available;

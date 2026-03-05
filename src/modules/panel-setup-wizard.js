@@ -482,6 +482,46 @@ async function _handleSetupPanelModal(interaction) {
     detected.foundCount = 0;
   }
 
+  // ── Step 5: Auto-discover bot server + web panel port ─────
+  // If the same API key controls multiple Pterodactyl servers (Bisect game + bot),
+  // find the bot server and discover available port allocations for the web panel.
+  try {
+    const allServers = await api.listServers();
+    if (allServers.length > 1) {
+      // The game server is the one matching panelUrl — find it by identifier
+      const panelId = panelUrl.split('/').pop();
+      const botServer = allServers.find(s =>
+        s.identifier !== panelId &&
+        // Bot servers typically run Node.js/Python images or have 'bot' in name/description
+        (/node|bot|discord/i.test(s.name || '') ||
+         /node|bot|discord/i.test(s.description || '') ||
+         /node|python|java/i.test(s.docker_image || ''))
+      );
+      if (botServer) {
+        detected.botServer = {
+          identifier: botServer.identifier,
+          name: botServer.name,
+          allocations: botServer.allocations || [],
+        };
+        // Find a non-default allocation for the web panel (default = bot's main port)
+        const defaultAlloc = botServer.allocations.find(a => a.is_default);
+        const extraAllocs = botServer.allocations.filter(a => !a.is_default);
+        if (extraAllocs.length > 0) {
+          // Use the first extra allocation for the web panel
+          const webAlloc = extraAllocs[0];
+          detected.webPanelPort = String(webAlloc.port);
+          detected.webPanelIp = webAlloc.ip_alias || webAlloc.ip || (defaultAlloc?.ip_alias || defaultAlloc?.ip || '');
+        } else if (defaultAlloc) {
+          // Only one allocation — web panel can't get its own port
+          // User will need to request an additional allocation from Bisect
+          detected.webPanelNeedsAllocation = true;
+        }
+      }
+    }
+  } catch {
+    // listServers() may fail (permissions, network) — non-critical
+  }
+
   // ── Evaluate results ──────────────────────────────────────
   this._setupWizard.panel.detected = detected;
   this._setupWizard.panel.errors = errors;
@@ -977,6 +1017,15 @@ async function _handleSetupApply(interaction) {
     envUpdates.SAVE_POLL_INTERVAL = '30000';
   } else if (wiz.profile === 'bisect') {
     envUpdates.SAVE_POLL_INTERVAL = '300000';
+
+    // Auto-configure web panel if bot server was detected with an available port
+    const det = wiz.panel?.detected || {};
+    if (det.webPanelPort && det.webPanelIp) {
+      envUpdates.WEB_MAP_PORT = det.webPanelPort;
+      envUpdates.WEB_MAP_TRUST_PROXY = '1';  // Pterodactyl Docker networking
+      // Callback URL for Discord OAuth — use the bot server's public IP + port
+      envUpdates.WEB_MAP_CALLBACK_URL = `http://${det.webPanelIp}:${det.webPanelPort}/auth/callback`;
+    }
   }
 
   // Channels
@@ -1008,6 +1057,11 @@ async function _handleSetupApply(interaction) {
     if (wiz.panel.detected.hasWebSocket) successLines.push('✅ WebSocket RCON — using panel console (no direct TCP needed)');
     if (wiz.rcon) successLines.push(`✅ RCON — \`${wiz.rcon.host}:${wiz.rcon.port}\``);
     if (wiz.panel.detected.foundCount > 0) successLines.push(`✅ Game files — found ${wiz.panel.detected.foundCount}/6 via Panel API`);
+    if (wiz.panel.detected.webPanelPort) {
+      successLines.push(`✅ Web panel — port ${wiz.panel.detected.webPanelPort} on bot server \`${wiz.panel.detected.botServer?.name || 'auto-detected'}\``);
+    } else if (wiz.panel.detected.webPanelNeedsAllocation) {
+      successLines.push('⚠️ Web panel — bot server has only one port allocation. Request an extra port from Bisect to enable the web panel.');
+    }
   } else {
     if (wiz.localDetected) successLines.push(`✅ Local server — detected at \`${wiz.localDetected.serverRoot}\``);
     if (wiz.rcon?.status === 'ok') successLines.push(`✅ RCON — \`${wiz.rcon.host}:${wiz.rcon.port}\``);
@@ -1075,6 +1129,15 @@ async function _updateSetupEmbed(interaction) {
         else lines.push('  └ ⚠️ RCON password: not found in startup vars');
         if (d.hasWebSocket) lines.push('  └ WebSocket RCON: available ✓');
         if (d.foundCount > 0) lines.push(`  └ Game files: ${d.foundCount}/6 found via Panel API`);
+        // Bot server + web panel auto-detection
+        if (d.botServer) {
+          lines.push(`  └ Bot server: \`${d.botServer.name}\` (${d.botServer.allocations.length} port(s))`);
+          if (d.webPanelPort) {
+            lines.push(`  └ Web panel: port \`${d.webPanelPort}\` auto-configured ✓`);
+          } else if (d.webPanelNeedsAllocation) {
+            lines.push('  └ ⚠️ Web panel: needs an extra port allocation from Bisect');
+          }
+        }
       } else if (wiz.panel.status === 'partial') {
         lines.push('⚠️ **Panel API:** Partially detected — some values may need manual entry');
         if (wiz.panel.errors?.length) lines.push(`  └ ${wiz.panel.errors[0]}`);

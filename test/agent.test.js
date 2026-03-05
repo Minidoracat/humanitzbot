@@ -404,6 +404,27 @@ describe('SaveService agent mode', () => {
     assert.equal(trigger, 'none');
   });
 
+  it('_resolveTrigger auto does NOT select rcon without Panel API (VPS fix)', async () => {
+    // Simulate VPS: RCON connected, but no Panel API (not Pterodactyl/Bisect)
+    const fakeRcon = { connected: true, send: async () => {} };
+    const svc = new SaveService(db, { agentTrigger: 'auto' });
+    svc._rcon = fakeRcon;  // inject fake connected RCON
+    // No panelApi configured → _checkPanelAvailable returns false
+    const trigger = await svc._resolveTrigger();
+    // Must NOT pick 'rcon' — createHZSocket is Bisect-only
+    assert.notEqual(trigger, 'rcon', 'auto should not select rcon without Panel API');
+    assert.equal(trigger, 'none');  // no SSH available either → none
+  });
+
+  it('_resolveTrigger auto selects rcon when RCON + Panel API both available (Bisect)', async () => {
+    const fakeRcon = { connected: true, send: async () => {} };
+    const fakePanelApi = { available: true, sendCommand: async () => {} };
+    const svc = new SaveService(db, { agentTrigger: 'auto', panelApi: fakePanelApi });
+    svc._rcon = fakeRcon;
+    const trigger = await svc._resolveTrigger();
+    assert.equal(trigger, 'rcon', 'auto should select rcon when Panel API confirms Pterodactyl host');
+  });
+
   it('_triggerViaPanel calls sendCommand on panelApi', async () => {
     let called = false;
     let sentCmd = '';
