@@ -406,6 +406,10 @@
       const d = await r.json();
       const p = d.primary;
 
+      // Landing title — use primary server name from config
+      var titleEl = $('#landing-title');
+      if (titleEl && p.name) titleEl.textContent = p.name;
+
       // Hero header — combined status across all servers
       var anyOnline = p.status === 'online';
       if (d.servers) for (var ci = 0; ci < d.servers.length; ci++) { if (d.servers[ci].status === 'online') anyOnline = true; }
