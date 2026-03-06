@@ -28,17 +28,17 @@
 </p>
 
 <p align="center">
-  <a href="https://www.bisecthosting.com/zuq?r=github">
-    <img src="https://www.bisecthosting.com/partners/custom-banners/3ad6b933-dc50-4c3c-aaa2-858dc43b73ed.webp" alt="BisectHosting Partner Banner" />
-  </a>
-</p>
-
-<p align="center">
   <a href="https://play.qs-zuq.com/"><strong>🌐 See it in action</strong></a> — public web panel on a live server (survivor permissions)
 </p>
 
 <p align="center">
   <a href="#features">Features</a> · <a href="#quick-start">Quick Start</a> · <a href="#web-dashboard">Web Dashboard</a> · <a href="#slash-commands">Commands</a> · <a href="#multi-server">Multi-Server</a> · <a href="#contributing">Contributing</a>
+</p>
+
+<p align="center">
+  <a href="https://www.bisecthosting.com/zuq?r=github">
+    <img src="https://www.bisecthosting.com/partners/custom-banners/3ad6b933-dc50-4c3c-aaa2-858dc43b73ed.webp" alt="BisectHosting Partner Banner" />
+  </a>
 </p>
 
 ---
