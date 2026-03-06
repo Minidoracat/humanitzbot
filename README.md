@@ -28,6 +28,12 @@
 </p>
 
 <p align="center">
+  <a href="https://bisecthosting.com/zuq">
+    <img src="https://www.bisecthosting.com/partners/custom-banners/3ad6b933-dc50-4c3c-aaa2-858dc43b73ed.webp" alt="BisectHosting Partner Banner" />
+  </a>
+</p>
+
+<p align="center">
   <a href="https://play.qs-zuq.com/"><strong>🌐 See it in action</strong></a> — public web panel on a live server (survivor permissions)
 </p>
 
