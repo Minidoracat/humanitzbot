@@ -31,9 +31,10 @@ const OAUTH_SCOPES = 'identify guilds guilds.members.read';
 // Access tier levels (higher = more access)
 const TIER = { public: 0, survivor: 1, mod: 2, admin: 3 };
 
-// In-memory session store: sessionId → { userId, username, avatar, roles, tier, expiresAt }
+// In-memory session store: sessionId → { userId, username, avatar, roles, tier, expiresAt, lastRoleCheck }
 const sessions = new Map();
 const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const ROLE_REFRESH_INTERVAL = 5 * 60 * 1000; // Re-check Discord roles every 5 minutes
 const COOKIE_NAME = 'hmz_session';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -296,6 +297,7 @@ function setupAuth(app, client) {
         tierLevel: TIER[tier],
         inGuild: !!member,
         expiresAt: Date.now() + SESSION_TTL,
+        lastRoleCheck: Date.now(),
       });
 
       const signed = signSession(sessionId, authCfg.sessionSecret);
@@ -367,7 +369,13 @@ function setupAuth(app, client) {
             session.tierLevel = TIER[newTier];
             session.inGuild = true;
             session.roles = memberData.roles;
+          } else {
+            // Member left the server
+            session.tier = 'public';
+            session.tierLevel = TIER.public;
+            session.inGuild = false;
           }
+          session.lastRoleCheck = Date.now();
         }
       } catch (err) {
         console.warn('[WEB AUTH] Refresh guild check failed:', err.message);
@@ -388,6 +396,7 @@ function setupAuth(app, client) {
   // ── Tier-aware middleware ──
   // Sets req.tier and req.tierLevel on every request.
   // Does NOT block public routes — individual routes check tier.
+  // Re-checks Discord roles every ROLE_REFRESH_INTERVAL via bot guild cache.
 
   return (req, _res, next) => {
     // Skip auth routes
@@ -395,6 +404,31 @@ function setupAuth(app, client) {
 
     const session = getSession(req, authCfg.sessionSecret);
     if (session) {
+      // Periodically re-validate roles from the bot's guild cache (no Discord API call)
+      if (client && authCfg.guildId && session.userId &&
+          Date.now() - (session.lastRoleCheck || 0) > ROLE_REFRESH_INTERVAL) {
+        const guild = client.guilds?.cache?.get(authCfg.guildId);
+        const member = guild?.members?.cache?.get(session.userId);
+        if (member) {
+          const memberData = {
+            roles: member.roles.cache.map(r => r.id),
+            permissions: member.permissions.bitfield.toString(),
+          };
+          const newTier = resolveTier(memberData, authCfg);
+          if (newTier !== session.tier) {
+            console.log(`[WEB AUTH] Role change detected for ${session.username}: ${session.tier} → ${newTier}`);
+          }
+          session.tier = newTier;
+          session.tierLevel = TIER[newTier];
+          session.roles = memberData.roles;
+        } else if (guild) {
+          // Member not in guild cache — they may have left the server
+          session.tier = 'public';
+          session.tierLevel = TIER.public;
+          session.inGuild = false;
+        }
+        session.lastRoleCheck = Date.now();
+      }
       req.session = session;
       req.tier = session.tier;
       req.tierLevel = session.tierLevel;
@@ -451,4 +485,4 @@ function getSession(req, secret) {
   return session;
 }
 
-module.exports = { setupAuth, requireTier, isEnabled, isAuthorised, resolveTier, TIER, _test: { signSession, verifySession, parseCookies } };
+module.exports = { setupAuth, requireTier, isEnabled, isAuthorised, resolveTier, TIER, _test: { signSession, verifySession, parseCookies, sessions, getSessionSecret } };

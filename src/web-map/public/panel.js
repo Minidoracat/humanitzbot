@@ -655,6 +655,29 @@
     _landingStopAuto(); // stop landing carousel
     $('#landing').classList.add('hidden');
     $('#panel').classList.remove('hidden');
+
+    // Periodically re-check roles while in the panel (detects role revocation)
+    S._panelRefreshPoll = setInterval(async function() {
+      try {
+        var r = await fetch('/auth/refresh');
+        var d = await r.json();
+        if (!d.authenticated || d.tierLevel < 1) {
+          clearInterval(S._panelRefreshPoll);
+          location.reload();
+          return;
+        }
+        if (d.tierLevel !== S.tier) {
+          S.user = d;
+          S.tier = d.tierLevel;
+          $('#user-tier').textContent = d.tier || '-';
+          // Re-apply tier visibility on tab elements
+          $$('[data-min-tier]').forEach(function(el) {
+            var min = parseInt(el.dataset.minTier, 10);
+            el.classList.toggle('tier-hidden', S.tier < min);
+          });
+        }
+      } catch (e) { /* ignore */ }
+    }, 120000); // every 2 minutes
     const skyBg = $('#skyline-bg');
     if (skyBg) skyBg.classList.add('panel-active');
 
