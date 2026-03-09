@@ -306,5 +306,74 @@ describe('Web Map Auth', () => {
       assert.equal(statusCode, 401);
       assert.ok(jsonBody.error);
     });
+
+    it('middleware re-checks roles from guild cache when lastRoleCheck is stale', () => {
+      process.env.DISCORD_OAUTH_SECRET = 'test-secret';
+      process.env.WEB_MAP_CALLBACK_URL = 'http://localhost:3000/auth/callback';
+
+      const { setupAuth: setup, _test: t } = require('../src/web-map/auth');
+
+      // Build a mock bot client with a guild member cache
+      const mockMember = {
+        roles: { cache: { map: (fn) => fn({ id: '111' }) ? ['111'] : [] } },
+        permissions: { bitfield: 0n },
+      };
+      // Fix: map returns an array with correct role IDs
+      mockMember.roles.cache.map = () => ['111'];
+
+      const mockGuild = {
+        members: { cache: { get: () => mockMember } },
+      };
+      const mockClient = {
+        guilds: { cache: { get: (id) => id === '987654321' ? mockGuild : null } },
+      };
+
+      const routes = {};
+      const app = {
+        get: (path, ...handlers) => { routes[`GET ${path}`] = handlers[handlers.length - 1]; },
+        post: (path, ...handlers) => { routes[`POST ${path}`] = handlers[handlers.length - 1]; },
+        use: () => {},
+      };
+
+      const middleware = setup(app, mockClient);
+
+      // Inject a session with stale lastRoleCheck (admin tier, but mock member has no admin role/permission)
+      const secret = t.getSessionSecret();
+      const sessionId = 'test-role-refresh-' + Date.now();
+      const signed = t.signSession(sessionId, secret);
+
+      // Access the sessions map via _test
+      const { sessions } = t;
+      sessions.set(sessionId, {
+        userId: 'user123',
+        username: 'TestUser',
+        displayName: 'Test',
+        avatar: null,
+        roles: ['999'], // old admin role
+        tier: 'admin',
+        tierLevel: 3,
+        inGuild: true,
+        expiresAt: Date.now() + 86400000,
+        lastRoleCheck: 0, // way in the past → triggers refresh
+      });
+
+      const req = {
+        path: '/api/players',
+        headers: { cookie: `hmz_session=${signed}` },
+      };
+      let nextCalled = false;
+      middleware(req, {}, () => { nextCalled = true; });
+      assert.equal(nextCalled, true);
+
+      // The mock member has no admin role/permission → tier should downgrade
+      const sess = sessions.get(sessionId);
+      assert.notEqual(sess.tier, 'admin', 'Tier should have been downgraded from admin');
+      assert.ok(sess.lastRoleCheck > 0, 'lastRoleCheck should be updated');
+
+      // Clean up
+      sessions.delete(sessionId);
+      delete process.env.DISCORD_OAUTH_SECRET;
+      delete process.env.WEB_MAP_CALLBACK_URL;
+    });
   });
 });
