@@ -137,13 +137,35 @@ class ActivityLog {
 
     try {
       const syncTime = result.syncTime || new Date();
-      const embeds = this._buildEmbeds(result.diffEvents, syncTime);
+
+      // Cap events to prevent OOM/rate-limit on first-sync diff storms
+      const maxEvents = 200;
+      const events = result.diffEvents.length > maxEvents
+        ? result.diffEvents.slice(0, maxEvents)
+        : result.diffEvents;
+
+      const embeds = this._buildEmbeds(events, syncTime);
+
+      // Send embeds with a small delay between each to avoid Discord rate limits
       for (const embed of embeds) {
-        if (this._logWatcher) {
-          await this._logWatcher.sendToThread(embed);
-        } else {
-          await this._channel.send({ embeds: [embed] });
+        try {
+          if (this._logWatcher) {
+            await this._logWatcher.sendToThread(embed);
+          } else {
+            await this._channel.send({ embeds: [embed] });
+          }
+        } catch (sendErr) {
+          // Log individual embed failures but continue sending the rest
+          console.warn(`[${this._label}] Embed send failed (continuing):`, sendErr.message);
         }
+        // Small delay to respect Discord rate limits (1 embed per 500ms)
+        if (embeds.length > 3) {
+          await new Promise(r => setTimeout(r, 500));
+        }
+      }
+
+      if (result.diffEvents.length > maxEvents) {
+        console.log(`[${this._label}] Capped activity batch: ${result.diffEvents.length} events → ${maxEvents} posted`);
       }
     } catch (err) {
       console.warn(`[${this._label}] Failed to post activity:`, err.message);

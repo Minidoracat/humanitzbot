@@ -34,6 +34,7 @@ const LogWatcher = require('../modules/log-watcher');
 const PlayerStatsChannel = require('../modules/player-stats-channel');
 const PvpScheduler = require('../modules/pvp-scheduler');
 const ServerScheduler = require('../modules/server-scheduler');
+const ActivityLog = require('../modules/activity-log');
 let AnticheatIntegration;
 try { AnticheatIntegration = require('../modules/anticheat-integration'); } catch { /* optional module */ }
 
@@ -288,6 +289,16 @@ function createServerConfig(serverDef) {
     merged.panelApiKey = '';
   }
 
+  // Agent/cache mode overrides — don't inherit primary's agent config
+  // (each server may have different Node.js availability / trigger strategies)
+  if (serverDef.agentMode)      merged.agentMode      = serverDef.agentMode;
+  if (serverDef.agentTrigger)   merged.agentTrigger   = serverDef.agentTrigger;
+  if (serverDef.agentNodePath)  merged.agentNodePath  = serverDef.agentNodePath;
+  if (serverDef.agentCachePath) merged.agentCachePath = serverDef.agentCachePath;
+  // If no agent config specified, default to direct (don't inherit primary's
+  // agent settings — a VPS server with SSH doesn't match Bisect's RCON trigger)
+  if (!serverDef.agentMode) merged.agentMode = 'direct';
+
   return merged;
 }
 
@@ -461,7 +472,11 @@ class ServerInstance {
             ? this.config.getEffectiveSavePollInterval()
             : (this.config.savePollInterval || 300000),
           agentMode: this.config.agentMode || 'direct',
+          agentTrigger: this.config.agentTrigger,
+          agentNodePath: this.config.agentNodePath,
+          agentCachePath: this.config.agentCachePath,
           panelApi: this.panelApi || null,
+          dataDir: this.dataDir,
           label: `SAVE:${label}`,
         });
         this.saveService.on('sync', (result) => {
@@ -501,6 +516,12 @@ class ServerInstance {
       } catch (err) {
         console.error(`[MULTI:${label}] LogWatcher failed:`, err.message);
       }
+    }
+
+    // ── Wire LogWatcher → SaveService ID map sharing ──
+    // Without this, SaveService has no player names and the DB players table stays empty.
+    if (this._modules.logWatcher && this.saveService) {
+      this._modules.logWatcher._onIdMapRefresh = (idMap) => this.saveService.setIdMap(idMap);
     }
 
     // Chat Relay (needs RCON — can run headless without Discord channel for DB-only data collection)
@@ -581,6 +602,23 @@ class ServerInstance {
         console.log(`[MULTI:${label}] ServerScheduler active`);
       } catch (err) {
         console.error(`[MULTI:${label}] ServerScheduler failed:`, err.message);
+      }
+    }
+
+    // Activity Log — save-file change tracking feed to daily thread or dedicated channel
+    if (this.saveService && (this.config.enableActivityLog !== false)) {
+      try {
+        const mod = new ActivityLog(this.client, {
+          db: this.db,
+          saveService: this.saveService,
+          logWatcher: this._modules.logWatcher || null,
+          label: `ActivityLog:${label}`,
+        });
+        await mod.start();
+        this._modules.activityLog = mod;
+        console.log(`[MULTI:${label}] ActivityLog active`);
+      } catch (err) {
+        console.error(`[MULTI:${label}] ActivityLog failed:`, err.message);
       }
     }
 

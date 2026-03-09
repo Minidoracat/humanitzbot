@@ -68,6 +68,7 @@ class SaveService extends EventEmitter {
     this._pollInterval = options.pollInterval || 60_000;
     this._idMap = options.idMap || {};
     this._label = options.label || 'SaveService';
+    this._dataDir = options.dataDir || path.join(__dirname, '..', '..');
 
     // Auto-load cached PlayerIDMapped.txt if no idMap provided
     if (!options.idMap || Object.keys(this._idMap).length === 0) {
@@ -152,9 +153,12 @@ class SaveService extends EventEmitter {
    */
   _loadLocalIdMap() {
     try {
-      const filePath = path.join(__dirname, '..', '..', 'data', 'logs', 'PlayerIDMapped.txt');
-      if (!fs.existsSync(filePath)) return;
-      const raw = fs.readFileSync(filePath, 'utf8');
+      const filePath = path.join(this._dataDir, 'data', 'logs', 'PlayerIDMapped.txt');
+      // Also check per-server location (dataDir IS the data dir for multi-server)
+      const altPath = path.join(this._dataDir, 'logs', 'PlayerIDMapped.txt');
+      const actualPath = fs.existsSync(filePath) ? filePath : (fs.existsSync(altPath) ? altPath : null);
+      if (!actualPath) return;
+      const raw = fs.readFileSync(actualPath, 'utf8');
       const map = {};
       let count = 0;
       for (const line of raw.split(/\r?\n/)) {
@@ -1000,9 +1004,12 @@ class SaveService extends EventEmitter {
 
     // ── Diff engine: compare old state with new, generate activity log ──
     let diffEvents = [];
+    const isFirstSync = this._syncCount === 0;
     try {
       const oldState = this._readOldStateForDiff();
-      if (oldState) {
+      // Skip diff on first sync after restart — the "old state" from DB will differ
+      // massively from live state, generating thousands of spurious events (OOM risk).
+      if (oldState && !isFirstSync) {
         const newState = {
           containers: parsed.containers || [],
           horses: parsed.horses || [],
