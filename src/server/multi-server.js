@@ -74,18 +74,37 @@ function generateId() {
 // SFTP path auto-discovery
 // ═════════════════════════════════════════════════════════════
 
+/**
+ * Extract SaveName from a GameServerSettings.ini text.
+ * Returns the value (e.g. 'DedicatedSaveMP') or null if not found.
+ * The game uses this to construct the save filename: Save_{SaveName}.sav
+ */
+function _extractSaveName(iniText) {
+  const match = iniText.match(/^\s*SaveName\s*=\s*"?([^"\r\n]+)"?\s*$/im);
+  return match ? match[1].trim() : null;
+}
+
 /** Target filenames to discover on the SFTP server. */
 const DISCOVERY_TARGETS = [
   'HMZLog.log',
   'PlayerConnectedLog.txt',
   'PlayerIDMapped.txt',
-  'Save_DedicatedSaveMP.sav',
   'GameServerSettings.ini',
   'WelcomeMessage.txt',
 ];
 
+/**
+ * Pattern for save files: matches Save_*.sav but NOT Save_ClanData.sav.
+ * HumanitZ uses GameServerSettings.ini SaveName= to set the save file name.
+ * Default is Save_DedicatedSaveMP.sav, but users can change it.
+ */
+const SAVE_FILE_PATTERN = /^Save_(?!ClanData)[\w]+\.sav$/i;
+
 /** Directory names to discover (for per-restart rotated logs). */
 const DISCOVERY_DIR_TARGETS = ['HZLogs'];
+
+/** Total expected discoveries (exact targets + save file + dir targets). */
+const MAX_DISCOVERIES = DISCOVERY_TARGETS.length + 1 + DISCOVERY_DIR_TARGETS.length;
 
 /**
  * Recursively search an SFTP server for target files.
@@ -110,8 +129,11 @@ async function _discoverFiles(sftp, dir, depth, maxDepth, found) {
       await _discoverFiles(sftp, fullPath, depth + 1, maxDepth, found);
     } else if (DISCOVERY_TARGETS.includes(item.name) && !found.has(item.name)) {
       found.set(item.name, fullPath);
+    } else if (!found.has('__save_file__') && SAVE_FILE_PATTERN.test(item.name)) {
+      // Discover any Save_*.sav (supports custom SaveName in GameServerSettings.ini)
+      found.set('__save_file__', fullPath);
     }
-    if (found.size >= DISCOVERY_TARGETS.length + DISCOVERY_DIR_TARGETS.length) return;
+    if (found.size >= MAX_DISCOVERIES) return;
   }
 }
 
@@ -149,19 +171,42 @@ async function discoverPaths(sftpConfig, label = 'DISCOVER') {
     const found = new Map();
     await _discoverFiles(sftp, '/', 0, 8, found);
 
-    await sftp.end().catch(() => {});
-
     if (found.size === 0) {
+      await sftp.end().catch(() => {});
       console.log(`[${label}] No game files found on server`);
       return null;
     }
+
+    // If GameServerSettings.ini was found but no save file, try to derive save path
+    // from the SaveName setting (users can rename saves from the default DedicatedSaveMP)
+    if (!found.has('__save_file__') && found.has('GameServerSettings.ini')) {
+      try {
+        const iniBuf = await sftp.get(found.get('GameServerSettings.ini'));
+        const saveName = _extractSaveName(iniBuf.toString('utf8'));
+        if (saveName) {
+          // Search the SaveList directory for the custom-named save
+          const iniDir = found.get('GameServerSettings.ini').replace(/[/\\][^/\\]+$/, '');
+          const saveDir = iniDir + '/Saved/SaveGames/SaveList/Default';
+          try {
+            const items = await sftp.list(saveDir);
+            const saveFile = items.find(f => f.name === `Save_${saveName}.sav`);
+            if (saveFile) {
+              found.set('__save_file__', `${saveDir}/${saveFile.name}`);
+              console.log(`[${label}] Found custom save: Save_${saveName}.sav (from GameServerSettings.ini SaveName)`);
+            }
+          } catch { /* SaveList dir not at expected location — will use whatever was discovered */ }
+        }
+      } catch { /* couldn't read settings — non-critical */ }
+    }
+
+    await sftp.end().catch(() => {});
 
     // Build paths object
     const paths = {};
     if (found.has('HMZLog.log'))              paths.logPath = found.get('HMZLog.log');
     if (found.has('PlayerConnectedLog.txt'))   paths.connectLogPath = found.get('PlayerConnectedLog.txt');
     if (found.has('PlayerIDMapped.txt'))        paths.idMapPath = found.get('PlayerIDMapped.txt');
-    if (found.has('Save_DedicatedSaveMP.sav')) paths.savePath = found.get('Save_DedicatedSaveMP.sav');
+    if (found.has('__save_file__'))            paths.savePath = found.get('__save_file__');
     if (found.has('GameServerSettings.ini'))   paths.settingsPath = found.get('GameServerSettings.ini');
     if (found.has('WelcomeMessage.txt'))       paths.welcomePath = found.get('WelcomeMessage.txt');
 
@@ -877,3 +922,5 @@ module.exports.saveServers = saveServers;
 module.exports.createServerConfig = createServerConfig;
 module.exports.discoverPaths = discoverPaths;
 module.exports.SERVERS_FILE = SERVERS_FILE;
+module.exports._extractSaveName = _extractSaveName;
+module.exports.SAVE_FILE_PATTERN = SAVE_FILE_PATTERN;
