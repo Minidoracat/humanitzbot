@@ -169,10 +169,26 @@ const DISCOVERY_TARGETS = {
   'HMZLog.log':              'FTP_LOG_PATH',
   'PlayerConnectedLog.txt':  'FTP_CONNECT_LOG_PATH',
   'PlayerIDMapped.txt':      'FTP_ID_MAP_PATH',
-  'Save_DedicatedSaveMP.sav':'FTP_SAVE_PATH',
   'GameServerSettings.ini':  'FTP_SETTINGS_PATH',
   'WelcomeMessage.txt':      'FTP_WELCOME_PATH',
 };
+
+/**
+ * Pattern for save files: matches Save_*.sav but NOT Save_ClanData.sav.
+ * HumanitZ uses GameServerSettings.ini SaveName= to set the save file name.
+ * Default is Save_DedicatedSaveMP.sav, but users can change it.
+ */
+const SAVE_FILE_PATTERN = /^Save_(?!ClanData)[\w]+\.sav$/i;
+
+/**
+ * Extract SaveName from a GameServerSettings.ini text.
+ * Returns the value (e.g. 'DedicatedSaveMP') or null if not found.
+ */
+function _extractSaveName(iniText) {
+  const match = iniText.match(/^\s*SaveName\s*=\s*"?([^"\r\n]+)"?\s*$/im);
+  return match ? match[1].trim() : null;
+}
+
 // Directory targets (for per-restart rotated logs — game update Feb 28 2026)
 const DISCOVERY_DIR_TARGETS = ['HZLogs'];
 
@@ -184,6 +200,7 @@ async function discoverFiles(sftp, dir, depth, maxDepth, found) {
   if (depth >= maxDepth) return;
   let items;
   try { items = await sftp.list(dir); } catch { return; }
+  const maxCount = Object.keys(DISCOVERY_TARGETS).length + 1 + DISCOVERY_DIR_TARGETS.length;
   for (const item of items) {
     const fullPath = dir === '/' ? `/${item.name}` : `${dir}/${item.name}`;
     if (item.type === 'd') {
@@ -204,9 +221,13 @@ async function discoverFiles(sftp, dir, depth, maxDepth, found) {
     } else if (DISCOVERY_TARGETS[item.name] && !found.has(item.name)) {
       found.set(item.name, fullPath);
       console.log(`  Found ${item.name} → ${fullPath}`);
+    } else if (!found.has('__save_file__') && SAVE_FILE_PATTERN.test(item.name)) {
+      // Discover any Save_*.sav (supports custom SaveName in GameServerSettings.ini)
+      found.set('__save_file__', fullPath);
+      console.log(`  Found save file: ${item.name} → ${fullPath}`);
     }
     // Early exit if all targets found
-    if (found.size >= Object.keys(DISCOVERY_TARGETS).length + DISCOVERY_DIR_TARGETS.length) return;
+    if (found.size >= maxCount) return;
   }
 }
 
@@ -223,7 +244,7 @@ async function autoDiscoverPaths(sftp) {
     { name: 'HMZLog.log',              path: ftpLogPath },
     { name: 'PlayerConnectedLog.txt',  path: ftpConnectLogPath },
     { name: 'PlayerIDMapped.txt',      path: ftpIdMapPath },
-    { name: 'Save_DedicatedSaveMP.sav', path: ftpSavePath },
+    { name: '__save_file__',           path: ftpSavePath },
     { name: 'GameServerSettings.ini',  path: ftpSettingsPath },
     { name: 'WelcomeMessage.txt',      path: ftpWelcomePath },
   ];
@@ -232,7 +253,7 @@ async function autoDiscoverPaths(sftp) {
       const stat = await sftp.stat(p);
       if (stat) {
         found.set(name, p);
-        console.log(`  ✓ ${name} — confirmed at ${p}`);
+        console.log(`  ✓ ${path.basename(p)} — confirmed at ${p}`);
       }
     } catch { /* not there, will search */ }
   }
@@ -253,12 +274,35 @@ async function autoDiscoverPaths(sftp) {
   } catch { /* not there */ }
 
   // Search for any files we didn't find at the default locations
-  if (found.size < Object.keys(DISCOVERY_TARGETS).length + DISCOVERY_DIR_TARGETS.length) {
+  const totalExpected = Object.keys(DISCOVERY_TARGETS).length + 1 + DISCOVERY_DIR_TARGETS.length;
+  if (found.size < totalExpected) {
     const missingFiles = Object.keys(DISCOVERY_TARGETS).filter(n => !found.has(n));
+    if (!found.has('__save_file__')) missingFiles.push('Save_*.sav');
     const missingDirs = DISCOVERY_DIR_TARGETS.filter(n => !found.has(n));
     const missing = [...missingFiles, ...missingDirs.map(d => d + '/')];
     console.log(`  Searching for: ${missing.join(', ')}`);
     await discoverFiles(sftp, '/', 0, 12, found);
+  }
+
+  // If GameServerSettings.ini was found but no save file, try to resolve via SaveName
+  if (!found.has('__save_file__') && found.has('GameServerSettings.ini')) {
+    try {
+      const iniBuf = await sftp.get(found.get('GameServerSettings.ini'));
+      const saveName = _extractSaveName(iniBuf.toString('utf8'));
+      if (saveName) {
+        // Derive save path from settings file location
+        const iniDir = found.get('GameServerSettings.ini').replace(/[/\\][^/\\]+$/, '');
+        const saveDir = iniDir + '/Saved/SaveGames/SaveList/Default';
+        try {
+          const items = await sftp.list(saveDir);
+          const saveFile = items.find(f => f.name === `Save_${saveName}.sav`);
+          if (saveFile) {
+            found.set('__save_file__', `${saveDir}/${saveFile.name}`);
+            console.log(`  Found custom save: Save_${saveName}.sav (from GameServerSettings.ini SaveName)`);
+          }
+        } catch { /* SaveList dir not at expected location */ }
+      }
+    } catch { /* couldn't read settings — non-critical */ }
   }
 
   // Report results
@@ -266,10 +310,18 @@ async function autoDiscoverPaths(sftp) {
     ftpLogPath:        found.get('HMZLog.log')              || ftpLogPath,
     ftpConnectLogPath: found.get('PlayerConnectedLog.txt')  || ftpConnectLogPath,
     ftpIdMapPath:      found.get('PlayerIDMapped.txt')      || ftpIdMapPath,
-    ftpSavePath:       found.get('Save_DedicatedSaveMP.sav') || ftpSavePath,
+    ftpSavePath:       found.get('__save_file__')           || ftpSavePath,
     ftpSettingsPath:   found.get('GameServerSettings.ini')  || ftpSettingsPath,
     ftpWelcomePath:    found.get('WelcomeMessage.txt')      || ftpWelcomePath,
   };
+
+  // Log the discovered save file name if it differs from default
+  if (found.has('__save_file__')) {
+    const discoveredName = found.get('__save_file__').split(/[/\\]/).pop();
+    if (discoveredName !== 'Save_DedicatedSaveMP.sav') {
+      console.log(`  ℹ Custom save file detected: ${discoveredName} (SaveName changed from default)`);
+    }
+  }
 
   // If HZLogs found but no HMZLog.log (new server with only per-restart logs),
   // set ftpLogPath to parent so LogWatcher can derive HZLogs/ from it
@@ -284,6 +336,7 @@ async function autoDiscoverPaths(sftp) {
   }
 
   const notFound = Object.keys(DISCOVERY_TARGETS).filter(n => !found.has(n));
+  if (!found.has('__save_file__')) notFound.push('Save file (Save_*.sav)');
   if (notFound.length > 0) {
     console.log(`\n  ⚠️  Could not locate: ${notFound.join(', ')}`);
     if (found.size === 0) {
