@@ -22,13 +22,7 @@ const SftpClient = require('ssh2-sftp-client');
 const { createServerConfig } = require('../server/multi-server');
 const { GAME_SETTINGS_CATEGORIES } = require('./panel-constants');
 const { _detectSshKey } = require('./panel-setup-wizard');
-
-/** Safely build a modal title within Discord's 45-char limit. */
-function _modalTitle(prefix, name, suffix) {
-  const maxName = 45 - prefix.length - suffix.length;
-  const truncated = name.length > maxName ? name.slice(0, maxName - 1) + '…' : name;
-  return `${prefix}${truncated}${suffix}`;
-}
+const { modalTitle: _modalTitle } = require('./discord-utils');
 
 // ═════════════════════════════════════════════════════════════
 // Add server wizard

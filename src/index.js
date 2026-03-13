@@ -586,35 +586,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     });
     saveService.on('sync', (result) => {
       console.log(`[BOT] Save sync: ${result.playerCount} players, ${result.structureCount} structures (${result.mode}, ${result.elapsed}ms)`);
-
-      // Write save-cache.json for web map consumption
-      if (result.parsed) {
-        try {
-          const cacheData = {
-            updatedAt: new Date().toISOString(),
-            playerCount: result.playerCount,
-            worldState: result.worldState || {},
-            players: {},
-            structures: Array.isArray(result.parsed.structures) ? result.parsed.structures : [],
-            vehicles: Array.isArray(result.parsed.vehicles) ? result.parsed.vehicles : [],
-            horses: Array.isArray(result.parsed.horses) ? result.parsed.horses : [],
-            containers: Array.isArray(result.parsed.containers) ? result.parsed.containers : [],
-            companions: Array.isArray(result.parsed.companions) ? result.parsed.companions : [],
-          };
-          // Convert players Map to plain object
-          if (result.parsed.players instanceof Map) {
-            for (const [steamId, pData] of result.parsed.players) {
-              cacheData.players[steamId] = pData;
-            }
-          } else if (result.parsed.players && typeof result.parsed.players === 'object') {
-            cacheData.players = result.parsed.players;
-          }
-          const cachePath = path.join(__dirname, '..', 'data', 'save-cache.json');
-          fs.writeFileSync(cachePath, JSON.stringify(cacheData), 'utf8');
-        } catch (err) {
-          console.error('[BOT] Failed to write save-cache.json:', err.message);
-        }
-      }
+      // save-cache.json is now written inside SaveService._syncParsedData()
     });
     saveService.on('error', (err) => {
       console.error('[BOT] Save service error:', err.message);

@@ -255,14 +255,20 @@ function _buildOverviewEmbed() {
 /**
  * Build merged roster Map<steamId, playerObj> from save + log + playtime.
  * Internal helper used by overview and select menus.
+ * Cached for 5 seconds to avoid duplicate work when _buildOverviewEmbed()
+ * and _buildPlayerRow() both call this in the same render cycle.
  */
 function _buildRoster() {
+  const now = Date.now();
+  if (this._cachedRoster && this._rosterCacheTime && (now - this._rosterCacheTime) < 5000) {
+    return this._cachedRoster;
+  }
+
   const allLog = this._playerStats.getAllPlayers();
   const sessions = this._playtime.getActiveSessions() || {};
   const ptLeaderboard = this._playtime.getLeaderboard();
 
   const onlineNames = new Set(Object.keys(sessions));
-  const now = Date.now();
   const recentMs = 10 * 60000;
   for (const s of allLog) {
     if (s.lastEvent && (now - new Date(s.lastEvent).getTime()) < recentMs)
@@ -318,6 +324,8 @@ function _buildRoster() {
     }
   }
 
+  this._cachedRoster = roster;
+  this._rosterCacheTime = Date.now();
   return roster;
 }
 

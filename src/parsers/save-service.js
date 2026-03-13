@@ -1141,6 +1141,11 @@ class SaveService extends EventEmitter {
     const itemLabel = itemStats ? `, items: ${itemStats.matched}m/${itemStats.created}c/${itemStats.moved}v/${itemStats.lost}l` + (itemStats.groups ? ` grp: ${itemStats.groups.matched}m/${itemStats.groups.created}c/${itemStats.groups.adjusted}a/${itemStats.groups.transferred}t/${itemStats.groups.lost}l` : '') : '';
     console.log(`[${this._label}] Sync complete (${mode}): ${parsed.players.size} players, ${parsed.structures.length} structures, ${parsed.vehicles.length} vehicles, ${clans.length} clans${horsesLabel}${containersLabel}${activityLabel}${itemLabel} (${elapsed}ms)`);
 
+    // Write save-cache.json for web map consumption BEFORE emitting sync,
+    // while parsed data is in scope.  Writing here (instead of in a sync listener)
+    // avoids creating a second large copy of the parsed data in memory.
+    this._writeSaveCache(parsed);
+
     // Emit event with summary so other modules can react
     const result = {
       playerCount: parsed.players.size,
@@ -1158,7 +1163,8 @@ class SaveService extends EventEmitter {
       mode,
       diffEvents, // pass to listeners for real-time Discord updates
       syncTime: new Date(), // timestamp for activity log event display
-      // Full parsed data for timeline snapshots (SnapshotService)
+      // Parsed data for timeline snapshots & module sync.
+      // This is a REFERENCE, not a copy — listeners must not mutate.
       parsed: {
         players: parsed.players,
         structures: parsed.structures,
@@ -1188,16 +1194,50 @@ class SaveService extends EventEmitter {
       const vehicles = this._db.getAllVehicles ? this._db.getAllVehicles() : [];
       const structures = this._db.getStructures ? this._db.getStructures() : [];
 
-      // Read player inventories (only the columns we need for diff)
+      // Read only online player inventories — lightweight query for diff engine
+      // (10 columns + 4 JSON parses vs full 133 columns + 27 JSON parses)
       let players = [];
       try {
-        players = this._db.getAllPlayers ? this._db.getAllPlayers() : [];
+        players = this._db.getOnlinePlayersForDiff ? this._db.getOnlinePlayersForDiff() : [];
       } catch { /* empty */ }
 
       return { containers, horses, players, worldState, vehicles, structures };
     } catch (err) {
       console.warn(`[${this._label}] Could not read old state for diff:`, err.message);
       return null;
+    }
+  }
+
+  /**
+   * Write save-cache.json for web map consumption.
+   * Called inside _syncParsedData() while parsed data is still in scope,
+   * avoiding the need for sync listeners to create copies.
+   * @param {object} parsed - The full parsed save data
+   */
+  _writeSaveCache(parsed) {
+    try {
+      const cacheData = {
+        updatedAt: new Date().toISOString(),
+        playerCount: parsed.players.size,
+        worldState: parsed.worldState || {},
+        players: {},
+        structures: Array.isArray(parsed.structures) ? parsed.structures : [],
+        vehicles: Array.isArray(parsed.vehicles) ? parsed.vehicles : [],
+        horses: Array.isArray(parsed.horses) ? parsed.horses : [],
+        containers: Array.isArray(parsed.containers) ? parsed.containers : [],
+        companions: Array.isArray(parsed.companions) ? parsed.companions : [],
+      };
+      if (parsed.players instanceof Map) {
+        for (const [steamId, pData] of parsed.players) {
+          cacheData.players[steamId] = pData;
+        }
+      } else if (parsed.players && typeof parsed.players === 'object') {
+        cacheData.players = parsed.players;
+      }
+      const cachePath = path.join(__dirname, '..', '..', 'data', 'save-cache.json');
+      fs.writeFileSync(cachePath, JSON.stringify(cacheData), 'utf8');
+    } catch (err) {
+      console.error(`[${this._label}] Failed to write save-cache.json:`, err.message);
     }
   }
 }

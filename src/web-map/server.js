@@ -107,7 +107,7 @@ function _extractLandingSettings(ss) {
     airDrops: i('AirDrop', 1),
     dogCompanion: i('DogEnabled', 1),
     weaponBreak: i('WeaponBreak', 1),
-    foodDecay: i('FoodDecay', 1),
+    foodDecay: n('FoodDecay', 1),
     buildingDecay: i('BuildingDecay', 14),
     maxVehicles: i('MaxVehiclePerPlayer', 2),
     // Enriched world stats (injected by save-service)

@@ -24,9 +24,9 @@ const { getDayOffset, getRotatedProfileIndex } = require('../modules/schedule-ut
 
 const DIFFICULTY_LABELS = ['Very Easy', 'Easy', 'Default', 'Hard', 'Very Hard', 'Nightmare'];
 const SCARCITY_LABELS   = ['Scarce', 'Low', 'Default', 'Plentiful', 'Abundant'];
-const ON_DEATH_LABELS   = ['Backpack + Weapon', 'Pockets + Backpack', 'Everything'];
+const ON_DEATH_LABELS   = ['Lose Nothing', 'Backpack + Weapon', 'Pockets + Backpack', 'Everything'];
 const VITAL_DRAIN_LABELS = ['Slow', 'Normal', 'Fast'];
-const SPAWN_LABELS      = ['Low', 'Medium', 'High'];
+const AI_EVENT_LABELS    = ['Off', 'Low', 'Default', 'High', 'Insane'];
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Value formatters
@@ -45,7 +45,8 @@ function formatTime(timeStr) {
 }
 
 /**
- * Spawn amount label: 0→Low, 1→Medium, 2→High, other→"x{n}".
+ * Spawn/amount multiplier display.  0 → "None", otherwise "x{val}".
+ * These are float multipliers in the V35 INI (e.g. 0.5, 1, 1.5, 3).
  * @param {string|number} val
  * @returns {string|null}
  */
@@ -53,9 +54,8 @@ function spawnLabel(val) {
   if (val === undefined || val === null) return null;
   const num = parseFloat(val);
   if (isNaN(num)) return String(val);
-  if (num === 0) return 'Low';
-  if (num === 1) return 'Medium';
-  if (num === 2) return 'High';
+  if (num === 0) return 'None';
+  if (num === 1) return 'x1 (Default)';
   return `x${num}`;
 }
 
@@ -107,6 +107,52 @@ function settingLabel(val, labels) {
   if (isNaN(num)) return String(val);
   const idx = Math.round(num);
   return labels[idx] || String(val);
+}
+
+/**
+ * Float multiplier setting → human-readable display.
+ * V35 INI: 0 = "Off", 1 = "Default", other = "{val}x".
+ * Used for FoodDecay, GenFuel, etc.
+ * @param {string|number} val
+ * @returns {string|null}
+ */
+function settingMultiplier(val) {
+  if (val === undefined || val === null) return null;
+  const num = parseFloat(val);
+  if (isNaN(num)) return String(val);
+  if (num === 0) return 'Off';
+  if (num === 1) return 'Default';
+  return `${num}x`;
+}
+
+/**
+ * Numeric days/duration setting → human-readable display.
+ * V35 INI: 0 = "Off", positive N = "{N} days".
+ * Used for BuildingDecay, Decay (spawn point), etc.
+ * @param {string|number} val
+ * @param {string} [unit='days']
+ * @returns {string|null}
+ */
+function settingDays(val, unit = 'days') {
+  if (val === undefined || val === null) return null;
+  const num = parseFloat(val);
+  if (isNaN(num)) return String(val);
+  if (num === 0) return 'Off';
+  return `${num} ${unit}`;
+}
+
+/**
+ * PermaDeath — V32 used 0/1/2 enum, V35 uses true/false boolean.
+ * Handle both formats gracefully.
+ * @param {string|number} val
+ * @returns {string|null}
+ */
+function settingPermaDeath(val) {
+  if (val === undefined || val === null) return null;
+  const s = String(val).toLowerCase();
+  if (s === 'true')  return 'On';
+  if (s === 'false') return 'Off';
+  return settingLabel(val, ['Off', 'Individual', 'All']);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -208,7 +254,7 @@ function buildSettingsFields(s, cfg = {}) {
       ['PvP',           settingBool(s.PVP)],
       ['Max Players',   s.MaxPlayers],
       ['On Death',      settingLabel(s.OnDeath, ON_DEATH_LABELS)],
-      ['Perma Death',   settingLabel(s.PermaDeath, ['Off', 'Individual', 'All'])],
+      ['Perma Death',   settingPermaDeath(s.PermaDeath)],
       ['Vital Drain',   settingLabel(s.VitalDrain, VITAL_DRAIN_LABELS)],
       ['XP Multiplier', s.XpMultiplier != null ? `${s.XpMultiplier}x` : null],
     ]);
@@ -240,7 +286,7 @@ function buildSettingsFields(s, cfg = {}) {
   if (cfg.showSettingsItems !== false) {
     const itemEntries = [
       ['Weapon Break', settingBool(s.WeaponBreak)],
-      ['Food Decay',   settingBool(s.FoodDecay)],
+      ['Food Decay',   settingMultiplier(s.FoodDecay)],
       ['Loot Respawn', s.LootRespawnTimer != null ? `${s.LootRespawnTimer} min` : null],
       ['Air Drops',    settingBool(s.AirDrop)],
     ];
@@ -260,7 +306,7 @@ function buildSettingsFields(s, cfg = {}) {
         ['Damage',  difficultyLabel(s.HumanDamage)],
         ['Spawns',  spawnLabel(s.HumanAmountMulti)],
         ['Respawn', s.HumanRespawnTimer != null ? `${s.HumanRespawnTimer} min` : null],
-        ['AI Events', settingLabel(s.AIEvent, ['Off', 'Low', 'Default'])],
+        ['AI Events', settingLabel(s.AIEvent, AI_EVENT_LABELS)],
       ]);
     }
 
@@ -276,8 +322,8 @@ function buildSettingsFields(s, cfg = {}) {
     // Building & Territory
     if (cfg.showSettingsBuilding !== false) {
       section('🏗️', 'Building', [
-        ['Building HP',     settingLabel(s.BuildingHealth, VITAL_DRAIN_LABELS)],
-        ['Building Decay',  settingBool(s.BuildingDecay)],
+        ['Building HP',     settingMultiplier(s.BuildingHealth)],
+        ['Building Decay',  settingDays(s.BuildingDecay)],
         ['Gen Fuel Rate',   s.GenFuel != null ? `${s.GenFuel}x` : null],
         ['Territory',       settingBool(s.Territory)],
         ['Dismantle Own',   settingBool(s.AllowDismantle)],
@@ -310,15 +356,17 @@ function buildSettingsFields(s, cfg = {}) {
  * @returns {string|null} Formatted multi-line string, or null if no data
  */
 function buildLootScarcity(s) {
+  // Legacy fallback: old INIs may have a single LootRarity key instead of per-category
+  const fb = s.LootRarity ?? undefined;
   const map = [
-    ['🍖', 'Food',      s.RarityFood],
-    ['🥤', 'Drink',     s.RarityDrink],
-    ['🔪', 'Melee',     s.RarityMelee],
-    ['🔫', 'Ranged',    s.RarityRanged],
-    ['🛡️', 'Armor',     s.RarityArmor],
-    ['🧱', 'Resources', s.RarityResources],
-    ['🎯', 'Ammo',      s.RarityAmmo],
-    ['📦', 'Other',     s.RarityOther],
+    ['🍖', 'Food',      s.RarityFood   ?? fb],
+    ['🥤', 'Drink',     s.RarityDrink  ?? fb],
+    ['🔪', 'Melee',     s.RarityMelee  ?? fb],
+    ['🔫', 'Ranged',    s.RarityRanged ?? fb],
+    ['🛡️', 'Armor',     s.RarityArmor  ?? fb],
+    ['🧱', 'Resources', s.RarityResources ?? fb],
+    ['🎯', 'Ammo',      s.RarityAmmo   ?? fb],
+    ['📦', 'Other',     s.RarityOther  ?? fb],
   ];
 
   const rows = map
@@ -452,7 +500,7 @@ module.exports = {
   SCARCITY_LABELS,
   ON_DEATH_LABELS,
   VITAL_DRAIN_LABELS,
-  SPAWN_LABELS,
+  AI_EVENT_LABELS,
 
   // Value formatters
   formatTime,
@@ -461,6 +509,9 @@ module.exports = {
   difficultyBar,
   settingBool,
   settingLabel,
+  settingMultiplier,
+  settingDays,
+  settingPermaDeath,
 
   // Visual helpers
   progressBar,

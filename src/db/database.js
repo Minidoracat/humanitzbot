@@ -1070,6 +1070,9 @@ class HumanitZDB {
     this._stmts.getPlayer = this._db.prepare('SELECT * FROM players WHERE steam_id = ?');
     this._stmts.getAllPlayers = this._db.prepare('SELECT * FROM players ORDER BY lifetime_kills DESC');
     this._stmts.getOnlinePlayers = this._db.prepare('SELECT * FROM players WHERE online = 1');
+    this._stmts.getOnlinePlayersForDiff = this._db.prepare(
+      'SELECT steam_id, name, online, inventory, equipment, quick_slots, backpack_items, pos_x, pos_y, pos_z FROM players WHERE online = 1'
+    );
     this._stmts.setPlayerOnline = this._db.prepare('UPDATE players SET online = ?, last_seen = datetime(\'now\') WHERE steam_id = ?');
     this._stmts.setAllOffline = this._db.prepare('UPDATE players SET online = 0');
 
@@ -1834,6 +1837,15 @@ class HumanitZDB {
 
   getOnlinePlayers() {
     return this._stmts.getOnlinePlayers.all().map(_parsePlayerRow);
+  }
+
+  /**
+   * Lightweight query for diff engine — only columns needed for inventory comparison.
+   * Returns online players with only inventory/equipment/quick_slots/backpack_items + identity/position.
+   * Avoids the full 133-column SELECT * + 27-column JSON parse that causes OOM on large servers.
+   */
+  getOnlinePlayersForDiff() {
+    return this._stmts.getOnlinePlayersForDiff.all().map(_parsePlayerRowForDiff);
   }
 
   setPlayerOnline(steamId, online) {
@@ -3710,6 +3722,33 @@ function _parsePlayerRow(row) {
   parsed.male = !!parsed.male;
   parsed.online = !!parsed.online;
   parsed.has_extended_stats = !!parsed.has_extended_stats;
+  return parsed;
+}
+
+/**
+ * Lightweight player row parser for the diff engine.
+ * Only parses the 4 inventory JSON columns needed by diffPlayerInventories().
+ * Avoids the { ...row } spread + 27-column JSON.parse of _parsePlayerRow().
+ */
+function _parsePlayerRowForDiff(row) {
+  if (!row) return null;
+  const parsed = {
+    steam_id: row.steam_id,
+    name: row.name,
+    online: !!row.online,
+    pos_x: row.pos_x,
+    pos_y: row.pos_y,
+    pos_z: row.pos_z,
+    inventory: null,
+    equipment: null,
+    quick_slots: null,
+    backpack_items: null,
+  };
+  for (const col of ['inventory', 'equipment', 'quick_slots', 'backpack_items']) {
+    if (row[col] && typeof row[col] === 'string') {
+      try { parsed[col] = JSON.parse(row[col]); } catch { parsed[col] = row[col]; }
+    }
+  }
   return parsed;
 }
 

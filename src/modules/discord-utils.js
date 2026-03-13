@@ -129,4 +129,23 @@ async function safeEditMessage(message, channel, payload, options = {}) {
 }
 
 
-module.exports = { cleanOwnMessages, embedContentKey, safeEditMessage };
+/**
+ * Safely build a modal title within Discord's 45-char limit.
+ * Truncates `name` with '…' if needed.  Handles surrogate pairs by
+ * slicing at the character level (Array.from) so emoji are not split.
+ * @param {string} prefix
+ * @param {string} name
+ * @param {string} suffix
+ * @returns {string}
+ */
+function modalTitle(prefix, name, suffix) {
+  const maxName = 45 - prefix.length - suffix.length;
+  if (maxName <= 0) return `${prefix}${suffix}`.slice(0, 45);
+  const chars = Array.from(name);
+  const truncated = chars.length > maxName
+    ? chars.slice(0, maxName - 1).join('') + '…'
+    : name;
+  return `${prefix}${truncated}${suffix}`;
+}
+
+module.exports = { cleanOwnMessages, embedContentKey, safeEditMessage, modalTitle };

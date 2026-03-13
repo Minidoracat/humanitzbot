@@ -20,7 +20,7 @@ const MultiServerManager = require('../server/multi-server');
 const { blockBar: _progressBar } = require('../server/server-display');
 const { BTN, SELECT, ENV_CATEGORIES, GAME_SETTINGS_CATEGORIES } = require('./panel-constants');
 const { buildDiagnostics } = require('./panel-diagnostics');
-const { cleanOwnMessages, embedContentKey } = require('./discord-utils');
+const { cleanOwnMessages, embedContentKey, modalTitle } = require('./discord-utils');
 
 // ── State colour map ────────────────────────────────────────
 const STATE_DISPLAY = {
@@ -497,7 +497,7 @@ class PanelChannel {
     const restartTag = category.restart ? ' (🔄 Bot Restart)' : ' (✨ Live)';
     const modal = new ModalBuilder()
       .setCustomId(`panel_env_modal:${categoryId}`)
-      .setTitle(`Edit: ${category.label}${restartTag}`);
+      .setTitle(modalTitle('Edit: ', category.label, restartTag));
 
     for (const field of category.fields) {
       const style = field.style === 'paragraph' ? TextInputStyle.Paragraph : TextInputStyle.Short;
@@ -541,7 +541,7 @@ class PanelChannel {
 
     const modal = new ModalBuilder()
       .setCustomId(`panel_game_modal:${categoryId}`)
-      .setTitle(`Server: ${category.label} (🔄 Server Restart)`);
+      .setTitle(modalTitle('Server: ', category.label, ' (🔄 Server Restart)'));
 
     for (const setting of category.settings) {
       const currentValue = cached[setting.ini] != null ? String(cached[setting.ini]) : '';
