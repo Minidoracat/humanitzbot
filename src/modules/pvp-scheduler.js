@@ -112,6 +112,7 @@ class PvpScheduler {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
+      hourCycle: 'h23',
       timeZone: this._config.botTimezone,
     }).formatToParts(now);
     const h = parseInt(timeParts.find((p) => p.type === 'hour')?.value || '0', 10);

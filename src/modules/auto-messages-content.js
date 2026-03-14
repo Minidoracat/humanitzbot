@@ -90,6 +90,7 @@ function _getTimePartsInTz(date, timeZone) {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
+    hourCycle: 'h23',
     timeZone,
   }).formatToParts(date);
   const hour = parseInt(parts.find((p) => p.type === 'hour')?.value || '0', 10);

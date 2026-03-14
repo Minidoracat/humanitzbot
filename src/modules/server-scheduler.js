@@ -169,7 +169,7 @@ class ServerScheduler {
   _getCurrentTime() {
     const now = new Date();
     const parts = new Intl.DateTimeFormat('en-US', {
-      hour: '2-digit', minute: '2-digit', hour12: false,
+      hour: '2-digit', minute: '2-digit', hour12: false, hourCycle: 'h23',
       timeZone: this._config.botTimezone,
     }).formatToParts(now);
     const h = parseInt(parts.find((p) => p.type === 'hour')?.value || '0', 10);
