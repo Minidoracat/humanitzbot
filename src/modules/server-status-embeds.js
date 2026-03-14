@@ -18,7 +18,9 @@ function _ts(locale, key, vars = {}) {
 }
 
 function _normalizeLabel(value) {
-  return String(value || '').trim().toLowerCase();
+  return String(value || '')
+    .trim()
+    .toLowerCase();
 }
 
 function _seasonLabel(locale, season) {
@@ -30,7 +32,7 @@ function _seasonLabel(locale, season) {
     fall: 'season_autumn',
     winter: 'season_winter',
   };
-  return keyMap[norm] ? _ts(locale, keyMap[norm]) : (season || '--');
+  return keyMap[norm] ? _ts(locale, keyMap[norm]) : season || '--';
 }
 
 function _weatherLabel(locale, weather) {
@@ -51,7 +53,7 @@ function _weatherLabel(locale, weather) {
     heatwave: 'weather_heatwave',
     sandstorm: 'weather_sandstorm',
   };
-  return keyMap[norm] ? _ts(locale, keyMap[norm]) : (weather || '--');
+  return keyMap[norm] ? _ts(locale, keyMap[norm]) : weather || '--';
 }
 
 function _footer(playtimeTracker, cfg) {
@@ -67,10 +69,8 @@ function _settingsBlock(settings, cfg, locale) {
     if (sf.length > 0) fields.push(...sf);
   }
 
-  const lootLine = cfg.showLootScarcity && Object.keys(settings).length > 0
-    ? _buildLootScarcity(settings) : null;
-  const weatherLine = cfg.showWeatherOdds && Object.keys(settings).length > 0
-    ? _buildWeatherOdds(settings) : null;
+  const lootLine = cfg.showLootScarcity && Object.keys(settings).length > 0 ? _buildLootScarcity(settings) : null;
+  const weatherLine = cfg.showWeatherOdds && Object.keys(settings).length > 0 ? _buildWeatherOdds(settings) : null;
 
   if (lootLine && weatherLine) {
     fields.push(
@@ -92,17 +92,31 @@ function _statsBlock(playtimeTracker, playerStats, cfg, locale) {
   const leaderboard = playtimeTracker.getLeaderboard();
   if (leaderboard.length > 0) {
     const medals = ['\uD83E\uDD47', '\uD83E\uDD48', '\uD83E\uDD49'];
-    const top3 = leaderboard.slice(0, 3)
-      .map((e, i) => `${medals[i]} **${e.name}** \u2014 ${e.totalFormatted}`);
+    const top3 = leaderboard.slice(0, 3).map((e, i) => `${medals[i]} **${e.name}** \u2014 ${e.totalFormatted}`);
     fields.push({ name: _ts(locale, 'top_playtime'), value: top3.join('\n'), inline: true });
   }
 
   const all = playerStats.getAllPlayers();
   if (all.length > 0) {
     const parts = [
-      _ts(locale, 'activity_deaths', { count: fmtNumber(all.reduce((s, p) => s + p.deaths, 0), locale) }),
-      _ts(locale, 'activity_builds', { count: fmtNumber(all.reduce((s, p) => s + p.builds, 0), locale) }),
-      _ts(locale, 'activity_looted', { count: fmtNumber(all.reduce((s, p) => s + p.containersLooted, 0), locale) }),
+      _ts(locale, 'activity_deaths', {
+        count: fmtNumber(
+          all.reduce((s, p) => s + p.deaths, 0),
+          locale,
+        ),
+      }),
+      _ts(locale, 'activity_builds', {
+        count: fmtNumber(
+          all.reduce((s, p) => s + p.builds, 0),
+          locale,
+        ),
+      }),
+      _ts(locale, 'activity_looted', {
+        count: fmtNumber(
+          all.reduce((s, p) => s + p.containersLooted, 0),
+          locale,
+        ),
+      }),
     ];
     if (cfg.showRaidStats) {
       const r = all.reduce((s, p) => s + p.raidsOut, 0);
@@ -167,20 +181,23 @@ function _buildEmbed(info, playerList, resources) {
   } else if (this._onlineSince) {
     const ms = Date.now() - this._onlineSince.getTime();
     const mins = Math.floor(ms / 60000);
-    uptimeStr = mins < 60
-      ? ` \xB7 ${_ts(locale, 'uptime')}: ${_ts(locale, 'uptime_minutes', { minutes: fmtNumber(mins, locale) })}`
-      : ` \xB7 ${_ts(locale, 'uptime')}: ${_ts(locale, 'uptime_hours_minutes', { hours: fmtNumber(Math.floor(mins / 60), locale), minutes: fmtNumber(mins % 60, locale) })}`;
+    uptimeStr =
+      mins < 60
+        ? ` \xB7 ${_ts(locale, 'uptime')}: ${_ts(locale, 'uptime_minutes', { minutes: fmtNumber(mins, locale) })}`
+        : ` \xB7 ${_ts(locale, 'uptime')}: ${_ts(locale, 'uptime_hours_minutes', { hours: fmtNumber(Math.floor(mins / 60), locale), minutes: fmtNumber(mins % 60, locale) })}`;
   }
-  descParts.push(_ts(locale, 'online_status_line', {
-    online: _ts(locale, 'online'),
-    uptime: uptimeStr,
-    connect: connectStr,
-  }));
+  descParts.push(
+    _ts(locale, 'online_status_line', {
+      online: _ts(locale, 'online'),
+      uptime: uptimeStr,
+      connect: connectStr,
+    }),
+  );
   embed.setDescription(descParts.join('\n'));
 
   const settings = this._loadServerSettings();
 
-  let playerCount = '--';
+  let playerCount;
   let playerBar = '';
   if (info.players != null) {
     const max = parseInt(info.maxPlayers, 10) || 0;
@@ -237,7 +254,7 @@ function _buildEmbed(info, playerList, resources) {
   });
 
   if (playerList.players?.length > 0) {
-    const names = playerList.players.map(p => p.name).join(', ');
+    const names = playerList.players.map((p) => p.name).join(', ');
     embed.addFields({ name: _ts(locale, 'online_now'), value: names.substring(0, 1024) });
   }
 
@@ -247,7 +264,8 @@ function _buildEmbed(info, playerList, resources) {
     const perfParts = [];
     if (info.fps) perfParts.push(_ts(locale, 'performance_fps', { value: fmtNumber(info.fps, locale) }));
     if (info.ai) perfParts.push(_ts(locale, 'performance_ai', { value: fmtNumber(info.ai, locale) }));
-    if (perfParts.length > 0) embed.addFields({ name: _ts(locale, 'performance'), value: perfParts.join('  \xB7  '), inline: true });
+    if (perfParts.length > 0)
+      embed.addFields({ name: _ts(locale, 'performance'), value: perfParts.join('  \xB7  '), inline: true });
   }
   if (this._config.showServerVersion && info.version) {
     embed.addFields({ name: _ts(locale, 'version'), value: info.version, inline: true });
@@ -260,10 +278,14 @@ function _buildEmbed(info, playerList, resources) {
 
   if (this._config.showWorldStats) {
     const wp = [];
-    if (settings._totalPlayers != null) wp.push(_ts(locale, 'world_players', { count: fmtNumber(settings._totalPlayers, locale) }));
-    if (settings._totalZombieKills != null) wp.push(_ts(locale, 'world_killed', { count: fmtNumber(settings._totalZombieKills, locale) }));
-    if (settings._totalStructures != null) wp.push(_ts(locale, 'world_structures', { count: fmtNumber(settings._totalStructures, locale) }));
-    if (settings._totalVehicles != null) wp.push(_ts(locale, 'world_vehicles', { count: fmtNumber(settings._totalVehicles, locale) }));
+    if (settings._totalPlayers != null)
+      wp.push(_ts(locale, 'world_players', { count: fmtNumber(settings._totalPlayers, locale) }));
+    if (settings._totalZombieKills != null)
+      wp.push(_ts(locale, 'world_killed', { count: fmtNumber(settings._totalZombieKills, locale) }));
+    if (settings._totalStructures != null)
+      wp.push(_ts(locale, 'world_structures', { count: fmtNumber(settings._totalStructures, locale) }));
+    if (settings._totalVehicles != null)
+      wp.push(_ts(locale, 'world_vehicles', { count: fmtNumber(settings._totalVehicles, locale) }));
     if (settings._totalCompanions != null && settings._totalCompanions > 0) {
       wp.push(_ts(locale, 'world_companions', { count: fmtNumber(settings._totalCompanions, locale) }));
     }
@@ -290,21 +312,25 @@ async function _buildOfflineEmbed() {
   if (this._offlineSince) {
     const ms = Date.now() - this._offlineSince.getTime();
     const mins = Math.floor(ms / 60000);
-    downtime = mins < 60
-      ? _ts(locale, 'downtime_minutes', { minutes: fmtNumber(mins, locale) })
-      : _ts(locale, 'downtime_hours_minutes', {
-        hours: fmtNumber(Math.floor(mins / 60), locale),
-        minutes: fmtNumber(mins % 60, locale),
-      });
+    downtime =
+      mins < 60
+        ? _ts(locale, 'downtime_minutes', { minutes: fmtNumber(mins, locale) })
+        : _ts(locale, 'downtime_hours_minutes', {
+            hours: fmtNumber(Math.floor(mins / 60), locale),
+            minutes: fmtNumber(mins % 60, locale),
+          });
   }
 
   const serverName = this._lastInfo?.name || '';
-  embed.setDescription(serverName
-    ? _ts(locale, 'offline_with_name', { name: serverName, downtime })
-    : _ts(locale, 'offline_no_name', { downtime }));
+  embed.setDescription(
+    serverName
+      ? _ts(locale, 'offline_with_name', { name: serverName, downtime })
+      : _ts(locale, 'offline_no_name', { downtime }),
+  );
 
   embed.addFields({ name: _ts(locale, 'direct_connect'), value: connectStr, inline: true });
-  if (this._lastInfo?.version) embed.addFields({ name: _ts(locale, 'version'), value: this._lastInfo.version, inline: true });
+  if (this._lastInfo?.version)
+    embed.addFields({ name: _ts(locale, 'version'), value: this._lastInfo.version, inline: true });
 
   const schedField = _buildScheduleField(this._config);
   if (schedField) embed.addFields(schedField);
@@ -316,8 +342,7 @@ async function _buildOfflineEmbed() {
     } catch (_) {}
   }
 
-  const settings = (this._config.showServerSettings || this._config.showLootScarcity)
-    ? this._loadServerSettings() : {};
+  const settings = this._config.showServerSettings || this._config.showLootScarcity ? this._loadServerSettings() : {};
   embed.addFields(..._settingsBlock(settings, this._config, locale));
   embed.addFields(..._statsBlock(this._playtime, this._playerStats, this._config, locale));
 

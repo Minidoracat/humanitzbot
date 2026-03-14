@@ -4,7 +4,14 @@
  */
 const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
-const { _envBool: envBool, _envTime: envTime, _tzOffsetMs: tzOffsetMs, canShow, isAdminView, addAdminMembers } = require('../src/config');
+const {
+  _envBool: envBool,
+  _envTime: envTime,
+  _tzOffsetMs: tzOffsetMs,
+  canShow,
+  isAdminView,
+  addAdminMembers,
+} = require('../src/config');
 const config = require('../src/config');
 
 // ══════════════════════════════════════════════════════════
@@ -339,7 +346,14 @@ describe('addAdminMembers', () => {
     config.adminUserIds = ['111', '222'];
     config.adminRoleIds = [];
     const added = [];
-    const thread = { members: { add: (uid) => { added.push(uid); return Promise.resolve(); } } };
+    const thread = {
+      members: {
+        add: (uid) => {
+          added.push(uid);
+          return Promise.resolve();
+        },
+      },
+    };
     const guild = {};
     await addAdminMembers(thread, guild);
     assert.deepEqual(added, ['111', '222']);
@@ -349,11 +363,26 @@ describe('addAdminMembers', () => {
     config.adminUserIds = [];
     config.adminRoleIds = ['role1'];
     const added = [];
-    const thread = { members: { add: (uid) => { added.push(uid); return Promise.resolve(); } } };
-    const roleMembers = new Map([['user1', {}], ['user2', {}]]);
+    const thread = {
+      members: {
+        add: (uid) => {
+          added.push(uid);
+          return Promise.resolve();
+        },
+      },
+    };
+    const roleMembers = new Map([
+      ['user1', {}],
+      ['user2', {}],
+    ]);
     const guild = {
       roles: { cache: new Map([['role1', { members: roleMembers }]]) },
-      members: { cache: new Map([['a', {}], ['b', {}]]) },
+      members: {
+        cache: new Map([
+          ['a', {}],
+          ['b', {}],
+        ]),
+      },
     };
     await addAdminMembers(thread, guild);
     assert.deepEqual(added, ['user1', 'user2']);
@@ -363,14 +392,26 @@ describe('addAdminMembers', () => {
     config.adminUserIds = [];
     config.adminRoleIds = ['role1'];
     const added = [];
-    const thread = { members: { add: (uid) => { added.push(uid); return Promise.resolve(); } } };
+    const thread = {
+      members: {
+        add: (uid) => {
+          added.push(uid);
+          return Promise.resolve();
+        },
+      },
+    };
     const roleMembers = new Map([['user1', {}]]);
     const guild = {
       roles: {
         cache: new Map(),
-        fetch: async (id) => id === 'role1' ? { members: roleMembers } : null,
+        fetch: async (id) => (id === 'role1' ? { members: roleMembers } : null),
       },
-      members: { cache: new Map([['a', {}], ['b', {}]]) },
+      members: {
+        cache: new Map([
+          ['a', {}],
+          ['b', {}],
+        ]),
+      },
     };
     await addAdminMembers(thread, guild);
     assert.deepEqual(added, ['user1']);
@@ -380,7 +421,14 @@ describe('addAdminMembers', () => {
     config.adminUserIds = [];
     config.adminRoleIds = ['badRole'];
     const added = [];
-    const thread = { members: { add: (uid) => { added.push(uid); return Promise.resolve(); } } };
+    const thread = {
+      members: {
+        add: (uid) => {
+          added.push(uid);
+          return Promise.resolve();
+        },
+      },
+    };
     const guild = {
       roles: {
         cache: new Map(),
@@ -396,11 +444,23 @@ describe('addAdminMembers', () => {
     config.adminUserIds = ['explicit1'];
     config.adminRoleIds = ['role1'];
     const added = [];
-    const thread = { members: { add: (uid) => { added.push(uid); return Promise.resolve(); } } };
+    const thread = {
+      members: {
+        add: (uid) => {
+          added.push(uid);
+          return Promise.resolve();
+        },
+      },
+    };
     const roleMembers = new Map([['roleUser1', {}]]);
     const guild = {
       roles: { cache: new Map([['role1', { members: roleMembers }]]) },
-      members: { cache: new Map([['a', {}], ['b', {}]]) },
+      members: {
+        cache: new Map([
+          ['a', {}],
+          ['b', {}],
+        ]),
+      },
     };
     await addAdminMembers(thread, guild);
     assert.deepEqual(added, ['explicit1', 'roleUser1']);

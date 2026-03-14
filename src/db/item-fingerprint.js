@@ -99,7 +99,17 @@ function normalizeSlot(slot) {
 
   // Raw save-parser format: array of property objects [{name, value}, ...]
   if (Array.isArray(slot)) {
-    const parsed = { item: '', amount: 0, durability: 0, ammo: 0, attachments: [], cap: 0, maxDur: 0, weight: 0, wetness: 0 };
+    const parsed = {
+      item: '',
+      amount: 0,
+      durability: 0,
+      ammo: 0,
+      attachments: [],
+      cap: 0,
+      maxDur: 0,
+      weight: 0,
+      wetness: 0,
+    };
     for (const prop of slot) {
       if (prop.name === 'Item' && prop.children) {
         for (const c of prop.children) {

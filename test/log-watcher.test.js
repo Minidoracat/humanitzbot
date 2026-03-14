@@ -13,7 +13,8 @@ const assert = require('node:assert/strict');
 const LOG_LINE_RE = /^\((\d{1,2})[/\-.](\d{1,2})[/\-.](\d{1,2},?\d{3})\s+(\d{1,2}):(\d{1,2})(?::\d{1,2})?\)\s+(.+)$/;
 
 // Connect/disconnect regex (from _processConnectLine)
-const CONNECT_RE = /^Player (Connected|Disconnected)\s+(.+?)\s+NetID\((\d{17})[^)]*\)\s*\((\d{1,2})[/\-.](\d{1,2})[/\-.](\d{1,2},?\d{3})\s+(\d{1,2}):(\d{1,2})(?::\d{1,2})?\)/;
+const CONNECT_RE =
+  /^Player (Connected|Disconnected)\s+(.+?)\s+NetID\((\d{17})[^)]*\)\s*\((\d{1,2})[/\-.](\d{1,2})[/\-.](\d{1,2},?\d{3})\s+(\d{1,2}):(\d{1,2})(?::\d{1,2})?\)/;
 
 // Event body regexes (from _processLine)
 const DEATH_RE = /^Player died \((.+)\)$/;
@@ -27,7 +28,8 @@ const SPEED_WARN_RE = /^(.+?)\s+suspected of speed hacking\s+Warn\s*=>\s*(\d+)\/
 const SPEED_KICK_RE = /^(.+?)\s+will be kicked for speed-hack strong suspicion\s+ID\s*=\s*(\d{17})/;
 const ADMIN_KICK_RE = /^(Kicked (?:for|player for)\s+.+?)(?:\.\s*|$)/;
 const BAD_SPAWN_RE = /^(?:Detected )?[Bb]ad spawn location/i;
-const RAID_RE = /^Building \(([^)]+)\) owned by \((\d{17}[^)]*)\) damaged \([\d.]+\) by (.+?)(?:\((\d{17})[^)]*\))?(\s*\(Destroyed\))?$/;
+const RAID_RE =
+  /^Building \(([^)]+)\) owned by \((\d{17}[^)]*)\) damaged \([\d.]+\) by (.+?)(?:\((\d{17})[^)]*\))?(\s*\(Destroyed\))?$/;
 
 // Blueprint name cleaner (from _simplifyBlueprintName)
 function simplifyBlueprintName(rawName) {
@@ -245,7 +247,9 @@ describe('bad spawn detection', () => {
 
 describe('raid regex', () => {
   it('matches building damage with destroyer', () => {
-    const m = RAID_RE.exec('Building (BP_Wall_C) owned by (76561100000000002) damaged (50.0) by attacker(76561100000000001) (Destroyed)');
+    const m = RAID_RE.exec(
+      'Building (BP_Wall_C) owned by (76561100000000002) damaged (50.0) by attacker(76561100000000001) (Destroyed)',
+    );
     assert.ok(m);
     assert.equal(m[1], 'BP_Wall_C');
     assert.ok(m[2].startsWith('76561100000000002'));
@@ -254,7 +258,9 @@ describe('raid regex', () => {
   });
 
   it('matches building damage without Destroyed', () => {
-    const m = RAID_RE.exec('Building (BP_Wall_C) owned by (76561100000000002) damaged (25.0) by attacker(76561100000000001)');
+    const m = RAID_RE.exec(
+      'Building (BP_Wall_C) owned by (76561100000000002) damaged (25.0) by attacker(76561100000000001)',
+    );
     assert.ok(m);
     assert.equal(m[5], undefined); // No Destroyed
   });
@@ -339,17 +345,29 @@ describe('_nukeActive thread suppression', () => {
   const ChatRelay = require('../src/modules/chat-relay');
 
   const mockClient = { channels: { fetch: async () => null }, on: () => {}, user: { id: '1' } };
-  const mockChannel = { id: '123', name: 'test', threads: { fetchActive: async () => ({ threads: new Map() }), fetchArchived: async () => ({ threads: new Map() }) }, send: async () => ({ startThread: async () => ({ send: async () => {} }) }), messages: { fetch: async () => new Map() } };
+  const mockChannel = {
+    id: '123',
+    name: 'test',
+    threads: { fetchActive: async () => ({ threads: new Map() }), fetchArchived: async () => ({ threads: new Map() }) },
+    send: async () => ({ startThread: async () => ({ send: async () => {} }) }),
+    messages: { fetch: async () => new Map() },
+  };
   const fakeConfig = {
     getToday: () => '2026-01-01',
     getDateLabel: () => '01 Jan 2026',
     useActivityThreads: true,
     useChatThreads: true,
     logPollInterval: 600000,
-    ftpHost: 'x', ftpPort: 22, ftpUser: 'x', ftpPassword: 'x',
-    ftpLogPath: '/test', ftpConnectLogPath: '/test',
-    logChannelId: '123', adminChannelId: '123',
-    serverName: '', nukeBot: true,
+    ftpHost: 'x',
+    ftpPort: 22,
+    ftpUser: 'x',
+    ftpPassword: 'x',
+    ftpLogPath: '/test',
+    ftpConnectLogPath: '/test',
+    logChannelId: '123',
+    adminChannelId: '123',
+    serverName: '',
+    nukeBot: true,
     addAdminMembers: async () => {},
   };
 
@@ -385,9 +403,19 @@ describe('PvP NPC source detection', () => {
   const LogWatcher = require('../src/modules/log-watcher');
 
   function createWatcher() {
-    return new LogWatcher({ on: () => {}, channels: { fetch: async () => null }, user: { id: '1' } }, {
-      config: { getToday: () => '2026-01-01', getDateLabel: () => '01 Jan 2026', logPollInterval: 999999, ftpHost: '', enablePvpKillFeed: true, pvpKillWindow: 60000 },
-    });
+    return new LogWatcher(
+      { on: () => {}, channels: { fetch: async () => null }, user: { id: '1' } },
+      {
+        config: {
+          getToday: () => '2026-01-01',
+          getDateLabel: () => '01 Jan 2026',
+          logPollInterval: 999999,
+          ftpHost: '',
+          enablePvpKillFeed: true,
+          pvpKillWindow: 60000,
+        },
+      },
+    );
   }
 
   function cleanup(lw) {
@@ -457,9 +485,19 @@ describe('PvP damage → death correlation', () => {
   const LogWatcher = require('../src/modules/log-watcher');
 
   function createWatcher() {
-    const lw = new LogWatcher({ on: () => {}, channels: { fetch: async () => null }, user: { id: '1' } }, {
-      config: { getToday: () => '2026-01-01', getDateLabel: () => '01 Jan 2026', logPollInterval: 999999, ftpHost: '', enablePvpKillFeed: true, pvpKillWindow: 60000 },
-    });
+    const lw = new LogWatcher(
+      { on: () => {}, channels: { fetch: async () => null }, user: { id: '1' } },
+      {
+        config: {
+          getToday: () => '2026-01-01',
+          getDateLabel: () => '01 Jan 2026',
+          logPollInterval: 999999,
+          ftpHost: '',
+          enablePvpKillFeed: true,
+          pvpKillWindow: 60000,
+        },
+      },
+    );
     return lw;
   }
 

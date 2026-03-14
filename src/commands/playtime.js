@@ -36,11 +36,9 @@ module.exports = {
       if (search) {
         // Player lookup
         const leaderboard = playtime.getLeaderboard();
-        const match = leaderboard.find(
-          (e) => e.name.toLowerCase() === search.toLowerCase(),
-        ) || leaderboard.find(
-          (e) => e.name.toLowerCase().includes(search.toLowerCase()),
-        );
+        const match =
+          leaderboard.find((e) => e.name.toLowerCase() === search.toLowerCase()) ||
+          leaderboard.find((e) => e.name.toLowerCase().includes(search.toLowerCase()));
 
         if (!match) {
           await interaction.editReply(t('commands:playtime.reply.not_found', locale, { player: search }));

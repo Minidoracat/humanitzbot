@@ -26,14 +26,14 @@ const { t, getLocale, fmtNumber } = require('../i18n');
 
 const KILL_THRESHOLDS = [100, 500, 1000, 5000, 10000, 25000, 50000, 100000];
 const PLAYTIME_THRESHOLDS_MS = [
-  1 * 3600000,    //   1h
-  6 * 3600000,    //   6h
-  12 * 3600000,   //  12h
-  24 * 3600000,   //  24h
-  48 * 3600000,   //  48h
-  100 * 3600000,  // 100h
-  250 * 3600000,  // 250h
-  500 * 3600000,  // 500h
+  1 * 3600000, //   1h
+  6 * 3600000, //   6h
+  12 * 3600000, //  12h
+  24 * 3600000, //  24h
+  48 * 3600000, //  48h
+  100 * 3600000, // 100h
+  250 * 3600000, // 250h
+  500 * 3600000, // 500h
   1000 * 3600000, // 1000h
 ];
 const SURVIVAL_THRESHOLDS = [1, 3, 7, 14, 30, 60, 100];
@@ -129,7 +129,7 @@ class MilestoneTracker {
    *
    * @param {object} [syncResult] - SaveService sync result (unused, we read DB directly)
    */
-  async check(syncResult) {
+  async check(_syncResult) {
     if (!this._db) return;
     this._lastCheckCount = 0;
 
@@ -272,10 +272,10 @@ class MilestoneTracker {
     // challenges is a JSON array: [{ name, progress, total }] or similar
     let challenges;
     try {
-      challenges = typeof player.challenges === 'string'
-        ? JSON.parse(player.challenges)
-        : player.challenges;
-    } catch { return false; }
+      challenges = typeof player.challenges === 'string' ? JSON.parse(player.challenges) : player.challenges;
+    } catch {
+      return false;
+    }
     if (!Array.isArray(challenges) || challenges.length === 0) return false;
 
     let changed = false;
@@ -308,10 +308,13 @@ class MilestoneTracker {
     // Professions
     let profs;
     try {
-      profs = typeof player.unlocked_professions === 'string'
-        ? JSON.parse(player.unlocked_professions)
-        : player.unlocked_professions;
-    } catch { profs = []; }
+      profs =
+        typeof player.unlocked_professions === 'string'
+          ? JSON.parse(player.unlocked_professions)
+          : player.unlocked_professions;
+    } catch {
+      profs = [];
+    }
     if (Array.isArray(profs) && profs.length > 0) {
       if (!this._state.firsts.profession) this._state.firsts.profession = [];
       const announcedProfs = this._state.firsts.profession;
@@ -392,10 +395,7 @@ class MilestoneTracker {
   // ── Embed queueing & posting ───────────────────────────────
 
   _queueEmbed(description, color, footer) {
-    const embed = new EmbedBuilder()
-      .setDescription(description)
-      .setColor(color)
-      .setTimestamp();
+    const embed = new EmbedBuilder().setDescription(description).setColor(color).setTimestamp();
     if (footer) embed.setFooter({ text: footer });
     this._pendingEmbeds.push(embed);
   }
@@ -443,7 +443,9 @@ class MilestoneTracker {
     if (channelId && this._client) {
       try {
         return this._client.channels.cache.get(channelId) || null;
-      } catch { return null; }
+      } catch {
+        return null;
+      }
     }
     return null;
   }
@@ -451,16 +453,24 @@ class MilestoneTracker {
   // ── State access (for testing) ─────────────────────────────
 
   /** Get the current milestone state (for testing/debugging). */
-  getState() { return this._state; }
+  getState() {
+    return this._state;
+  }
 
   /** Get pending embeds count (for testing — may be 0 after flush). */
-  getPendingCount() { return this._pendingEmbeds.length; }
+  getPendingCount() {
+    return this._pendingEmbeds.length;
+  }
 
   /** Get the number of milestones queued during the last check() call. */
-  getLastCheckCount() { return this._lastCheckCount; }
+  getLastCheckCount() {
+    return this._lastCheckCount;
+  }
 
   /** Clear all pending embeds (for testing). */
-  clearPending() { this._pendingEmbeds = []; }
+  clearPending() {
+    this._pendingEmbeds = [];
+  }
 }
 
 // Export thresholds for testing

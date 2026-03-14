@@ -126,7 +126,7 @@ class RecapService {
   _gatherDayStats(startOfDay, endOfDay) {
     const events = this._db.getActivitySince(startOfDay);
     // Filter to only this day (getActivitySince returns everything after the timestamp)
-    const dayEvents = events.filter(e => e.timestamp <= endOfDay);
+    const dayEvents = events.filter((e) => e.timestamp <= endOfDay);
 
     if (dayEvents.length === 0) return null;
 
@@ -180,15 +180,17 @@ class RecapService {
     }
 
     // New players (first_seen today)
-    const newPlayers = allPlayers.filter(p => {
+    const newPlayers = allPlayers.filter((p) => {
       const firstSeen = p.playtime_first_seen || p.updated_at;
       return firstSeen && firstSeen >= startOfDay && firstSeen <= endOfDay;
     });
 
     // MVP — weighted score: kills*2 + builds*1 + loots*0.5 + playtime_hours*3
     // Unluckiest — most deaths
-    let mvp = null, mvpScore = 0;
-    let unluckiest = null, unluckyDeaths = 0;
+    let mvp = null,
+      mvpScore = 0;
+    let unluckiest = null,
+      unluckyDeaths = 0;
 
     for (const sid of uniquePlayers) {
       const name = playerNames[sid] || sid;
@@ -196,8 +198,14 @@ class RecapService {
       const builds = playerBuilds[sid] || 0;
       const deaths = playerDeaths[sid] || 0;
       const score = kills * 2 + builds * 1;
-      if (score > mvpScore) { mvp = name; mvpScore = score; }
-      if (deaths > unluckyDeaths) { unluckiest = name; unluckyDeaths = deaths; }
+      if (score > mvpScore) {
+        mvp = name;
+        mvpScore = score;
+      }
+      if (deaths > unluckyDeaths) {
+        unluckiest = name;
+        unluckyDeaths = deaths;
+      }
     }
 
     // Peak concurrent from playtime tracker
@@ -222,7 +230,7 @@ class RecapService {
       totalKills,
       topKiller,
       topKillerKills,
-      newPlayers: newPlayers.map(p => p.name),
+      newPlayers: newPlayers.map((p) => p.name),
       mvp,
       mvpScore,
       unluckiest,
@@ -238,49 +246,58 @@ class RecapService {
     const lines = [];
 
     // Header stats
-    lines.push(_tr(locale, 'daily_unique_peak_line', {
-      unique_players: _fmt(stats.uniquePlayers, locale),
-      peak: _fmt(stats.peakConcurrent, locale),
-    }));
+    lines.push(
+      _tr(locale, 'daily_unique_peak_line', {
+        unique_players: _fmt(stats.uniquePlayers, locale),
+        peak: _fmt(stats.peakConcurrent, locale),
+      }),
+    );
     lines.push('');
 
     // Activity breakdown
     if (stats.deaths > 0) {
-      const pvpNote = stats.pvpKills > 0
-        ? _tr(locale, 'daily_deaths_pvp_note', { pvp_kills: _fmt(stats.pvpKills, locale) })
-        : '';
-      lines.push(_tr(locale, 'daily_deaths_line', {
-        deaths: _fmt(stats.deaths, locale),
-        pvp_note: pvpNote,
-      }));
+      const pvpNote =
+        stats.pvpKills > 0 ? _tr(locale, 'daily_deaths_pvp_note', { pvp_kills: _fmt(stats.pvpKills, locale) }) : '';
+      lines.push(
+        _tr(locale, 'daily_deaths_line', {
+          deaths: _fmt(stats.deaths, locale),
+          pvp_note: pvpNote,
+        }),
+      );
     }
     if (stats.builds > 0) lines.push(_tr(locale, 'daily_built_line', { builds: _fmt(stats.builds, locale) }));
     if (stats.loots > 0) lines.push(_tr(locale, 'daily_looted_line', { loots: _fmt(stats.loots, locale) }));
-    if (stats.raidHits > 0) lines.push(_tr(locale, 'daily_raid_hits_line', { raid_hits: _fmt(stats.raidHits, locale) }));
+    if (stats.raidHits > 0)
+      lines.push(_tr(locale, 'daily_raid_hits_line', { raid_hits: _fmt(stats.raidHits, locale) }));
     if (stats.fish > 0) lines.push(_tr(locale, 'daily_fish_line', { fish: _fmt(stats.fish, locale) }));
 
     // Top killer
     if (stats.topKiller) {
       lines.push('');
-      lines.push(_tr(locale, 'daily_top_killer_line', {
-        top_killer: stats.topKiller,
-        top_killer_kills: _fmt(stats.topKillerKills, locale),
-      }));
+      lines.push(
+        _tr(locale, 'daily_top_killer_line', {
+          top_killer: stats.topKiller,
+          top_killer_kills: _fmt(stats.topKillerKills, locale),
+        }),
+      );
     }
 
     // New players
     if (stats.newPlayers.length > 0) {
       lines.push('');
       const names = stats.newPlayers.slice(0, 5).join(', ');
-      const extra = stats.newPlayers.length > 5
-        ? _tr(locale, 'daily_new_survivors_extra', {
-          count: _fmt(stats.newPlayers.length - 5, locale),
-        })
-        : '';
-      lines.push(_tr(locale, 'daily_new_survivors_line', {
-        names,
-        extra,
-      }));
+      const extra =
+        stats.newPlayers.length > 5
+          ? _tr(locale, 'daily_new_survivors_extra', {
+              count: _fmt(stats.newPlayers.length - 5, locale),
+            })
+          : '';
+      lines.push(
+        _tr(locale, 'daily_new_survivors_line', {
+          names,
+          extra,
+        }),
+      );
     }
 
     // MVP and Unluckiest
@@ -288,10 +305,12 @@ class RecapService {
       lines.push('');
       if (stats.mvp) lines.push(_tr(locale, 'daily_mvp_line', { mvp: stats.mvp }));
       if (stats.unluckiest && stats.unluckyDeaths > 1) {
-        lines.push(_tr(locale, 'daily_unluckiest_line', {
-          unluckiest: stats.unluckiest,
-          deaths: _fmt(stats.unluckyDeaths, locale),
-        }));
+        lines.push(
+          _tr(locale, 'daily_unluckiest_line', {
+            unluckiest: stats.unluckiest,
+            deaths: _fmt(stats.unluckyDeaths, locale),
+          }),
+        );
       }
     }
 
@@ -355,7 +374,8 @@ class RecapService {
       const topPlaytime = this._db.topPlaytime(1);
 
       // Unluckiest of the week
-      let unluckiest = null, unluckyDeaths = 0;
+      let unluckiest = null,
+        unluckyDeaths = 0;
       for (const [sid, deaths] of Object.entries(playerDeaths)) {
         if (deaths > unluckyDeaths) {
           unluckiest = playerNames[sid] || sid;
@@ -364,58 +384,76 @@ class RecapService {
       }
 
       const lines = [];
-      lines.push(_tr(locale, 'weekly_unique_players_line', {
-        unique_players: _fmt(uniquePlayers.size, locale),
-        trend: _trend(uniquePlayers.size, prevWeek?.uniquePlayers),
-      }));
+      lines.push(
+        _tr(locale, 'weekly_unique_players_line', {
+          unique_players: _fmt(uniquePlayers.size, locale),
+          trend: _trend(uniquePlayers.size, prevWeek?.uniquePlayers),
+        }),
+      );
       lines.push('');
 
       // Stats with trends
-      lines.push(_tr(locale, 'weekly_deaths_line', {
-        deaths: _fmt(totalDeaths, locale),
-        trend: _trend(totalDeaths, prevWeek?.deaths),
-      }));
+      lines.push(
+        _tr(locale, 'weekly_deaths_line', {
+          deaths: _fmt(totalDeaths, locale),
+          trend: _trend(totalDeaths, prevWeek?.deaths),
+        }),
+      );
       if (pvpKills > 0) {
-        lines.push(_tr(locale, 'weekly_pvp_kills_line', {
-          pvp_kills: _fmt(pvpKills, locale),
-          trend: _trend(pvpKills, prevWeek?.pvpKills),
-        }));
+        lines.push(
+          _tr(locale, 'weekly_pvp_kills_line', {
+            pvp_kills: _fmt(pvpKills, locale),
+            trend: _trend(pvpKills, prevWeek?.pvpKills),
+          }),
+        );
       }
-      lines.push(_tr(locale, 'weekly_built_line', {
-        builds: _fmt(totalBuilds, locale),
-        trend: _trend(totalBuilds, prevWeek?.builds),
-      }));
-      lines.push(_tr(locale, 'weekly_looted_line', {
-        loots: _fmt(totalLoots, locale),
-        trend: _trend(totalLoots, prevWeek?.loots),
-      }));
+      lines.push(
+        _tr(locale, 'weekly_built_line', {
+          builds: _fmt(totalBuilds, locale),
+          trend: _trend(totalBuilds, prevWeek?.builds),
+        }),
+      );
+      lines.push(
+        _tr(locale, 'weekly_looted_line', {
+          loots: _fmt(totalLoots, locale),
+          trend: _trend(totalLoots, prevWeek?.loots),
+        }),
+      );
       lines.push('');
 
       // Player of the Week
       if (topKillers.length > 0) {
-        lines.push(_tr(locale, 'weekly_top_killer_line', {
-          top_killer: topKillers[0].name,
-          top_killer_kills: _fmt(topKillers[0].lifetime_kills, locale),
-        }));
+        lines.push(
+          _tr(locale, 'weekly_top_killer_line', {
+            top_killer: topKillers[0].name,
+            top_killer_kills: _fmt(topKillers[0].lifetime_kills, locale),
+          }),
+        );
       }
       if (topPlaytime.length > 0 && topPlaytime[0].playtime_seconds > 0) {
-        lines.push(_tr(locale, 'weekly_most_active_line', {
-          most_active: topPlaytime[0].name,
-          most_active_hours: _fmtHours(topPlaytime[0].playtime_seconds, locale),
-        }));
+        lines.push(
+          _tr(locale, 'weekly_most_active_line', {
+            most_active: topPlaytime[0].name,
+            most_active_hours: _fmtHours(topPlaytime[0].playtime_seconds, locale),
+          }),
+        );
       }
       if (unluckiest && unluckyDeaths > 2) {
-        lines.push(_tr(locale, 'weekly_unluckiest_line', {
-          unluckiest,
-          unlucky_deaths: _fmt(unluckyDeaths, locale),
-        }));
+        lines.push(
+          _tr(locale, 'weekly_unluckiest_line', {
+            unluckiest,
+            unlucky_deaths: _fmt(unluckyDeaths, locale),
+          }),
+        );
       }
 
       lines.push('');
-      lines.push(_tr(locale, 'weekly_total_events_line', {
-        total_events: _fmt(events.length, locale),
-        trend: _trend(events.length, prevWeek?.totalEvents),
-      }));
+      lines.push(
+        _tr(locale, 'weekly_total_events_line', {
+          total_events: _fmt(events.length, locale),
+          trend: _trend(events.length, prevWeek?.totalEvents),
+        }),
+      );
 
       const embed = new EmbedBuilder()
         .setTitle(_tr(locale, 'weekly_digest_title'))
@@ -494,7 +532,9 @@ class RecapService {
     if (!this._db) return {};
     try {
       return this._db.getStateJSON(STATE_KEY, {});
-    } catch { return {}; }
+    } catch {
+      return {};
+    }
   }
 
   _saveLastDaily(date, stats) {

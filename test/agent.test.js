@@ -9,7 +9,7 @@
  * Run:  npm test test/agent.test.js
  */
 
-const { describe, it, before, after, beforeEach } = require('node:test');
+const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
@@ -30,7 +30,6 @@ const TEMP_CACHE = path.join(DATA_DIR, '_test-cache.json');
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('agent-builder', () => {
-
   let script;
 
   before(() => {
@@ -39,8 +38,12 @@ describe('agent-builder', () => {
 
   after(() => {
     // Clean up temp files
-    try { fs.unlinkSync(TEMP_AGENT); } catch {}
-    try { fs.unlinkSync(TEMP_CACHE); } catch {}
+    try {
+      fs.unlinkSync(TEMP_AGENT);
+    } catch {}
+    try {
+      fs.unlinkSync(TEMP_CACHE);
+    } catch {}
   });
 
   it('generates a non-empty string', () => {
@@ -86,7 +89,7 @@ describe('agent-builder', () => {
   it('has valid JavaScript syntax', () => {
     // Write to temp file and run node --check
     fs.writeFileSync(TEMP_AGENT, script);
-    const result = execSync(`node --check "${TEMP_AGENT}"`, { encoding: 'utf-8', timeout: 10000 });
+    execSync(`node --check "${TEMP_AGENT}"`, { encoding: 'utf-8', timeout: 10000 });
     // node --check returns nothing on success
     assert.ok(true, 'Syntax check passed');
   });
@@ -110,15 +113,18 @@ describe('agent-builder', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('agent execution', () => {
-
   before(() => {
     // Write the agent to temp location
     writeAgent(TEMP_AGENT);
   });
 
   after(() => {
-    try { fs.unlinkSync(TEMP_AGENT); } catch {}
-    try { fs.unlinkSync(TEMP_CACHE); } catch {}
+    try {
+      fs.unlinkSync(TEMP_AGENT);
+    } catch {}
+    try {
+      fs.unlinkSync(TEMP_CACHE);
+    } catch {}
   });
 
   if (!SAV_EXISTS) {
@@ -185,7 +191,6 @@ describe('agent execution', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('SaveService agent mode', () => {
-
   // We test the logic without actual SFTP/SSH connections
   const SaveService = require('../src/parsers/save-service');
   const HumanitZDB = require('../src/db/database');
@@ -288,11 +293,16 @@ describe('SaveService agent mode', () => {
     // Generate a cache from a real save
     writeAgent(TEMP_AGENT);
     execFileSync('node', [TEMP_AGENT, '--save', SAV_FILE, '--output', TEMP_CACHE], {
-      encoding: 'utf-8', timeout: 30000,
+      encoding: 'utf-8',
+      timeout: 30000,
     });
     const cache = JSON.parse(fs.readFileSync(TEMP_CACHE, 'utf-8'));
-    try { fs.unlinkSync(TEMP_AGENT); } catch {}
-    try { fs.unlinkSync(TEMP_CACHE); } catch {}
+    try {
+      fs.unlinkSync(TEMP_AGENT);
+    } catch {}
+    try {
+      fs.unlinkSync(TEMP_CACHE);
+    } catch {}
 
     const svc = new SaveService(db);
     let emitted = false;
@@ -319,7 +329,9 @@ describe('SaveService agent mode', () => {
     });
 
     let emitted = false;
-    svc.on('sync', () => { emitted = true; });
+    svc.on('sync', () => {
+      emitted = true;
+    });
     await svc._poll(true);
     assert.ok(emitted, 'Direct mode should sync');
   });
@@ -408,12 +420,12 @@ describe('SaveService agent mode', () => {
     // Simulate VPS: RCON connected, but no Panel API (not Pterodactyl/Bisect)
     const fakeRcon = { connected: true, send: async () => {} };
     const svc = new SaveService(db, { agentTrigger: 'auto' });
-    svc._rcon = fakeRcon;  // inject fake connected RCON
+    svc._rcon = fakeRcon; // inject fake connected RCON
     // No panelApi configured → _checkPanelAvailable returns false
     const trigger = await svc._resolveTrigger();
     // Must NOT pick 'rcon' — createHZSocket is Bisect-only
     assert.notEqual(trigger, 'rcon', 'auto should not select rcon without Panel API');
-    assert.equal(trigger, 'none');  // no SSH available either → none
+    assert.equal(trigger, 'none'); // no SSH available either → none
   });
 
   it('_resolveTrigger auto selects rcon when RCON + Panel API both available (Bisect)', async () => {
@@ -430,12 +442,15 @@ describe('SaveService agent mode', () => {
     let sentCmd = '';
     const fakePanelApi = {
       available: true,
-      sendCommand: async (cmd) => { called = true; sentCmd = cmd; },
+      sendCommand: async (cmd) => {
+        called = true;
+        sentCmd = cmd;
+      },
     };
     const svc = new SaveService(db, {
       panelApi: fakePanelApi,
       agentPanelCommand: 'test-parse',
-      agentPanelDelay: 0,  // no delay for tests
+      agentPanelDelay: 0, // no delay for tests
     });
     await svc._triggerViaPanel();
     assert.ok(called, 'Should have called sendCommand');
@@ -466,8 +481,12 @@ describe('agent output consistency', () => {
   });
 
   after(() => {
-    try { fs.unlinkSync(TEMP_AGENT); } catch {}
-    try { fs.unlinkSync(TEMP_CACHE); } catch {}
+    try {
+      fs.unlinkSync(TEMP_AGENT);
+    } catch {}
+    try {
+      fs.unlinkSync(TEMP_CACHE);
+    } catch {}
   });
 
   it('agent JSON has same player count as direct parse', () => {
@@ -477,8 +496,7 @@ describe('agent output consistency', () => {
 
     const agentPlayerCount = Object.keys(cache.players).length;
 
-    assert.equal(agentPlayerCount, direct.players.size,
-      `Agent: ${agentPlayerCount}, Direct: ${direct.players.size}`);
+    assert.equal(agentPlayerCount, direct.players.size, `Agent: ${agentPlayerCount}, Direct: ${direct.players.size}`);
   });
 
   it('agent JSON has same structure count as direct parse', () => {

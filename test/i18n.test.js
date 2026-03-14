@@ -2,15 +2,7 @@ const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 
 const config = require('../src/config');
-const {
-  t,
-  getLocale,
-  fmtDate,
-  fmtTime,
-  fmtNumber,
-  getSupportedLocales,
-  getLocalizations
-} = require('../src/i18n');
+const { t, getLocale, fmtDate, fmtTime, fmtNumber, getSupportedLocales, getLocalizations } = require('../src/i18n');
 
 describe('i18n module', () => {
   let savedBotLocale;
@@ -90,7 +82,7 @@ describe('i18n module', () => {
     const fs = require('fs');
     function leaves(o, p = '') {
       return Object.entries(o).flatMap(([k, v]) =>
-        typeof v === 'object' && v !== null ? leaves(v, p + k + '.') : [p + k]
+        typeof v === 'object' && v !== null ? leaves(v, p + k + '.') : [p + k],
       );
     }
     const ns = ['common', 'web', 'discord', 'api', 'commands'];
@@ -98,7 +90,7 @@ describe('i18n module', () => {
     for (const n of ns) {
       const en = leaves(JSON.parse(fs.readFileSync(path.join(localesDir, 'en', n + '.json'), 'utf8')));
       const tw = leaves(JSON.parse(fs.readFileSync(path.join(localesDir, 'zh-TW', n + '.json'), 'utf8')));
-      const missing = en.filter(k => !tw.includes(k));
+      const missing = en.filter((k) => !tw.includes(k));
       assert.equal(missing.length, 0, `zh-TW/${n}.json missing keys: ${missing.slice(0, 5).join(', ')}`);
     }
   });
@@ -108,7 +100,7 @@ describe('i18n module', () => {
     const fs = require('fs');
     function leaves(o, p = '') {
       return Object.entries(o).flatMap(([k, v]) =>
-        typeof v === 'object' && v !== null ? leaves(v, p + k + '.') : [p + k]
+        typeof v === 'object' && v !== null ? leaves(v, p + k + '.') : [p + k],
       );
     }
     const ns = ['common', 'web', 'discord', 'api', 'commands'];
@@ -116,7 +108,7 @@ describe('i18n module', () => {
     for (const n of ns) {
       const en = leaves(JSON.parse(fs.readFileSync(path.join(localesDir, 'en', n + '.json'), 'utf8')));
       const cn = leaves(JSON.parse(fs.readFileSync(path.join(localesDir, 'zh-CN', n + '.json'), 'utf8')));
-      const missing = en.filter(k => !cn.includes(k));
+      const missing = en.filter((k) => !cn.includes(k));
       assert.equal(missing.length, 0, `zh-CN/${n}.json missing keys: ${missing.slice(0, 5).join(', ')}`);
     }
   });
@@ -187,8 +179,10 @@ describe('i18n module', () => {
           untranslated.push(key);
         }
       }
-      assert.equal(untranslated.length, 0,
-        `zh-CN/${n}.json has ${untranslated.length} untranslated values (identical to English but zh-TW differs): ${untranslated.slice(0, 10).join(', ')}`
+      assert.equal(
+        untranslated.length,
+        0,
+        `zh-CN/${n}.json has ${untranslated.length} untranslated values (identical to English but zh-TW differs): ${untranslated.slice(0, 10).join(', ')}`,
       );
     }
   });
@@ -216,7 +210,7 @@ describe('i18n module', () => {
         for (const [key, lngV] of Object.entries(lngVars)) {
           const enV = enVars[key] || [];
           // Check that translated vars are a SUBSET of English vars (no typos/unknown vars)
-          const unknown = lngV.filter(v => !enV.includes(v));
+          const unknown = lngV.filter((v) => !enV.includes(v));
           assert.equal(unknown.length, 0, `${lng}/${n}.json key '${key}' has unknown vars: ${unknown.join(', ')}`);
         }
       }

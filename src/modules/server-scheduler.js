@@ -33,7 +33,9 @@ const WARNINGS = [10, 5, 3, 2, 1]; // countdown warnings in minutes
 // Profile name → RCON color tag for in-game messages
 // NOTE: Never use PN — that's the player name tag, chat parser treats it specially
 const PROFILE_COLORS = { calm: 'PR', surge: 'SP', horde: 'CL' };
-function profileTag(name) { return PROFILE_COLORS[name] || 'FO'; }
+function profileTag(name) {
+  return PROFILE_COLORS[name] || 'FO';
+}
 
 class ServerScheduler {
   constructor(client, logWatcher, deps = {}) {
@@ -49,25 +51,26 @@ class ServerScheduler {
     this._adminChannel = null;
 
     // Profile state
-    this._profiles = [];            // ordered list of profile names
-    this._profileSettings = {};     // name → { key: value } overrides
+    this._profiles = []; // ordered list of profile names
+    this._profileSettings = {}; // name → { key: value } overrides
     this._currentProfileIndex = -1; // which profile is currently active
     this._currentProfileName = null;
-    this._restartTimes = [];        // sorted array of { hour, minute, totalMinutes }
-    this._lastRestartMinute = -1;   // prevent double-restart in same minute
+    this._restartTimes = []; // sorted array of { hour, minute, totalMinutes }
+    this._lastRestartMinute = -1; // prevent double-restart in same minute
   }
 
   async start() {
     // Parse restart times
     const timesStr = this._config.restartTimes || process.env.RESTART_TIMES || '';
-    this._restartTimes = timesStr.split(',')
-      .map(s => s.trim())
+    this._restartTimes = timesStr
+      .split(',')
+      .map((s) => s.trim())
       .filter(Boolean)
-      .map(s => {
+      .map((s) => {
         const [h, m] = s.split(':').map(Number);
         return { hour: h, minute: m || 0, totalMinutes: h * 60 + (m || 0) };
       })
-      .filter(t => !isNaN(t.hour))
+      .filter((t) => !isNaN(t.hour))
       .sort((a, b) => a.totalMinutes - b.totalMinutes);
 
     if (this._restartTimes.length === 0) {
@@ -77,7 +80,10 @@ class ServerScheduler {
 
     // Parse profiles
     const profilesStr = this._config.restartProfiles || process.env.RESTART_PROFILES || '';
-    this._profiles = profilesStr.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    this._profiles = profilesStr
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
 
     // Load profile settings from config (multi-server) or env
     const preloaded = this._config.restartProfileSettings || {};
@@ -108,7 +114,9 @@ class ServerScheduler {
 
     // Log configuration
     const fmt = (t) => `${String(t.hour).padStart(2, '0')}:${String(t.minute).padStart(2, '0')}`;
-    console.log(`[${this._label}] Scheduled restarts: ${this._restartTimes.map(fmt).join(', ')} (${this._config.botTimezone})`);
+    console.log(
+      `[${this._label}] Scheduled restarts: ${this._restartTimes.map(fmt).join(', ')} (${this._config.botTimezone})`,
+    );
     console.log(`[${this._label}] Countdown: ${delay} minutes before each restart`);
     if (this._profiles.length > 0 && this._profiles[0] !== 'default') {
       console.log(`[${this._label}] Profiles: ${this._profiles.join(' → ')} (cycling)`);
@@ -130,7 +138,9 @@ class ServerScheduler {
     if (this._config.adminChannelId) {
       try {
         this._adminChannel = await this._client.channels.fetch(this._config.adminChannelId);
-      } catch { /* no channel */ }
+      } catch {
+        /* no channel */
+      }
     }
 
     // Check every 30 seconds
@@ -169,7 +179,10 @@ class ServerScheduler {
   _getCurrentTime() {
     const now = new Date();
     const parts = new Intl.DateTimeFormat('en-US', {
-      hour: '2-digit', minute: '2-digit', hour12: false, hourCycle: 'h23',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      hourCycle: 'h23',
       timeZone: this._config.botTimezone,
     }).formatToParts(now);
     const h = parseInt(parts.find((p) => p.type === 'hour')?.value || '0', 10);
@@ -196,7 +209,11 @@ class ServerScheduler {
       // Start countdown when within the delay window
       if (minutesUntil <= delay && minutesUntil >= 0) {
         // Calculate next profile using day-aware rotation
-        const dayOffset = getDayOffset(this._config.botTimezone, this._profiles.length, this._config.restartRotateDaily);
+        const dayOffset = getDayOffset(
+          this._config.botTimezone,
+          this._profiles.length,
+          this._config.restartRotateDaily,
+        );
         const nextSlotIndex = this._restartTimes.indexOf(restartTime);
         const nextProfileIdx = getRotatedProfileIndex(nextSlotIndex, this._profiles.length, dayOffset);
         const nextProfile = this._profiles[nextProfileIdx];
@@ -218,7 +235,7 @@ class ServerScheduler {
     const hasSettings = Object.keys(profileSettings).length > 0;
 
     // Build warning schedule
-    const warnings = WARNINGS.filter(m => m <= delay);
+    const warnings = WARNINGS.filter((m) => m <= delay);
     if (warnings.length === 0 || warnings[0] < delay) {
       warnings.unshift(Math.ceil(delay));
     }
@@ -248,7 +265,7 @@ class ServerScheduler {
       }
 
       this._announce(msg, 0xf39c12);
-      this._rcon.send(`admin ${rconMsg}`).catch(err => {
+      this._rcon.send(`admin ${rconMsg}`).catch((err) => {
         console.error(`[${this._label}] Failed to send in-game warning:`, err.message);
       });
 
@@ -334,7 +351,9 @@ class ServerScheduler {
             originalMode = mode;
             await sftp.chmod(settingsPath, mode | 0o220);
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
 
         // Read, modify, write
         const content = (await sftp.get(settingsPath)).toString('utf8');
@@ -435,7 +454,8 @@ class ServerScheduler {
           const { exec } = require('child_process');
           await new Promise((resolve, reject) => {
             exec(`docker stop ${container} && docker start ${container}`, { timeout: 120000 }, (err) => {
-              if (err) reject(err); else resolve();
+              if (err) reject(err);
+              else resolve();
             });
           });
           console.log(`[${this._label}] Restart via Docker stop+start (${container})`);
@@ -500,12 +520,16 @@ class ServerScheduler {
       try {
         await this._logWatcher.sendToThread(embed);
         return;
-      } catch { /* fall through */ }
+      } catch {
+        /* fall through */
+      }
     }
     if (this._adminChannel) {
       try {
         await this._adminChannel.send({ embeds: [embed] });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -516,7 +540,7 @@ class ServerScheduler {
    */
   _scheduleRconHealthCheck(container) {
     const checkInterval = 10_000; // check every 10s
-    const maxWait = 90_000;       // give up after 90s
+    const maxWait = 90_000; // give up after 90s
     const start = Date.now();
     console.log(`[${this._label}] RCON health check started — will verify within ${maxWait / 1000}s`);
 
@@ -531,7 +555,9 @@ class ServerScheduler {
       // Timed out — RCON never came back
       if (Date.now() - start >= maxWait) {
         clearInterval(timer);
-        console.warn(`[${this._label}] RCON health check FAILED — no connection after ${maxWait / 1000}s, restarting game process`);
+        console.warn(
+          `[${this._label}] RCON health check FAILED — no connection after ${maxWait / 1000}s, restarting game process`,
+        );
 
         // Try Docker first (if configured)
         if (container) {
@@ -541,7 +567,8 @@ class ServerScheduler {
               exec(`docker exec -u linuxgsm ${container} /app/hzserver restart`, { timeout: 120000 }, (err) => {
                 if (err) {
                   exec(`docker stop ${container} && docker start ${container}`, { timeout: 120000 }, (err2) => {
-                    if (err2) reject(err2); else resolve();
+                    if (err2) reject(err2);
+                    else resolve();
                   });
                 } else resolve();
               });
@@ -617,7 +644,7 @@ class ServerScheduler {
     // Wrap around to tomorrow
     if (!nextRestart && this._restartTimes.length > 0) {
       nextRestart = this._restartTimes[0];
-      minutesUntilNext = (1440 - totalMinutes) + nextRestart.totalMinutes;
+      minutesUntilNext = 1440 - totalMinutes + nextRestart.totalMinutes;
     }
 
     // Build today's schedule with rotation
@@ -643,7 +670,7 @@ class ServerScheduler {
     // Enrich schedule slots with display names
     const enrichSlots = (slots) => {
       if (!slots) return null;
-      return slots.map(s => ({
+      return slots.map((s) => ({
         ...s,
         profileDisplayName: profileDisplayNames[s.profileName] || s.profileName,
       }));
@@ -652,8 +679,7 @@ class ServerScheduler {
     return {
       active: this._restartTimes.length > 0,
       currentProfile: this._currentProfileName,
-      currentProfileDisplay: this._currentProfileName
-        ? this._getProfileDisplayName(this._currentProfileName) : null,
+      currentProfileDisplay: this._currentProfileName ? this._getProfileDisplayName(this._currentProfileName) : null,
       nextRestart: nextRestart ? fmt(nextRestart) : null,
       minutesUntilRestart: minutesUntilNext === Infinity ? null : minutesUntilNext,
       restartTimes: timeStrs,

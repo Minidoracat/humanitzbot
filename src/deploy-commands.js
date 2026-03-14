@@ -16,7 +16,7 @@ if (!token || !clientId || !guildId) {
 
 const commands = [];
 const commandsPath = path.join(__dirname, 'commands');
-const commandFiles = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
+const commandFiles = fs.readdirSync(commandsPath).filter((f) => f.endsWith('.js'));
 
 for (const file of commandFiles) {
   const command = require(path.join(commandsPath, file));
@@ -32,10 +32,7 @@ const rest = new REST({ version: '10' }).setToken(token);
   try {
     console.log(`[DEPLOY] Registering ${commands.length} slash commands...`);
 
-    await rest.put(
-      Routes.applicationGuildCommands(clientId, guildId),
-      { body: commands },
-    );
+    await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
 
     console.log('[DEPLOY] Successfully registered all commands!');
   } catch (err) {

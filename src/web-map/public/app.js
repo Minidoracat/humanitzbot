@@ -1,9 +1,9 @@
-/* eslint-env browser */
-/* global L */
-
 // ── Map setup ──────────────────────────────────────────────
 const MAP_SIZE = 4096;
-const mapBounds = [[0, 0], [MAP_SIZE, MAP_SIZE]];
+const mapBounds = [
+  [0, 0],
+  [MAP_SIZE, MAP_SIZE],
+];
 
 const map = L.map('map', {
   crs: L.CRS.Simple,
@@ -14,7 +14,7 @@ const map = L.map('map', {
   attributionControl: false,
 });
 
-const mapImage = L.imageOverlay('terrain.png', mapBounds, { className: 'map-terrain' }).addTo(map);
+const _mapImage = L.imageOverlay('terrain.png', mapBounds, { className: 'map-terrain' }).addTo(map);
 map.fitBounds(mapBounds);
 
 // Adjust map size for flex layout
@@ -25,8 +25,7 @@ const markersGroup = L.layerGroup().addTo(map);
 let playerData = [];
 let showOffline = true;
 let autoRefreshTimer = null;
-let currentServer = 'primary';  // multi-server: currently selected server ID
-
+let currentServer = 'primary'; // multi-server: currently selected server ID
 
 // 3-tier player status: online (green), offline (red), inactive 3+ days (grey)
 const INACTIVE_DAYS = 3;
@@ -42,8 +41,14 @@ function getPlayerStatus(p) {
 
 function createPlayerIcon(status) {
   const styles = {
-    online:   { size: 16, bg: '#3fb950', border: '#238636', shadow: '0 0 10px rgba(63,185,80,0.6)', cls: 'marker-online' },
-    offline:  { size: 12, bg: '#da3633', border: '#b62324', shadow: 'none', cls: 'marker-offline' },
+    online: {
+      size: 16,
+      bg: '#3fb950',
+      border: '#238636',
+      shadow: '0 0 10px rgba(63,185,80,0.6)',
+      cls: 'marker-online',
+    },
+    offline: { size: 12, bg: '#da3633', border: '#b62324', shadow: 'none', cls: 'marker-offline' },
     inactive: { size: 10, bg: '#484f58', border: '#30363d', shadow: 'none', cls: 'marker-inactive' },
   };
   const s = styles[status] || styles.offline;
@@ -100,11 +105,12 @@ function buildPlayerDetail(p) {
   const t = displayToggles;
   const td = (key, vars) => i18next.t(`web:map.player_detail.${key}`, vars);
   const status = getPlayerStatus(p);
-  const statusLabel = status === 'online'
-    ? `<span style="color:#3fb950">● ${i18next.t('web:map.online')}</span>`
-    : status === 'inactive'
-      ? `<span style="color:#484f58">● ${i18next.t('web:map.inactive')}</span>`
-      : `<span style="color:#da3633">● ${i18next.t('web:map.offline')}</span>`;
+  const statusLabel =
+    status === 'online'
+      ? `<span style="color:#3fb950">● ${i18next.t('web:map.online')}</span>`
+      : status === 'inactive'
+        ? `<span style="color:#484f58">● ${i18next.t('web:map.inactive')}</span>`
+        : `<span style="color:#da3633">● ${i18next.t('web:map.offline')}</span>`;
   const lastSeenStr = p.lastSeen ? new Date(p.lastSeen).toLocaleString() : td('unknown');
 
   let html = `<div class="player-popup">`;
@@ -128,10 +134,14 @@ function buildPlayerDetail(p) {
   html += `<span class="label">${td('headshots')}</span><span class="value">${(p.headshots || 0).toLocaleString()}</span>`;
   html += `<span class="label">${td('melee_kills')}</span><span class="value">${(p.meleeKills || 0).toLocaleString()}</span>`;
   html += `<span class="label">${td('gun_kills')}</span><span class="value">${(p.gunKills || 0).toLocaleString()}</span>`;
-  if (p.blastKills) html += `<span class="label">${td('blast_kills')}</span><span class="value">${p.blastKills.toLocaleString()}</span>`;
-  if (p.fistKills) html += `<span class="label">${td('fist_kills')}</span><span class="value">${p.fistKills.toLocaleString()}</span>`;
-  if (p.takedownKills) html += `<span class="label">${td('takedowns')}</span><span class="value">${p.takedownKills.toLocaleString()}</span>`;
-  if (p.vehicleKills) html += `<span class="label">${td('vehicle_kills')}</span><span class="value">${p.vehicleKills.toLocaleString()}</span>`;
+  if (p.blastKills)
+    html += `<span class="label">${td('blast_kills')}</span><span class="value">${p.blastKills.toLocaleString()}</span>`;
+  if (p.fistKills)
+    html += `<span class="label">${td('fist_kills')}</span><span class="value">${p.fistKills.toLocaleString()}</span>`;
+  if (p.takedownKills)
+    html += `<span class="label">${td('takedowns')}</span><span class="value">${p.takedownKills.toLocaleString()}</span>`;
+  if (p.vehicleKills)
+    html += `<span class="label">${td('vehicle_kills')}</span><span class="value">${p.vehicleKills.toLocaleString()}</span>`;
   if (p.hasExtendedStats) {
     html += `<span class="label">${td('lifetime_kills')}</span><span class="value">${(p.lifetimeKills || 0).toLocaleString()}</span>`;
   }
@@ -158,13 +168,13 @@ function buildPlayerDetail(p) {
   // ── Unlocked Professions ──
   if (p.unlockedProfessions && p.unlockedProfessions.length > 1) {
     html += `<div class="section-title">${td('unlocked_professions')}</div>`;
-    html += `<div class="item-list">${p.unlockedProfessions.map(pr => `<div>\u2022 ${pr}</div>`).join('')}</div>`;
+    html += `<div class="item-list">${p.unlockedProfessions.map((pr) => `<div>\u2022 ${pr}</div>`).join('')}</div>`;
   }
 
   // ── Skills ──
   if (p.unlockedSkills && p.unlockedSkills.length > 0) {
     html += `<div class="section-title">${td('skills_count', { count: p.unlockedSkills.length })}</div>`;
-    html += `<div class="item-list">${p.unlockedSkills.map(s => `<div>\u2022 ${simplifyName(s)}</div>`).join('')}</div>`;
+    html += `<div class="item-list">${p.unlockedSkills.map((s) => `<div>\u2022 ${simplifyName(s)}</div>`).join('')}</div>`;
   }
 
   // ── Recipes ──
@@ -173,11 +183,11 @@ function buildPlayerDetail(p) {
     const build = p.buildingRecipes || [];
     if (t.showCraftingRecipes !== false && craft.length > 0) {
       html += `<div class="section-title">${td('crafting_recipes_count', { count: craft.length })}</div>`;
-      html += `<div class="item-list">${craft.map(r => `<div>\u2022 ${simplifyName(r)}</div>`).join('')}</div>`;
+      html += `<div class="item-list">${craft.map((r) => `<div>\u2022 ${simplifyName(r)}</div>`).join('')}</div>`;
     }
     if (t.showBuildingRecipes !== false && build.length > 0) {
       html += `<div class="section-title">${td('building_recipes_count', { count: build.length })}</div>`;
-      html += `<div class="item-list">${build.map(r => `<div>\u2022 ${simplifyName(r)}</div>`).join('')}</div>`;
+      html += `<div class="item-list">${build.map((r) => `<div>\u2022 ${simplifyName(r)}</div>`).join('')}</div>`;
     }
   }
 
@@ -205,59 +215,86 @@ function buildPlayerDetail(p) {
     }
     if (t.showPlayerStates !== false && p.playerStates && p.playerStates.length > 0) {
       html += `<div class="section-title">${td('status_effects_count', { count: p.playerStates.length })}</div>`;
-      html += `<div class="item-list">${p.playerStates.map(s => `<div>\u2022 ${simplifyName(s)}</div>`).join('')}</div>`;
+      html += `<div class="item-list">${p.playerStates.map((s) => `<div>\u2022 ${simplifyName(s)}</div>`).join('')}</div>`;
     }
     if (t.showBodyConditions !== false && p.bodyConditions && p.bodyConditions.length > 0) {
       html += `<div class="section-title">${td('body_conditions_count', { count: p.bodyConditions.length })}</div>`;
-      html += `<div class="item-list">${p.bodyConditions.map(s => `<div>\u2022 ${simplifyName(s)}</div>`).join('')}</div>`;
+      html += `<div class="item-list">${p.bodyConditions.map((s) => `<div>\u2022 ${simplifyName(s)}</div>`).join('')}</div>`;
     }
   }
 
   // ── Equipment ──
   if (t.showInventory !== false && t.showEquipment !== false && p.equipment && p.equipment.length > 0) {
-    const items = p.equipment.filter(i => { const n = typeof i === 'object' ? i.item : i; return n && n !== 'Empty'; });
+    const items = p.equipment.filter((i) => {
+      const n = typeof i === 'object' ? i.item : i;
+      return n && n !== 'Empty';
+    });
     if (items.length > 0) {
       html += `<div class="section-title">${td('equipment')}</div>`;
-      html += `<div class="item-list">${items.map(i => {
-        const name = simplifyName(i);
-        const dur = (typeof i === 'object' && i.durability != null) ? ` <span class="item-dur">(${Math.round(i.durability)}%)</span>` : '';
-        return `<div>\u2022 ${name}${dur}</div>`;
-      }).join('')}</div>`;
+      html += `<div class="item-list">${items
+        .map((i) => {
+          const name = simplifyName(i);
+          const dur =
+            typeof i === 'object' && i.durability != null
+              ? ` <span class="item-dur">(${Math.round(i.durability)}%)</span>`
+              : '';
+          return `<div>\u2022 ${name}${dur}</div>`;
+        })
+        .join('')}</div>`;
     }
   }
 
   // ── Quick Slots ──
   if (t.showInventory !== false && t.showQuickSlots !== false && p.quickSlots && p.quickSlots.length > 0) {
-    const items = p.quickSlots.filter(i => { const n = typeof i === 'object' ? i.item : i; return n && n !== 'Empty'; });
+    const items = p.quickSlots.filter((i) => {
+      const n = typeof i === 'object' ? i.item : i;
+      return n && n !== 'Empty';
+    });
     if (items.length > 0) {
       html += `<div class="section-title">${td('quick_slots')}</div>`;
-      html += `<div class="item-list">${items.map(i => `<div>\u2022 ${simplifyName(i)}</div>`).join('')}</div>`;
+      html += `<div class="item-list">${items.map((i) => `<div>\u2022 ${simplifyName(i)}</div>`).join('')}</div>`;
     }
   }
 
   // ── Pockets (inventory) ──
   if (t.showInventory !== false && t.showPockets !== false && p.inventory && p.inventory.length > 0) {
-    const items = p.inventory.filter(i => { const n = typeof i === 'object' ? i.item : i; return n && n !== 'Empty'; });
+    const items = p.inventory.filter((i) => {
+      const n = typeof i === 'object' ? i.item : i;
+      return n && n !== 'Empty';
+    });
     if (items.length > 0) {
       html += `<div class="section-title">${td('pockets_count', { count: items.length })}</div>`;
-      html += `<div class="item-list">${items.map(i => {
-        const name = simplifyName(i);
-        const dur = (typeof i === 'object' && i.durability != null) ? ` <span class="item-dur">(${Math.round(i.durability)}%)</span>` : '';
-        return `<div>\u2022 ${name}${dur}</div>`;
-      }).join('')}</div>`;
+      html += `<div class="item-list">${items
+        .map((i) => {
+          const name = simplifyName(i);
+          const dur =
+            typeof i === 'object' && i.durability != null
+              ? ` <span class="item-dur">(${Math.round(i.durability)}%)</span>`
+              : '';
+          return `<div>\u2022 ${name}${dur}</div>`;
+        })
+        .join('')}</div>`;
     }
   }
 
   // ── Backpack ──
   if (t.showInventory !== false && t.showBackpack !== false && p.backpackItems && p.backpackItems.length > 0) {
-    const items = p.backpackItems.filter(i => { const n = typeof i === 'object' ? i.item : i; return n && n !== 'Empty'; });
+    const items = p.backpackItems.filter((i) => {
+      const n = typeof i === 'object' ? i.item : i;
+      return n && n !== 'Empty';
+    });
     if (items.length > 0) {
       html += `<div class="section-title">${td('backpack_count', { count: items.length })}</div>`;
-      html += `<div class="item-list">${items.map(i => {
-        const name = simplifyName(i);
-        const dur = (typeof i === 'object' && i.durability != null) ? ` <span class="item-dur">(${Math.round(i.durability)}%)</span>` : '';
-        return `<div>\u2022 ${name}${dur}</div>`;
-      }).join('')}</div>`;
+      html += `<div class="item-list">${items
+        .map((i) => {
+          const name = simplifyName(i);
+          const dur =
+            typeof i === 'object' && i.durability != null
+              ? ` <span class="item-dur">(${Math.round(i.durability)}%)</span>`
+              : '';
+          return `<div>\u2022 ${name}${dur}</div>`;
+        })
+        .join('')}</div>`;
     }
   }
 
@@ -270,13 +307,13 @@ function buildPlayerDetail(p) {
   const uniques = [...(p.uniqueLoots || []), ...(p.craftedUniques || [])];
   if (uniques.length > 0) {
     html += `<div class="section-title">${td('unique_items_count', { count: uniques.length })}</div>`;
-    html += `<div class="item-list">${uniques.map(u => `<div>\u2022 ${simplifyName(u)}</div>`).join('')}</div>`;
+    html += `<div class="item-list">${uniques.map((u) => `<div>\u2022 ${simplifyName(u)}</div>`).join('')}</div>`;
   }
 
   // ── Companions ──
   if (p.companionData && p.companionData.length > 0) {
     html += `<div class="section-title">${td('companions_count', { count: p.companionData.length })}</div>`;
-    html += `<div class="item-list">${p.companionData.map(c => `<div>\u2022 ${simplifyName(c.type || c)}</div>`).join('')}</div>`;
+    html += `<div class="item-list">${p.companionData.map((c) => `<div>\u2022 ${simplifyName(c.type || c)}</div>`).join('')}</div>`;
   }
   if (p.horses && p.horses.length > 0) {
     html += `<div class="section-title">${td('horses_count', { count: p.horses.length })}</div>`;
@@ -310,12 +347,13 @@ function renderPlayerList() {
     const status = getPlayerStatus(p);
     const section = status === 'online' ? 'online' : status === 'offline' ? 'offline' : 'inactive';
     if (section !== lastSection) {
-      const count = sorted.filter(x => getPlayerStatus(x) === status).length;
-      const sectionLabel = section === 'online'
-        ? listT('online_count', { count })
-        : section === 'offline'
-          ? listT('offline_count', { count })
-          : listT('inactive_count', { count });
+      const count = sorted.filter((x) => getPlayerStatus(x) === status).length;
+      const sectionLabel =
+        section === 'online'
+          ? listT('online_count', { count })
+          : section === 'offline'
+            ? listT('offline_count', { count })
+            : listT('inactive_count', { count });
       html += `<div class="player-list-section">${sectionLabel}</div>`;
       lastSection = section;
     }
@@ -332,12 +370,14 @@ function renderPlayerList() {
     html += `<span class="player-extra">${extra}</span>`;
     html += `</div>`;
   }
-  if (!sorted.length) html = `<div style="color:#6e7681;padding:16px 0;text-align:center">${listT('no_players_yet')}</div>`;
+  if (!sorted.length)
+    html = `<div style="color:#6e7681;padding:16px 0;text-align:center">${listT('no_players_yet')}</div>`;
   content.innerHTML = html;
 }
 
+// eslint-disable-next-line no-unused-vars
 function selectPlayer(steamId) {
-  const p = playerData.find(x => x.steamId === steamId);
+  const p = playerData.find((x) => x.steamId === steamId);
   if (!p) return;
   showPlayerDetail(p);
   // Pan map to player if they have a position
@@ -357,9 +397,10 @@ function showPlayerDetail(p) {
   content.scrollTop = 0;
   // Show admin footer
   footer.style.display = 'flex';
-  footer.innerHTML = `<button class="btn-msg" onclick="sendMessage('${p.steamId}','${escapeHtml(p.name)}')">${i18next.t('web:map.actions.message')}</button>`
-    + `<button class="btn-kick" onclick="kickPlayer('${p.steamId}','${escapeHtml(p.name)}')">${i18next.t('web:map.actions.kick')}</button>`
-    + `<button class="btn-ban" onclick="banPlayer('${p.steamId}','${escapeHtml(p.name)}')">${i18next.t('web:map.actions.ban')}</button>`;
+  footer.innerHTML =
+    `<button class="btn-msg" onclick="sendMessage('${p.steamId}','${escapeHtml(p.name)}')">${i18next.t('web:map.actions.message')}</button>` +
+    `<button class="btn-kick" onclick="kickPlayer('${p.steamId}','${escapeHtml(p.name)}')">${i18next.t('web:map.actions.kick')}</button>` +
+    `<button class="btn-ban" onclick="banPlayer('${p.steamId}','${escapeHtml(p.name)}')">${i18next.t('web:map.actions.ban')}</button>`;
 }
 
 function showPlayerPanel(p) {
@@ -371,6 +412,7 @@ function showPlayerList() {
   renderPlayerList();
 }
 
+// eslint-disable-next-line no-unused-vars
 function closePlayerPanel() {
   // Panel is always visible now — go back to list
   showPlayerList();
@@ -405,6 +447,7 @@ async function fetchPlayersQuick() {
 }
 
 // ── Full refresh via SSE (downloads from SFTP with progress) ──
+// eslint-disable-next-line no-unused-vars
 function refreshPlayers() {
   const btn = document.getElementById('btn-refresh');
   const progressEl = document.getElementById('refresh-progress');
@@ -430,7 +473,9 @@ function refreshPlayers() {
     if (finished) return;
     finished = true;
     clearTimeout(safetyTimer);
-    try { es.close(); } catch (_) {}
+    try {
+      es.close();
+    } catch (_) {}
     btn.textContent = i18next.t('web:map.refresh');
     btn.disabled = false;
     progressEl.classList.add('fade-out');
@@ -469,10 +514,12 @@ function refreshPlayers() {
 
   es.onerror = () => {
     // SSE endpoint may not exist — fall back to quick fetch
-    fetchPlayersQuick().catch(() => {}).finally(() => {
-      addStep(i18next.t('web:map.loaded_from_cache'), 'done');
-      finish();
-    });
+    fetchPlayersQuick()
+      .catch(() => {})
+      .finally(() => {
+        addStep(i18next.t('web:map.loaded_from_cache'), 'done');
+        finish();
+      });
   };
 }
 
@@ -489,7 +536,10 @@ function renderMarkers() {
 
     // Skip players without valid map coordinates
     if (!p.hasPosition || p.lat === null || p.lng === null) continue;
-    if (isNaN(p.lat) || isNaN(p.lng)) { console.warn('[map] NaN coords for', p.name); continue; }
+    if (isNaN(p.lat) || isNaN(p.lng)) {
+      console.warn('[map] NaN coords for', p.name);
+      continue;
+    }
     if (!showOffline && status !== 'online') continue;
 
     mappedCount++;
@@ -500,7 +550,8 @@ function renderMarkers() {
     });
 
     // Hover tooltip with name + status
-    const tooltipSuffix = status === 'online' ? ' 🟢' : status === 'inactive' ? ` (${i18next.t('web:map.inactive')})` : '';
+    const tooltipSuffix =
+      status === 'online' ? ' 🟢' : status === 'inactive' ? ` (${i18next.t('web:map.inactive')})` : '';
     marker.bindTooltip(p.name + tooltipSuffix, {
       permanent: false,
       direction: 'top',
@@ -529,6 +580,7 @@ function renderMarkers() {
 }
 
 // ── Admin actions ──────────────────────────────────────────
+// eslint-disable-next-line no-unused-vars
 async function kickPlayer(steamId, name) {
   if (!window.uiConfirm('web:dialog.confirm_kick', { name, steamId })) return;
   try {
@@ -544,6 +596,7 @@ async function kickPlayer(steamId, name) {
   }
 }
 
+// eslint-disable-next-line no-unused-vars
 async function banPlayer(steamId, name) {
   if (!window.uiConfirm('web:dialog.confirm_ban', { name, steamId })) return;
   if (!window.uiConfirm('web:dialog.confirm_ban_double', { name })) return;
@@ -560,6 +613,7 @@ async function banPlayer(steamId, name) {
   }
 }
 
+// eslint-disable-next-line no-unused-vars
 async function sendMessage(steamId, name) {
   const msg = window.uiPrompt('web:dialog.message_prompt', { name });
   if (!msg) return;
@@ -577,12 +631,12 @@ async function sendMessage(steamId, name) {
 }
 
 // ── Zoom controls ──────────────────────────────────────────
-function zoomToFit() {
+function _zoomToFit() {
   map.fitBounds(mapBounds, { padding: [20, 20] });
 }
 
-function focusOnlinePlayers() {
-  const onlinePlayers = playerData.filter(p => p.isOnline && p.hasPosition && p.lat !== null);
+function _focusOnlinePlayers() {
+  const onlinePlayers = playerData.filter((p) => p.isOnline && p.hasPosition && p.lat !== null);
   if (onlinePlayers.length === 0) {
     window.uiAlert('web:dialog.no_players_on_map');
     return;
@@ -590,7 +644,7 @@ function focusOnlinePlayers() {
   if (onlinePlayers.length === 1) {
     map.setView([onlinePlayers[0].lat, onlinePlayers[0].lng], 2);
   } else {
-    const bounds = L.latLngBounds(onlinePlayers.map(p => [p.lat, p.lng]));
+    const bounds = L.latLngBounds(onlinePlayers.map((p) => [p.lat, p.lng]));
     map.fitBounds(bounds.pad(0.3));
   }
 }
@@ -605,7 +659,8 @@ function startAutoRefresh(intervalMs = 60000) {
 const coordDisplay = L.control({ position: 'bottomleft' });
 coordDisplay.onAdd = function () {
   const div = L.DomUtil.create('div', 'coord-display');
-  div.style.cssText = 'background:rgba(13,17,23,0.85);color:#8b949e;padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace;border:1px solid #30363d;';
+  div.style.cssText =
+    'background:rgba(13,17,23,0.85);color:#8b949e;padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace;border:1px solid #30363d;';
   div.innerHTML = i18next.t('web:map.coordinates.move_mouse');
   this._div = div;
   return div;
@@ -635,10 +690,14 @@ map.on('click', function () {
     const badge = document.createElement('span');
     badge.className = 'stat';
     badge.style.cssText = 'display:flex;align-items:center;gap:6px;';
-    const img = data.avatar ? `<img src="${data.avatar}?size=32" style="width:20px;height:20px;border-radius:50%;vertical-align:middle;">` : '';
+    const img = data.avatar
+      ? `<img src="${data.avatar}?size=32" style="width:20px;height:20px;border-radius:50%;vertical-align:middle;">`
+      : '';
     badge.innerHTML = `${img}<span style="color:#c9d1d9">${data.username}</span><a href="/auth/logout" style="color:#6e7681;font-size:11px;text-decoration:none;" title="${i18next.t('web:auth.sign_out')}">✕</a>`;
     bar.appendChild(badge);
-  } catch (_) { /* auth not enabled */ }
+  } catch (_) {
+    /* auth not enabled */
+  }
 })();
 
 // ── Multi-server dropdown ──────────────────────────────────
@@ -666,9 +725,11 @@ map.on('click', function () {
       fetchPlayersQuick();
       showPlayerList();
     });
-  } catch (_) { /* multi-server not available */ }
+  } catch (_) {
+    /* multi-server not available */
+  }
 })();
 
 // ── Init ───────────────────────────────────────────────────
-fetchPlayersQuick().catch(err => console.warn('[MAP] Initial fetch failed:', err));
+fetchPlayersQuick().catch((err) => console.warn('[MAP] Initial fetch failed:', err));
 startAutoRefresh(30000); // quick poll every 30s after that

@@ -38,10 +38,14 @@ class AnticheatIntegration {
   }
 
   /** Whether the private anticheat package is installed. */
-  get available() { return _available; }
+  get available() {
+    return _available;
+  }
 
   /** The engine instance (null if not available). */
-  get engine() { return this._engine; }
+  get engine() {
+    return this._engine;
+  }
 
   /**
    * Start the anticheat engine. No-op if private package is missing.
@@ -53,11 +57,12 @@ class AnticheatIntegration {
     }
 
     try {
-      this._engine = typeof AnticheatEngine === 'function'
-        ? new AnticheatEngine({ db: this._db, config: this._config })
-        : AnticheatEngine.create
-          ? AnticheatEngine.create({ db: this._db, config: this._config })
-          : null;
+      this._engine =
+        typeof AnticheatEngine === 'function'
+          ? new AnticheatEngine({ db: this._db, config: this._config })
+          : AnticheatEngine.create
+            ? AnticheatEngine.create({ db: this._db, config: this._config })
+            : null;
 
       if (!this._engine) {
         console.warn('[ANTICHEAT] Could not instantiate engine — check package version');
@@ -78,8 +83,11 @@ class AnticheatIntegration {
       const baselineInterval = this._config?.anticheatBaselineInterval || 900_000;
       this._baselineTimer = setInterval(() => this._recalibrateBaseline(), baselineInterval);
 
-      console.log('[ANTICHEAT] Engine started — analysis every %ds, baseline every %ds',
-        analyzeInterval / 1000, baselineInterval / 1000);
+      console.log(
+        '[ANTICHEAT] Engine started — analysis every %ds, baseline every %ds',
+        analyzeInterval / 1000,
+        baselineInterval / 1000,
+      );
     } catch (err) {
       console.error('[ANTICHEAT] Failed to start engine:', err.message);
       _available = false;
@@ -144,7 +152,9 @@ class AnticheatIntegration {
     if (!this._db) return;
     try {
       const flags = this._db.getAcFlagsBySteam(steamId, 500);
-      let open = 0, confirmed = 0, dismissed = 0;
+      let open = 0,
+        confirmed = 0,
+        dismissed = 0;
       let lastFlagAt = null;
 
       for (const f of flags) {
@@ -155,7 +165,7 @@ class AnticheatIntegration {
       }
 
       // Risk score: weighted sum of flag severities
-      const SEVERITY_WEIGHT = { info: 0.01, low: 0.05, medium: 0.15, high: 0.35, critical: 0.60 };
+      const SEVERITY_WEIGHT = { info: 0.01, low: 0.05, medium: 0.15, high: 0.35, critical: 0.6 };
       let rawScore = 0;
       for (const f of flags) {
         if (f.status === 'dismissed' || f.status === 'whitelisted') continue;
@@ -230,7 +240,9 @@ class AnticheatIntegration {
     if (this._db) {
       try {
         diag.flagsOpen = this._db.getAcFlags('open', 1000).length;
-      } catch { /* table may not exist yet */ }
+      } catch {
+        /* table may not exist yet */
+      }
     }
     return diag;
   }
@@ -239,8 +251,14 @@ class AnticheatIntegration {
    * Clean shutdown.
    */
   async stop() {
-    if (this._analyzeTimer) { clearInterval(this._analyzeTimer); this._analyzeTimer = null; }
-    if (this._baselineTimer) { clearInterval(this._baselineTimer); this._baselineTimer = null; }
+    if (this._analyzeTimer) {
+      clearInterval(this._analyzeTimer);
+      this._analyzeTimer = null;
+    }
+    if (this._baselineTimer) {
+      clearInterval(this._baselineTimer);
+      this._baselineTimer = null;
+    }
     if (this._engine && typeof this._engine.shutdown === 'function') {
       await this._engine.shutdown();
     }

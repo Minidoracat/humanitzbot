@@ -172,9 +172,7 @@ function _buildPlayerActivity(info, lastPlayers) {
   const { players, maxPlayers } = _extractPlayers(info);
   if (players === null) return null;
 
-  let label = (maxPlayers && maxPlayers > 0)
-    ? `${players}/${maxPlayers} Survivors`
-    : `${players} Survivors Online`;
+  let label = maxPlayers && maxPlayers > 0 ? `${players}/${maxPlayers} Survivors` : `${players} Survivors Online`;
 
   if (lastPlayers !== null && Number.isFinite(lastPlayers) && players !== lastPlayers) {
     const delta = players - lastPlayers;
@@ -231,7 +229,7 @@ function createBotStatusManager(client, opts = {}) {
       };
     }
 
-    if (err && usedCachedInfo && lastInfo && (now - lastInfoAt) <= staleInfoMs) {
+    if (err && usedCachedInfo && lastInfo && now - lastInfoAt <= staleInfoMs) {
       return {
         mode: 'degraded',
         status: 'idle',
@@ -340,7 +338,7 @@ function createBotStatusManager(client, opts = {}) {
     }
 
     const pool = [baseActivity, ...extras, baseActivity];
-    const canRotate = forceRotate || (now - lastRotationAt >= rotationIntervalMs);
+    const canRotate = forceRotate || now - lastRotationAt >= rotationIntervalMs;
 
     if (!canRotate && _hasValue(lastActivityKey)) {
       const reused = pool.find((activity) => _activityKey(activity) === lastActivityKey);
@@ -387,7 +385,7 @@ function createBotStatusManager(client, opts = {}) {
       }
     }
 
-    const effectiveInfo = info || ((now - lastInfoAt) <= staleInfoMs ? lastInfo : null);
+    const effectiveInfo = info || (now - lastInfoAt <= staleInfoMs ? lastInfo : null);
     const usedCachedInfo = !info && !!effectiveInfo;
     const base = _buildBasePresence(effectiveInfo, error, now, usedCachedInfo);
     const features = _buildFeatureActivities();

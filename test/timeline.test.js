@@ -27,9 +27,15 @@ describe('Schema v11 — Timeline tables', () => {
   it('ALL_TABLES includes timeline table definitions', () => {
     const allSql = ALL_TABLES.join('\n');
     const expected = [
-      'timeline_snapshots', 'timeline_players', 'timeline_ai',
-      'timeline_vehicles', 'timeline_structures', 'timeline_houses',
-      'timeline_companions', 'timeline_backpacks', 'death_causes',
+      'timeline_snapshots',
+      'timeline_players',
+      'timeline_ai',
+      'timeline_vehicles',
+      'timeline_structures',
+      'timeline_houses',
+      'timeline_companions',
+      'timeline_backpacks',
+      'death_causes',
     ];
     for (const t of expected) {
       assert.ok(allSql.includes(t), `ALL_TABLES SQL should include ${t}`);
@@ -38,7 +44,7 @@ describe('Schema v11 — Timeline tables', () => {
 
   it('creates all timeline tables in DB', () => {
     const tables = db.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
-    const names = tables.map(t => t.name);
+    const names = tables.map((t) => t.name);
     assert.ok(names.includes('timeline_snapshots'));
     assert.ok(names.includes('timeline_players'));
     assert.ok(names.includes('timeline_ai'));
@@ -52,7 +58,7 @@ describe('Schema v11 — Timeline tables', () => {
 
   it('creates indexes on timeline tables', () => {
     const indexes = db.db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_tl_%'").all();
-    const names = indexes.map(i => i.name);
+    const names = indexes.map((i) => i.name);
     assert.ok(names.includes('idx_tl_snap_created'));
     assert.ok(names.includes('idx_tl_snap_day'));
     assert.ok(names.includes('idx_tl_players_snap'));
@@ -72,42 +78,131 @@ describe('DB — insertTimelineSnapshot + queries', () => {
   it('inserts a timeline snapshot with entities', () => {
     snapId = db.insertTimelineSnapshot({
       snapshot: {
-        gameDay: 42, gameTime: 14.5,
-        playerCount: 2, onlineCount: 1,
-        aiCount: 3, structureCount: 1, vehicleCount: 1,
-        containerCount: 0, worldItemCount: 10,
-        weatherType: 'Rain', season: 'Summer',
-        airdropActive: true, airdropX: 1000, airdropY: 2000, airdropAiAlive: 2,
+        gameDay: 42,
+        gameTime: 14.5,
+        playerCount: 2,
+        onlineCount: 1,
+        aiCount: 3,
+        structureCount: 1,
+        vehicleCount: 1,
+        containerCount: 0,
+        worldItemCount: 10,
+        weatherType: 'Rain',
+        season: 'Summer',
+        airdropActive: true,
+        airdropX: 1000,
+        airdropY: 2000,
+        airdropAiAlive: 2,
         summary: { gameDifficulty: 'hard' },
       },
       players: [
-        { steamId: '76561198000000001', name: 'Alice', online: 1, x: 100, y: 200, z: 50,
-          health: 90, maxHealth: 100, hunger: 70, thirst: 60, infection: 0, stamina: 80,
-          level: 5, zeeksKilled: 42, daysSurvived: 10, lifetimeKills: 100 },
-        { steamId: '76561198000000002', name: 'Bob', online: 0, x: 300, y: 400, z: 55,
-          health: 50, maxHealth: 100, hunger: 40, thirst: 30, infection: 5, stamina: 60,
-          level: 3, zeeksKilled: 20, daysSurvived: 5, lifetimeKills: 50 },
+        {
+          steamId: '76561198000000001',
+          name: 'Alice',
+          online: 1,
+          x: 100,
+          y: 200,
+          z: 50,
+          health: 90,
+          maxHealth: 100,
+          hunger: 70,
+          thirst: 60,
+          infection: 0,
+          stamina: 80,
+          level: 5,
+          zeeksKilled: 42,
+          daysSurvived: 10,
+          lifetimeKills: 100,
+        },
+        {
+          steamId: '76561198000000002',
+          name: 'Bob',
+          online: 0,
+          x: 300,
+          y: 400,
+          z: 55,
+          health: 50,
+          maxHealth: 100,
+          hunger: 40,
+          thirst: 30,
+          infection: 5,
+          stamina: 60,
+          level: 3,
+          zeeksKilled: 20,
+          daysSurvived: 5,
+          lifetimeKills: 50,
+        },
       ],
       ai: [
         { aiType: 'ZombieDefault', category: 'zombie', displayName: 'Zombie', nodeUid: 'n1', x: 500, y: 600, z: 10 },
         { aiType: 'AnimalWold', category: 'animal', displayName: 'Wolf', nodeUid: 'n2', x: 700, y: 800, z: 15 },
-        { aiType: 'BanditPistol', category: 'bandit', displayName: 'Bandit (Pistol)', nodeUid: 'n3', x: 900, y: 100, z: 20 },
+        {
+          aiType: 'BanditPistol',
+          category: 'bandit',
+          displayName: 'Bandit (Pistol)',
+          nodeUid: 'n3',
+          x: 900,
+          y: 100,
+          z: 20,
+        },
       ],
       vehicles: [
-        { class: 'BP_Sedan_C', displayName: 'Sedan', x: 1100, y: 1200, z: 5, health: 800, maxHealth: 1000, fuel: 15.5, itemCount: 3 },
+        {
+          class: 'BP_Sedan_C',
+          displayName: 'Sedan',
+          x: 1100,
+          y: 1200,
+          z: 5,
+          health: 800,
+          maxHealth: 1000,
+          fuel: 15.5,
+          itemCount: 3,
+        },
       ],
       structures: [
-        { actorClass: 'BP_WoodWall_C', displayName: 'Wood Wall', ownerSteamId: '76561198000000001', x: 150, y: 250, z: 50, currentHealth: 200, maxHealth: 500, upgradeLevel: 1 },
+        {
+          actorClass: 'BP_WoodWall_C',
+          displayName: 'Wood Wall',
+          ownerSteamId: '76561198000000001',
+          x: 150,
+          y: 250,
+          z: 50,
+          currentHealth: 200,
+          maxHealth: 500,
+          upgradeLevel: 1,
+        },
       ],
       houses: [
-        { uid: 'house_001', name: 'Ranch House', windowsOpen: 2, windowsTotal: 4, doorsOpen: 1, doorsLocked: 0, doorsTotal: 3, destroyedFurniture: 1, hasGenerator: true, sleepers: 0, clean: 1, x: null, y: null },
+        {
+          uid: 'house_001',
+          name: 'Ranch House',
+          windowsOpen: 2,
+          windowsTotal: 4,
+          doorsOpen: 1,
+          doorsLocked: 0,
+          doorsTotal: 3,
+          destroyedFurniture: 1,
+          hasGenerator: true,
+          sleepers: 0,
+          clean: 1,
+          x: null,
+          y: null,
+        },
       ],
       companions: [
-        { entityType: 'dog', actorName: 'BP_Dog_C', displayName: 'Dog', ownerSteamId: '76561198000000001', x: 110, y: 210, z: 50, health: 80, extra: { stamina: 50 } },
+        {
+          entityType: 'dog',
+          actorName: 'BP_Dog_C',
+          displayName: 'Dog',
+          ownerSteamId: '76561198000000001',
+          x: 110,
+          y: 210,
+          z: 50,
+          health: 80,
+          extra: { stamina: 50 },
+        },
       ],
-      backpacks: [
-        { class: 'BP_Backpack_C', x: 500, y: 500, z: 10, itemCount: 5, items: [{ item: 'Axe', amount: 1 }] },
-      ],
+      backpacks: [{ class: 'BP_Backpack_C', x: 500, y: 500, z: 10, itemCount: 5, items: [{ item: 'Axe', amount: 1 }] }],
     });
 
     assert.ok(typeof snapId === 'number');
@@ -145,7 +240,7 @@ describe('DB — insertTimelineSnapshot + queries', () => {
 
   it('getTimelineSnapshotFull player data is correct', () => {
     const full = db.getTimelineSnapshotFull(snapId);
-    const alice = full.players.find(p => p.name === 'Alice');
+    const alice = full.players.find((p) => p.name === 'Alice');
     assert.ok(alice);
     assert.equal(alice.steam_id, '76561198000000001');
     assert.equal(alice.online, 1);
@@ -158,7 +253,7 @@ describe('DB — insertTimelineSnapshot + queries', () => {
 
   it('getTimelineSnapshotFull AI data is correct', () => {
     const full = db.getTimelineSnapshotFull(snapId);
-    const wolf = full.ai.find(a => a.ai_type === 'AnimalWold');
+    const wolf = full.ai.find((a) => a.ai_type === 'AnimalWold');
     assert.ok(wolf);
     assert.equal(wolf.category, 'animal');
     assert.equal(wolf.display_name, 'Wolf');
@@ -207,7 +302,7 @@ describe('DB — insertTimelineSnapshot + queries', () => {
   });
 
   it('getTimelineSnapshotRange returns snapshots in range', () => {
-    const bounds = db.getTimelineBounds();
+    const _bounds = db.getTimelineBounds();
     const snaps = db.getTimelineSnapshotRange('2000-01-01', '2100-01-01');
     assert.ok(snaps.length >= 1);
   });
@@ -253,7 +348,9 @@ describe('DB — Death causes', () => {
       causeName: 'Runner',
       causeRaw: 'BP_ZombieRunner_C',
       damageTotal: 45.5,
-      x: 100, y: 200, z: 50,
+      x: 100,
+      y: 200,
+      z: 50,
     });
     // Should not throw
   });
@@ -266,7 +363,9 @@ describe('DB — Death causes', () => {
       causeName: 'Alice',
       causeRaw: 'BP_Player_C',
       damageTotal: 80,
-      x: 300, y: 400, z: 55,
+      x: 300,
+      y: 400,
+      z: 55,
     });
   });
 
@@ -294,7 +393,7 @@ describe('DB — Death causes', () => {
   it('getDeathCauseStats returns aggregated stats', () => {
     const stats = db.getDeathCauseStats();
     assert.ok(stats.length >= 2);
-    const zombieStat = stats.find(s => s.cause_type === 'zombie');
+    const zombieStat = stats.find((s) => s.cause_type === 'zombie');
     assert.ok(zombieStat);
     assert.equal(zombieStat.cause_name, 'Runner');
     assert.equal(zombieStat.count, 1);
@@ -333,13 +432,26 @@ describe('SnapshotService', () => {
   it('records a snapshot from save-like data', () => {
     const saveData = {
       players: new Map([
-        ['76561198000000001', {
-          name: 'TestPlayer', steamId: '76561198000000001',
-          x: 150000, y: -200000, z: 100,
-          health: 85, maxHealth: 100, hunger: 60, thirst: 50,
-          infection: 0, stamina: 90, level: 7,
-          zeeksKilled: 55, daysSurvived: 15, lifetimeKills: 120,
-        }],
+        [
+          '76561198000000001',
+          {
+            name: 'TestPlayer',
+            steamId: '76561198000000001',
+            x: 150000,
+            y: -200000,
+            z: 100,
+            health: 85,
+            maxHealth: 100,
+            hunger: 60,
+            thirst: 50,
+            infection: 0,
+            stamina: 90,
+            level: 7,
+            zeeksKilled: 55,
+            daysSurvived: 15,
+            lifetimeKills: 120,
+          },
+        ],
       ]),
       worldState: {
         totalDaysElapsed: 45,
@@ -349,23 +461,72 @@ describe('SnapshotService', () => {
           { type: 'AnimalWold', category: 'animal', x: 170000, y: -180000, z: 55, nodeUid: 'a2' },
         ],
         houses: [
-          { uid: 'h1', name: 'House 1', windowsOpen: 1, windowsTotal: 3, doorsOpen: 0, doorsTotal: 2, doorsLocked: 1, destroyedFurniture: 0, hasGenerator: false },
+          {
+            uid: 'h1',
+            name: 'House 1',
+            windowsOpen: 1,
+            windowsTotal: 3,
+            doorsOpen: 0,
+            doorsTotal: 2,
+            doorsLocked: 1,
+            destroyedFurniture: 0,
+            hasGenerator: false,
+          },
         ],
         droppedBackpacks: [
           { class: 'BP_Backpack_C', x: 155000, y: -195000, z: 80, items: [{ item: 'Axe', amount: 1 }] },
         ],
       },
       vehicles: [
-        { class: 'BP_Van_C', displayName: 'Van', x: 140000, y: -210000, z: 60, health: 500, maxHealth: 1000, fuel: 20, inventory: ['item1', 'item2'] },
+        {
+          class: 'BP_Van_C',
+          displayName: 'Van',
+          x: 140000,
+          y: -210000,
+          z: 60,
+          health: 500,
+          maxHealth: 1000,
+          fuel: 20,
+          inventory: ['item1', 'item2'],
+        },
       ],
       structures: [
-        { actorClass: 'BP_WoodFloor_C', displayName: 'Wood Floor', ownerSteamId: '76561198000000001', x: 152000, y: -198000, z: 100, currentHealth: 300, maxHealth: 500, upgradeLevel: 2 },
+        {
+          actorClass: 'BP_WoodFloor_C',
+          displayName: 'Wood Floor',
+          ownerSteamId: '76561198000000001',
+          x: 152000,
+          y: -198000,
+          z: 100,
+          currentHealth: 300,
+          maxHealth: 500,
+          upgradeLevel: 2,
+        },
       ],
       companions: [
-        { type: 'dog', actorName: 'BP_Dog_C', ownerSteamId: '76561198000000001', x: 151000, y: -199000, z: 100, health: 90, extra: {} },
+        {
+          type: 'dog',
+          actorName: 'BP_Dog_C',
+          ownerSteamId: '76561198000000001',
+          x: 151000,
+          y: -199000,
+          z: 100,
+          health: 90,
+          extra: {},
+        },
       ],
       horses: [
-        { actorName: 'BP_Horse_C', horseName: 'Spirit', ownerSteamId: '76561198000000001', x: 153000, y: -197000, z: 100, health: 100, energy: 80, stamina: 70 },
+        {
+          actorName: 'BP_Horse_C',
+          horseName: 'Spirit',
+          ownerSteamId: '76561198000000001',
+          x: 153000,
+          y: -197000,
+          z: 100,
+          health: 100,
+          energy: 80,
+          stamina: 70,
+        },
       ],
     };
 
@@ -404,19 +565,19 @@ describe('SnapshotService', () => {
 
   it('horse is stored as companion with entity_type=horse', () => {
     const full = serviceDb.getTimelineSnapshotFull(service.lastSnapshotId);
-    const horse = full.companions.find(c => c.entity_type === 'horse');
+    const horse = full.companions.find((c) => c.entity_type === 'horse');
     assert.ok(horse);
     assert.equal(horse.display_name, 'Spirit');
   });
 
   it('AI display names are resolved', () => {
     const full = serviceDb.getTimelineSnapshotFull(service.lastSnapshotId);
-    const zombie = full.ai.find(a => a.ai_type === 'ZombieDefault');
+    const zombie = full.ai.find((a) => a.ai_type === 'ZombieDefault');
     assert.ok(zombie);
     assert.equal(zombie.display_name, 'Zombie');
     assert.equal(zombie.category, 'zombie');
 
-    const wolf = full.ai.find(a => a.ai_type === 'AnimalWold');
+    const wolf = full.ai.find((a) => a.ai_type === 'AnimalWold');
     assert.ok(wolf);
     assert.equal(wolf.display_name, 'Wolf');
     assert.equal(wolf.category, 'animal');
@@ -452,12 +613,12 @@ describe('SnapshotService', () => {
   });
 
   it('resolves seasons from day count', () => {
-    assert.equal(service._resolveSeason({ totalDaysElapsed: 0 }), 'Spring');     // 0-29
+    assert.equal(service._resolveSeason({ totalDaysElapsed: 0 }), 'Spring'); // 0-29
     assert.equal(service._resolveSeason({ totalDaysElapsed: 15 }), 'Spring');
-    assert.equal(service._resolveSeason({ totalDaysElapsed: 30 }), 'Summer');    // 30-59
-    assert.equal(service._resolveSeason({ totalDaysElapsed: 60 }), 'Autumn');    // 60-89
-    assert.equal(service._resolveSeason({ totalDaysElapsed: 90 }), 'Winter');    // 90-119
-    assert.equal(service._resolveSeason({ totalDaysElapsed: 120 }), 'Spring');   // cycles
+    assert.equal(service._resolveSeason({ totalDaysElapsed: 30 }), 'Summer'); // 30-59
+    assert.equal(service._resolveSeason({ totalDaysElapsed: 60 }), 'Autumn'); // 60-89
+    assert.equal(service._resolveSeason({ totalDaysElapsed: 90 }), 'Winter'); // 90-119
+    assert.equal(service._resolveSeason({ totalDaysElapsed: 120 }), 'Spring'); // cycles
   });
 
   it('records multiple snapshots', () => {

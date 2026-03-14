@@ -67,7 +67,7 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setTitle(t('commands:playerstats.embeds.title', locale))
       .setDescription(t('commands:playerstats.embeds.tracked_survivors', locale, { count: allPlayers.length }))
-      .setColor(0x5865F2)
+      .setColor(0x5865f2)
       .setTimestamp();
 
     embed.addFields(
@@ -101,7 +101,11 @@ module.exports = {
 
         if (!stats) {
           await selectInteraction.update({
-            embeds: [new EmbedBuilder().setDescription(t('commands:playerstats.reply.player_not_found', locale)).setColor(0xe74c3c)],
+            embeds: [
+              new EmbedBuilder()
+                .setDescription(t('commands:playerstats.reply.player_not_found', locale))
+                .setColor(0xe74c3c),
+            ],
             components: [row],
           });
           return;

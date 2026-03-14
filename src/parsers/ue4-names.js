@@ -37,23 +37,23 @@ const CONTAINER_ALIASES = [
 // ─── NPC/AI name aliases ──────────────────────────────────────────────────
 // Post-cleanup names from damage sources that generic CamelCase splitting can't fix.
 const NPC_ALIASES = new Map([
-  ['dogzombie',          'Dog Zombie'],
-  ['zombiebear',         'Zombie Bear'],
-  ['kaihuman',           'Bandit'],
-  ['kai human',          'Bandit'],
-  ['kai human melee',    'Bandit'],
-  ['kai human ranged',   'Bandit'],
-  ['bellytoxic',         'Bloater'],
-  ['belly toxic',        'Bloater'],
-  ['runnerbrute',        'Runner Brute'],
-  ['giantbrute',         'Giant Brute'],
-  ['giant brute',        'Giant Brute'],
-  ['militaryarmoured',   'Military Armoured'],
-  ['military armoured',  'Military Armoured'],
-  ['police armor',       'Police Armoured'],
-  ['policearmor',        'Police Armoured'],
-  ['police1',            'Police Zombie'],
-  ['police2',            'Police Zombie'],
+  ['dogzombie', 'Dog Zombie'],
+  ['zombiebear', 'Zombie Bear'],
+  ['kaihuman', 'Bandit'],
+  ['kai human', 'Bandit'],
+  ['kai human melee', 'Bandit'],
+  ['kai human ranged', 'Bandit'],
+  ['bellytoxic', 'Bloater'],
+  ['belly toxic', 'Bloater'],
+  ['runnerbrute', 'Runner Brute'],
+  ['giantbrute', 'Giant Brute'],
+  ['giant brute', 'Giant Brute'],
+  ['militaryarmoured', 'Military Armoured'],
+  ['military armoured', 'Military Armoured'],
+  ['police armor', 'Police Armoured'],
+  ['policearmor', 'Police Armoured'],
+  ['police1', 'Police Zombie'],
+  ['police2', 'Police Zombie'],
 ]);
 
 /**
@@ -169,7 +169,7 @@ function cleanName(raw) {
 // Keys are lowercase for case-insensitive matching.
 const ITEM_ALIASES = new Map([
   // Weapons & ammo
-  ['tacticalmachette', 'Tactical Machete'],   // game data: TacticalMachette (double-t)
+  ['tacticalmachette', 'Tactical Machete'], // game data: TacticalMachette (double-t)
   ['tacticalmachete', 'Tactical Machete'],
   ['22ammo', '.22 Ammo'],
   ['9mmammo', '9mm Ammo'],
@@ -328,7 +328,7 @@ function isHexGuid(str) {
 function cleanItemArray(items) {
   if (!Array.isArray(items)) return [];
   return items
-    .map(item => {
+    .map((item) => {
       if (typeof item === 'string') {
         if (isHexGuid(item)) return null;
         return cleanItemName(item);

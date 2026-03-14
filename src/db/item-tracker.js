@@ -22,7 +22,7 @@
  * @module item-tracker
  */
 
-const { normalizeInventory, generateFingerprint } = require('./item-fingerprint');
+const { normalizeInventory } = require('./item-fingerprint');
 
 /**
  * Full reconciliation pass — compares current save state against DB.
@@ -33,8 +33,13 @@ const { normalizeInventory, generateFingerprint } = require('./item-fingerprint'
  * @returns {{ matched: number, created: number, moved: number, lost: number, groups: { matched: number, created: number, adjusted: number, transferred: number, lost: number } }}
  */
 function reconcileItems(db, snapshot, nameResolver) {
-  const stats = { matched: 0, created: 0, moved: 0, lost: 0,
-    groups: { matched: 0, created: 0, adjusted: 0, transferred: 0, lost: 0 } };
+  const stats = {
+    matched: 0,
+    created: 0,
+    moved: 0,
+    lost: 0,
+    groups: { matched: 0, created: 0, adjusted: 0, transferred: 0, lost: 0 },
+  };
 
   // ── Collect all items from the current snapshot ──
   const currentItems = [];
@@ -50,8 +55,7 @@ function reconcileItems(db, snapshot, nameResolver) {
       ];
       for (const [slotName, items] of slots) {
         if (!items || items.length === 0) continue;
-        _addLocationItems(currentItems, normalizeInventory(items),
-          'player', steamId, slotName, data);
+        _addLocationItems(currentItems, normalizeInventory(items), 'player', steamId, slotName, data);
       }
     }
   }
@@ -60,8 +64,14 @@ function reconcileItems(db, snapshot, nameResolver) {
   if (snapshot.containers) {
     for (const c of snapshot.containers) {
       if (c.items?.length) {
-        _addLocationItems(currentItems, normalizeInventory(c.items),
-          'container', c.actorName || c.name || '', 'items', c);
+        _addLocationItems(
+          currentItems,
+          normalizeInventory(c.items),
+          'container',
+          c.actorName || c.name || '',
+          'items',
+          c,
+        );
       }
     }
   }
@@ -69,11 +79,13 @@ function reconcileItems(db, snapshot, nameResolver) {
   // Vehicles
   if (snapshot.vehicles) {
     for (const v of snapshot.vehicles) {
-      const slots = [['inventory', v.inventory], ['trunk', v.trunkItems]];
+      const slots = [
+        ['inventory', v.inventory],
+        ['trunk', v.trunkItems],
+      ];
       for (const [slotName, items] of slots) {
         if (!items || items.length === 0) continue;
-        _addLocationItems(currentItems, normalizeInventory(items),
-          'vehicle', v.actorName || v.name || '', slotName, v);
+        _addLocationItems(currentItems, normalizeInventory(items), 'vehicle', v.actorName || v.name || '', slotName, v);
       }
     }
   }
@@ -82,8 +94,14 @@ function reconcileItems(db, snapshot, nameResolver) {
   if (snapshot.horses) {
     for (const h of snapshot.horses) {
       if (h.saddleItems?.length) {
-        _addLocationItems(currentItems, normalizeInventory(h.saddleItems),
-          'horse', h.actorName || h.name || '', 'saddle', h);
+        _addLocationItems(
+          currentItems,
+          normalizeInventory(h.saddleItems),
+          'horse',
+          h.actorName || h.name || '',
+          'saddle',
+          h,
+        );
       }
     }
   }
@@ -92,8 +110,14 @@ function reconcileItems(db, snapshot, nameResolver) {
   if (snapshot.structures) {
     for (const s of snapshot.structures) {
       if (s.inventory?.length) {
-        _addLocationItems(currentItems, normalizeInventory(s.inventory),
-          'structure', s.actorName || s.name || '', 'items', s);
+        _addLocationItems(
+          currentItems,
+          normalizeInventory(s.inventory),
+          'structure',
+          s.actorName || s.name || '',
+          'items',
+          s,
+        );
       }
     }
   }
@@ -112,15 +136,20 @@ function reconcileItems(db, snapshot, nameResolver) {
     for (const bp of ws.droppedBackpacks) {
       if (!bp.items?.length) continue;
       const posId = `backpack_${Math.round(bp.x)}_${Math.round(bp.y)}_${Math.round(bp.z)}`;
-      _addLocationItems(currentItems, normalizeInventory(bp.items),
-        'backpack', posId, 'items', bp);
+      _addLocationItems(currentItems, normalizeInventory(bp.items), 'backpack', posId, 'items', bp);
     }
   }
   if (ws.globalContainers) {
     for (const gc of ws.globalContainers) {
       if (!gc.items?.length) continue;
-      _addLocationItems(currentItems, normalizeInventory(gc.items),
-        'global_container', gc.actorName || '', 'items', gc);
+      _addLocationItems(
+        currentItems,
+        normalizeInventory(gc.items),
+        'global_container',
+        gc.actorName || '',
+        'items',
+        gc,
+      );
     }
   }
 
@@ -190,11 +219,12 @@ function _reconcileUniqueItems(db, currentItems, snapshot, nameResolver, stats) 
     const candidates = existingByFP.get(ci.fingerprint);
     if (!candidates) continue;
 
-    const exact = candidates.find(c =>
-      !c._matched &&
-      c.location_type === ci.locationType &&
-      c.location_id === ci.locationId &&
-      c.location_slot === ci.locationSlot
+    const exact = candidates.find(
+      (c) =>
+        !c._matched &&
+        c.location_type === ci.locationType &&
+        c.location_id === ci.locationId &&
+        c.location_slot === ci.locationSlot,
     );
     if (exact) {
       exact._matched = true;
@@ -212,21 +242,28 @@ function _reconcileUniqueItems(db, currentItems, snapshot, nameResolver, stats) 
     const candidates = existingByFP.get(ci.fingerprint);
     if (!candidates) continue;
 
-    const moved = candidates.find(c => !c._matched);
+    const moved = candidates.find((c) => !c._matched);
     if (moved) {
       moved._matched = true;
       ci._matchedInstanceId = moved.id;
       ci._matchType = 'moved';
 
       const attribution = _attributeMovement(ci, moved, snapshot, nameResolver);
-      db.moveItemInstance(moved.id, {
-        locationType: ci.locationType,
-        locationId: ci.locationId,
-        locationSlot: ci.locationSlot,
-        x: ci.x, y: ci.y, z: ci.z,
-        amount: ci.amount,
-        groupId: null,
-      }, attribution, 'move');
+      db.moveItemInstance(
+        moved.id,
+        {
+          locationType: ci.locationType,
+          locationId: ci.locationId,
+          locationSlot: ci.locationSlot,
+          x: ci.x,
+          y: ci.y,
+          z: ci.z,
+          amount: ci.amount,
+          groupId: null,
+        },
+        attribution,
+        'move',
+      );
 
       stats.moved++;
     }
@@ -247,7 +284,9 @@ function _reconcileUniqueItems(db, currentItems, snapshot, nameResolver, stats) 
       locationType: ci.locationType,
       locationId: ci.locationId,
       locationSlot: ci.locationSlot,
-      x: ci.x, y: ci.y, z: ci.z,
+      x: ci.x,
+      y: ci.y,
+      z: ci.z,
       amount: ci.amount,
       groupId: null,
     });
@@ -293,11 +332,12 @@ function _reconcileFungibleGroups(db, currentGroups, snapshot, nameResolver, sta
     const existingList = existingByFP.get(cg.fingerprint) || [];
 
     // Find exact location match
-    const exact = existingList.find(g =>
-      !g._matched &&
-      g.location_type === cg.locationType &&
-      g.location_id === cg.locationId &&
-      g.location_slot === cg.locationSlot
+    const exact = existingList.find(
+      (g) =>
+        !g._matched &&
+        g.location_type === cg.locationType &&
+        g.location_id === cg.locationId &&
+        g.location_slot === cg.locationSlot,
     );
 
     if (exact) {
@@ -320,17 +360,25 @@ function _reconcileFungibleGroups(db, currentGroups, snapshot, nameResolver, sta
         const delta = deltas.get(cg.fingerprint);
         if (newQty > oldQty) {
           delta.increases.push({
-            groupId: exact.id, amount: newQty - oldQty,
-            locationType: cg.locationType, locationId: cg.locationId,
+            groupId: exact.id,
+            amount: newQty - oldQty,
+            locationType: cg.locationType,
+            locationId: cg.locationId,
             locationSlot: cg.locationSlot,
-            x: cg.x, y: cg.y, z: cg.z,
+            x: cg.x,
+            y: cg.y,
+            z: cg.z,
           });
         } else {
           delta.decreases.push({
-            groupId: exact.id, amount: oldQty - newQty,
-            locationType: cg.locationType, locationId: cg.locationId,
+            groupId: exact.id,
+            amount: oldQty - newQty,
+            locationType: cg.locationType,
+            locationId: cg.locationId,
             locationSlot: cg.locationSlot,
-            x: cg.x, y: cg.y, z: cg.z,
+            x: cg.x,
+            y: cg.y,
+            z: cg.z,
           });
         }
       }
@@ -347,7 +395,9 @@ function _reconcileFungibleGroups(db, currentGroups, snapshot, nameResolver, sta
         locationType: cg.locationType,
         locationId: cg.locationId,
         locationSlot: cg.locationSlot,
-        x: cg.x, y: cg.y, z: cg.z,
+        x: cg.x,
+        y: cg.y,
+        z: cg.z,
         quantity: cg.quantity,
         stackSize: rep.amount || 1,
       });
@@ -357,10 +407,14 @@ function _reconcileFungibleGroups(db, currentGroups, snapshot, nameResolver, sta
       // Track as increase for transfer cross-referencing
       if (!deltas.has(cg.fingerprint)) deltas.set(cg.fingerprint, { increases: [], decreases: [] });
       deltas.get(cg.fingerprint).increases.push({
-        groupId: id, amount: cg.quantity,
-        locationType: cg.locationType, locationId: cg.locationId,
+        groupId: id,
+        amount: cg.quantity,
+        locationType: cg.locationType,
+        locationId: cg.locationId,
         locationSlot: cg.locationSlot,
-        x: cg.x, y: cg.y, z: cg.z,
+        x: cg.x,
+        y: cg.y,
+        z: cg.z,
       });
     }
   }
@@ -374,10 +428,14 @@ function _reconcileFungibleGroups(db, currentGroups, snapshot, nameResolver, sta
 
         if (!deltas.has(fp)) deltas.set(fp, { increases: [], decreases: [] });
         deltas.get(fp).decreases.push({
-          groupId: g.id, amount: g.quantity,
-          locationType: g.location_type, locationId: g.location_id,
+          groupId: g.id,
+          amount: g.quantity,
+          locationType: g.location_type,
+          locationId: g.location_id,
           locationSlot: g.location_slot,
-          x: g.pos_x, y: g.pos_y, z: g.pos_z,
+          x: g.pos_x,
+          y: g.pos_y,
+          z: g.pos_z,
         });
       }
     }
@@ -402,7 +460,13 @@ function _reconcileFungibleGroups(db, currentGroups, snapshot, nameResolver, sta
         inc.amount -= transferred;
 
         // Determine who moved it
-        const fakeCurrentItem = { locationType: inc.locationType, locationId: inc.locationId, x: inc.x, y: inc.y, z: inc.z };
+        const fakeCurrentItem = {
+          locationType: inc.locationType,
+          locationId: inc.locationId,
+          x: inc.x,
+          y: inc.y,
+          z: inc.z,
+        };
         const fakeOldInstance = { location_type: dec.locationType, location_id: dec.locationId };
         const attribution = _attributeMovement(fakeCurrentItem, fakeOldInstance, snapshot, nameResolver);
 
@@ -473,8 +537,8 @@ function _attributeMovement(currentItem, oldInstance, snapshot, nameResolver) {
 
     for (const [steamId, data] of snapshot.players) {
       if (data.x == null) continue;
-      const dx = (currentItem.x - (data.x || 0));
-      const dy = (currentItem.y - (data.y || 0));
+      const dx = currentItem.x - (data.x || 0);
+      const dy = currentItem.y - (data.y || 0);
       const distSq = dx * dx + dy * dy;
       if (distSq < bestDistSq) {
         bestDistSq = distSq;

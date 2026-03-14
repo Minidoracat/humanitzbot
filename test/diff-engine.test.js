@@ -67,11 +67,7 @@ describe('_normalizeItems', () => {
   });
 
   it('filters out null entries and entries without item field', () => {
-    const items = [
-      null,
-      { amount: 5 },
-      { item: 'Bandage', amount: 3 },
-    ];
+    const items = [null, { amount: 5 }, { item: 'Bandage', amount: 3 }];
     const result = _normalizeItems(items);
     assert.equal(result.length, 1);
     assert.equal(result[0].item, 'Bandage');
@@ -123,7 +119,10 @@ describe('_diffItemLists', () => {
 
   it('detects new item added', () => {
     const old = [{ item: 'Axe', amount: 1 }];
-    const now = [{ item: 'Axe', amount: 1 }, { item: 'Bandage', amount: 3 }];
+    const now = [
+      { item: 'Axe', amount: 1 },
+      { item: 'Bandage', amount: 3 },
+    ];
     const { added, removed } = _diffItemLists(old, now);
     assert.equal(added.length, 1);
     assert.equal(added[0].item, 'Bandage');
@@ -132,7 +131,10 @@ describe('_diffItemLists', () => {
   });
 
   it('detects item removed', () => {
-    const old = [{ item: 'Axe', amount: 1 }, { item: 'Sword', amount: 1 }];
+    const old = [
+      { item: 'Axe', amount: 1 },
+      { item: 'Sword', amount: 1 },
+    ];
     const now = [{ item: 'Axe', amount: 1 }];
     const { added, removed } = _diffItemLists(old, now);
     assert.equal(added.length, 0);
@@ -161,7 +163,10 @@ describe('_diffItemLists', () => {
   });
 
   it('handles empty old list (all items new)', () => {
-    const now = [{ item: 'Gun', amount: 1 }, { item: 'Ammo', amount: 30 }];
+    const now = [
+      { item: 'Gun', amount: 1 },
+      { item: 'Ammo', amount: 30 },
+    ];
     const { added, removed } = _diffItemLists([], now);
     assert.equal(added.length, 2);
     assert.equal(removed.length, 0);
@@ -181,9 +186,7 @@ describe('_diffItemLists', () => {
       { item: 'Nail', amount: 10 },
       { item: 'Nail', amount: 5 },
     ];
-    const now = [
-      { item: 'Nail', amount: 20 },
-    ];
+    const now = [{ item: 'Nail', amount: 20 }];
     const { added, removed } = _diffItemLists(old, now);
     // Old total = 15, new total = 20, so added 5
     assert.equal(added.length, 1);
@@ -194,7 +197,7 @@ describe('_diffItemLists', () => {
   it('defaults missing amount to 1', () => {
     const old = [{ item: 'Axe' }]; // no amount field
     const now = [{ item: 'Axe' }, { item: 'Axe' }];
-    const { added, removed } = _diffItemLists(old, now);
+    const { added, removed: _removed } = _diffItemLists(old, now);
     // Old = 1, New = 2
     assert.equal(added.length, 1);
     assert.equal(added[0].amount, 1);
@@ -266,11 +269,19 @@ describe('diffContainers', () => {
     const now = [{ actorName: 'Box1', items: [], locked: true }];
     const events = diffContainers(old, now);
     // No container_locked event — only items matter for new containers
-    assert.ok(!events.some(e => e.type === 'container_locked'));
+    assert.ok(!events.some((e) => e.type === 'container_locked'));
   });
 
   it('detects container destroyed (disappeared with items)', () => {
-    const old = [{ actorName: 'Box1', items: [{ item: 'Axe', amount: 1 }, { item: 'Sword', amount: 1 }] }];
+    const old = [
+      {
+        actorName: 'Box1',
+        items: [
+          { item: 'Axe', amount: 1 },
+          { item: 'Sword', amount: 1 },
+        ],
+      },
+    ];
     const now = [];
     const events = diffContainers(old, now);
     assert.equal(events.length, 1);
@@ -311,7 +322,7 @@ describe('diffContainers', () => {
     ];
     const now = [
       { actorName: 'Box1', items: [{ item: 'Nail', amount: 10 }] }, // unchanged
-      { actorName: 'Box2', items: [{ item: 'Rope', amount: 3 }] },  // lost 2
+      { actorName: 'Box2', items: [{ item: 'Rope', amount: 3 }] }, // lost 2
     ];
     const events = diffContainers(old, now);
     assert.equal(events.length, 1);
@@ -387,7 +398,7 @@ describe('diffHorses', () => {
     const events = diffHorses(old, now);
     // old key: Horse_A::111, new key: Horse_A::222 — different keys
     assert.equal(events.length, 2);
-    const types = events.map(e => e.type).sort();
+    const types = events.map((e) => e.type).sort();
     assert.deepEqual(types, ['horse_appeared', 'horse_disappeared']);
   });
 
@@ -430,25 +441,47 @@ describe('diffHorses', () => {
 describe('diffPlayerInventories', () => {
   it('skips new players (not in old)', () => {
     const old = new Map();
-    const now = new Map([['steam1', {
-      name: 'Player1',
-      inventory: [{ item: 'Axe', amount: 1 }],
-    }]]);
+    const now = new Map([
+      [
+        'steam1',
+        {
+          name: 'Player1',
+          inventory: [{ item: 'Axe', amount: 1 }],
+        },
+      ],
+    ]);
     const events = diffPlayerInventories(old, now);
     assert.equal(events.length, 0);
   });
 
   it('detects item added to inventory', () => {
-    const old = new Map([['steam1', {
-      name: 'Player1',
-      inventory: [{ item: 'Axe', amount: 1 }],
-      equipment: [], quick_slots: [], backpack_items: [],
-    }]]);
-    const now = new Map([['steam1', {
-      name: 'Player1',
-      inventory: [{ item: 'Axe', amount: 1 }, { item: 'Bandage', amount: 3 }],
-      equipment: [], quickSlots: [], backpackItems: [],
-    }]]);
+    const old = new Map([
+      [
+        'steam1',
+        {
+          name: 'Player1',
+          inventory: [{ item: 'Axe', amount: 1 }],
+          equipment: [],
+          quick_slots: [],
+          backpack_items: [],
+        },
+      ],
+    ]);
+    const now = new Map([
+      [
+        'steam1',
+        {
+          name: 'Player1',
+          inventory: [
+            { item: 'Axe', amount: 1 },
+            { item: 'Bandage', amount: 3 },
+          ],
+          equipment: [],
+          quickSlots: [],
+          backpackItems: [],
+        },
+      ],
+    ]);
     const events = diffPlayerInventories(old, now);
     assert.equal(events.length, 1);
     assert.equal(events[0].type, 'inventory_item_added');
@@ -460,16 +493,30 @@ describe('diffPlayerInventories', () => {
   });
 
   it('detects item removed from equipment', () => {
-    const old = new Map([['steam1', {
-      name: 'Player1',
-      inventory: [], equipment: [{ item: 'Helmet', amount: 1 }],
-      quick_slots: [], backpack_items: [],
-    }]]);
-    const now = new Map([['steam1', {
-      name: 'Player1',
-      inventory: [], equipment: [],
-      quickSlots: [], backpackItems: [],
-    }]]);
+    const old = new Map([
+      [
+        'steam1',
+        {
+          name: 'Player1',
+          inventory: [],
+          equipment: [{ item: 'Helmet', amount: 1 }],
+          quick_slots: [],
+          backpack_items: [],
+        },
+      ],
+    ]);
+    const now = new Map([
+      [
+        'steam1',
+        {
+          name: 'Player1',
+          inventory: [],
+          equipment: [],
+          quickSlots: [],
+          backpackItems: [],
+        },
+      ],
+    ]);
     const events = diffPlayerInventories(old, now);
     assert.equal(events.length, 1);
     assert.equal(events[0].type, 'inventory_item_removed');
@@ -478,19 +525,34 @@ describe('diffPlayerInventories', () => {
   });
 
   it('detects changes in quick_slots and backpack', () => {
-    const old = new Map([['steam1', {
-      inventory: [], equipment: [],
-      quick_slots: [{ item: 'Medkit', amount: 1 }],
-      backpack_items: [{ item: 'Rope', amount: 5 }],
-    }]]);
-    const now = new Map([['steam1', {
-      inventory: [], equipment: [],
-      quickSlots: [{ item: 'Medkit', amount: 1 }, { item: 'Grenade', amount: 2 }],
-      backpackItems: [],
-    }]]);
+    const old = new Map([
+      [
+        'steam1',
+        {
+          inventory: [],
+          equipment: [],
+          quick_slots: [{ item: 'Medkit', amount: 1 }],
+          backpack_items: [{ item: 'Rope', amount: 5 }],
+        },
+      ],
+    ]);
+    const now = new Map([
+      [
+        'steam1',
+        {
+          inventory: [],
+          equipment: [],
+          quickSlots: [
+            { item: 'Medkit', amount: 1 },
+            { item: 'Grenade', amount: 2 },
+          ],
+          backpackItems: [],
+        },
+      ],
+    ]);
     const events = diffPlayerInventories(old, now);
-    const qsAdd = events.find(e => e.details.slot === 'quick_slots' && e.type === 'inventory_item_added');
-    const bpRem = events.find(e => e.details.slot === 'backpack' && e.type === 'inventory_item_removed');
+    const qsAdd = events.find((e) => e.details.slot === 'quick_slots' && e.type === 'inventory_item_added');
+    const bpRem = events.find((e) => e.details.slot === 'backpack' && e.type === 'inventory_item_removed');
     assert.ok(qsAdd);
     assert.equal(qsAdd.item, 'Grenade');
     assert.ok(bpRem);
@@ -499,21 +561,32 @@ describe('diffPlayerInventories', () => {
 
   it('uses nameResolver when provided', () => {
     const old = new Map([['steam1', { inventory: [], equipment: [], quick_slots: [], backpack_items: [] }]]);
-    const now = new Map([['steam1', { inventory: [{ item: 'Axe', amount: 1 }], equipment: [], quickSlots: [], backpackItems: [] }]]);
-    const resolver = (id) => id === 'steam1' ? 'Bob' : id;
+    const now = new Map([
+      ['steam1', { inventory: [{ item: 'Axe', amount: 1 }], equipment: [], quickSlots: [], backpackItems: [] }],
+    ]);
+    const resolver = (id) => (id === 'steam1' ? 'Bob' : id);
     const events = diffPlayerInventories(old, now, resolver);
     assert.equal(events[0].actorName, 'Bob');
   });
 
   it('falls back to player name when no resolver', () => {
-    const old = new Map([['steam1', { name: 'Alice', inventory: [], equipment: [], quick_slots: [], backpack_items: [] }]]);
-    const now = new Map([['steam1', { name: 'Alice', inventory: [{ item: 'Axe', amount: 1 }], equipment: [], quickSlots: [], backpackItems: [] }]]);
+    const old = new Map([
+      ['steam1', { name: 'Alice', inventory: [], equipment: [], quick_slots: [], backpack_items: [] }],
+    ]);
+    const now = new Map([
+      [
+        'steam1',
+        { name: 'Alice', inventory: [{ item: 'Axe', amount: 1 }], equipment: [], quickSlots: [], backpackItems: [] },
+      ],
+    ]);
     const events = diffPlayerInventories(old, now);
     assert.equal(events[0].actorName, 'Alice');
   });
 
   it('accepts object instead of Map for old players', () => {
-    const old = { steam1: { inventory: [{ item: 'Axe', amount: 1 }], equipment: [], quick_slots: [], backpack_items: [] } };
+    const old = {
+      steam1: { inventory: [{ item: 'Axe', amount: 1 }], equipment: [], quick_slots: [], backpack_items: [] },
+    };
     const now = new Map([['steam1', { inventory: [], equipment: [], quickSlots: [], backpackItems: [] }]]);
     const events = diffPlayerInventories(old, now);
     assert.equal(events.length, 1);
@@ -522,7 +595,15 @@ describe('diffPlayerInventories', () => {
   });
 
   it('accepts array with steam_id for old players', () => {
-    const old = [{ steam_id: 'steam1', inventory: [{ item: 'Axe', amount: 1 }], equipment: [], quick_slots: [], backpack_items: [] }];
+    const old = [
+      {
+        steam_id: 'steam1',
+        inventory: [{ item: 'Axe', amount: 1 }],
+        equipment: [],
+        quick_slots: [],
+        backpack_items: [],
+      },
+    ];
     const now = new Map([['steam1', { inventory: [], equipment: [], quickSlots: [], backpackItems: [] }]]);
     const events = diffPlayerInventories(old, now);
     assert.equal(events.length, 1);
@@ -530,14 +611,31 @@ describe('diffPlayerInventories', () => {
   });
 
   it('handles DB JSON strings for inventory fields', () => {
-    const old = new Map([['steam1', {
-      inventory: JSON.stringify([{ item: 'Axe', amount: 1 }]),
-      equipment: '[]', quick_slots: '[]', backpack_items: '[]',
-    }]]);
-    const now = new Map([['steam1', {
-      inventory: [{ item: 'Axe', amount: 1 }, { item: 'Sword', amount: 1 }],
-      equipment: [], quickSlots: [], backpackItems: [],
-    }]]);
+    const old = new Map([
+      [
+        'steam1',
+        {
+          inventory: JSON.stringify([{ item: 'Axe', amount: 1 }]),
+          equipment: '[]',
+          quick_slots: '[]',
+          backpack_items: '[]',
+        },
+      ],
+    ]);
+    const now = new Map([
+      [
+        'steam1',
+        {
+          inventory: [
+            { item: 'Axe', amount: 1 },
+            { item: 'Sword', amount: 1 },
+          ],
+          equipment: [],
+          quickSlots: [],
+          backpackItems: [],
+        },
+      ],
+    ]);
     const events = diffPlayerInventories(old, now);
     assert.equal(events.length, 1);
     assert.equal(events[0].item, 'Sword');
@@ -645,7 +743,7 @@ describe('diffWorldState', () => {
     const now = { dedi_days_passed: '11', current_season: 'Autumn', airdrop: 'Crate' };
     const events = diffWorldState(old, now);
     assert.equal(events.length, 3);
-    const types = events.map(e => e.type).sort();
+    const types = events.map((e) => e.type).sort();
     assert.deepEqual(types, ['airdrop_spawned', 'world_day_advanced', 'world_season_changed']);
   });
 });
@@ -696,7 +794,7 @@ describe('diffVehicleInventories', () => {
     ];
     const now = [
       { class: 'Truck', inventory: [{ item: 'Fuel', amount: 10 }] }, // unchanged
-      { class: 'Truck', inventory: [] },                              // items removed
+      { class: 'Truck', inventory: [] }, // items removed
     ];
     const events = diffVehicleInventories(old, now);
     assert.equal(events.length, 1);
@@ -740,13 +838,15 @@ describe('diffSaveState', () => {
     const now = {
       containers: [{ actorName: 'Box1', items: [{ item: 'Rope', amount: 1 }] }],
       horses: [{ class: 'Horse_A', owner_steam_id: '1', health: 100 }],
-      players: new Map([['s1', { inventory: [{ item: 'Axe', amount: 1 }], equipment: [], quickSlots: [], backpackItems: [] }]]),
+      players: new Map([
+        ['s1', { inventory: [{ item: 'Axe', amount: 1 }], equipment: [], quickSlots: [], backpackItems: [] }],
+      ]),
       worldState: { dedi_days_passed: '11' },
       vehicles: [{ class: 'Car', inventory: [{ item: 'Fuel', amount: 3 }] }],
     };
     const events = diffSaveState(old, now);
 
-    const categories = new Set(events.map(e => e.category));
+    const categories = new Set(events.map((e) => e.category));
     assert.ok(categories.has('container'));
     assert.ok(categories.has('horse'));
     assert.ok(categories.has('inventory'));
@@ -757,16 +857,22 @@ describe('diffSaveState', () => {
 
   it('passes nameResolver to player inventory diff', () => {
     const old = {
-      containers: [], horses: [],
+      containers: [],
+      horses: [],
       players: new Map([['s1', { inventory: [], equipment: [], quick_slots: [], backpack_items: [] }]]),
-      worldState: {}, vehicles: [],
+      worldState: {},
+      vehicles: [],
     };
     const now = {
-      containers: [], horses: [],
-      players: new Map([['s1', { inventory: [{ item: 'Axe', amount: 1 }], equipment: [], quickSlots: [], backpackItems: [] }]]),
-      worldState: {}, vehicles: [],
+      containers: [],
+      horses: [],
+      players: new Map([
+        ['s1', { inventory: [{ item: 'Axe', amount: 1 }], equipment: [], quickSlots: [], backpackItems: [] }],
+      ]),
+      worldState: {},
+      vehicles: [],
     };
-    const resolver = (id) => 'TestPlayer';
+    const resolver = (_id) => 'TestPlayer';
     const events = diffSaveState(old, now, resolver);
     assert.equal(events[0].actorName, 'TestPlayer');
   });
@@ -807,10 +913,26 @@ const { _crossReferenceContainerAccess } = require('../src/db/diff-engine');
 describe('_crossReferenceContainerAccess', () => {
   it('attributes container removal to player who gained the same item', () => {
     const events = [
-      { type: 'container_item_removed', category: 'container', actor: 'Box1', actorName: 'Box1',
-        item: 'Axe', amount: 1, x: 1000, y: 2000 },
-      { type: 'inventory_item_added', category: 'inventory', actor: 'STEAM_001', actorName: 'Alice',
-        item: 'Axe', amount: 1, x: 1100, y: 2100 },
+      {
+        type: 'container_item_removed',
+        category: 'container',
+        actor: 'Box1',
+        actorName: 'Box1',
+        item: 'Axe',
+        amount: 1,
+        x: 1000,
+        y: 2000,
+      },
+      {
+        type: 'inventory_item_added',
+        category: 'inventory',
+        actor: 'STEAM_001',
+        actorName: 'Alice',
+        item: 'Axe',
+        amount: 1,
+        x: 1100,
+        y: 2100,
+      },
     ];
     _crossReferenceContainerAccess(events);
     assert.equal(events[0].attributedPlayer, 'Alice');
@@ -819,10 +941,26 @@ describe('_crossReferenceContainerAccess', () => {
 
   it('attributes container addition to player who lost the same item', () => {
     const events = [
-      { type: 'container_item_added', category: 'container', actor: 'Box1', actorName: 'Box1',
-        item: 'Bandage', amount: 3, x: 1000, y: 2000 },
-      { type: 'inventory_item_removed', category: 'inventory', actor: 'STEAM_002', actorName: 'Bob',
-        item: 'Bandage', amount: 3, x: 1050, y: 2050 },
+      {
+        type: 'container_item_added',
+        category: 'container',
+        actor: 'Box1',
+        actorName: 'Box1',
+        item: 'Bandage',
+        amount: 3,
+        x: 1000,
+        y: 2000,
+      },
+      {
+        type: 'inventory_item_removed',
+        category: 'inventory',
+        actor: 'STEAM_002',
+        actorName: 'Bob',
+        item: 'Bandage',
+        amount: 3,
+        x: 1050,
+        y: 2050,
+      },
     ];
     _crossReferenceContainerAccess(events);
     assert.equal(events[0].attributedPlayer, 'Bob');
@@ -831,10 +969,26 @@ describe('_crossReferenceContainerAccess', () => {
 
   it('does not attribute when player is too far from container', () => {
     const events = [
-      { type: 'container_item_removed', category: 'container', actor: 'Box1', actorName: 'Box1',
-        item: 'Axe', amount: 1, x: 1000, y: 2000 },
-      { type: 'inventory_item_added', category: 'inventory', actor: 'STEAM_001', actorName: 'Alice',
-        item: 'Axe', amount: 1, x: 100000, y: 200000 },
+      {
+        type: 'container_item_removed',
+        category: 'container',
+        actor: 'Box1',
+        actorName: 'Box1',
+        item: 'Axe',
+        amount: 1,
+        x: 1000,
+        y: 2000,
+      },
+      {
+        type: 'inventory_item_added',
+        category: 'inventory',
+        actor: 'STEAM_001',
+        actorName: 'Alice',
+        item: 'Axe',
+        amount: 1,
+        x: 100000,
+        y: 200000,
+      },
     ];
     _crossReferenceContainerAccess(events);
     assert.equal(events[0].attributedPlayer, undefined);
@@ -842,12 +996,36 @@ describe('_crossReferenceContainerAccess', () => {
 
   it('picks the player with the best item match when multiple nearby', () => {
     const events = [
-      { type: 'container_item_removed', category: 'container', actor: 'Box1', actorName: 'Box1',
-        item: 'Nail', amount: 10, x: 1000, y: 2000 },
-      { type: 'inventory_item_added', category: 'inventory', actor: 'STEAM_001', actorName: 'Alice',
-        item: 'Nail', amount: 3, x: 1100, y: 2100 },
-      { type: 'inventory_item_added', category: 'inventory', actor: 'STEAM_002', actorName: 'Bob',
-        item: 'Nail', amount: 8, x: 1200, y: 2200 },
+      {
+        type: 'container_item_removed',
+        category: 'container',
+        actor: 'Box1',
+        actorName: 'Box1',
+        item: 'Nail',
+        amount: 10,
+        x: 1000,
+        y: 2000,
+      },
+      {
+        type: 'inventory_item_added',
+        category: 'inventory',
+        actor: 'STEAM_001',
+        actorName: 'Alice',
+        item: 'Nail',
+        amount: 3,
+        x: 1100,
+        y: 2100,
+      },
+      {
+        type: 'inventory_item_added',
+        category: 'inventory',
+        actor: 'STEAM_002',
+        actorName: 'Bob',
+        item: 'Nail',
+        amount: 8,
+        x: 1200,
+        y: 2200,
+      },
     ];
     _crossReferenceContainerAccess(events);
     // Bob gained 8 nails vs Alice's 3 — Bob is the better match (min(8,10) > min(3,10))
@@ -856,8 +1034,16 @@ describe('_crossReferenceContainerAccess', () => {
 
   it('does not crash with no inventory events', () => {
     const events = [
-      { type: 'container_item_removed', category: 'container', actor: 'Box1', actorName: 'Box1',
-        item: 'Axe', amount: 1, x: 0, y: 0 },
+      {
+        type: 'container_item_removed',
+        category: 'container',
+        actor: 'Box1',
+        actorName: 'Box1',
+        item: 'Axe',
+        amount: 1,
+        x: 0,
+        y: 0,
+      },
     ];
     _crossReferenceContainerAccess(events);
     assert.equal(events[0].attributedPlayer, undefined);
@@ -865,8 +1051,16 @@ describe('_crossReferenceContainerAccess', () => {
 
   it('does not crash with no container events', () => {
     const events = [
-      { type: 'inventory_item_added', category: 'inventory', actor: 'STEAM_001', actorName: 'Alice',
-        item: 'Axe', amount: 1, x: 0, y: 0 },
+      {
+        type: 'inventory_item_added',
+        category: 'inventory',
+        actor: 'STEAM_001',
+        actorName: 'Alice',
+        item: 'Axe',
+        amount: 1,
+        x: 0,
+        y: 0,
+      },
     ];
     _crossReferenceContainerAccess(events);
     // No container events to attribute — should not throw
@@ -875,10 +1069,26 @@ describe('_crossReferenceContainerAccess', () => {
 
   it('handles events with no coordinates (skips distance check)', () => {
     const events = [
-      { type: 'container_item_removed', category: 'container', actor: 'Box1', actorName: 'Box1',
-        item: 'Rope', amount: 2, x: null, y: null },
-      { type: 'inventory_item_added', category: 'inventory', actor: 'STEAM_001', actorName: 'Alice',
-        item: 'Rope', amount: 2, x: null, y: null },
+      {
+        type: 'container_item_removed',
+        category: 'container',
+        actor: 'Box1',
+        actorName: 'Box1',
+        item: 'Rope',
+        amount: 2,
+        x: null,
+        y: null,
+      },
+      {
+        type: 'inventory_item_added',
+        category: 'inventory',
+        actor: 'STEAM_001',
+        actorName: 'Alice',
+        item: 'Rope',
+        amount: 2,
+        x: null,
+        y: null,
+      },
     ];
     _crossReferenceContainerAccess(events);
     // No coords — position check is skipped, item match still works
@@ -889,22 +1099,51 @@ describe('_crossReferenceContainerAccess', () => {
     const old = {
       containers: [{ actorName: 'Crate', items: [{ item: 'Food', amount: 5 }], pos_x: 100, pos_y: 200, pos_z: 0 }],
       horses: [],
-      players: new Map([['76561100000', { name: 'TestPlayer', x: 120, y: 220, z: 0,
-        inventory: [{ item: 'Knife', amount: 1 }], equipment: [], quick_slots: [], backpack_items: [] }]]),
+      players: new Map([
+        [
+          '76561100000',
+          {
+            name: 'TestPlayer',
+            x: 120,
+            y: 220,
+            z: 0,
+            inventory: [{ item: 'Knife', amount: 1 }],
+            equipment: [],
+            quick_slots: [],
+            backpack_items: [],
+          },
+        ],
+      ]),
       worldState: {},
       vehicles: [],
     };
     const now = {
       containers: [{ actorName: 'Crate', items: [{ item: 'Food', amount: 2 }], pos_x: 100, pos_y: 200, pos_z: 0 }],
       horses: [],
-      players: new Map([['76561100000', { name: 'TestPlayer', x: 120, y: 220, z: 0,
-        inventory: [{ item: 'Knife', amount: 1 }, { item: 'Food', amount: 3 }], equipment: [], quick_slots: [], backpack_items: [] }]]),
+      players: new Map([
+        [
+          '76561100000',
+          {
+            name: 'TestPlayer',
+            x: 120,
+            y: 220,
+            z: 0,
+            inventory: [
+              { item: 'Knife', amount: 1 },
+              { item: 'Food', amount: 3 },
+            ],
+            equipment: [],
+            quick_slots: [],
+            backpack_items: [],
+          },
+        ],
+      ]),
       worldState: {},
       vehicles: [],
     };
-    const events = diffSaveState(old, now, (id) => id === '76561100000' ? 'TestPlayer' : id);
-    const containerRemoved = events.find(e => e.type === 'container_item_removed');
-    const invAdded = events.find(e => e.type === 'inventory_item_added');
+    const events = diffSaveState(old, now, (id) => (id === '76561100000' ? 'TestPlayer' : id));
+    const containerRemoved = events.find((e) => e.type === 'container_item_removed');
+    const invAdded = events.find((e) => e.type === 'inventory_item_added');
 
     assert.ok(containerRemoved, 'should have container_item_removed event');
     assert.ok(invAdded, 'should have inventory_item_added event');

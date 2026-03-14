@@ -28,9 +28,7 @@
  */
 async function cleanOwnMessages(channel, client, options = {}) {
   const { savedIds: rawIds, limit = 20, label = 'UTIL' } = options;
-  const savedIds = rawIds
-    ? (Array.isArray(rawIds) ? rawIds : [rawIds]).filter(Boolean)
-    : [];
+  const savedIds = rawIds ? (Array.isArray(rawIds) ? rawIds : [rawIds]).filter(Boolean) : [];
 
   let allFound = savedIds.length > 0;
 
@@ -57,18 +55,19 @@ async function cleanOwnMessages(channel, client, options = {}) {
   // No saved IDs, or some were stale — sweep ALL old bot messages
   try {
     const messages = await channel.messages.fetch({ limit });
-    const botMessages = messages.filter(m => m.author.id === client.user.id);
+    const botMessages = messages.filter((m) => m.author.id === client.user.id);
     if (botMessages.size > 0) {
       console.log(`[${label}] Cleaning ${botMessages.size} old bot message(s)`);
       for (const [, msg] of botMessages) {
-        try { await msg.delete(); } catch (_) {}
+        try {
+          await msg.delete();
+        } catch (_) {}
       }
     }
   } catch (err) {
     console.log(`[${label}] Could not clean old messages:`, err.message);
   }
 }
-
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Content hashing (skip-if-unchanged)
@@ -84,13 +83,12 @@ async function cleanOwnMessages(channel, client, options = {}) {
  */
 function embedContentKey(embeds, components) {
   const embedArr = Array.isArray(embeds) ? embeds : [embeds];
-  let key = JSON.stringify(embedArr.map(e => e.data));
+  let key = JSON.stringify(embedArr.map((e) => e.data));
   if (components && components.length > 0) {
-    key += JSON.stringify(components.map(c => c.toJSON()));
+    key += JSON.stringify(components.map((c) => c.toJSON()));
   }
   return key;
 }
-
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Safe message edit with re-create fallback
@@ -128,7 +126,6 @@ async function safeEditMessage(message, channel, payload, options = {}) {
   }
 }
 
-
 /**
  * Safely build a modal title within Discord's 45-char limit.
  * Truncates `name` with '…' if needed.  Handles surrogate pairs by
@@ -142,9 +139,7 @@ function modalTitle(prefix, name, suffix) {
   const maxName = 45 - prefix.length - suffix.length;
   if (maxName <= 0) return `${prefix}${suffix}`.slice(0, 45);
   const chars = Array.from(name);
-  const truncated = chars.length > maxName
-    ? chars.slice(0, maxName - 1).join('') + '…'
-    : name;
+  const truncated = chars.length > maxName ? chars.slice(0, maxName - 1).join('') + '…' : name;
   return `${prefix}${truncated}${suffix}`;
 }
 

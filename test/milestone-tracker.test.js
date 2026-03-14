@@ -1,6 +1,6 @@
 'use strict';
 
-const { describe, it, beforeEach } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const MilestoneTracker = require('../src/modules/milestone-tracker');
 
@@ -11,16 +11,30 @@ function mockDb(players = [], clans = [], initialState = null) {
   if (initialState) store.set(MilestoneTracker.STATE_KEY, JSON.stringify(initialState));
 
   return {
-    getAllPlayers() { return players; },
-    getAllClans() { return clans; },
-    getState(key) { return store.get(key) ?? null; },
-    setState(key, value) { store.set(key, value != null ? String(value) : null); },
+    getAllPlayers() {
+      return players;
+    },
+    getAllClans() {
+      return clans;
+    },
+    getState(key) {
+      return store.get(key) ?? null;
+    },
+    setState(key, value) {
+      store.set(key, value != null ? String(value) : null);
+    },
     getStateJSON(key, defaultVal = null) {
       const raw = store.get(key);
       if (raw == null) return defaultVal;
-      try { return JSON.parse(raw); } catch { return defaultVal; }
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return defaultVal;
+      }
     },
-    setStateJSON(key, value) { store.set(key, JSON.stringify(value)); },
+    setStateJSON(key, value) {
+      store.set(key, JSON.stringify(value));
+    },
     _store: store,
   };
 }
@@ -45,12 +59,9 @@ function makePlayer(overrides = {}) {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('MilestoneTracker', () => {
-
   describe('backfill on first enable', () => {
     it('silently records existing milestones without queuing embeds', async () => {
-      const db = mockDb([
-        makePlayer({ lifetime_kills: 1500, playtime_seconds: 100 * 3600, days_survived: 15 }),
-      ]);
+      const db = mockDb([makePlayer({ lifetime_kills: 1500, playtime_seconds: 100 * 3600, days_survived: 15 })]);
       // No initial state in DB → first run → backfill
       const mt = new MilestoneTracker(mockClient(), { db });
 
@@ -73,9 +84,7 @@ describe('MilestoneTracker', () => {
 
     it('does not backfill when state already exists in DB', async () => {
       const existing = { kills: {}, playtime: {}, survival: {}, challenges: {}, firsts: {}, clans: {} };
-      const db = mockDb([
-        makePlayer({ lifetime_kills: 200 }),
-      ], [], existing);
+      const db = mockDb([makePlayer({ lifetime_kills: 200 })], [], existing);
       const mt = new MilestoneTracker(mockClient(), { db });
 
       assert.ok(!mt._needsBackfill, 'Should not need backfill');
@@ -90,9 +99,7 @@ describe('MilestoneTracker', () => {
   describe('kill milestones', () => {
     it('announces when threshold is crossed', async () => {
       const existing = { kills: {}, playtime: {}, survival: {}, challenges: {}, firsts: {}, clans: {} };
-      const db = mockDb([
-        makePlayer({ lifetime_kills: 550 }),
-      ], [], existing);
+      const db = mockDb([makePlayer({ lifetime_kills: 550 })], [], existing);
       const mt = new MilestoneTracker(mockClient(), { db });
 
       await mt.check();
@@ -104,11 +111,13 @@ describe('MilestoneTracker', () => {
     it('does not re-announce already recorded milestones', async () => {
       const existing = {
         kills: { '76561198000000001': [100, 500] },
-        playtime: {}, survival: {}, challenges: {}, firsts: {}, clans: {},
+        playtime: {},
+        survival: {},
+        challenges: {},
+        firsts: {},
+        clans: {},
       };
-      const db = mockDb([
-        makePlayer({ lifetime_kills: 550 }),
-      ], [], existing);
+      const db = mockDb([makePlayer({ lifetime_kills: 550 })], [], existing);
       const mt = new MilestoneTracker(mockClient(), { db });
 
       await mt.check();
@@ -119,11 +128,13 @@ describe('MilestoneTracker', () => {
     it('announces next threshold when kills increase', async () => {
       const existing = {
         kills: { '76561198000000001': [100, 500] },
-        playtime: {}, survival: {}, challenges: {}, firsts: {}, clans: {},
+        playtime: {},
+        survival: {},
+        challenges: {},
+        firsts: {},
+        clans: {},
       };
-      const db = mockDb([
-        makePlayer({ lifetime_kills: 1200 }),
-      ], [], existing);
+      const db = mockDb([makePlayer({ lifetime_kills: 1200 })], [], existing);
       const mt = new MilestoneTracker(mockClient(), { db });
 
       await mt.check();
@@ -137,9 +148,13 @@ describe('MilestoneTracker', () => {
   describe('playtime milestones', () => {
     it('announces playtime thresholds', async () => {
       const existing = { kills: {}, playtime: {}, survival: {}, challenges: {}, firsts: {}, clans: {} };
-      const db = mockDb([
-        makePlayer({ playtime_seconds: 7 * 3600 }), // 7 hours
-      ], [], existing);
+      const db = mockDb(
+        [
+          makePlayer({ playtime_seconds: 7 * 3600 }), // 7 hours
+        ],
+        [],
+        existing,
+      );
       const mt = new MilestoneTracker(mockClient(), { db });
 
       await mt.check();
@@ -152,9 +167,7 @@ describe('MilestoneTracker', () => {
   describe('survival milestones', () => {
     it('announces survival streaks', async () => {
       const existing = { kills: {}, playtime: {}, survival: {}, challenges: {}, firsts: {}, clans: {} };
-      const db = mockDb([
-        makePlayer({ days_survived: 8 }),
-      ], [], existing);
+      const db = mockDb([makePlayer({ days_survived: 8 })], [], existing);
       const mt = new MilestoneTracker(mockClient(), { db });
 
       await mt.check();
@@ -165,9 +178,12 @@ describe('MilestoneTracker', () => {
 
     it('resets survival milestones on death', async () => {
       const existing = {
-        kills: {}, playtime: {},
+        kills: {},
+        playtime: {},
         survival: { '76561198000000001': [1, 3, 7] },
-        challenges: {}, firsts: {}, clans: {},
+        challenges: {},
+        firsts: {},
+        clans: {},
       };
       const db = mockDb([], [], existing);
       const mt = new MilestoneTracker(mockClient(), { db });
@@ -180,13 +196,14 @@ describe('MilestoneTracker', () => {
 
     it('can re-earn survival milestones after death', async () => {
       const existing = {
-        kills: {}, playtime: {},
+        kills: {},
+        playtime: {},
         survival: { '76561198000000001': [1, 3, 7] },
-        challenges: {}, firsts: {}, clans: {},
+        challenges: {},
+        firsts: {},
+        clans: {},
       };
-      const db = mockDb([
-        makePlayer({ days_survived: 4 }),
-      ], [], existing);
+      const db = mockDb([makePlayer({ days_survived: 4 })], [], existing);
       const mt = new MilestoneTracker(mockClient(), { db });
 
       // Death resets survival
@@ -201,14 +218,18 @@ describe('MilestoneTracker', () => {
   describe('challenge milestones', () => {
     it('announces completed challenges', async () => {
       const existing = { kills: {}, playtime: {}, survival: {}, challenges: {}, firsts: {}, clans: {} };
-      const db = mockDb([
-        makePlayer({
-          challenges: JSON.stringify([
-            { name: 'Bear Hunter', progress: 10, total: 10 },
-            { name: 'Fish Master', progress: 5, total: 20 },
-          ]),
-        }),
-      ], [], existing);
+      const db = mockDb(
+        [
+          makePlayer({
+            challenges: JSON.stringify([
+              { name: 'Bear Hunter', progress: 10, total: 10 },
+              { name: 'Fish Master', progress: 5, total: 20 },
+            ]),
+          }),
+        ],
+        [],
+        existing,
+      );
       const mt = new MilestoneTracker(mockClient(), { db });
 
       await mt.check();
@@ -219,17 +240,22 @@ describe('MilestoneTracker', () => {
 
     it('does not re-announce completed challenges', async () => {
       const existing = {
-        kills: {}, playtime: {}, survival: {},
+        kills: {},
+        playtime: {},
+        survival: {},
         challenges: { '76561198000000001': ['Bear Hunter'] },
-        firsts: {}, clans: {},
+        firsts: {},
+        clans: {},
       };
-      const db = mockDb([
-        makePlayer({
-          challenges: JSON.stringify([
-            { name: 'Bear Hunter', progress: 10, total: 10 },
-          ]),
-        }),
-      ], [], existing);
+      const db = mockDb(
+        [
+          makePlayer({
+            challenges: JSON.stringify([{ name: 'Bear Hunter', progress: 10, total: 10 }]),
+          }),
+        ],
+        [],
+        existing,
+      );
       const mt = new MilestoneTracker(mockClient(), { db });
 
       await mt.check();
@@ -241,9 +267,7 @@ describe('MilestoneTracker', () => {
   describe('first-to-unlock milestones', () => {
     it('announces first profession unlock', async () => {
       const existing = { kills: {}, playtime: {}, survival: {}, challenges: {}, firsts: {}, clans: {} };
-      const db = mockDb([
-        makePlayer({ unlocked_professions: JSON.stringify(['Mechanic']) }),
-      ], [], existing);
+      const db = mockDb([makePlayer({ unlocked_professions: JSON.stringify(['Mechanic']) })], [], existing);
       const mt = new MilestoneTracker(mockClient(), { db });
 
       await mt.check();
@@ -255,17 +279,24 @@ describe('MilestoneTracker', () => {
 
     it('does not announce profession already claimed by someone else', async () => {
       const existing = {
-        kills: {}, playtime: {}, survival: {}, challenges: {},
+        kills: {},
+        playtime: {},
+        survival: {},
+        challenges: {},
         firsts: { profession: ['Mechanic'] },
         clans: {},
       };
-      const db = mockDb([
-        makePlayer({
-          steam_id: '76561198000000002',
-          name: 'Player2',
-          unlocked_professions: JSON.stringify(['Mechanic']),
-        }),
-      ], [], existing);
+      const db = mockDb(
+        [
+          makePlayer({
+            steam_id: '76561198000000002',
+            name: 'Player2',
+            unlocked_professions: JSON.stringify(['Mechanic']),
+          }),
+        ],
+        [],
+        existing,
+      );
       const mt = new MilestoneTracker(mockClient(), { db });
 
       await mt.check();
@@ -278,7 +309,9 @@ describe('MilestoneTracker', () => {
     it('announces clan member thresholds', async () => {
       const existing = { kills: {}, playtime: {}, survival: {}, challenges: {}, firsts: {}, clans: {} };
       const members = Array.from({ length: 6 }, (_, i) => ({
-        steamId: `7656119800000000${i}`, name: `Player${i}`, rank: 0,
+        steamId: `7656119800000000${i}`,
+        name: `Player${i}`,
+        rank: 0,
       }));
       const db = mockDb([], [{ name: 'WolfPack', members }], existing);
       const mt = new MilestoneTracker(mockClient(), { db });
@@ -293,10 +326,14 @@ describe('MilestoneTracker', () => {
   describe('multiple players', () => {
     it('tracks milestones independently per player', async () => {
       const existing = { kills: {}, playtime: {}, survival: {}, challenges: {}, firsts: {}, clans: {} };
-      const db = mockDb([
-        makePlayer({ steam_id: '76561198000000001', name: 'Alice', lifetime_kills: 150 }),
-        makePlayer({ steam_id: '76561198000000002', name: 'Bob', lifetime_kills: 600 }),
-      ], [], existing);
+      const db = mockDb(
+        [
+          makePlayer({ steam_id: '76561198000000001', name: 'Alice', lifetime_kills: 150 }),
+          makePlayer({ steam_id: '76561198000000002', name: 'Bob', lifetime_kills: 600 }),
+        ],
+        [],
+        existing,
+      );
       const mt = new MilestoneTracker(mockClient(), { db });
 
       await mt.check();
@@ -310,9 +347,7 @@ describe('MilestoneTracker', () => {
   describe('state persistence', () => {
     it('saves state to DB after changes', async () => {
       const existing = { kills: {}, playtime: {}, survival: {}, challenges: {}, firsts: {}, clans: {} };
-      const db = mockDb([
-        makePlayer({ lifetime_kills: 150 }),
-      ], [], existing);
+      const db = mockDb([makePlayer({ lifetime_kills: 150 })], [], existing);
       const mt = new MilestoneTracker(mockClient(), { db });
 
       await mt.check();
@@ -324,17 +359,28 @@ describe('MilestoneTracker', () => {
     it('does not save when nothing changed', async () => {
       const existing = {
         kills: { '76561198000000001': [100] },
-        playtime: {}, survival: {}, challenges: {}, firsts: {}, clans: {},
+        playtime: {},
+        survival: {},
+        challenges: {},
+        firsts: {},
+        clans: {},
       };
-      const db = mockDb([
-        makePlayer({ lifetime_kills: 50 }), // below next threshold
-      ], [], existing);
+      const db = mockDb(
+        [
+          makePlayer({ lifetime_kills: 50 }), // below next threshold
+        ],
+        [],
+        existing,
+      );
       const mt = new MilestoneTracker(mockClient(), { db });
 
       // Track if setStateJSON is called
       let saveCalled = false;
       const origSet = db.setStateJSON.bind(db);
-      db.setStateJSON = (...args) => { saveCalled = true; origSet(...args); };
+      db.setStateJSON = (...args) => {
+        saveCalled = true;
+        origSet(...args);
+      };
 
       await mt.check();
 
@@ -346,13 +392,17 @@ describe('MilestoneTracker', () => {
     it('batches embeds into groups of 10', async () => {
       const existing = { kills: {}, playtime: {}, survival: {}, challenges: {}, firsts: {}, clans: {} };
       // Create player that hits many milestones at once
-      const db = mockDb([
-        makePlayer({
-          lifetime_kills: 100000,    // all 8 kill thresholds
-          playtime_seconds: 1001 * 3600, // all 9 playtime thresholds
-          days_survived: 100,        // all 7 survival thresholds
-        }),
-      ], [], existing);
+      const db = mockDb(
+        [
+          makePlayer({
+            lifetime_kills: 100000, // all 8 kill thresholds
+            playtime_seconds: 1001 * 3600, // all 9 playtime thresholds
+            days_survived: 100, // all 7 survival thresholds
+          }),
+        ],
+        [],
+        existing,
+      );
       const mt = new MilestoneTracker(mockClient(), { db });
 
       await mt.check();
@@ -379,9 +429,7 @@ describe('MilestoneTracker', () => {
 
     it('handles malformed challenges JSON', async () => {
       const existing = { kills: {}, playtime: {}, survival: {}, challenges: {}, firsts: {}, clans: {} };
-      const db = mockDb([
-        makePlayer({ challenges: 'not-json' }),
-      ], [], existing);
+      const db = mockDb([makePlayer({ challenges: 'not-json' })], [], existing);
       const mt = new MilestoneTracker(mockClient(), { db });
       await mt.check(); // should not throw
       assert.equal(mt.getLastCheckCount(), 0);
@@ -389,9 +437,7 @@ describe('MilestoneTracker', () => {
 
     it('handles zero kills/playtime/days', async () => {
       const existing = { kills: {}, playtime: {}, survival: {}, challenges: {}, firsts: {}, clans: {} };
-      const db = mockDb([
-        makePlayer({ lifetime_kills: 0, playtime_seconds: 0, days_survived: 0 }),
-      ], [], existing);
+      const db = mockDb([makePlayer({ lifetime_kills: 0, playtime_seconds: 0, days_survived: 0 })], [], existing);
       const mt = new MilestoneTracker(mockClient(), { db });
       await mt.check();
       assert.equal(mt.getLastCheckCount(), 0);
@@ -402,7 +448,7 @@ describe('MilestoneTracker', () => {
       const db = mockDb([], [], existing);
       const mt = new MilestoneTracker(mockClient(), { db });
       mt.onPlayerDeath('unknown_id'); // should not throw
-      mt.onPlayerDeath(null);         // should not throw
+      mt.onPlayerDeath(null); // should not throw
     });
   });
 });

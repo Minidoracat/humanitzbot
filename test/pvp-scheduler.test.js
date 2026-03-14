@@ -2,7 +2,7 @@
  * Tests for pvp-scheduler.js — per-day PvP hours, window detection, transitions.
  * Run: npm test
  */
-const { describe, it, beforeEach } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
 // Minimal stub for PvpScheduler — we only test pure-logic methods
@@ -11,13 +11,16 @@ const PvpScheduler = require('../src/modules/pvp-scheduler');
 function makeScheduler(overrides = {}) {
   const config = {
     pvpStartMinutes: 1080, // 18:00
-    pvpEndMinutes: 1320,   // 22:00
-    pvpDays: null,         // every day
-    pvpDayHours: null,     // no per-day overrides
+    pvpEndMinutes: 1320, // 22:00
+    pvpDays: null, // every day
+    pvpDayHours: null, // no per-day overrides
     pvpRestartDelay: 10,
     pvpUpdateServerName: false,
     botTimezone: 'UTC',
-    ftpHost: '', ftpPort: 22, ftpUser: '', ftpPassword: '',
+    ftpHost: '',
+    ftpPort: 22,
+    ftpUser: '',
+    ftpPassword: '',
     ftpSettingsPath: '',
     adminChannelId: '',
     enablePvpScheduler: true,
@@ -56,8 +59,8 @@ describe('_getHoursForDay', () => {
   it('returns per-day override for all configured days', () => {
     const s = makeScheduler({
       pvpDayHours: new Map([
-        [0, { start: 720, end: 1440 }],  // Sun: 12:00-24:00
-        [6, { start: 720, end: 1440 }],  // Sat: 12:00-24:00
+        [0, { start: 720, end: 1440 }], // Sun: 12:00-24:00
+        [6, { start: 720, end: 1440 }], // Sat: 12:00-24:00
       ]),
     });
     assert.deepEqual(s._getHoursForDay(0), { start: 720, end: 1440 }); // Sun
@@ -99,9 +102,9 @@ describe('_isInsidePvpWindow (per-day overrides)', () => {
         [5, { start: 960, end: 1380 }], // Friday: 16:00-23:00
       ]),
     });
-    assert.equal(s._isInsidePvpWindow(1000, 5), true);  // Fri 16:40 — inside override
-    assert.equal(s._isInsidePvpWindow(1350, 5), true);  // Fri 22:30 — inside override (past default end)
-    assert.equal(s._isInsidePvpWindow(900, 5), false);   // Fri 15:00 — before override start
+    assert.equal(s._isInsidePvpWindow(1000, 5), true); // Fri 16:40 — inside override
+    assert.equal(s._isInsidePvpWindow(1350, 5), true); // Fri 22:30 — inside override (past default end)
+    assert.equal(s._isInsidePvpWindow(900, 5), false); // Fri 15:00 — before override start
   });
 
   it('uses global default on days without override', () => {
@@ -110,8 +113,8 @@ describe('_isInsidePvpWindow (per-day overrides)', () => {
         [5, { start: 960, end: 1380 }], // Friday only
       ]),
     });
-    assert.equal(s._isInsidePvpWindow(1100, 3), true);  // Wed 18:20 — default range
-    assert.equal(s._isInsidePvpWindow(1350, 3), false);  // Wed 22:30 — outside default
+    assert.equal(s._isInsidePvpWindow(1100, 3), true); // Wed 18:20 — default range
+    assert.equal(s._isInsidePvpWindow(1350, 3), false); // Wed 22:30 — outside default
   });
 });
 
@@ -119,7 +122,7 @@ describe('_isInsidePvpWindow (overnight)', () => {
   it('detects inside overnight window after start', () => {
     const s = makeScheduler({
       pvpStartMinutes: 1320, // 22:00
-      pvpEndMinutes: 360,    // 06:00
+      pvpEndMinutes: 360, // 06:00
     });
     assert.equal(s._isInsidePvpWindow(1380, 3), true); // Wed 23:00
   });
@@ -127,7 +130,7 @@ describe('_isInsidePvpWindow (overnight)', () => {
   it('detects inside overnight window before end (next day)', () => {
     const s = makeScheduler({
       pvpStartMinutes: 1320, // 22:00
-      pvpEndMinutes: 360,    // 06:00
+      pvpEndMinutes: 360, // 06:00
     });
     assert.equal(s._isInsidePvpWindow(120, 4), true); // Thu 02:00 (started Wed night)
   });
@@ -135,7 +138,7 @@ describe('_isInsidePvpWindow (overnight)', () => {
   it('detects outside overnight window in the gap', () => {
     const s = makeScheduler({
       pvpStartMinutes: 1320, // 22:00
-      pvpEndMinutes: 360,    // 06:00
+      pvpEndMinutes: 360, // 06:00
     });
     assert.equal(s._isInsidePvpWindow(720, 4), false); // Thu 12:00
   });
@@ -147,7 +150,7 @@ describe('_isInsidePvpWindow (pvpDays filter)', () => {
       pvpDays: new Set([5, 6]), // Fri, Sat only
     });
     assert.equal(s._isInsidePvpWindow(1100, 3), false); // Wed 18:20 — not a PvP day
-    assert.equal(s._isInsidePvpWindow(1100, 5), true);  // Fri 18:20 — PvP day
+    assert.equal(s._isInsidePvpWindow(1100, 5), true); // Fri 18:20 — PvP day
   });
 });
 
