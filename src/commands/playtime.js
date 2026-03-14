@@ -9,6 +9,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const playtime = require('../tracking/playtime-tracker');
 const { t, getLocalizations, fmtDate } = require('../i18n');
+const config = require('../config');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -30,7 +31,7 @@ module.exports = {
 
     try {
       const search = interaction.options.getString('player');
-      const trackingSince = fmtDate(new Date(playtime.getTrackingSince()), locale);
+      const trackingSince = fmtDate(new Date(playtime.getTrackingSince()), locale, config.botTimezone);
 
       if (search) {
         // Player lookup
