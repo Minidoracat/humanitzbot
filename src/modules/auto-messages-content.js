@@ -86,7 +86,7 @@ function formatMs(ms) {
 }
 
 function _getTimePartsInTz(date, timeZone) {
-  const parts = new Intl.DateTimeFormat(undefined, {
+  const parts = new Intl.DateTimeFormat('en-US', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
@@ -98,7 +98,7 @@ function _getTimePartsInTz(date, timeZone) {
 }
 
 function _getWeekdayInTz(date, timeZone) {
-  const parts = new Intl.DateTimeFormat(undefined, {
+  const parts = new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

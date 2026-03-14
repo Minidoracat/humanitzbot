@@ -52,12 +52,16 @@ function getLocale(context = {}) {
   return 'en';
 }
 
-function fmtDate(date, lng = 'en') {
-  return new Intl.DateTimeFormat(lng, { dateStyle: 'medium' }).format(date instanceof Date ? date : new Date(date));
+function fmtDate(date, lng = 'en', timeZone) {
+  const opts = { dateStyle: 'medium' };
+  if (timeZone) opts.timeZone = timeZone;
+  return new Intl.DateTimeFormat(lng, opts).format(date instanceof Date ? date : new Date(date));
 }
 
-function fmtTime(date, lng = 'en') {
-  return new Intl.DateTimeFormat(lng, { timeStyle: 'short' }).format(date instanceof Date ? date : new Date(date));
+function fmtTime(date, lng = 'en', timeZone) {
+  const opts = { timeStyle: 'short' };
+  if (timeZone) opts.timeZone = timeZone;
+  return new Intl.DateTimeFormat(lng, opts).format(date instanceof Date ? date : new Date(date));
 }
 
 function fmtNumber(num, lng = 'en') {

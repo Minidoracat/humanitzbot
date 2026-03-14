@@ -61,18 +61,24 @@ function makeIcon(color, size, shape = 'circle', label = '') {
   });
 }
 
-const ICONS = {
-  playerOnline:  (name) => makeIcon('#3fb950', 14, 'circle', name),
-  playerOffline: (name) => makeIcon('#da3633', 10, 'circle', name),
-  zombie:    makeIcon('#9b59b6', 6, 'circle', tTimeline('entity_labels.zombie')),
-  animal:    makeIcon('#e67e22', 7, 'diamond', tTimeline('entity_labels.animal')),
-  bandit:    makeIcon('#e74c3c', 8, 'square', tTimeline('entity_labels.bandit')),
-  vehicle:   makeIcon('#3498db', 10, 'square', tTimeline('entity_labels.vehicle')),
-  structure: makeIcon('#95a5a6', 5, 'square', tTimeline('entity_labels.structure')),
-  companion: makeIcon('#f1c40f', 8, 'diamond', tTimeline('entity_labels.companion')),
-  backpack:  makeIcon('#8e44ad', 7, 'square', tTimeline('entity_labels.backpack')),
-  death:     makeIcon('#ff0000', 10, 'circle', tTimeline('entity_labels.death')),
-};
+function _getIcons() {
+  return {
+    playerOnline:  (name) => makeIcon('#3fb950', 14, 'circle', name),
+    playerOffline: (name) => makeIcon('#da3633', 10, 'circle', name),
+    zombie:    makeIcon('#9b59b6', 6, 'circle', tTimeline('entity_labels.zombie')),
+    animal:    makeIcon('#e67e22', 7, 'diamond', tTimeline('entity_labels.animal')),
+    bandit:    makeIcon('#e74c3c', 8, 'square', tTimeline('entity_labels.bandit')),
+    vehicle:   makeIcon('#3498db', 10, 'square', tTimeline('entity_labels.vehicle')),
+    structure: makeIcon('#95a5a6', 5, 'square', tTimeline('entity_labels.structure')),
+    companion: makeIcon('#f1c40f', 8, 'diamond', tTimeline('entity_labels.companion')),
+    backpack:  makeIcon('#8e44ad', 7, 'square', tTimeline('entity_labels.backpack')),
+    death:     makeIcon('#ff0000', 10, 'circle', tTimeline('entity_labels.death')),
+  };
+}
+var ICONS = _getIcons();
+
+// Rebuild icons on language change
+document.addEventListener('languageChanged', function() { ICONS = _getIcons(); });
 
 // ── Fetch helpers ──────────────────────────────────────────
 
