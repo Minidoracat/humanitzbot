@@ -24,11 +24,13 @@ function getDayOfYear(timezone, now) {
   const d = now || new Date();
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
-    year: 'numeric', month: '2-digit', day: '2-digit',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
   }).formatToParts(d);
-  const year  = parseInt(parts.find(p => p.type === 'year').value, 10);
-  const month = parseInt(parts.find(p => p.type === 'month').value, 10);
-  const day   = parseInt(parts.find(p => p.type === 'day').value, 10);
+  const year = parseInt(parts.find((p) => p.type === 'year').value, 10);
+  const month = parseInt(parts.find((p) => p.type === 'month').value, 10);
+  const day = parseInt(parts.find((p) => p.type === 'day').value, 10);
   const jan1 = new Date(year, 0, 1);
   const target = new Date(year, month - 1, day);
   return Math.floor((target - jan1) / 86400000);
@@ -91,7 +93,10 @@ function getTodaySchedule(times, profiles, dayOffset) {
 function getActiveProfileIndex(timeMins, nowMin, profileCount, dayOffset) {
   let slotIndex = 0;
   for (let i = timeMins.length - 1; i >= 0; i--) {
-    if (nowMin >= timeMins[i]) { slotIndex = i; break; }
+    if (nowMin >= timeMins[i]) {
+      slotIndex = i;
+      break;
+    }
   }
   return getRotatedProfileIndex(slotIndex, profileCount, dayOffset);
 }

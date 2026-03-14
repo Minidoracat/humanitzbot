@@ -6,7 +6,12 @@
  */
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { generateFingerprint, normalizeSlot, normalizeInventory, buildFingerprintMap } = require('../src/db/item-fingerprint');
+const {
+  generateFingerprint,
+  normalizeSlot,
+  normalizeInventory,
+  buildFingerprintMap,
+} = require('../src/db/item-fingerprint');
 
 describe('generateFingerprint', () => {
   it('returns empty string for null/invalid input', () => {
@@ -79,8 +84,11 @@ describe('normalizeSlot', () => {
 
   it('normalises clean agent format', () => {
     const result = normalizeSlot({
-      item: 'AK47', amount: 1, durability: 0.847623,
-      ammo: 15, attachments: ['Scope'],
+      item: 'AK47',
+      amount: 1,
+      durability: 0.847623,
+      ammo: 15,
+      attachments: ['Scope'],
     });
     assert.equal(result.item, 'AK47');
     assert.equal(result.amount, 1);

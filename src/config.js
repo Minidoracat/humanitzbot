@@ -64,7 +64,7 @@ function canShow(toggleKey, isAdmin = false) {
  */
 function isAdminView(member) {
   if (!member?.permissions) return false;
-  return config.adminViewPermissions.some(p => member.permissions.has(p));
+  return config.adminViewPermissions.some((p) => member.permissions.has(p));
 }
 
 /**
@@ -83,7 +83,7 @@ async function addAdminMembers(thread, guild) {
   // Role-based — requires GuildMembers privileged intent
   for (const roleId of config.adminRoleIds) {
     try {
-      const role = guild.roles.cache.get(roleId) || await guild.roles.fetch(roleId);
+      const role = guild.roles.cache.get(roleId) || (await guild.roles.fetch(roleId));
       if (!role) continue;
       // Ensure members are cached
       if (guild.members.cache.size <= 1) await guild.members.fetch();
@@ -92,7 +92,9 @@ async function addAdminMembers(thread, guild) {
       }
     } catch (e) {
       if (e.code === 50001 || /disallowed intents|privileged/i.test(e.message)) {
-        console.error(`[CONFIG] ADMIN_ROLE_IDS requires the "Server Members Intent" to be enabled in the Discord Developer Portal (Bot → Privileged Gateway Intents).`);
+        console.error(
+          `[CONFIG] ADMIN_ROLE_IDS requires the "Server Members Intent" to be enabled in the Discord Developer Portal (Bot → Privileged Gateway Intents).`,
+        );
       } else {
         console.warn(`[CONFIG] Could not resolve role ${roleId}:`, e.message);
       }
@@ -107,17 +109,29 @@ const config = {
   discordClientSecret: process.env.DISCORD_OAUTH_SECRET || '',
   guildId: process.env.DISCORD_GUILD_ID,
   adminChannelId: process.env.ADMIN_CHANNEL_ID,
-  chatChannelId: process.env.CHAT_CHANNEL_ID || '',  // defaults to adminChannelId if empty
+  chatChannelId: process.env.CHAT_CHANNEL_ID || '', // defaults to adminChannelId if empty
   serverStatusChannelId: process.env.SERVER_STATUS_CHANNEL_ID,
   panelChannelId: process.env.PANEL_CHANNEL_ID || '',
-  adminUserIds: (process.env.ADMIN_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean),
-  adminRoleIds: (process.env.ADMIN_ROLE_IDS || '').split(',').map(s => s.trim()).filter(Boolean),
-  adminAlertChannelIds: (process.env.ADMIN_ALERT_CHANNEL_IDS || '').split(',').map(s => s.trim()).filter(Boolean),
+  adminUserIds: (process.env.ADMIN_USER_IDS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+  adminRoleIds: (process.env.ADMIN_ROLE_IDS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+  adminAlertChannelIds: (process.env.ADMIN_ALERT_CHANNEL_IDS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
 
   // Discord permissions that grant "admin view" for admin-only embed sections.
   // Comma-separated permission names from Discord.js PermissionFlagsBits.
   // Default: Administrator. Examples: ManageGuild, ManageChannels, ManageRoles
-  adminViewPermissions: (process.env.ADMIN_VIEW_PERMISSIONS || 'Administrator').split(',').map(s => s.trim()).filter(Boolean),
+  adminViewPermissions: (process.env.ADMIN_VIEW_PERMISSIONS || 'Administrator')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
 
   // RCON
   rconHost: process.env.RCON_HOST,
@@ -152,26 +166,26 @@ const config = {
 
   // Auto-messages
   discordInviteLink: process.env.DISCORD_INVITE_LINK || '',
-  autoMsgLinkInterval: Math.max(parseInt(process.env.AUTO_MSG_LINK_INTERVAL, 10) || 1800000, 60000),      // min 1 min
-  autoMsgPromoInterval: Math.max(parseInt(process.env.AUTO_MSG_PROMO_INTERVAL, 10) || 2700000, 60000),    // min 1 min
-  autoMsgJoinCheckInterval: Math.max(parseInt(process.env.AUTO_MSG_JOIN_CHECK, 10) || 10000, 5000),      // min 5 sec
-  autoMsgLinkText: process.env.AUTO_MSG_LINK_TEXT || '',       // custom discord link broadcast (blank = default)
-  autoMsgPromoText: process.env.AUTO_MSG_PROMO_TEXT || '',     // custom promo broadcast (blank = default)
+  autoMsgLinkInterval: Math.max(parseInt(process.env.AUTO_MSG_LINK_INTERVAL, 10) || 1800000, 60000), // min 1 min
+  autoMsgPromoInterval: Math.max(parseInt(process.env.AUTO_MSG_PROMO_INTERVAL, 10) || 2700000, 60000), // min 1 min
+  autoMsgJoinCheckInterval: Math.max(parseInt(process.env.AUTO_MSG_JOIN_CHECK, 10) || 10000, 5000), // min 5 sec
+  autoMsgLinkText: process.env.AUTO_MSG_LINK_TEXT || '', // custom discord link broadcast (blank = default)
+  autoMsgPromoText: process.env.AUTO_MSG_PROMO_TEXT || '', // custom promo broadcast (blank = default)
 
   // SFTP file paths
   ftpHost: process.env.FTP_HOST || '',
   ftpPort: parseInt(process.env.FTP_PORT, 10) || 2022,
   ftpUser: process.env.FTP_USER || '',
   ftpPassword: process.env.FTP_PASSWORD || '',
-  ftpPrivateKeyPath: process.env.FTP_PRIVATE_KEY_PATH || '',  // path to SSH private key (optional, replaces password auth)
-  ftpBasePath: (process.env.FTP_BASE_PATH || '').replace(/\/+$/, ''),  // strip trailing slash
+  ftpPrivateKeyPath: process.env.FTP_PRIVATE_KEY_PATH || '', // path to SSH private key (optional, replaces password auth)
+  ftpBasePath: (process.env.FTP_BASE_PATH || '').replace(/\/+$/, ''), // strip trailing slash
   ftpLogPath: process.env.FTP_LOG_PATH || '/HumanitZServer/HMZLog.log',
   ftpConnectLogPath: process.env.FTP_CONNECT_LOG_PATH || '/HumanitZServer/PlayerConnectedLog.txt',
   ftpIdMapPath: process.env.FTP_ID_MAP_PATH || '/HumanitZServer/PlayerIDMapped.txt',
   ftpSavePath: process.env.FTP_SAVE_PATH || '/HumanitZServer/Saved/SaveGames/SaveList/Default/Save_DedicatedSaveMP.sav',
   ftpSettingsPath: process.env.FTP_SETTINGS_PATH || '/HumanitZServer/GameServerSettings.ini',
   ftpWelcomePath: process.env.FTP_WELCOME_PATH || '/HumanitZServer/WelcomeMessage.txt',
-  logPollInterval: Math.max(parseInt(process.env.LOG_POLL_INTERVAL, 10) || 30000, 10000),   // min 10 sec
+  logPollInterval: Math.max(parseInt(process.env.LOG_POLL_INTERVAL, 10) || 30000, 10000), // min 10 sec
   logChannelId: process.env.LOG_CHANNEL_ID || '',
 
   // Pterodactyl / panel API (CPU, RAM, disk monitoring)
@@ -189,7 +203,7 @@ const config = {
 
   // SSH resource monitoring (reuses FTP_HOST/FTP_USER/FTP_PASSWORD)
   enableSshResources: envBool('ENABLE_SSH_RESOURCES', false),
-  sshPort: parseInt(process.env.SSH_PORT, 10) || 0,   // 0 = use FTP_PORT
+  sshPort: parseInt(process.env.SSH_PORT, 10) || 0, // 0 = use FTP_PORT
 
   // Trust proxy setting for the web panel Express app.
   // Default 'loopback' trusts Caddy/nginx on localhost.
@@ -206,17 +220,17 @@ const config = {
   resourceCacheTtl: Math.max(parseInt(process.env.RESOURCE_CACHE_TTL, 10) || 30000, 10000),
 
   // Save-file parser
-  savePollInterval: Math.max(parseInt(process.env.SAVE_POLL_INTERVAL, 10) || 300000, 60000),  // min 1 min
+  savePollInterval: Math.max(parseInt(process.env.SAVE_POLL_INTERVAL, 10) || 300000, 60000), // min 1 min
 
   // Agent mode — offloads save parsing to the game server for faster updates.
   // 'auto' = try agent first, fall back to direct .sav download
   // 'agent' = agent only (fail if unavailable)
   // 'direct' = always download full .sav (no agent)
   agentMode: (process.env.AGENT_MODE || 'auto').toLowerCase(),
-  agentNodePath: process.env.AGENT_NODE_PATH || 'node',     // path to Node.js on game server
-  agentRemoteDir: process.env.AGENT_REMOTE_DIR || '',        // where to upload agent (default: same dir as save)
-  agentCachePath: process.env.AGENT_CACHE_PATH || '',        // explicit path to humanitz-cache.json (for host-managed agents)
-  agentTimeout: Math.max(parseInt(process.env.AGENT_TIMEOUT, 10) || 120000, 10000),  // max wait for agent exec
+  agentNodePath: process.env.AGENT_NODE_PATH || 'node', // path to Node.js on game server
+  agentRemoteDir: process.env.AGENT_REMOTE_DIR || '', // where to upload agent (default: same dir as save)
+  agentCachePath: process.env.AGENT_CACHE_PATH || '', // explicit path to humanitz-cache.json (for host-managed agents)
+  agentTimeout: Math.max(parseInt(process.env.AGENT_TIMEOUT, 10) || 120000, 10000), // max wait for agent exec
 
   // Agent trigger — how the bot tells the game server to generate the cache.
   // 'auto'  = try RCON+Panel API (Pterodactyl/Bisect), then SSH, then skip
@@ -225,8 +239,8 @@ const config = {
   // 'ssh'   = SSH exec only
   // 'none'  = don't trigger — assume host runs the agent externally
   agentTrigger: (process.env.AGENT_TRIGGER || 'auto').toLowerCase(),
-  agentPanelCommand: process.env.AGENT_PANEL_COMMAND || 'createHZSocket',  // RCON/console command to trigger cache generation
-  agentPanelDelay: Math.max(parseInt(process.env.AGENT_PANEL_DELAY, 10) || 3000, 500),  // ms to wait after sending command before checking for cache
+  agentPanelCommand: process.env.AGENT_PANEL_COMMAND || 'createHZSocket', // RCON/console command to trigger cache generation
+  agentPanelDelay: Math.max(parseInt(process.env.AGENT_PANEL_DELAY, 10) || 3000, 500), // ms to wait after sending command before checking for cache
 
   // Agent poll interval — used instead of SAVE_POLL_INTERVAL when agent mode is active.
   // Agent downloads a ~200-500KB cache vs the full ~60MB .sav, so faster polling is safe.
@@ -260,9 +274,9 @@ const config = {
   howyagarnChannelId: process.env.HOWYAGARN_CHANNEL_ID || '',
 
   // hzmod native plugin (private — howyagarn repo only)
-  hzmodServerId: process.env.HZMOD_SERVER_ID || '',       // multi-server id the plugin belongs to
-  hzmodSocketPath: process.env.HZMOD_SOCKET_PATH || '',   // Unix socket path for IPC
-  hzmodStatusPath: process.env.HZMOD_STATUS_PATH || '',   // JSON status file written by plugin
+  hzmodServerId: process.env.HZMOD_SERVER_ID || '', // multi-server id the plugin belongs to
+  hzmodSocketPath: process.env.HZMOD_SOCKET_PATH || '', // Unix socket path for IPC
+  hzmodStatusPath: process.env.HZMOD_STATUS_PATH || '', // JSON status file written by plugin
 
   // Thread mode — when true (default), chat/activity go into daily threads.
   // When false, messages post directly to the channel.
@@ -274,11 +288,11 @@ const config = {
 
   // Server scheduler — timed restarts with dynamic difficulty profiles
   enableServerScheduler: envBool('ENABLE_SERVER_SCHEDULER', false),
-  restartTimes: process.env.RESTART_TIMES || '',          // comma-separated HH:MM times in BOT_TIMEZONE
-  restartProfiles: process.env.RESTART_PROFILES || '',    // comma-separated profile names (cycle order)
+  restartTimes: process.env.RESTART_TIMES || '', // comma-separated HH:MM times in BOT_TIMEZONE
+  restartProfiles: process.env.RESTART_PROFILES || '', // comma-separated profile names (cycle order)
   restartDelay: parseInt(process.env.RESTART_DELAY, 10) || 10, // countdown minutes before restart
   restartRotateDaily: envBool('RESTART_ROTATE_DAILY', true), // shift profile order each day
-  dockerContainer: process.env.DOCKER_CONTAINER || '',    // Docker container name for restart commands
+  dockerContainer: process.env.DOCKER_CONTAINER || '', // Docker container name for restart commands
   serverNameTemplate: process.env.SERVER_NAME_TEMPLATE || '', // e.g. "[EU1] Howyagarn PVE | Current Mode: {mode} | Dynamic Difficulty"
 
   // Activity log — tracks item movements, horse changes, world events from save diffs
@@ -286,20 +300,34 @@ const config = {
   activityLogChannelId: process.env.ACTIVITY_LOG_CHANNEL_ID || '',
 
   // Activity log sub-toggles
-  enableContainerLog: envBool('ENABLE_CONTAINER_LOG', true),     // container item add/remove
-  enableHorseLog: envBool('ENABLE_HORSE_LOG', true),             // horse appeared/disappeared/health
-  enableVehicleLog: envBool('ENABLE_VEHICLE_LOG', true),         // vehicle trunk changes
-  showInventoryLog: envBool('SHOW_INVENTORY_LOG', false),        // player inventory changes (off by default — sensitive)
+  enableContainerLog: envBool('ENABLE_CONTAINER_LOG', true), // container item add/remove
+  enableHorseLog: envBool('ENABLE_HORSE_LOG', true), // horse appeared/disappeared/health
+  enableVehicleLog: envBool('ENABLE_VEHICLE_LOG', true), // vehicle trunk changes
+  showInventoryLog: envBool('SHOW_INVENTORY_LOG', false), // player inventory changes (off by default — sensitive)
   showInventoryLogAdminOnly: envBool('SHOW_INVENTORY_LOG_ADMIN_ONLY', true), // restrict inventory log to admins
-  pvpStartMinutes: envTime('PVP_START_TIME'),   // total minutes from midnight (supports "HH" or "HH:MM")
-  pvpEndMinutes: envTime('PVP_END_TIME'),       // total minutes from midnight (supports "HH" or "HH:MM")
+  pvpStartMinutes: envTime('PVP_START_TIME'), // total minutes from midnight (supports "HH" or "HH:MM")
+  pvpEndMinutes: envTime('PVP_END_TIME'), // total minutes from midnight (supports "HH" or "HH:MM")
   pvpRestartDelay: parseInt(process.env.PVP_RESTART_DELAY, 10) || 10,
   pvpUpdateServerName: envBool('PVP_UPDATE_SERVER_NAME', false),
   pvpDays: (() => {
     const val = process.env.PVP_DAYS;
     if (!val || val.trim() === '') return null; // null = every day
-    const dayNames = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6,
-                       sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
+    const dayNames = {
+      sun: 0,
+      mon: 1,
+      tue: 2,
+      wed: 3,
+      thu: 4,
+      fri: 5,
+      sat: 6,
+      sunday: 0,
+      monday: 1,
+      tuesday: 2,
+      wednesday: 3,
+      thursday: 4,
+      friday: 5,
+      saturday: 6,
+    };
     const days = new Set();
     for (const part of val.split(',')) {
       const t = part.trim().toLowerCase();
@@ -315,7 +343,9 @@ const config = {
   pvpSettingsOverrides: (() => {
     const raw = process.env.PVP_SETTINGS_OVERRIDES;
     if (!raw || !raw.trim()) return null;
-    try { return JSON.parse(raw); } catch (e) {
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
       console.error('[CONFIG] Invalid PVP_SETTINGS_OVERRIDES JSON:', e.message);
       return null;
     }
@@ -330,7 +360,10 @@ const config = {
       const val = process.env[`PVP_HOURS_${dayKeys[d]}`];
       if (!val || !val.includes('-')) continue;
       const [startStr, endStr] = val.split('-');
-      const parseHM = (s) => { const p = s.trim().split(':'); return parseInt(p[0], 10) * 60 + (parseInt(p[1], 10) || 0); };
+      const parseHM = (s) => {
+        const p = s.trim().split(':');
+        return parseInt(p[0], 10) * 60 + (parseInt(p[1], 10) || 0);
+      };
       const start = parseHM(startStr);
       const end = parseHM(endStr);
       if (!isNaN(start) && !isNaN(end)) map.set(d, { start, end });
@@ -344,41 +377,44 @@ const config = {
   // Factory reset — wipes all bot messages from Discord, deletes local data,
   // re-imports from server logs, and rebuilds everything fresh.
   // Runs once on startup, then automatically sets itself back to false.
-  nukeBot: envBool('NUKE_BOT', false) || envBool('NUKE_THREADS', false),  // backward compat
+  nukeBot: envBool('NUKE_BOT', false) || envBool('NUKE_THREADS', false), // backward compat
 
   // Feature toggles — log watcher sub-features
-  enableKillFeed: envBool('ENABLE_KILL_FEED', true),   // post zombie kill batches to activity thread
+  enableKillFeed: envBool('ENABLE_KILL_FEED', true), // post zombie kill batches to activity thread
   enablePvpKillFeed: envBool('ENABLE_PVP_KILL_FEED', true), // post PvP kills to activity thread
   pvpKillWindow: parseInt(process.env.PVP_KILL_WINDOW, 10) || 60000, // ms window to attribute a kill after damage (default 60s; log timestamps are minute-precision)
 
   // Save-based activity feeds — posted to activity thread from save-file diffs
-  enableFishingFeed: envBool('ENABLE_FISHING_FEED', true),       // "Player caught 3 fish"
-  enableRecipeFeed: envBool('ENABLE_RECIPE_FEED', true),         // "Player learned Firearm, Furnace"
-  enableSkillFeed: envBool('ENABLE_SKILL_FEED', true),           // "Player unlocked Mechanic skill"
+  enableFishingFeed: envBool('ENABLE_FISHING_FEED', true), // "Player caught 3 fish"
+  enableRecipeFeed: envBool('ENABLE_RECIPE_FEED', true), // "Player learned Firearm, Furnace"
+  enableSkillFeed: envBool('ENABLE_SKILL_FEED', true), // "Player unlocked Mechanic skill"
   enableProfessionFeed: envBool('ENABLE_PROFESSION_FEED', true), // "Player unlocked Mechanic"
-  enableLoreFeed: envBool('ENABLE_LORE_FEED', true),             // "Player found 2 lore entries"
-  enableUniqueFeed: envBool('ENABLE_UNIQUE_FEED', true),         // "Player found unique item"
-  enableCompanionFeed: envBool('ENABLE_COMPANION_FEED', true),   // "Player tamed a companion"
-  enableChallengeFeed: envBool('ENABLE_CHALLENGE_FEED', true),    // "Player completed Bear Hunter"
+  enableLoreFeed: envBool('ENABLE_LORE_FEED', true), // "Player found 2 lore entries"
+  enableUniqueFeed: envBool('ENABLE_UNIQUE_FEED', true), // "Player found unique item"
+  enableCompanionFeed: envBool('ENABLE_COMPANION_FEED', true), // "Player tamed a companion"
+  enableChallengeFeed: envBool('ENABLE_CHALLENGE_FEED', true), // "Player completed Bear Hunter"
   enableWorldEventFeed: envBool('ENABLE_WORLD_EVENT_FEED', true), // season/day changes, airdrops
 
   // Feature toggles — auto-message sub-features (all on by default)
   enableAutoMsgLink: envBool('ENABLE_AUTO_MSG_LINK', true),
   enableAutoMsgPromo: envBool('ENABLE_AUTO_MSG_PROMO', true),
-  enableWelcomeMsg: envBool('ENABLE_WELCOME_MSG', true),            // RCON admin welcome on player join
-  enableWelcomeFile: envBool('ENABLE_WELCOME_FILE', true),          // SFTP-managed WelcomeMessage.txt
-  welcomeFileLines: (process.env.WELCOME_FILE_LINES || '').split('|').map(s => s.trim()).filter(Boolean),
+  enableWelcomeMsg: envBool('ENABLE_WELCOME_MSG', true), // RCON admin welcome on player join
+  enableWelcomeFile: envBool('ENABLE_WELCOME_FILE', true), // SFTP-managed WelcomeMessage.txt
+  welcomeFileLines: (process.env.WELCOME_FILE_LINES || '')
+    .split('|')
+    .map((s) => s.trim())
+    .filter(Boolean),
 
   // Feature toggles — player stats embed sections
-  showRaidStats: envBool('SHOW_RAID_STATS', false),       // default: off (PVE)
-  showPvpKills: envBool('SHOW_PVP_KILLS', false),         // "Last 10 PvP Kills" on overview embed
-  showVitals: envBool('SHOW_VITALS', true),               // default: on
+  showRaidStats: envBool('SHOW_RAID_STATS', false), // default: off (PVE)
+  showPvpKills: envBool('SHOW_PVP_KILLS', false), // "Last 10 PvP Kills" on overview embed
+  showVitals: envBool('SHOW_VITALS', true), // default: on
   showStatusEffects: envBool('SHOW_STATUS_EFFECTS', true), // default: on
-  showInventory: envBool('SHOW_INVENTORY', true),          // default: on
-  showRecipes: envBool('SHOW_RECIPES', true),              // default: on
-  showLore: envBool('SHOW_LORE', true),                    // default: on
-  showSkills: envBool('SHOW_SKILLS', true),                // default: on
-  showConnections: envBool('SHOW_CONNECTIONS', true),      // default: on
+  showInventory: envBool('SHOW_INVENTORY', true), // default: on
+  showRecipes: envBool('SHOW_RECIPES', true), // default: on
+  showLore: envBool('SHOW_LORE', true), // default: on
+  showSkills: envBool('SHOW_SKILLS', true), // default: on
+  showConnections: envBool('SHOW_CONNECTIONS', true), // default: on
 
   // Fine-grained sub-toggles (parent section must also be enabled)
   // Vitals sub-stats
@@ -405,16 +441,16 @@ const config = {
   showConnectCount: envBool('SHOW_CONNECT_COUNT', true),
   showAdminAccess: envBool('SHOW_ADMIN_ACCESS', true),
   // Raid sub-sections
-  showRaidsOut: envBool('SHOW_RAIDS_OUT', true),          // raids initiated
-  showRaidsIn: envBool('SHOW_RAIDS_IN', true),            // raids received
+  showRaidsOut: envBool('SHOW_RAIDS_OUT', true), // raids initiated
+  showRaidsIn: envBool('SHOW_RAIDS_IN', true), // raids received
   // Coordinates
-  showCoordinates: envBool('SHOW_COORDINATES', false),    // default: off (sensitive)
+  showCoordinates: envBool('SHOW_COORDINATES', false), // default: off (sensitive)
   showCoordinatesAdminOnly: envBool('SHOW_COORDINATES_ADMIN_ONLY', true), // admin-only when shown
 
   // Container / horse display flags (for embeds and web map)
-  showContainers: envBool('SHOW_CONTAINERS', true),              // show container info on player/world stats
+  showContainers: envBool('SHOW_CONTAINERS', true), // show container info on player/world stats
   showContainersAdminOnly: envBool('SHOW_CONTAINERS_ADMIN_ONLY', true), // restrict to admins
-  showHorses: envBool('SHOW_HORSES', true),                      // show horse info in world stats
+  showHorses: envBool('SHOW_HORSES', true), // show horse info in world stats
   showHorsesAdminOnly: envBool('SHOW_HORSES_ADMIN_ONLY', false), // horse info is public by default
 
   // Admin-only flags — when true, that section is only shown to Discord users
@@ -430,26 +466,26 @@ const config = {
   showChallengeDescriptionsAdminOnly: envBool('SHOW_CHALLENGE_DESCRIPTIONS_ADMIN_ONLY', false),
 
   // Feature toggles — server status embed sections
-  showServerSettings: envBool('SHOW_SERVER_SETTINGS', true),     // server settings grid from GameServerSettings.ini
+  showServerSettings: envBool('SHOW_SERVER_SETTINGS', true), // server settings grid from GameServerSettings.ini
   showExtendedSettings: envBool('SHOW_EXTENDED_SETTINGS', true), // bandits, companions, territory, vehicles in settings grid
   // Per-category toggles within the settings grid
-  showSettingsGeneral: envBool('SHOW_SETTINGS_GENERAL', true),       // PvP, Max Players, On Death, etc.
-  showSettingsTime: envBool('SHOW_SETTINGS_TIME', true),             // Day/Night/Season Length, Start Season
-  showSettingsZombies: envBool('SHOW_SETTINGS_ZOMBIES', true),       // Zombie Health/Speed/Damage/Spawns/Respawn
-  showSettingsItems: envBool('SHOW_SETTINGS_ITEMS', true),           // Weapon Break, Food Decay, Loot Respawn, Air Drops
-  showSettingsBandits: envBool('SHOW_SETTINGS_BANDITS', true),       // Bandit stats + AI Events (requires SHOW_EXTENDED_SETTINGS)
+  showSettingsGeneral: envBool('SHOW_SETTINGS_GENERAL', true), // PvP, Max Players, On Death, etc.
+  showSettingsTime: envBool('SHOW_SETTINGS_TIME', true), // Day/Night/Season Length, Start Season
+  showSettingsZombies: envBool('SHOW_SETTINGS_ZOMBIES', true), // Zombie Health/Speed/Damage/Spawns/Respawn
+  showSettingsItems: envBool('SHOW_SETTINGS_ITEMS', true), // Weapon Break, Food Decay, Loot Respawn, Air Drops
+  showSettingsBandits: envBool('SHOW_SETTINGS_BANDITS', true), // Bandit stats + AI Events (requires SHOW_EXTENDED_SETTINGS)
   showSettingsCompanions: envBool('SHOW_SETTINGS_COMPANIONS', true), // Dog Companion, Companion HP/Dmg (requires SHOW_EXTENDED_SETTINGS)
-  showSettingsBuilding: envBool('SHOW_SETTINGS_BUILDING', true),     // Building HP/Decay, Gen Fuel, Territory, Dismantle (requires SHOW_EXTENDED_SETTINGS)
-  showSettingsVehicles: envBool('SHOW_SETTINGS_VEHICLES', true),     // Max Cars (requires SHOW_EXTENDED_SETTINGS)
-  showSettingsAnimals: envBool('SHOW_SETTINGS_ANIMALS', true),       // Animal Spawns/Respawn (requires SHOW_EXTENDED_SETTINGS)
-  showLootScarcity: envBool('SHOW_LOOT_SCARCITY', true),         // loot rarity breakdown
-  showWeatherOdds: envBool('SHOW_WEATHER_ODDS', false),          // weather multiplier breakdown (off by default — niche)
-  showServerVersion: envBool('SHOW_SERVER_VERSION', true),       // version from RCON info
+  showSettingsBuilding: envBool('SHOW_SETTINGS_BUILDING', true), // Building HP/Decay, Gen Fuel, Territory, Dismantle (requires SHOW_EXTENDED_SETTINGS)
+  showSettingsVehicles: envBool('SHOW_SETTINGS_VEHICLES', true), // Max Cars (requires SHOW_EXTENDED_SETTINGS)
+  showSettingsAnimals: envBool('SHOW_SETTINGS_ANIMALS', true), // Animal Spawns/Respawn (requires SHOW_EXTENDED_SETTINGS)
+  showLootScarcity: envBool('SHOW_LOOT_SCARCITY', true), // loot rarity breakdown
+  showWeatherOdds: envBool('SHOW_WEATHER_ODDS', false), // weather multiplier breakdown (off by default — niche)
+  showServerVersion: envBool('SHOW_SERVER_VERSION', true), // version from RCON info
   showServerPerformance: envBool('SHOW_SERVER_PERFORMANCE', true), // FPS + AI count from RCON info
-  showHostResources: envBool('SHOW_HOST_RESOURCES', true),       // CPU/RAM/disk from panel API or SSH
-  showServerDay: envBool('SHOW_SERVER_DAY', true),               // in-game day number
-  showSeasonProgress: envBool('SHOW_SEASON_PROGRESS', true),     // day X/Y within current season
-  showWorldStats: envBool('SHOW_WORLD_STATS', true),             // structures, vehicles, zombie kills from save
+  showHostResources: envBool('SHOW_HOST_RESOURCES', true), // CPU/RAM/disk from panel API or SSH
+  showServerDay: envBool('SHOW_SERVER_DAY', true), // in-game day number
+  showSeasonProgress: envBool('SHOW_SEASON_PROGRESS', true), // day X/Y within current season
+  showWorldStats: envBool('SHOW_WORLD_STATS', true), // structures, vehicles, zombie kills from save
 
   // Feature toggles — player stats embed extras
   showChallengeDescriptions: envBool('SHOW_CHALLENGE_DESCRIPTIONS', true), // show challenge descriptions alongside progress
@@ -457,19 +493,29 @@ const config = {
   // Feature toggles — log watcher: death loop detection
   enableDeathLoopDetection: envBool('ENABLE_DEATH_LOOP_DETECTION', true), // collapse rapid-fire death embeds
   deathLoopThreshold: parseInt(process.env.DEATH_LOOP_THRESHOLD, 10) || 3, // deaths within window to trigger
-  deathLoopWindow: parseInt(process.env.DEATH_LOOP_WINDOW, 10) || 60000,   // time window in ms (default 60s)
+  deathLoopWindow: parseInt(process.env.DEATH_LOOP_WINDOW, 10) || 60000, // time window in ms (default 60s)
 
   // Feature toggles — overview embed leaderboards
-  showMostBitten: envBool('SHOW_MOST_BITTEN', true),             // most bitten leaderboard (from save)
-  showMostFish: envBool('SHOW_MOST_FISH', true),                 // most fish caught leaderboard (from save)
-  showWeeklyStats: envBool('SHOW_WEEKLY_STATS', true),           // weekly leaderboards alongside all-time
-  weeklyResetDay: (() => { const v = parseInt(process.env.WEEKLY_RESET_DAY, 10); return isNaN(v) ? 1 : v; })(), // day to reset weekly baseline (0=Sun … 6=Sat, default 1=Mon)
+  showMostBitten: envBool('SHOW_MOST_BITTEN', true), // most bitten leaderboard (from save)
+  showMostFish: envBool('SHOW_MOST_FISH', true), // most fish caught leaderboard (from save)
+  showWeeklyStats: envBool('SHOW_WEEKLY_STATS', true), // weekly leaderboards alongside all-time
+  weeklyResetDay: (() => {
+    const v = parseInt(process.env.WEEKLY_RESET_DAY, 10);
+    return isNaN(v) ? 1 : v;
+  })(), // day to reset weekly baseline (0=Sun … 6=Sat, default 1=Mon)
 };
 
 // Prepend FTP_BASE_PATH to all FTP file paths when set (only for relative paths)
 if (config.ftpBasePath) {
   const prefix = config.ftpBasePath;
-  const ftpKeys = ['ftpLogPath', 'ftpConnectLogPath', 'ftpIdMapPath', 'ftpSavePath', 'ftpSettingsPath', 'ftpWelcomePath'];
+  const ftpKeys = [
+    'ftpLogPath',
+    'ftpConnectLogPath',
+    'ftpIdMapPath',
+    'ftpSavePath',
+    'ftpSettingsPath',
+    'ftpWelcomePath',
+  ];
   for (const key of ftpKeys) {
     // Only prepend if path doesn't start with / (relative path indicator)
     if (config[key] && !config[key].startsWith('/')) {
@@ -492,11 +538,15 @@ for (const key of required) {
 }
 
 // Flag so modules know whether RCON/SFTP are ready
-config.needsSetup = !config.rconHost || !config.rconPassword || config.rconHost.startsWith('your_') || config.rconPassword.startsWith('your_');
+config.needsSetup =
+  !config.rconHost ||
+  !config.rconPassword ||
+  config.rconHost.startsWith('your_') ||
+  config.rconPassword.startsWith('your_');
 
 if (!config.panelChannelId) {
   console.warn('[CONFIG] PANEL_CHANNEL_ID not set — panel channel will be disabled.');
-  console.warn('         The panel channel is the bot\'s admin dashboard. Set a channel ID in .env');
+  console.warn("         The panel channel is the bot's admin dashboard. Set a channel ID in .env");
   console.warn('         to enable the setup wizard, server controls, and settings editor.');
 }
 
@@ -507,11 +557,13 @@ config.getToday = function () {
   try {
     const parts = new Intl.DateTimeFormat('en-CA', {
       timeZone: config.botTimezone,
-      year: 'numeric', month: '2-digit', day: '2-digit',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
     }).formatToParts(new Date());
-    const y = parts.find(p => p.type === 'year').value;
-    const m = parts.find(p => p.type === 'month').value;
-    const d = parts.find(p => p.type === 'day').value;
+    const y = parts.find((p) => p.type === 'year').value;
+    const m = parts.find((p) => p.type === 'month').value;
+    const d = parts.find((p) => p.type === 'day').value;
     return `${y}-${m}-${d}`;
   } catch {
     return new Date().toISOString().split('T')[0];
@@ -522,11 +574,15 @@ config.getDateLabel = function (date) {
   try {
     return (date || new Date()).toLocaleDateString('en-GB', {
       timeZone: config.botTimezone,
-      day: 'numeric', month: 'short', year: 'numeric',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
     });
   } catch {
     return (date || new Date()).toLocaleDateString('en-GB', {
-      day: 'numeric', month: 'short', year: 'numeric',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
     });
   }
 };
@@ -535,13 +591,19 @@ config.formatTime = function (date) {
   try {
     return date.toLocaleString('en-US', {
       timeZone: config.botTimezone,
-      month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit', hour12: true,
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
     });
   } catch {
     return date.toLocaleString('en-US', {
-      month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit', hour12: true,
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
     });
   }
 };
@@ -553,25 +615,29 @@ config.formatTime = function (date) {
 function _tzOffsetMs(utcDate, timezone) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
     hour12: false,
   }).formatToParts(utcDate);
 
-  const y = parts.find(p => p.type === 'year').value;
-  const m = parts.find(p => p.type === 'month').value;
-  const d = parts.find(p => p.type === 'day').value;
-  let h = parts.find(p => p.type === 'hour').value;
+  const y = parts.find((p) => p.type === 'year').value;
+  const m = parts.find((p) => p.type === 'month').value;
+  const d = parts.find((p) => p.type === 'day').value;
+  let h = parts.find((p) => p.type === 'hour').value;
   if (h === '24') h = '00'; // midnight edge case
-  const mn = parts.find(p => p.type === 'minute').value;
-  const s = parts.find(p => p.type === 'second').value;
+  const mn = parts.find((p) => p.type === 'minute').value;
+  const s = parts.find((p) => p.type === 'second').value;
 
   const localAsUtc = new Date(`${y}-${m}-${d}T${h}:${mn}:${s}Z`);
   return localAsUtc.getTime() - utcDate.getTime();
 }
 
 config.parseLogTimestamp = function (year, month, day, hour, min) {
-  const pad = n => String(n).padStart(2, '0');
+  const pad = (n) => String(n).padStart(2, '0');
   const iso = `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(min)}:00Z`;
   const asUtc = new Date(iso);
 
@@ -628,7 +694,7 @@ config.sftpConnectConfig = function () {
  */
 config.getEffectiveSavePollInterval = function () {
   if (config.agentMode !== 'direct' && config.agentPollInterval > 0) {
-    return Math.max(config.agentPollInterval, 30000);  // min 30s
+    return Math.max(config.agentPollInterval, 30000); // min 30s
   }
   return config.savePollInterval;
 };

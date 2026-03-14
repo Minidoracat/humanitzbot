@@ -14,31 +14,44 @@ const { reconcileItems } = require('../src/db/item-tracker');
 let db;
 
 describe('Item Tracker', () => {
-
   beforeEach(() => {
-    if (db) { try { db.close(); } catch {} }
+    if (db) {
+      try {
+        db.close();
+      } catch {}
+    }
     db = new HumanitZDB({ memory: true, label: 'test' });
     db.init();
   });
 
   afterEach(() => {
-    if (db) { try { db.close(); } catch {} db = null; }
+    if (db) {
+      try {
+        db.close();
+      } catch {}
+      db = null;
+    }
   });
 
   describe('reconcileItems', () => {
     it('creates new instances for items seen for the first time', () => {
       const snapshot = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [
-              { item: 'AK47', amount: 1, durability: 0.85, ammo: 15 },
-              { item: 'Nails', amount: 50, durability: 1.0 },
-            ],
-            equipment: [],
-            quickSlots: [],
-            backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [
+                { item: 'AK47', amount: 1, durability: 0.85, ammo: 15 },
+                { item: 'Nails', amount: 50, durability: 1.0 },
+              ],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
         containers: [],
         vehicles: [],
@@ -57,7 +70,7 @@ describe('Item Tracker', () => {
       const instances = db.getActiveItemInstances();
       assert.equal(instances.length, 2);
 
-      const ak = instances.find(i => i.item === 'AK47');
+      const ak = instances.find((i) => i.item === 'AK47');
       assert.ok(ak);
       assert.equal(ak.location_type, 'player');
       assert.equal(ak.location_id, '76561100000000001');
@@ -68,13 +81,24 @@ describe('Item Tracker', () => {
     it('matches existing instances on second sync (no change)', () => {
       const snapshot = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [{ item: 'AK47', amount: 1, durability: 0.85 }],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [{ item: 'AK47', amount: 1, durability: 0.85 }],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [], vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
 
       // First sync — creates
@@ -93,30 +117,57 @@ describe('Item Tracker', () => {
       // First sync: AK47 in player inventory
       const snap1 = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [{ item: 'AK47', amount: 1, durability: 0.85, ammo: 15 }],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [{ item: 'AK47', amount: 1, durability: 0.85, ammo: 15 }],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [], vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
       reconcileItems(db, snap1);
 
       // Second sync: AK47 moved to a container
       const snap2 = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [{
-          actorName: 'StorageChest_1', items: [{ item: 'AK47', amount: 1, durability: 0.85, ammo: 15 }],
-          quickSlots: [], x: 110, y: 210, z: 50,
-        }],
-        vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [
+          {
+            actorName: 'StorageChest_1',
+            items: [{ item: 'AK47', amount: 1, durability: 0.85, ammo: 15 }],
+            quickSlots: [],
+            x: 110,
+            y: 210,
+            z: 50,
+          },
+        ],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
       const stats = reconcileItems(db, snap2);
       assert.equal(stats.moved, 1);
@@ -124,7 +175,7 @@ describe('Item Tracker', () => {
 
       // Verify the instance now points to the container
       const instances = db.getActiveItemInstances();
-      const ak = instances.find(i => i.item === 'AK47');
+      const ak = instances.find((i) => i.item === 'AK47');
       assert.equal(ak.location_type, 'container');
       assert.equal(ak.location_id, 'StorageChest_1');
 
@@ -140,25 +191,48 @@ describe('Item Tracker', () => {
     it('marks items as lost when they disappear', () => {
       const snap1 = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [{ item: 'AK47', amount: 1, durability: 0.85 }],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [{ item: 'AK47', amount: 1, durability: 0.85 }],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [], vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
       reconcileItems(db, snap1);
 
       // Item disappears (consumed, destroyed, etc.)
       const snap2 = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [], equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [], vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
       const stats = reconcileItems(db, snap2);
       assert.equal(stats.lost, 1);
@@ -172,12 +246,19 @@ describe('Item Tracker', () => {
       const snapshot = {
         players: new Map(),
         containers: [],
-        vehicles: [{
-          displayName: 'SUV', class: 'BP_SUV_C',
-          trunkItems: [{ item: 'Gasoline', amount: 5, durability: 1.0 }],
-          x: 500, y: 600, z: 10,
-        }],
-        horses: [], structures: [], worldState: {},
+        vehicles: [
+          {
+            displayName: 'SUV',
+            class: 'BP_SUV_C',
+            trunkItems: [{ item: 'Gasoline', amount: 5, durability: 1.0 }],
+            x: 500,
+            y: 600,
+            z: 10,
+          },
+        ],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
       const stats = reconcileItems(db, snapshot);
       assert.equal(stats.created, 1);
@@ -190,13 +271,21 @@ describe('Item Tracker', () => {
     it('tracks items in horse saddlebags', () => {
       const snapshot = {
         players: new Map(),
-        containers: [], vehicles: [],
-        horses: [{
-          actorName: 'Horse_1', displayName: 'Thunder',
-          saddleItems: [{ item: 'Bandage', amount: 3, durability: 1.0 }],
-          inventory: [], x: 300, y: 400, z: 20,
-        }],
-        structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [
+          {
+            actorName: 'Horse_1',
+            displayName: 'Thunder',
+            saddleItems: [{ item: 'Bandage', amount: 3, durability: 1.0 }],
+            inventory: [],
+            x: 300,
+            y: 400,
+            z: 20,
+          },
+        ],
+        structures: [],
+        worldState: {},
       };
       const stats = reconcileItems(db, snapshot);
       assert.equal(stats.created, 1);
@@ -209,7 +298,10 @@ describe('Item Tracker', () => {
     it('tracks LOD pickups (world drops)', () => {
       const snapshot = {
         players: new Map(),
-        containers: [], vehicles: [], horses: [], structures: [],
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
         worldState: {
           lodPickups: [
             { item: 'Axe', amount: 1, durability: 0.7, x: 1000, y: 2000, z: 30, valid: true, worldLoot: true },
@@ -228,26 +320,41 @@ describe('Item Tracker', () => {
       // Two identical nails stacks (same fingerprint) in different locations
       const snap1 = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [{ item: 'Nails', amount: 50, durability: 1.0 }],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [{ item: 'Nails', amount: 50, durability: 1.0 }],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [{
-          actorName: 'Chest_1',
-          items: [{ item: 'Nails', amount: 50, durability: 1.0 }],
-          quickSlots: [], x: 500, y: 600, z: 10,
-        }],
-        vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [
+          {
+            actorName: 'Chest_1',
+            items: [{ item: 'Nails', amount: 50, durability: 1.0 }],
+            quickSlots: [],
+            x: 500,
+            y: 600,
+            z: 10,
+          },
+        ],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
 
       const stats = reconcileItems(db, snap1);
       assert.equal(stats.created, 2);
 
       const instances = db.getActiveItemInstances();
-      const playerNails = instances.find(i => i.location_type === 'player');
-      const chestNails = instances.find(i => i.location_type === 'container');
+      const playerNails = instances.find((i) => i.location_type === 'player');
+      const chestNails = instances.find((i) => i.location_type === 'container');
       assert.ok(playerNails);
       assert.ok(chestNails);
       // Both have same fingerprint
@@ -257,17 +364,28 @@ describe('Item Tracker', () => {
     it('searchItemInstances finds items by name', () => {
       const snapshot = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [
-              { item: 'AK47', amount: 1, durability: 0.85 },
-              { item: 'AK47_Ammo', amount: 30, durability: 1.0 },
-              { item: 'Shotgun', amount: 1, durability: 0.5 },
-            ],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [
+                { item: 'AK47', amount: 1, durability: 0.85 },
+                { item: 'AK47_Ammo', amount: 30, durability: 1.0 },
+                { item: 'Shotgun', amount: 1, durability: 0.5 },
+              ],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [], vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
       reconcileItems(db, snapshot);
 
@@ -281,16 +399,27 @@ describe('Item Tracker', () => {
     it('searchItemInstances finds items by fingerprint', () => {
       const snapshot = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [
-              { item: 'AK47', amount: 1, durability: 0.85 },
-              { item: 'Shotgun', amount: 1, durability: 0.5 },
-            ],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [
+                { item: 'AK47', amount: 1, durability: 0.85 },
+                { item: 'Shotgun', amount: 1, durability: 0.5 },
+              ],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [], vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
       reconcileItems(db, snapshot);
 
@@ -309,16 +438,27 @@ describe('Item Tracker', () => {
     it('searchItemGroups finds groups by fingerprint', () => {
       const snapshot = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [
-              { item: 'Nails', amount: 50, durability: 1.0 },
-              { item: 'Nails', amount: 50, durability: 1.0 },
-            ],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [
+                { item: 'Nails', amount: 50, durability: 1.0 },
+                { item: 'Nails', amount: 50, durability: 1.0 },
+              ],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [], vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
       reconcileItems(db, snapshot);
 
@@ -337,16 +477,27 @@ describe('Item Tracker', () => {
     it('getItemInstanceCount returns correct count', () => {
       const snapshot = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [
-              { item: 'AK47', amount: 1, durability: 0.85 },
-              { item: 'Nails', amount: 50, durability: 1.0 },
-            ],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [
+                { item: 'AK47', amount: 1, durability: 0.85 },
+                { item: 'Nails', amount: 50, durability: 1.0 },
+              ],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [], vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
       reconcileItems(db, snapshot);
       assert.equal(db.getItemInstanceCount(), 2);
@@ -355,14 +506,24 @@ describe('Item Tracker', () => {
     it('getItemInstancesByLocation returns items at a specific location', () => {
       const snapshot = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [{ item: 'AK47', amount: 1, durability: 0.85 }],
-            equipment: [{ item: 'Helmet', amount: 1, durability: 0.9 }],
-            quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [{ item: 'AK47', amount: 1, durability: 0.85 }],
+              equipment: [{ item: 'Helmet', amount: 1, durability: 0.9 }],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [], vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
       reconcileItems(db, snapshot);
 
@@ -374,37 +535,73 @@ describe('Item Tracker', () => {
       // Player has AK47
       reconcileItems(db, {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [{ item: 'AK47', amount: 1, durability: 0.85 }],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [{ item: 'AK47', amount: 1, durability: 0.85 }],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [{
-          actorName: 'Chest_1', items: [], quickSlots: [], x: 110, y: 210, z: 50,
-        }],
-        vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [
+          {
+            actorName: 'Chest_1',
+            items: [],
+            quickSlots: [],
+            x: 110,
+            y: 210,
+            z: 50,
+          },
+        ],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       });
 
       // Player moves AK47 to chest
-      reconcileItems(db, {
-        players: new Map([
-          ['76561100000000001', {
-            inventory: [],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
-        ]),
-        containers: [{
-          actorName: 'Chest_1',
-          items: [{ item: 'AK47', amount: 1, durability: 0.85 }],
-          quickSlots: [], x: 110, y: 210, z: 50,
-        }],
-        vehicles: [], horses: [], structures: [], worldState: {},
-      }, (steamId) => steamId === '76561100000000001' ? 'TestPlayer' : steamId);
+      reconcileItems(
+        db,
+        {
+          players: new Map([
+            [
+              '76561100000000001',
+              {
+                inventory: [],
+                equipment: [],
+                quickSlots: [],
+                backpackItems: [],
+                x: 100,
+                y: 200,
+                z: 50,
+              },
+            ],
+          ]),
+          containers: [
+            {
+              actorName: 'Chest_1',
+              items: [{ item: 'AK47', amount: 1, durability: 0.85 }],
+              quickSlots: [],
+              x: 110,
+              y: 210,
+              z: 50,
+            },
+          ],
+          vehicles: [],
+          horses: [],
+          structures: [],
+          worldState: {},
+        },
+        (steamId) => (steamId === '76561100000000001' ? 'TestPlayer' : steamId),
+      );
 
       const instances = db.getActiveItemInstances();
-      const ak = instances.find(i => i.item === 'AK47');
+      const ak = instances.find((i) => i.item === 'AK47');
       const movements = db.getItemMovements(ak.id);
       assert.equal(movements.length, 1);
       // Item moved FROM player, so player is attributed
@@ -418,7 +615,15 @@ describe('Item Tracker', () => {
       db.replaceWorldDrops([
         { type: 'pickup', item: 'Axe', amount: 1, durability: 0.7, x: 100, y: 200, z: 30 },
         { type: 'backpack', actorName: 'backpack_0', items: [{ item: 'Nails', amount: 10 }], x: 300, y: 400, z: 10 },
-        { type: 'global_container', actorName: 'House_Chest_1', items: [{ item: 'Bandage', amount: 5 }], locked: true, x: 500, y: 600, z: 20 },
+        {
+          type: 'global_container',
+          actorName: 'House_Chest_1',
+          items: [{ item: 'Bandage', amount: 5 }],
+          locked: true,
+          x: 500,
+          y: 600,
+          z: 20,
+        },
       ]);
 
       const all = db.getAllWorldDrops();
@@ -439,9 +644,7 @@ describe('Item Tracker', () => {
       ]);
       assert.equal(db.getAllWorldDrops().length, 2);
 
-      db.replaceWorldDrops([
-        { type: 'pickup', item: 'Sword', amount: 1, x: 200, y: 300, z: 30 },
-      ]);
+      db.replaceWorldDrops([{ type: 'pickup', item: 'Sword', amount: 1, x: 200, y: 300, z: 30 }]);
       assert.equal(db.getAllWorldDrops().length, 1);
       assert.equal(db.getAllWorldDrops()[0].item, 'Sword');
     });
@@ -451,15 +654,31 @@ describe('Item Tracker', () => {
     it('getItemMovementsByPlayer returns player-attributed movements', () => {
       // Create an item, move it manually to test the query
       const id = db.createItemInstance({
-        fingerprint: 'abc123def456', item: 'AK47', durability: 0.85,
-        locationType: 'player', locationId: '76561100000000001', locationSlot: 'inventory',
-        x: 100, y: 200, z: 50, amount: 1,
+        fingerprint: 'abc123def456',
+        item: 'AK47',
+        durability: 0.85,
+        locationType: 'player',
+        locationId: '76561100000000001',
+        locationSlot: 'inventory',
+        x: 100,
+        y: 200,
+        z: 50,
+        amount: 1,
       });
 
-      db.moveItemInstance(id, {
-        locationType: 'container', locationId: 'Chest_1', locationSlot: 'inventory',
-        x: 110, y: 210, z: 50, amount: 1,
-      }, { steamId: '76561100000000001', name: 'TestPlayer' });
+      db.moveItemInstance(
+        id,
+        {
+          locationType: 'container',
+          locationId: 'Chest_1',
+          locationSlot: 'inventory',
+          x: 110,
+          y: 210,
+          z: 50,
+          amount: 1,
+        },
+        { steamId: '76561100000000001', name: 'TestPlayer' },
+      );
 
       const moves = db.getItemMovementsByPlayer('76561100000000001');
       assert.equal(moves.length, 1);
@@ -468,14 +687,25 @@ describe('Item Tracker', () => {
 
     it('getItemMovementsByLocation returns all movements involving a location', () => {
       const id = db.createItemInstance({
-        fingerprint: 'abc123def456', item: 'AK47', durability: 0.85,
-        locationType: 'container', locationId: 'Chest_1', locationSlot: 'inventory',
-        x: 100, y: 200, z: 50, amount: 1,
+        fingerprint: 'abc123def456',
+        item: 'AK47',
+        durability: 0.85,
+        locationType: 'container',
+        locationId: 'Chest_1',
+        locationSlot: 'inventory',
+        x: 100,
+        y: 200,
+        z: 50,
+        amount: 1,
       });
 
       db.moveItemInstance(id, {
-        locationType: 'player', locationId: '76561100000000001', locationSlot: 'inventory',
-        x: 100, y: 200, z: 50,
+        locationType: 'player',
+        locationId: '76561100000000001',
+        locationSlot: 'inventory',
+        x: 100,
+        y: 200,
+        z: 50,
       });
 
       const moves = db.getItemMovementsByLocation('container', 'Chest_1');
@@ -493,17 +723,28 @@ describe('Item Tracker', () => {
     it('creates groups for multiple identical items at the same location', () => {
       const snapshot = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [
-              { item: 'Nails', amount: 50, durability: 1.0 },
-              { item: 'Nails', amount: 50, durability: 1.0 },
-              { item: 'Nails', amount: 50, durability: 1.0 },
-            ],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [
+                { item: 'Nails', amount: 50, durability: 1.0 },
+                { item: 'Nails', amount: 50, durability: 1.0 },
+                { item: 'Nails', amount: 50, durability: 1.0 },
+              ],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [], vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
 
       const stats = reconcileItems(db, snapshot);
@@ -522,16 +763,27 @@ describe('Item Tracker', () => {
     it('matches existing groups on re-sync (stable quantity)', () => {
       const snapshot = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [
-              { item: 'Nails', amount: 50, durability: 1.0 },
-              { item: 'Nails', amount: 50, durability: 1.0 },
-            ],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [
+                { item: 'Nails', amount: 50, durability: 1.0 },
+                { item: 'Nails', amount: 50, durability: 1.0 },
+              ],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [], vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
 
       reconcileItems(db, snapshot);
@@ -543,33 +795,55 @@ describe('Item Tracker', () => {
     it('detects group quantity decrease (split)', () => {
       const snap1 = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [
-              { item: 'Nails', amount: 50, durability: 1.0 },
-              { item: 'Nails', amount: 50, durability: 1.0 },
-              { item: 'Nails', amount: 50, durability: 1.0 },
-            ],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [
+                { item: 'Nails', amount: 50, durability: 1.0 },
+                { item: 'Nails', amount: 50, durability: 1.0 },
+                { item: 'Nails', amount: 50, durability: 1.0 },
+              ],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [], vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
       reconcileItems(db, snap1);
 
       // Now only 2 stacks remain (1 was taken)
       const snap2 = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [
-              { item: 'Nails', amount: 50, durability: 1.0 },
-              { item: 'Nails', amount: 50, durability: 1.0 },
-            ],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [
+                { item: 'Nails', amount: 50, durability: 1.0 },
+                { item: 'Nails', amount: 50, durability: 1.0 },
+              ],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [], vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
       const stats = reconcileItems(db, snap2);
       assert.equal(stats.groups.adjusted, 1);
@@ -582,40 +856,63 @@ describe('Item Tracker', () => {
       // Initial: 3 Nails stacks in player inventory
       const snap1 = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [
-              { item: 'Nails', amount: 50, durability: 1.0 },
-              { item: 'Nails', amount: 50, durability: 1.0 },
-              { item: 'Nails', amount: 50, durability: 1.0 },
-            ],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [
+                { item: 'Nails', amount: 50, durability: 1.0 },
+                { item: 'Nails', amount: 50, durability: 1.0 },
+                { item: 'Nails', amount: 50, durability: 1.0 },
+              ],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [], vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
       reconcileItems(db, snap1);
 
       // Player drops 2 stacks into a container
       const snap2 = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [
+          [
+            '76561100000000001',
+            {
+              inventory: [{ item: 'Nails', amount: 50, durability: 1.0 }],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
+        ]),
+        containers: [
+          {
+            actorName: 'Chest_1',
+            items: [
+              { item: 'Nails', amount: 50, durability: 1.0 },
               { item: 'Nails', amount: 50, durability: 1.0 },
             ],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
-        ]),
-        containers: [{
-          actorName: 'Chest_1',
-          items: [
-            { item: 'Nails', amount: 50, durability: 1.0 },
-            { item: 'Nails', amount: 50, durability: 1.0 },
-          ],
-          x: 105, y: 205, z: 50,
-        }],
-        vehicles: [], horses: [], structures: [], worldState: {},
+            x: 105,
+            y: 205,
+            z: 50,
+          },
+        ],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
       const stats = reconcileItems(db, snap2);
 
@@ -626,7 +923,7 @@ describe('Item Tracker', () => {
 
       // Verify movement was recorded
       const movements = db.getRecentItemMovements(10);
-      const transfers = movements.filter(m => m.move_type === 'group_transfer');
+      const transfers = movements.filter((m) => m.move_type === 'group_transfer');
       // We expect at least one transfer event
       if (transfers.length > 0) {
         assert.equal(transfers[0].item, 'Nails');
@@ -637,24 +934,35 @@ describe('Item Tracker', () => {
     it('separates unique items from fungible groups', () => {
       const snapshot = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [
-              // Two identical Nails → group
-              { item: 'Nails', amount: 50, durability: 1.0 },
-              { item: 'Nails', amount: 50, durability: 1.0 },
-              // One unique AK47 → individual instance
-              { item: 'AK47', amount: 1, durability: 0.85, ammo: 15 },
-            ],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [
+                // Two identical Nails → group
+                { item: 'Nails', amount: 50, durability: 1.0 },
+                { item: 'Nails', amount: 50, durability: 1.0 },
+                // One unique AK47 → individual instance
+                { item: 'AK47', amount: 1, durability: 0.85, ammo: 15 },
+              ],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [], vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
 
       const stats = reconcileItems(db, snapshot);
-      assert.equal(stats.groups.created, 1);  // Nails group
-      assert.equal(stats.created, 1);          // AK47 instance
+      assert.equal(stats.groups.created, 1); // Nails group
+      assert.equal(stats.created, 1); // AK47 instance
 
       const groups = db.getActiveItemGroups();
       assert.equal(groups.length, 1);
@@ -662,7 +970,7 @@ describe('Item Tracker', () => {
 
       const instances = db.getActiveItemInstances();
       // Only the AK47 should be an individual instance (no group_id)
-      const nonGroupInstances = instances.filter(i => !i.group_id);
+      const nonGroupInstances = instances.filter((i) => !i.group_id);
       assert.equal(nonGroupInstances.length, 1);
       assert.equal(nonGroupInstances[0].item, 'AK47');
     });
@@ -670,29 +978,51 @@ describe('Item Tracker', () => {
     it('handles group disappearing entirely (all lost)', () => {
       const snap1 = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [
-              { item: 'Nails', amount: 50, durability: 1.0 },
-              { item: 'Nails', amount: 50, durability: 1.0 },
-            ],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [
+                { item: 'Nails', amount: 50, durability: 1.0 },
+                { item: 'Nails', amount: 50, durability: 1.0 },
+              ],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [], vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
       reconcileItems(db, snap1);
 
       // All items gone
       const snap2 = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
+          [
+            '76561100000000001',
+            {
+              inventory: [],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
+          ],
         ]),
-        containers: [], vehicles: [], horses: [], structures: [], worldState: {},
+        containers: [],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
       const stats = reconcileItems(db, snap2);
       assert.equal(stats.groups.lost, 1);
@@ -705,52 +1035,79 @@ describe('Item Tracker', () => {
       // Put 2 identical stacks in a container
       const snap1 = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [], equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
-        ]),
-        containers: [{
-          actorName: 'Chest_1',
-          items: [
-            { item: 'Wood', amount: 10, durability: 1.0 },
-            { item: 'Wood', amount: 10, durability: 1.0 },
-            { item: 'Wood', amount: 10, durability: 1.0 },
+          [
+            '76561100000000001',
+            {
+              inventory: [],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
           ],
-          x: 100, y: 200, z: 50,
-        }],
-        vehicles: [], horses: [], structures: [], worldState: {},
+        ]),
+        containers: [
+          {
+            actorName: 'Chest_1',
+            items: [
+              { item: 'Wood', amount: 10, durability: 1.0 },
+              { item: 'Wood', amount: 10, durability: 1.0 },
+              { item: 'Wood', amount: 10, durability: 1.0 },
+            ],
+            x: 100,
+            y: 200,
+            z: 50,
+          },
+        ],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
       reconcileItems(db, snap1);
 
       // Player takes 2 stacks (player is near the container)
       const snap2 = {
         players: new Map([
-          ['76561100000000001', {
-            inventory: [
-              { item: 'Wood', amount: 10, durability: 1.0 },
-              { item: 'Wood', amount: 10, durability: 1.0 },
-            ],
-            equipment: [], quickSlots: [], backpackItems: [],
-            x: 100, y: 200, z: 50,
-          }],
-        ]),
-        containers: [{
-          actorName: 'Chest_1',
-          items: [
-            { item: 'Wood', amount: 10, durability: 1.0 },
+          [
+            '76561100000000001',
+            {
+              inventory: [
+                { item: 'Wood', amount: 10, durability: 1.0 },
+                { item: 'Wood', amount: 10, durability: 1.0 },
+              ],
+              equipment: [],
+              quickSlots: [],
+              backpackItems: [],
+              x: 100,
+              y: 200,
+              z: 50,
+            },
           ],
-          x: 100, y: 200, z: 50,
-        }],
-        vehicles: [], horses: [], structures: [], worldState: {},
+        ]),
+        containers: [
+          {
+            actorName: 'Chest_1',
+            items: [{ item: 'Wood', amount: 10, durability: 1.0 }],
+            x: 100,
+            y: 200,
+            z: 50,
+          },
+        ],
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
       };
-      const stats = reconcileItems(db, snap2);
+      const _stats = reconcileItems(db, snap2);
 
       // Chest group went from 3 → 1 (now unique, group lost with qty 3)
       // Player got 2 identical → new group created
       // Transfer should be detected: container lost items, player gained items
       const movements = db.getRecentItemMovements(10);
-      const transfers = movements.filter(m => m.move_type === 'group_transfer');
+      const transfers = movements.filter((m) => m.move_type === 'group_transfer');
       if (transfers.length > 0) {
         // Attribution should be to the player since items went TO player
         assert.equal(transfers[0].attributed_steam_id, '76561100000000001');
@@ -765,19 +1122,30 @@ describe('Item Tracker', () => {
   describe('item group DB methods', () => {
     it('upsertItemGroup creates and updates groups', () => {
       const result1 = db.upsertItemGroup({
-        fingerprint: 'aaa111bbb222', item: 'Nails',
-        locationType: 'player', locationId: '76561100000000001', locationSlot: 'inventory',
-        x: 100, y: 200, z: 50,
-        quantity: 3, stackSize: 50,
+        fingerprint: 'aaa111bbb222',
+        item: 'Nails',
+        locationType: 'player',
+        locationId: '76561100000000001',
+        locationSlot: 'inventory',
+        x: 100,
+        y: 200,
+        z: 50,
+        quantity: 3,
+        stackSize: 50,
       });
       assert.ok(result1.id > 0);
       assert.equal(result1.created, true);
 
       // Upsert at same location → update quantity
       const result2 = db.upsertItemGroup({
-        fingerprint: 'aaa111bbb222', item: 'Nails',
-        locationType: 'player', locationId: '76561100000000001', locationSlot: 'inventory',
-        x: 100, y: 200, z: 50,
+        fingerprint: 'aaa111bbb222',
+        item: 'Nails',
+        locationType: 'player',
+        locationId: '76561100000000001',
+        locationSlot: 'inventory',
+        x: 100,
+        y: 200,
+        z: 50,
         quantity: 5,
       });
       assert.equal(result2.id, result1.id);
@@ -789,8 +1157,11 @@ describe('Item Tracker', () => {
 
     it('markItemGroupLost and purge', () => {
       const { id } = db.upsertItemGroup({
-        fingerprint: 'aaa111bbb222', item: 'Nails',
-        locationType: 'player', locationId: '76561100000000001', locationSlot: 'inventory',
+        fingerprint: 'aaa111bbb222',
+        item: 'Nails',
+        locationType: 'player',
+        locationId: '76561100000000001',
+        locationSlot: 'inventory',
         quantity: 3,
       });
 
@@ -804,8 +1175,11 @@ describe('Item Tracker', () => {
 
     it('recordGroupMovement writes movement records', () => {
       const { id: groupId } = db.upsertItemGroup({
-        fingerprint: 'aaa111bbb222', item: 'Nails',
-        locationType: 'container', locationId: 'Chest_1', locationSlot: 'items',
+        fingerprint: 'aaa111bbb222',
+        item: 'Nails',
+        locationType: 'container',
+        locationId: 'Chest_1',
+        locationSlot: 'items',
         quantity: 5,
       });
 
@@ -830,13 +1204,19 @@ describe('Item Tracker', () => {
 
     it('getItemGroupsByLocation returns groups at a location', () => {
       db.upsertItemGroup({
-        fingerprint: 'aaa111bbb222', item: 'Nails',
-        locationType: 'container', locationId: 'Chest_1', locationSlot: 'items',
+        fingerprint: 'aaa111bbb222',
+        item: 'Nails',
+        locationType: 'container',
+        locationId: 'Chest_1',
+        locationSlot: 'items',
         quantity: 3,
       });
       db.upsertItemGroup({
-        fingerprint: 'ccc333ddd444', item: 'Wood',
-        locationType: 'container', locationId: 'Chest_1', locationSlot: 'items',
+        fingerprint: 'ccc333ddd444',
+        item: 'Wood',
+        locationType: 'container',
+        locationId: 'Chest_1',
+        locationSlot: 'items',
         quantity: 5,
       });
 

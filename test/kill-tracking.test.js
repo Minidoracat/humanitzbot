@@ -4,24 +4,33 @@
  * Uses Node's built-in test runner (node --test).
  * Run: node --test test/kill-tracking.test.js
  */
-const { describe, it, beforeEach } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
 // ── Stub out external dependencies before requiring the module ──
 // We need to mock: discord.js, ssh2-sftp-client, config, playtime, playerStats, save-parser, game-data, fs (partially)
 
-const KILL_KEYS = ['zeeksKilled', 'headshots', 'meleeKills', 'gunKills', 'blastKills', 'fistKills', 'takedownKills', 'vehicleKills'];
-const SURVIVAL_KEYS = ['daysSurvived'];
+const KILL_KEYS = [
+  'zeeksKilled',
+  'headshots',
+  'meleeKills',
+  'gunKills',
+  'blastKills',
+  'fistKills',
+  'takedownKills',
+  'vehicleKills',
+];
+const _SURVIVAL_KEYS = ['daysSurvived'];
 
 const LIFETIME_KEY_MAP = {
-  zeeksKilled:   'lifetimeKills',
-  headshots:     'lifetimeHeadshots',
-  meleeKills:    'lifetimeMeleeKills',
-  gunKills:      'lifetimeGunKills',
-  blastKills:    'lifetimeBlastKills',
-  fistKills:     'lifetimeFistKills',
+  zeeksKilled: 'lifetimeKills',
+  headshots: 'lifetimeHeadshots',
+  meleeKills: 'lifetimeMeleeKills',
+  gunKills: 'lifetimeGunKills',
+  blastKills: 'lifetimeBlastKills',
+  fistKills: 'lifetimeFistKills',
   takedownKills: 'lifetimeTakedownKills',
-  vehicleKills:  'lifetimeVehicleKills',
+  vehicleKills: 'lifetimeVehicleKills',
 };
 
 // ── Minimal reimplementation of the key logic for isolated testing ──
@@ -45,21 +54,21 @@ function getAllTimeKills(save, record) {
   if (!record && !save) return null;
   const allTime = emptyKills();
   if (save?.hasExtendedStats) {
-    allTime.zeeksKilled    = save.lifetimeKills        || 0;
-    allTime.headshots      = save.lifetimeHeadshots    || 0;
-    allTime.meleeKills     = save.lifetimeMeleeKills   || 0;
-    allTime.gunKills       = save.lifetimeGunKills     || 0;
-    allTime.blastKills     = save.lifetimeBlastKills   || 0;
-    allTime.fistKills      = save.lifetimeFistKills    || 0;
-    allTime.takedownKills  = save.lifetimeTakedownKills || 0;
-    allTime.vehicleKills   = save.lifetimeVehicleKills || 0;
+    allTime.zeeksKilled = save.lifetimeKills || 0;
+    allTime.headshots = save.lifetimeHeadshots || 0;
+    allTime.meleeKills = save.lifetimeMeleeKills || 0;
+    allTime.gunKills = save.lifetimeGunKills || 0;
+    allTime.blastKills = save.lifetimeBlastKills || 0;
+    allTime.fistKills = save.lifetimeFistKills || 0;
+    allTime.takedownKills = save.lifetimeTakedownKills || 0;
+    allTime.vehicleKills = save.lifetimeVehicleKills || 0;
     return allTime;
   }
   if (record) {
     for (const k of KILL_KEYS) allTime[k] += record.cumulative[k];
   }
   if (save) {
-    for (const k of KILL_KEYS) allTime[k] += (save[k] || 0);
+    for (const k of KILL_KEYS) allTime[k] += save[k] || 0;
   }
   return allTime;
 }
@@ -81,7 +90,7 @@ function getCurrentLifeKills(save, record) {
     const life = {};
     for (const k of KILL_KEYS) {
       const lifetimeKey = LIFETIME_KEY_MAP[k];
-      const lifetime = lifetimeKey ? (save[lifetimeKey] || 0) : 0;
+      const lifetime = lifetimeKey ? save[lifetimeKey] || 0 : 0;
       life[k] = Math.max(0, lifetime - (record.deathCheckpoint[k] || 0));
     }
     return life;
@@ -92,7 +101,7 @@ function getCurrentLifeKills(save, record) {
     const life = {};
     for (const k of KILL_KEYS) {
       const lifetimeKey = LIFETIME_KEY_MAP[k];
-      life[k] = lifetimeKey ? (save[lifetimeKey] || 0) : 0;
+      life[k] = lifetimeKey ? save[lifetimeKey] || 0 : 0;
     }
     return life;
   }
@@ -108,7 +117,7 @@ function computeDeathCheckpoint(save, currentKills) {
   const cp = {};
   for (const k of KILL_KEYS) {
     const lifetimeKey = LIFETIME_KEY_MAP[k];
-    const lifetime = lifetimeKey ? (save[lifetimeKey] || 0) : 0;
+    const lifetime = lifetimeKey ? save[lifetimeKey] || 0 : 0;
     cp[k] = lifetime - (currentKills[k] || 0);
   }
   return cp;
@@ -119,11 +128,20 @@ function mockSave({ lifetime = 0, session = 0, headshots = 0, lifetimeHS = 0, ha
   return {
     zeeksKilled: session,
     headshots: headshots,
-    meleeKills: 0, gunKills: 0, blastKills: 0, fistKills: 0, takedownKills: 0, vehicleKills: 0,
+    meleeKills: 0,
+    gunKills: 0,
+    blastKills: 0,
+    fistKills: 0,
+    takedownKills: 0,
+    vehicleKills: 0,
     lifetimeKills: lifetime,
     lifetimeHeadshots: lifetimeHS,
-    lifetimeMeleeKills: 0, lifetimeGunKills: 0, lifetimeBlastKills: 0,
-    lifetimeFistKills: 0, lifetimeTakedownKills: 0, lifetimeVehicleKills: 0,
+    lifetimeMeleeKills: 0,
+    lifetimeGunKills: 0,
+    lifetimeBlastKills: 0,
+    lifetimeFistKills: 0,
+    lifetimeTakedownKills: 0,
+    lifetimeVehicleKills: 0,
     hasExtendedStats: hasExtended,
   };
 }
@@ -166,8 +184,8 @@ describe('getCurrentLifeKills', () => {
     const save = mockSave({ lifetime: 143, session: 0, lifetimeHS: 35, headshots: 0 });
     const record = { deathCheckpoint: { ...emptyKills(), zeeksKilled: 134, headshots: 30 } };
     const cl = getCurrentLifeKills(save, record);
-    assert.equal(cl.zeeksKilled, 9);  // 143 - 134
-    assert.equal(cl.headshots, 5);     // 35 - 30
+    assert.equal(cl.zeeksKilled, 9); // 143 - 134
+    assert.equal(cl.headshots, 5); // 35 - 30
   });
 
   it('returns full lifetime when never died (no checkpoint)', () => {
@@ -201,8 +219,8 @@ describe('computeDeathCheckpoint', () => {
     const save = mockSave({ lifetime: 143, session: 3, lifetimeHS: 35, headshots: 1 });
     const currentKills = snapshotKills(save);
     const cp = computeDeathCheckpoint(save, currentKills);
-    assert.equal(cp.zeeksKilled, 140);  // 143 - 3
-    assert.equal(cp.headshots, 34);      // 35 - 1
+    assert.equal(cp.zeeksKilled, 140); // 143 - 3
+    assert.equal(cp.headshots, 34); // 35 - 1
   });
 
   it('checkpoint equals lifetime when session is 0 (just died)', () => {

@@ -72,13 +72,27 @@ async function _probeSftp(hasSftp) {
       retries: 0,
     };
     if (config.ftpPrivateKeyPath) {
-      try { connectOpts.privateKey = fs.readFileSync(config.ftpPrivateKeyPath); } catch { /* ignore */ }
+      try {
+        connectOpts.privateKey = fs.readFileSync(config.ftpPrivateKeyPath);
+      } catch {
+        /* ignore */
+      }
     }
     await sftp.connect(connectOpts);
     let hasSave = false;
     let hasLog = false;
-    try { await sftp.stat(config.ftpSavePath); hasSave = true; } catch { /* missing */ }
-    try { await sftp.stat(config.ftpLogPath); hasLog = true; } catch { /* missing */ }
+    try {
+      await sftp.stat(config.ftpSavePath);
+      hasSave = true;
+    } catch {
+      /* missing */
+    }
+    try {
+      await sftp.stat(config.ftpLogPath);
+      hasLog = true;
+    } catch {
+      /* missing */
+    }
     // Also check HZLogs/ directory (per-restart rotated logs, game update March 2026)
     if (!hasLog) {
       try {
@@ -86,12 +100,18 @@ async function _probeSftp(hasSftp) {
         if (serverRoot.endsWith('/Saved/Logs')) serverRoot = serverRoot.replace(/\/Saved\/Logs$/, '');
         await sftp.stat(serverRoot + '/HZLogs');
         hasLog = true;
-      } catch { /* no HZLogs either */ }
+      } catch {
+        /* no HZLogs either */
+      }
     }
     await sftp.end();
     return { status: 'ok', latency: Date.now() - start, hasSave, hasLog };
   } catch (err) {
-    try { await sftp.end(); } catch { /* ignore */ }
+    try {
+      await sftp.end();
+    } catch {
+      /* ignore */
+    }
     return { status: 'error', latency: Date.now() - start, error: err.message };
   }
 }
@@ -106,7 +126,11 @@ function _probeDb(db) {
     const aliases = db.getAliasStats();
     const version = db.getMeta('schema_version');
     let fileSize = 0;
-    try { fileSize = fs.statSync(db._dbPath).size; } catch { /* in-memory */ }
+    try {
+      fileSize = fs.statSync(db._dbPath).size;
+    } catch {
+      /* in-memory */
+    }
     return {
       status: ok ? 'ok' : 'degraded',
       integrity: ok,
@@ -227,7 +251,9 @@ function _buildConnectivityLines(results) {
   // Database
   if (results.db.status === 'ok') {
     const sizeMB = (results.db.fileSize / 1024 / 1024).toFixed(1);
-    lines.push(`🟢 **Database** — v${results.db.version} · ${results.db.players} players · ${results.db.aliases} aliases · ${sizeMB} MB`);
+    lines.push(
+      `🟢 **Database** — v${results.db.version} · ${results.db.players} players · ${results.db.aliases} aliases · ${sizeMB} MB`,
+    );
   } else if (results.db.status === 'degraded') {
     lines.push('🟡 **Database** — Integrity check failed');
   } else if (results.db.status === 'error') {
@@ -264,7 +290,10 @@ function _buildModuleLines(moduleStatus, logWatcher) {
     } else if (icon === '⚫') {
       lines.push(`${icon} **${name}** — Disabled in config`);
     } else {
-      const reason = detail.replace(/^Skipped\s*/, '').replace(/^\(/, '').replace(/\)$/, '');
+      const reason = detail
+        .replace(/^Skipped\s*/, '')
+        .replace(/^\(/, '')
+        .replace(/\)$/, '');
       lines.push(`${icon} **${name}** — ${reason || 'Skipped'}`);
     }
   }
@@ -273,7 +302,7 @@ function _buildModuleLines(moduleStatus, logWatcher) {
     const lwActive = !!logWatcher.interval;
     const lwInit = logWatcher.initialised;
     if (lwActive && !lwInit) {
-      lines.push('-# Log Watcher is polling but hasn\'t received data yet');
+      lines.push("-# Log Watcher is polling but hasn't received data yet");
     }
   }
   return lines;
@@ -289,45 +318,49 @@ function _buildSuggestions(results, moduleStatus, saveResult) {
   if (results.rcon.status === 'disconnected') {
     tips.push(
       '🔌 **RCON disconnected** — The bot auto-reconnects every 15 seconds. ' +
-      'If your game server restarted (e.g. Bisect 8h schedule), just wait for it to finish booting. ' +
-      'The bot will automatically reconnect — no manual action needed. ' +
-      'Chat relay and server status will resume once RCON is back.'
+        'If your game server restarted (e.g. Bisect 8h schedule), just wait for it to finish booting. ' +
+        'The bot will automatically reconnect — no manual action needed. ' +
+        'Chat relay and server status will resume once RCON is back.',
     );
   } else if (results.rcon.status === 'error') {
     tips.push(
-      '⚠️ **RCON issues** — Connected but commands are failing. Check that `RCON_HOST`, `RCON_PORT`, and `RCON_PASSWORD` match your server\'s RCON settings.'
+      "⚠️ **RCON issues** — Connected but commands are failing. Check that `RCON_HOST`, `RCON_PORT`, and `RCON_PASSWORD` match your server's RCON settings.",
     );
   } else if (results.rcon.status === 'ok' && results.rcon.latency > 2000) {
     tips.push(
-      '🐢 **RCON slow** — Response took ' + results.rcon.latency + 'ms. ' +
-      'This may cause delayed chat relay and status updates. ' +
-      'Check server load or network latency to the game server.'
+      '🐢 **RCON slow** — Response took ' +
+        results.rcon.latency +
+        'ms. ' +
+        'This may cause delayed chat relay and status updates. ' +
+        'Check server load or network latency to the game server.',
     );
   }
 
   // SFTP issues
   if (results.sftp.status === 'error') {
     tips.push(
-      '🔴 **SFTP connection failed** — `' + results.sftp.error + '`. ' +
-      'Verify `FTP_HOST`, `FTP_PORT`, `FTP_USER`, `FTP_PASSWORD` are correct. ' +
-      'Common causes: wrong port (game SFTP is usually 2022), firewall blocking, incorrect credentials.'
+      '🔴 **SFTP connection failed** — `' +
+        results.sftp.error +
+        '`. ' +
+        'Verify `FTP_HOST`, `FTP_PORT`, `FTP_USER`, `FTP_PASSWORD` are correct. ' +
+        'Common causes: wrong port (game SFTP is usually 2022), firewall blocking, incorrect credentials.',
     );
   } else if (results.sftp.status === 'ok' && !results.sftp.hasSave) {
     tips.push(
       '📁 **Save file not found** — SFTP connected but `FTP_SAVE_PATH` does not exist on the server. ' +
-      'Check that `FTP_SAVE_PATH` points to the correct `.sav` file (default: `/HumanitZServer/Saved/SaveGames/SaveList/Default/Save_DedicatedSaveMP.sav`).'
+        'Check that `FTP_SAVE_PATH` points to the correct `.sav` file (default: `/HumanitZServer/Saved/SaveGames/SaveList/Default/Save_DedicatedSaveMP.sav`).',
     );
   } else if (results.sftp.status === 'ok' && !results.sftp.hasLog) {
     tips.push(
       '📁 **Log file not found** — `FTP_LOG_PATH` does not exist on the server. ' +
-      'Log Watcher needs this file. Set `FTP_LOG_PATH` in `.env` to the full path of `HMZLog.log` on your server ' +
-      '(e.g. `/home/steam/hzserver/serverfiles/HumanitZServer/HMZLog.log`). If you\'re unsure, run `npm run setup` to auto-discover.'
+        'Log Watcher needs this file. Set `FTP_LOG_PATH` in `.env` to the full path of `HMZLog.log` on your server ' +
+        "(e.g. `/home/steam/hzserver/serverfiles/HumanitZServer/HMZLog.log`). If you're unsure, run `npm run setup` to auto-discover.",
     );
   } else if (results.sftp.status === 'unconfigured' && skippedModules.some(([n]) => /log|save|stats|pvp/i.test(n))) {
     tips.push(
       '📡 **No SFTP configured** — Several modules need SFTP to read server files. ' +
-      'Set `FTP_HOST`, `FTP_USER`, and `FTP_PASSWORD` to enable log watching, player stats, and save syncing. ' +
-      'The bot will work for chat relay and server status without SFTP, but advanced features require it.'
+        'Set `FTP_HOST`, `FTP_USER`, and `FTP_PASSWORD` to enable log watching, player stats, and save syncing. ' +
+        'The bot will work for chat relay and server status without SFTP, but advanced features require it.',
     );
   }
 
@@ -335,15 +368,21 @@ function _buildSuggestions(results, moduleStatus, saveResult) {
   if (saveResult?.status === 'error') {
     tips.push('💾 **Save sync error** — `' + saveResult.lastError + '`. Check SFTP/agent configuration.');
   } else if (saveResult?.status === 'waiting') {
-    tips.push('💾 **Save service waiting** — No sync has completed yet. This is normal on fresh startup; data will appear after the first poll cycle.');
+    tips.push(
+      '💾 **Save service waiting** — No sync has completed yet. This is normal on fresh startup; data will appear after the first poll cycle.',
+    );
   }
 
   // DB issues
   if (results.db.status === 'degraded') {
-    tips.push('🗄️ **DB integrity issue** — The database failed SQLite integrity_check. Consider using "Factory Reset" to rebuild.');
+    tips.push(
+      '🗄️ **DB integrity issue** — The database failed SQLite integrity_check. Consider using "Factory Reset" to rebuild.',
+    );
   }
   if (results.db.status === 'ok' && results.db.players === 0 && saveResult?.syncCount > 0) {
-    tips.push('🗄️ **DB empty despite save syncs** — Save data was synced but no players in DB. The save file may be empty or corrupted.');
+    tips.push(
+      '🗄️ **DB empty despite save syncs** — Save data was synced but no players in DB. The save file may be empty or corrupted.',
+    );
   }
 
   // Panel API
@@ -352,11 +391,13 @@ function _buildSuggestions(results, moduleStatus, saveResult) {
   }
 
   // Channel issues
-  const brokenChannels = results.channels.filter(c => c.status === 'error');
+  const brokenChannels = results.channels.filter((c) => c.status === 'error');
   if (brokenChannels.length > 0) {
     tips.push(
-      '📺 **Invalid channel ID(s):** ' + brokenChannels.map(c => c.name).join(', ') + '. ' +
-      'The channel may have been deleted or the bot lacks access. Update in the Channels config category.'
+      '📺 **Invalid channel ID(s):** ' +
+        brokenChannels.map((c) => c.name).join(', ') +
+        '. ' +
+        'The channel may have been deleted or the bot lacks access. Update in the Channels config category.',
     );
   }
 
@@ -365,17 +406,23 @@ function _buildSuggestions(results, moduleStatus, saveResult) {
   if (missingChannels.length > 0) {
     const names = missingChannels.map(([n]) => n).join(', ');
     tips.push(
-      '📺 **Missing channel IDs for:** ' + names + '. ' +
-      'Set the corresponding channel IDs in the Channels config above to activate these modules.'
+      '📺 **Missing channel IDs for:** ' +
+        names +
+        '. ' +
+        'Set the corresponding channel IDs in the Channels config above to activate these modules.',
     );
   }
 
   // Data staleness
   if (results.db.status === 'ok' && results.db.players > 0 && results.psCount === 0) {
-    tips.push('📊 **Log stats empty** — DB has players but log-based stats (deaths, builds, loots) are empty. Enable Log Watcher with SFTP to track player activity.');
+    tips.push(
+      '📊 **Log stats empty** — DB has players but log-based stats (deaths, builds, loots) are empty. Enable Log Watcher with SFTP to track player activity.',
+    );
   }
   if (results.db.status === 'ok' && results.db.players > 0 && results.ptCount === 0) {
-    tips.push('⏱️ **No playtime data** — Enable playtime tracking (`ENABLE_PLAYTIME=true`) and ensure RCON is connected to track player sessions.');
+    tips.push(
+      '⏱️ **No playtime data** — Enable playtime tracking (`ENABLE_PLAYTIME=true`) and ensure RCON is connected to track player sessions.',
+    );
   }
 
   // Disabled module suggestions
@@ -442,7 +489,7 @@ async function buildDiagnostics({ client, db, saveService, logWatcher, moduleSta
   const moduleLines = _buildModuleLines(moduleStatus, logWatcher);
   const tips = _buildSuggestions(results, moduleStatus, results.save);
 
-  const chLines = results.channels.map(ch => {
+  const chLines = results.channels.map((ch) => {
     if (ch.status === 'ok') return `🟢 ${ch.name} → #${ch.channelName}`;
     if (ch.status === 'not set') return `⚫ ${ch.name} — not configured`;
     return `🔴 ${ch.name} — channel ${ch.id} not found or inaccessible`;
@@ -450,11 +497,16 @@ async function buildDiagnostics({ client, db, saveService, logWatcher, moduleSta
 
   const dataLines = [];
   if (results.db.status === 'ok' && results.db.players > 0) {
-    dataLines.push(`👥 **${fmtNumber(results.db.players, locale)}** players in database (${fmtNumber(results.db.online, locale)} online)`);
+    dataLines.push(
+      `👥 **${fmtNumber(results.db.players, locale)}** players in database (${fmtNumber(results.db.online, locale)} online)`,
+    );
     dataLines.push(`🪦 **${fmtNumber(results.db.totalKills || 0, locale)}** lifetime kills tracked`);
   }
   if (psCount > 0) dataLines.push(`📊 **${fmtNumber(psCount, locale)}** players in log stats`);
-  if (ptCount > 0) dataLines.push(`⏱️ **${fmtNumber(ptCount, locale)}** players with playtime (${fmtNumber(ptActive, locale)} active session${ptActive !== 1 ? 's' : ''})`);
+  if (ptCount > 0)
+    dataLines.push(
+      `⏱️ **${fmtNumber(ptCount, locale)}** players with playtime (${fmtNumber(ptActive, locale)} active session${ptActive !== 1 ? 's' : ''})`,
+    );
   if (dataLines.length === 0) dataLines.push('No player data loaded yet');
 
   // ── Build embeds ──
@@ -466,16 +518,24 @@ async function buildDiagnostics({ client, db, saveService, logWatcher, moduleSta
         ? 0xe74c3c
         : skippedModules.length > 0
           ? 0xf1c40f
-          : 0x2ecc71
+          : 0x2ecc71,
     )
-    .setDescription(t('discord:panel_diagnostics.uptime_modules', locale, {
-      uptime: `**${_formatUptime(upMs)}**`,
-      count: `**${fmtNumber(Object.keys(moduleStatus).length, locale)}**`,
-    }))
+    .setDescription(
+      t('discord:panel_diagnostics.uptime_modules', locale, {
+        uptime: `**${_formatUptime(upMs)}**`,
+        count: `**${fmtNumber(Object.keys(moduleStatus).length, locale)}**`,
+      }),
+    )
     .addFields(
       { name: `🔌 ${t('discord:panel_diagnostics.live_connectivity', locale)}`, value: connLines.join('\n') },
-      { name: `📺 ${t('discord:panel_diagnostics.channels', locale)}`, value: chLines.join('\n') || t('discord:panel_diagnostics.none_configured', locale) },
-      { name: `📦 ${t('discord:panel_diagnostics.modules', locale)}`, value: moduleLines.join('\n') || t('discord:panel_diagnostics.none_registered', locale) },
+      {
+        name: `📺 ${t('discord:panel_diagnostics.channels', locale)}`,
+        value: chLines.join('\n') || t('discord:panel_diagnostics.none_configured', locale),
+      },
+      {
+        name: `📦 ${t('discord:panel_diagnostics.modules', locale)}`,
+        value: moduleLines.join('\n') || t('discord:panel_diagnostics.none_registered', locale),
+      },
     )
     .setTimestamp()
     .setFooter({ text: t('discord:panel_diagnostics.visible_to_you', locale) });

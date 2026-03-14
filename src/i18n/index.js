@@ -27,13 +27,13 @@ i18next.init({
   fallbackLng: {
     'zh-TW': ['zh-CN', 'en'],
     'zh-CN': ['zh-TW', 'en'],
-    default: ['en']
+    default: ['en'],
   },
   ns: NAMESPACES,
   defaultNS: 'common',
   resources,
   interpolation: { escapeValue: false },
-  initImmediate: false
+  initImmediate: false,
 });
 
 function t(key, lng, vars = {}) {
@@ -97,5 +97,5 @@ module.exports = {
   fmtNumber,
   getSupportedLocales,
   getLocalizations,
-  i18next
+  i18next,
 };

@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Runtime data
+data/
+
+# Generated files
+src/web-map/public/tailwind.css
+src/web-map/public/tiles/
+CHANGELOG.json
+package-lock.json
+
+# Private / dev-only
+qs-anticheat/
+.dev/
+_*.js
+*.bak
+*.7z
+*.sav
+*.log
+
+# Binary / image assets
+*.png
+*.jpg
+*.svg
+*.db

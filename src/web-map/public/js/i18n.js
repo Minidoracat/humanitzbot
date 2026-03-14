@@ -1,7 +1,7 @@
 // i18n.js — Browser-side i18n initialization
 // Depends on CDN-loaded: i18next, i18nextHttpBackend, i18nextBrowserLanguageDetector
 
-(function() {
+(function () {
   'use strict';
 
   window.i18nReady = i18next
@@ -12,7 +12,7 @@
       fallbackLng: {
         'zh-TW': ['zh-CN', 'en'],
         'zh-CN': ['zh-TW', 'en'],
-        default: ['en']
+        default: ['en'],
       },
       detection: {
         order: ['localStorage', 'querystring', 'navigator'],
@@ -29,7 +29,7 @@
       interpolation: { escapeValue: false },
       debug: location.hostname === 'localhost',
     })
-    .then(function() {
+    .then(function () {
       translateDOM();
       updateHtmlLang();
       initLangSwitcher();
@@ -45,22 +45,32 @@
     root = root || document;
 
     // Text content: <span data-i18n="web:nav.dashboard">Dashboard</span>
-    root.querySelectorAll('[data-i18n]').forEach(function(el) {
+    root.querySelectorAll('[data-i18n]').forEach(function (el) {
       var key = el.getAttribute('data-i18n');
       var varsAttr = el.getAttribute('data-i18n-vars');
-      var vars; try { vars = varsAttr ? JSON.parse(varsAttr) : {}; } catch (e) { vars = {}; }
+      var vars;
+      try {
+        vars = varsAttr ? JSON.parse(varsAttr) : {};
+      } catch (_e) {
+        vars = {};
+      }
       el.textContent = i18next.t(key, vars);
     });
 
     // HTML content: <p data-i18n-html="web:help.text"></p>
-    root.querySelectorAll('[data-i18n-html]').forEach(function(el) {
+    root.querySelectorAll('[data-i18n-html]').forEach(function (el) {
       el.innerHTML = i18next.t(el.getAttribute('data-i18n-html'));
     });
 
     // Attributes: <input data-i18n-attr='{"placeholder":"web:search.placeholder"}'>
-    root.querySelectorAll('[data-i18n-attr]').forEach(function(el) {
-      var attrs; try { attrs = JSON.parse(el.getAttribute('data-i18n-attr')); } catch (e) { return; }
-      Object.keys(attrs).forEach(function(attr) {
+    root.querySelectorAll('[data-i18n-attr]').forEach(function (el) {
+      var attrs;
+      try {
+        attrs = JSON.parse(el.getAttribute('data-i18n-attr'));
+      } catch (_e) {
+        return;
+      }
+      Object.keys(attrs).forEach(function (attr) {
         el.setAttribute(attr, i18next.t(attrs[attr]));
       });
     });
@@ -79,7 +89,7 @@
    * Switch language without page reload
    */
   function switchLanguage(lang) {
-    i18next.changeLanguage(lang).then(function() {
+    i18next.changeLanguage(lang).then(function () {
       translateDOM();
       updateHtmlLang();
       // Update switcher UI
@@ -98,7 +108,7 @@
     if (!switcher) return;
     // Set initial value
     switcher.value = i18next.resolvedLanguage || i18next.language || 'en';
-    switcher.addEventListener('change', function() {
+    switcher.addEventListener('change', function () {
       switchLanguage(this.value);
     });
   }
@@ -126,9 +136,15 @@
 
   // ── Dialog Wrappers ──────────────────────────────────────
 
-  function uiAlert(key, vars) { alert(i18next.t(key, vars)); }
-  function uiConfirm(key, vars) { return confirm(i18next.t(key, vars)); }
-  function uiPrompt(key, vars) { return prompt(i18next.t(key, vars)); }
+  function uiAlert(key, vars) {
+    alert(i18next.t(key, vars));
+  }
+  function uiConfirm(key, vars) {
+    return confirm(i18next.t(key, vars));
+  }
+  function uiPrompt(key, vars) {
+    return prompt(i18next.t(key, vars));
+  }
 
   // ── Expose Globals ───────────────────────────────────────
 

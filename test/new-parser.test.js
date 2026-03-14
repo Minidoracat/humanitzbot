@@ -11,14 +11,24 @@
  * Run:  npm test test/new-parser.test.js
  */
 
-const { describe, it, before, after, beforeEach } = require('node:test');
+const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
 
 // ─── New parser modules ─────────────────────────────────────────────────────
 const { createReader, parseHeader, readProperty, cleanName, recoverForward } = require('../src/parsers/gvas-reader');
-const { parseSave, parseClanData, PERK_MAP, PERK_INDEX_MAP, CLAN_RANK_MAP, SEASON_MAP, STAT_TAG_MAP, createPlayerData, simplifyBlueprint } = require('../src/parsers/save-parser');
+const {
+  parseSave,
+  parseClanData,
+  PERK_MAP,
+  PERK_INDEX_MAP,
+  CLAN_RANK_MAP,
+  SEASON_MAP,
+  STAT_TAG_MAP,
+  createPlayerData,
+  simplifyBlueprint,
+} = require('../src/parsers/save-parser');
 const HumanitZDB = require('../src/db/database');
 
 // ─── Test data paths ────────────────────────────────────────────────────────
@@ -31,22 +41,42 @@ const SAV_FILES = [
   'Save_DedicatedSaveMP_NE.sav',
   'Save_DedicatedSaveMP_NEW.sav',
   'Save_DedicatedSaveMP_CAL.sav',
-].filter(f => fs.existsSync(path.join(DATA_DIR, f)));
+].filter((f) => fs.existsSync(path.join(DATA_DIR, f)));
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function writeFString(str) {
-  if (str === '') { const b = Buffer.alloc(4); b.writeInt32LE(0); return b; }
+  if (str === '') {
+    const b = Buffer.alloc(4);
+    b.writeInt32LE(0);
+    return b;
+  }
   const encoded = Buffer.from(str + '\0', 'utf8');
   const buf = Buffer.alloc(4);
   buf.writeInt32LE(encoded.length);
   return Buffer.concat([buf, encoded]);
 }
 
-function writeU8(val) { const b = Buffer.alloc(1); b[0] = val; return b; }
-function writeI32(val) { const b = Buffer.alloc(4); b.writeInt32LE(val); return b; }
-function writeI64(val) { const b = Buffer.alloc(8); b.writeBigInt64LE(BigInt(val)); return b; }
-function writeF32(val) { const b = Buffer.alloc(4); b.writeFloatLE(val); return b; }
+function writeU8(val) {
+  const b = Buffer.alloc(1);
+  b[0] = val;
+  return b;
+}
+function writeI32(val) {
+  const b = Buffer.alloc(4);
+  b.writeInt32LE(val);
+  return b;
+}
+function writeI64(val) {
+  const b = Buffer.alloc(8);
+  b.writeBigInt64LE(BigInt(val));
+  return b;
+}
+function writeF32(val) {
+  const b = Buffer.alloc(4);
+  b.writeFloatLE(val);
+  return b;
+}
 
 function buildGvasHeader() {
   const parts = [];
@@ -63,39 +93,36 @@ function buildGvasHeader() {
 
 function buildStrProperty(name, value) {
   const valBuf = writeFString(value);
-  return Buffer.concat([
-    writeFString(name), writeFString('StrProperty'),
-    writeI64(valBuf.length), writeU8(0), valBuf,
-  ]);
+  return Buffer.concat([writeFString(name), writeFString('StrProperty'), writeI64(valBuf.length), writeU8(0), valBuf]);
 }
 
 function buildIntProperty(name, value) {
-  return Buffer.concat([
-    writeFString(name), writeFString('IntProperty'),
-    writeI64(4), writeU8(0), writeI32(value),
-  ]);
+  return Buffer.concat([writeFString(name), writeFString('IntProperty'), writeI64(4), writeU8(0), writeI32(value)]);
 }
 
 function buildFloatProperty(name, value) {
-  return Buffer.concat([
-    writeFString(name), writeFString('FloatProperty'),
-    writeI64(4), writeU8(0), writeF32(value),
-  ]);
+  return Buffer.concat([writeFString(name), writeFString('FloatProperty'), writeI64(4), writeU8(0), writeF32(value)]);
 }
 
 function buildBoolProperty(name, value) {
   return Buffer.concat([
-    writeFString(name), writeFString('BoolProperty'),
-    writeI64(0), writeU8(value ? 1 : 0), writeU8(0),
+    writeFString(name),
+    writeFString('BoolProperty'),
+    writeI64(0),
+    writeU8(value ? 1 : 0),
+    writeU8(0),
   ]);
 }
 
 function buildStructProperty(name, structType, contentParts) {
   const content = Buffer.concat(contentParts);
   return Buffer.concat([
-    writeFString(name), writeFString('StructProperty'),
+    writeFString(name),
+    writeFString('StructProperty'),
     writeI64(content.length),
-    writeFString(structType), Buffer.alloc(16), writeU8(0),
+    writeFString(structType),
+    Buffer.alloc(16),
+    writeU8(0),
     content,
   ]);
 }
@@ -124,14 +151,14 @@ describe('gvas-reader', () => {
   describe('createReader', () => {
     it('reads basic types correctly', () => {
       const buf = Buffer.alloc(32);
-      buf.writeUInt8(0xFF, 0);
+      buf.writeUInt8(0xff, 0);
       buf.writeUInt16LE(1234, 1);
       buf.writeUInt32LE(99999, 3);
       buf.writeInt32LE(-42, 7);
       buf.writeFloatLE(3.14, 11);
 
       const r = createReader(buf);
-      assert.equal(r.readU8(), 0xFF);
+      assert.equal(r.readU8(), 0xff);
       assert.equal(r.readU16(), 1234);
       assert.equal(r.readU32(), 99999);
       assert.equal(r.readI32(), -42);
@@ -243,7 +270,7 @@ describe('gvas-reader', () => {
   describe('recoverForward', () => {
     it('finds the next property-like structure', () => {
       // Build buf with garbage then a valid property
-      const garbage = Buffer.alloc(50, 0xFF);
+      const garbage = Buffer.alloc(50, 0xff);
       const validProp = buildIntProperty('Score', 10);
       const buf = Buffer.concat([garbage, validProp]);
       const r = createReader(buf);
@@ -251,7 +278,7 @@ describe('gvas-reader', () => {
     });
 
     it('returns false when no valid property found', () => {
-      const buf = Buffer.alloc(100, 0xFF);
+      const buf = Buffer.alloc(100, 0xff);
       const r = createReader(buf);
       assert.equal(recoverForward(r, 0, 100), false);
     });
@@ -304,7 +331,7 @@ describe('save-parser', () => {
     it('extracts name from full blueprint path', () => {
       assert.equal(
         simplifyBlueprint('/Game/BuildingSystem/Blueprints/Buildings/BP_WoodWall.BP_WoodWall_C'),
-        'WoodWall'
+        'WoodWall',
       );
     });
 
@@ -362,7 +389,7 @@ describe('save-parser', () => {
       const { players } = parseSave(buf);
       const p = players.get('76561198000000001');
       assert.ok(Math.abs(p.x - 37377.63) < 1);
-      assert.ok(Math.abs(p.y - (-292189)) < 1);
+      assert.ok(Math.abs(p.y - -292189) < 1);
       assert.ok(typeof p.rotationYaw === 'number');
     });
 
@@ -439,7 +466,7 @@ describe('parseSave — real .sav files', () => {
       });
 
       it('player data has expected fields', () => {
-        const [steamId, p] = result.players.entries().next().value;
+        const [_steamId, p] = result.players.entries().next().value;
         // Must have all the default fields
         assert.ok('male' in p);
         assert.ok('startingPerk' in p);
@@ -495,7 +522,7 @@ describe('HumanitZDB', () => {
   describe('init', () => {
     it('creates all tables', () => {
       const tables = db.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
-      const names = tables.map(t => t.name);
+      const names = tables.map((t) => t.name);
       assert.ok(names.includes('players'));
       assert.ok(names.includes('clans'));
       assert.ok(names.includes('structures'));
@@ -512,7 +539,7 @@ describe('HumanitZDB', () => {
 
     it('creates player_aliases table', () => {
       const tables = db.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
-      assert.ok(tables.map(t => t.name).includes('player_aliases'));
+      assert.ok(tables.map((t) => t.name).includes('player_aliases'));
     });
   });
 
@@ -593,8 +620,20 @@ describe('HumanitZDB', () => {
   describe('structures', () => {
     it('replaces all structures', () => {
       db.replaceStructures([
-        { actorClass: 'BP_WoodWall', displayName: 'WoodWall', ownerSteamId: '76561198000000001', currentHealth: 100, maxHealth: 100 },
-        { actorClass: 'BP_StoneWall', displayName: 'StoneWall', ownerSteamId: '76561198000000002', currentHealth: 200, maxHealth: 200 },
+        {
+          actorClass: 'BP_WoodWall',
+          displayName: 'WoodWall',
+          ownerSteamId: '76561198000000001',
+          currentHealth: 100,
+          maxHealth: 100,
+        },
+        {
+          actorClass: 'BP_StoneWall',
+          displayName: 'StoneWall',
+          ownerSteamId: '76561198000000002',
+          currentHealth: 200,
+          maxHealth: 200,
+        },
       ]);
       const all = db.getStructures();
       assert.equal(all.length, 2);
@@ -615,9 +654,7 @@ describe('HumanitZDB', () => {
 
   describe('vehicles', () => {
     it('replaces all vehicles', () => {
-      db.replaceVehicles([
-        { class: 'BP_Sedan', displayName: 'Sedan', health: 500, maxHealth: 1000, fuel: 50 },
-      ]);
+      db.replaceVehicles([{ class: 'BP_Sedan', displayName: 'Sedan', health: 500, maxHealth: 1000, fuel: 50 }]);
       const all = db.getAllVehicles();
       assert.equal(all.length, 1);
       assert.equal(all[0].display_name, 'Sedan');
@@ -632,7 +669,7 @@ describe('HumanitZDB', () => {
       ]);
       const clans = db.getAllClans();
       assert.ok(clans.length >= 1);
-      const tc = clans.find(c => c.name === 'TestClan');
+      const tc = clans.find((c) => c.name === 'TestClan');
       assert.ok(tc);
       assert.equal(tc.members.length, 2);
     });
@@ -653,16 +690,23 @@ describe('HumanitZDB', () => {
         players,
         worldState: { daysPassed: 100, currentSeason: 'Winter' },
         structures: [
-          { actorClass: 'BP_Fence', displayName: 'Fence', ownerSteamId: '76561198000000010', currentHealth: 50, maxHealth: 100 },
+          {
+            actorClass: 'BP_Fence',
+            displayName: 'Fence',
+            ownerSteamId: '76561198000000010',
+            currentHealth: 50,
+            maxHealth: 100,
+          },
         ],
-        vehicles: [
-          { class: 'BP_Truck', displayName: 'Truck', health: 800, maxHealth: 1200, fuel: 75 },
-        ],
-        companions: [
-          { type: 'dog', actorName: 'Dog_1', ownerSteamId: '76561198000000010', health: 100 },
-        ],
+        vehicles: [{ class: 'BP_Truck', displayName: 'Truck', health: 800, maxHealth: 1200, fuel: 75 }],
+        companions: [{ type: 'dog', actorName: 'Dog_1', ownerSteamId: '76561198000000010', health: 100 }],
         clans: [
-          { name: 'SyncClan', members: [{ steamId: '76561198000000010', name: 'SyncPlayer', rank: 'Leader', canInvite: true, canKick: true }] },
+          {
+            name: 'SyncClan',
+            members: [
+              { steamId: '76561198000000010', name: 'SyncPlayer', rank: 'Leader', canInvite: true, canKick: true },
+            ],
+          },
         ],
       });
 
@@ -708,7 +752,13 @@ describe('HumanitZDB', () => {
 
     it('seeds professions', () => {
       db.seedGameProfessions([
-        { id: 'Mechanic', enumValue: 'Enum_Professions::NewEnumerator3', enumIndex: 3, perk: '50% more effective with Repair Kits', skills: ['METAL WORKING', 'CALLUSED'] },
+        {
+          id: 'Mechanic',
+          enumValue: 'Enum_Professions::NewEnumerator3',
+          enumIndex: 3,
+          perk: '50% more effective with Repair Kits',
+          skills: ['METAL WORKING', 'CALLUSED'],
+        },
       ]);
     });
 
@@ -759,7 +809,7 @@ describe('HumanitZDB', () => {
       db.registerAlias('76561198000000099', '', 'log');
       // Should not create a blank alias
       const aliases = db.getPlayerAliases('76561198000000099');
-      assert.ok(!aliases.some(a => a.name === ''));
+      assert.ok(!aliases.some((a) => a.name === ''));
     });
   });
 
@@ -810,7 +860,7 @@ describe('HumanitZDB', () => {
       db.registerAlias('76561198000000060', 'Name3', 'idmap');
       const aliases = db.getPlayerAliases('76561198000000060');
       assert.ok(aliases.length >= 3);
-      const names = aliases.map(a => a.name);
+      const names = aliases.map((a) => a.name);
       assert.ok(names.includes('Name1'));
       assert.ok(names.includes('Name2'));
       assert.ok(names.includes('Name3'));
@@ -892,7 +942,7 @@ describe('HumanitZDB', () => {
 
       // Both should appear in aliases
       const aliases = db.getPlayerAliases('76561198000000085');
-      const names = aliases.map(a => a.name);
+      const names = aliases.map((a) => a.name);
       assert.ok(names.includes('OriginalName'));
       assert.ok(names.includes('NewerName'));
     });
@@ -905,7 +955,9 @@ describe('HumanitZDB', () => {
 
 describe('Integration: parse .sav → sync to DB', () => {
   if (SAV_FILES.length === 0) {
-    it('skipped — no .sav files in data/', () => { assert.ok(true); });
+    it('skipped — no .sav files in data/', () => {
+      assert.ok(true);
+    });
     return;
   }
 

@@ -34,7 +34,7 @@ class HumanitZDB {
     this._memory = options.memory || false;
     this._label = options.label || 'DB';
     this._db = null;
-    this._stmts = {};  // cached prepared statements
+    this._stmts = {}; // cached prepared statements
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -79,7 +79,9 @@ class HumanitZDB {
     }
   }
 
-  get db() { return this._db; }
+  get db() {
+    return this._db;
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  Schema management
@@ -118,7 +120,7 @@ class HumanitZDB {
           CREATE INDEX IF NOT EXISTS idx_aliases_steam ON player_aliases(steam_id);
         `);
         // Seed aliases from existing players table
-        const players = this._db.prepare('SELECT steam_id, name, name_history FROM players WHERE name != \'\'').all();
+        const players = this._db.prepare("SELECT steam_id, name, name_history FROM players WHERE name != ''").all();
         const insertAlias = this._db.prepare(`
           INSERT OR IGNORE INTO player_aliases (steam_id, name, name_lower, source, first_seen, last_seen, is_current)
           VALUES (?, ?, ?, 'save', datetime('now'), datetime('now'), ?)
@@ -131,7 +133,9 @@ class HumanitZDB {
             for (const h of history) {
               if (h.name) insertAlias.run(p.steam_id, h.name, h.name.toLowerCase(), 0);
             }
-          } catch { /* ignore bad JSON */ }
+          } catch {
+            /* ignore bad JSON */
+          }
         }
         console.log(`[${this._label}] Migration v1→v2: created player_aliases (seeded ${players.length} players)`);
       }
@@ -139,8 +143,16 @@ class HumanitZDB {
       // v2 → v3: Add day_incremented + infection_timer columns to players
       if (fromVersion < 3) {
         // Use try/catch per column so migration is safe if columns already exist
-        try { this._db.exec('ALTER TABLE players ADD COLUMN day_incremented INTEGER DEFAULT 0'); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE players ADD COLUMN infection_timer REAL DEFAULT 0'); } catch { /* already exists */ }
+        try {
+          this._db.exec('ALTER TABLE players ADD COLUMN day_incremented INTEGER DEFAULT 0');
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec('ALTER TABLE players ADD COLUMN infection_timer REAL DEFAULT 0');
+        } catch {
+          /* already exists */
+        }
         console.log(`[${this._label}] Migration v2→v3: added day_incremented + infection_timer columns`);
       }
 
@@ -170,12 +182,36 @@ class HumanitZDB {
         `);
 
         // Enrich containers table with new columns
-        try { this._db.exec('ALTER TABLE containers ADD COLUMN quick_slots TEXT DEFAULT \'[]\''); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE containers ADD COLUMN locked INTEGER DEFAULT 0'); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE containers ADD COLUMN does_spawn_loot INTEGER DEFAULT 0'); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE containers ADD COLUMN alarm_off INTEGER DEFAULT 0'); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE containers ADD COLUMN crafting_content TEXT DEFAULT \'[]\''); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE containers ADD COLUMN extra TEXT DEFAULT \'{}\''); } catch { /* already exists */ }
+        try {
+          this._db.exec("ALTER TABLE containers ADD COLUMN quick_slots TEXT DEFAULT '[]'");
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec('ALTER TABLE containers ADD COLUMN locked INTEGER DEFAULT 0');
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec('ALTER TABLE containers ADD COLUMN does_spawn_loot INTEGER DEFAULT 0');
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec('ALTER TABLE containers ADD COLUMN alarm_off INTEGER DEFAULT 0');
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec("ALTER TABLE containers ADD COLUMN crafting_content TEXT DEFAULT '[]'");
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec("ALTER TABLE containers ADD COLUMN extra TEXT DEFAULT '{}'");
+        } catch {
+          /* already exists */
+        }
 
         // Activity log table
         this._db.exec(`
@@ -206,13 +242,37 @@ class HumanitZDB {
       // v4 → v5: Add steam_id + source + target columns to activity_log, create chat_log
       if (fromVersion < 5) {
         // New columns on activity_log
-        try { this._db.exec('ALTER TABLE activity_log ADD COLUMN steam_id TEXT DEFAULT \'\''); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE activity_log ADD COLUMN source TEXT DEFAULT \'save\''); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE activity_log ADD COLUMN target_name TEXT DEFAULT \'\''); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE activity_log ADD COLUMN target_steam_id TEXT DEFAULT \'\''); } catch { /* already exists */ }
+        try {
+          this._db.exec("ALTER TABLE activity_log ADD COLUMN steam_id TEXT DEFAULT ''");
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec("ALTER TABLE activity_log ADD COLUMN source TEXT DEFAULT 'save'");
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec("ALTER TABLE activity_log ADD COLUMN target_name TEXT DEFAULT ''");
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec("ALTER TABLE activity_log ADD COLUMN target_steam_id TEXT DEFAULT ''");
+        } catch {
+          /* already exists */
+        }
         // New indexes
-        try { this._db.exec('CREATE INDEX IF NOT EXISTS idx_activity_steam_id ON activity_log(steam_id)'); } catch { /* */ }
-        try { this._db.exec('CREATE INDEX IF NOT EXISTS idx_activity_source ON activity_log(source)'); } catch { /* */ }
+        try {
+          this._db.exec('CREATE INDEX IF NOT EXISTS idx_activity_steam_id ON activity_log(steam_id)');
+        } catch {
+          /* */
+        }
+        try {
+          this._db.exec('CREATE INDEX IF NOT EXISTS idx_activity_source ON activity_log(source)');
+        } catch {
+          /* */
+        }
 
         // Chat log table
         this._db.exec(`
@@ -238,10 +298,26 @@ class HumanitZDB {
 
       // v5 → v6: Add level, exp_current, exp_required, skills_point columns to players
       if (fromVersion < 6) {
-        try { this._db.exec('ALTER TABLE players ADD COLUMN level INTEGER DEFAULT 0'); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE players ADD COLUMN exp_current REAL DEFAULT 0'); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE players ADD COLUMN exp_required REAL DEFAULT 0'); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE players ADD COLUMN skills_point INTEGER DEFAULT 0'); } catch { /* already exists */ }
+        try {
+          this._db.exec('ALTER TABLE players ADD COLUMN level INTEGER DEFAULT 0');
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec('ALTER TABLE players ADD COLUMN exp_current REAL DEFAULT 0');
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec('ALTER TABLE players ADD COLUMN exp_required REAL DEFAULT 0');
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec('ALTER TABLE players ADD COLUMN skills_point INTEGER DEFAULT 0');
+        } catch {
+          /* already exists */
+        }
         console.log(`[${this._label}] Migration v5→v6: added level, exp_current, exp_required, skills_point`);
       }
 
@@ -360,13 +436,33 @@ class HumanitZDB {
         `);
 
         // Add group_id to item_instances if not present
-        try { this._db.exec('ALTER TABLE item_instances ADD COLUMN group_id INTEGER DEFAULT NULL'); } catch { /* already exists */ }
-        try { this._db.exec('CREATE INDEX IF NOT EXISTS idx_item_inst_group ON item_instances(group_id)'); } catch { /* already exists */ }
+        try {
+          this._db.exec('ALTER TABLE item_instances ADD COLUMN group_id INTEGER DEFAULT NULL');
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec('CREATE INDEX IF NOT EXISTS idx_item_inst_group ON item_instances(group_id)');
+        } catch {
+          /* already exists */
+        }
 
         // Add group_id + move_type to item_movements if not present
-        try { this._db.exec('ALTER TABLE item_movements ADD COLUMN group_id INTEGER DEFAULT NULL'); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE item_movements ADD COLUMN move_type TEXT DEFAULT \'move\''); } catch { /* already exists */ }
-        try { this._db.exec('CREATE INDEX IF NOT EXISTS idx_item_mov_group ON item_movements(group_id)'); } catch { /* already exists */ }
+        try {
+          this._db.exec('ALTER TABLE item_movements ADD COLUMN group_id INTEGER DEFAULT NULL');
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec("ALTER TABLE item_movements ADD COLUMN move_type TEXT DEFAULT 'move'");
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec('CREATE INDEX IF NOT EXISTS idx_item_mov_group ON item_movements(group_id)');
+        } catch {
+          /* already exists */
+        }
 
         // Make instance_id nullable (group-level movements don't have an instance)
         // SQLite doesn't support ALTER COLUMN, but the column already allows NULL values
@@ -378,19 +474,67 @@ class HumanitZDB {
       // v8 → v9: DB-first player stats & playtime — add detailed log columns + server_peaks
       if (fromVersion < 9) {
         // New detailed log stats columns on players
-        try { this._db.exec('ALTER TABLE players ADD COLUMN log_connects INTEGER DEFAULT 0'); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE players ADD COLUMN log_disconnects INTEGER DEFAULT 0'); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE players ADD COLUMN log_admin_access INTEGER DEFAULT 0'); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE players ADD COLUMN log_destroyed_out INTEGER DEFAULT 0'); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE players ADD COLUMN log_destroyed_in INTEGER DEFAULT 0'); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE players ADD COLUMN log_build_items TEXT DEFAULT \'{}\''); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE players ADD COLUMN log_killed_by TEXT DEFAULT \'{}\''); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE players ADD COLUMN log_damage_detail TEXT DEFAULT \'{}\''); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE players ADD COLUMN log_cheat_flags TEXT DEFAULT \'[]\''); } catch { /* already exists */ }
+        try {
+          this._db.exec('ALTER TABLE players ADD COLUMN log_connects INTEGER DEFAULT 0');
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec('ALTER TABLE players ADD COLUMN log_disconnects INTEGER DEFAULT 0');
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec('ALTER TABLE players ADD COLUMN log_admin_access INTEGER DEFAULT 0');
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec('ALTER TABLE players ADD COLUMN log_destroyed_out INTEGER DEFAULT 0');
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec('ALTER TABLE players ADD COLUMN log_destroyed_in INTEGER DEFAULT 0');
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec("ALTER TABLE players ADD COLUMN log_build_items TEXT DEFAULT '{}'");
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec("ALTER TABLE players ADD COLUMN log_killed_by TEXT DEFAULT '{}'");
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec("ALTER TABLE players ADD COLUMN log_damage_detail TEXT DEFAULT '{}'");
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec("ALTER TABLE players ADD COLUMN log_cheat_flags TEXT DEFAULT '[]'");
+        } catch {
+          /* already exists */
+        }
         // New playtime detail columns on players
-        try { this._db.exec('ALTER TABLE players ADD COLUMN playtime_first_seen TEXT'); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE players ADD COLUMN playtime_last_login TEXT'); } catch { /* already exists */ }
-        try { this._db.exec('ALTER TABLE players ADD COLUMN playtime_last_seen TEXT'); } catch { /* already exists */ }
+        try {
+          this._db.exec('ALTER TABLE players ADD COLUMN playtime_first_seen TEXT');
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec('ALTER TABLE players ADD COLUMN playtime_last_login TEXT');
+        } catch {
+          /* already exists */
+        }
+        try {
+          this._db.exec('ALTER TABLE players ADD COLUMN playtime_last_seen TEXT');
+        } catch {
+          /* already exists */
+        }
 
         // Server peaks table
         this._db.exec(`
@@ -664,7 +808,9 @@ class HumanitZDB {
         `);
 
         this._db.exec(`CREATE TABLE IF NOT EXISTS game_vehicles_ref (id TEXT PRIMARY KEY, name TEXT NOT NULL);`);
-        this._db.exec(`CREATE TABLE IF NOT EXISTS game_animals (id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT DEFAULT '', hide_item_id TEXT DEFAULT '');`);
+        this._db.exec(
+          `CREATE TABLE IF NOT EXISTS game_animals (id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT DEFAULT '', hide_item_id TEXT DEFAULT '');`,
+        );
         this._db.exec(`
           CREATE TABLE IF NOT EXISTS game_crops (
             id TEXT PRIMARY KEY, crop_id INTEGER DEFAULT 0, growth_time_days REAL DEFAULT 0,
@@ -679,7 +825,9 @@ class HumanitZDB {
             health REAL DEFAULT 0, craft_cost TEXT DEFAULT '[]'
           );
         `);
-        this._db.exec(`CREATE TABLE IF NOT EXISTS game_ammo_types (id TEXT PRIMARY KEY, damage REAL DEFAULT 0, headshot_multiplier REAL DEFAULT 1, range REAL DEFAULT 0, penetration REAL DEFAULT 0);`);
+        this._db.exec(
+          `CREATE TABLE IF NOT EXISTS game_ammo_types (id TEXT PRIMARY KEY, damage REAL DEFAULT 0, headshot_multiplier REAL DEFAULT 1, range REAL DEFAULT 0, penetration REAL DEFAULT 0);`,
+        );
         this._db.exec(`
           CREATE TABLE IF NOT EXISTS game_repair_data (
             id TEXT PRIMARY KEY, resource_type TEXT DEFAULT '', resource_type_raw TEXT DEFAULT '',
@@ -687,9 +835,15 @@ class HumanitZDB {
             extra_resources TEXT DEFAULT '[]'
           );
         `);
-        this._db.exec(`CREATE TABLE IF NOT EXISTS game_furniture (id TEXT PRIMARY KEY, name TEXT NOT NULL, mesh_count INTEGER DEFAULT 0, drop_resources TEXT DEFAULT '[]');`);
-        this._db.exec(`CREATE TABLE IF NOT EXISTS game_traps (id TEXT PRIMARY KEY, item_id TEXT DEFAULT '', requires_weapon INTEGER DEFAULT 0, requires_ammo INTEGER DEFAULT 0, requires_items INTEGER DEFAULT 0, required_ammo_id TEXT DEFAULT '');`);
-        this._db.exec(`CREATE TABLE IF NOT EXISTS game_sprays (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT DEFAULT '', color TEXT DEFAULT '');`);
+        this._db.exec(
+          `CREATE TABLE IF NOT EXISTS game_furniture (id TEXT PRIMARY KEY, name TEXT NOT NULL, mesh_count INTEGER DEFAULT 0, drop_resources TEXT DEFAULT '[]');`,
+        );
+        this._db.exec(
+          `CREATE TABLE IF NOT EXISTS game_traps (id TEXT PRIMARY KEY, item_id TEXT DEFAULT '', requires_weapon INTEGER DEFAULT 0, requires_ammo INTEGER DEFAULT 0, requires_items INTEGER DEFAULT 0, required_ammo_id TEXT DEFAULT '');`,
+        );
+        this._db.exec(
+          `CREATE TABLE IF NOT EXISTS game_sprays (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT DEFAULT '', color TEXT DEFAULT '');`,
+        );
 
         // Drop and recreate changed reference tables
         this._db.exec('DROP TABLE IF EXISTS game_recipes');
@@ -842,10 +996,14 @@ class HumanitZDB {
   }
 
   /** Public meta getter. */
-  getMeta(key) { return this._getMeta(key); }
+  getMeta(key) {
+    return this._getMeta(key);
+  }
 
   /** Public meta setter. */
-  setMeta(key, value) { return this._setMeta(key, value); }
+  setMeta(key, value) {
+    return this._setMeta(key, value);
+  }
 
   _setMeta(key, value) {
     this._db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(key, value);
@@ -863,16 +1021,20 @@ class HumanitZDB {
 
   /** Set a bot_state value. Creates or replaces. */
   setState(key, value) {
-    this._db.prepare(
-      'INSERT OR REPLACE INTO bot_state (key, value, updated_at) VALUES (?, ?, datetime(\'now\'))'
-    ).run(key, value != null ? String(value) : null);
+    this._db
+      .prepare("INSERT OR REPLACE INTO bot_state (key, value, updated_at) VALUES (?, ?, datetime('now'))")
+      .run(key, value != null ? String(value) : null);
   }
 
   /** Get a bot_state value parsed as JSON. Returns defaultVal if not found or parse fails. */
   getStateJSON(key, defaultVal = null) {
     const raw = this.getState(key);
     if (raw == null) return defaultVal;
-    try { return JSON.parse(raw); } catch { return defaultVal; }
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return defaultVal;
+    }
   }
 
   /** Set a bot_state value as JSON. */
@@ -1071,9 +1233,11 @@ class HumanitZDB {
     this._stmts.getAllPlayers = this._db.prepare('SELECT * FROM players ORDER BY lifetime_kills DESC');
     this._stmts.getOnlinePlayers = this._db.prepare('SELECT * FROM players WHERE online = 1');
     this._stmts.getOnlinePlayersForDiff = this._db.prepare(
-      'SELECT steam_id, name, online, inventory, equipment, quick_slots, backpack_items, pos_x, pos_y, pos_z FROM players WHERE online = 1'
+      'SELECT steam_id, name, online, inventory, equipment, quick_slots, backpack_items, pos_x, pos_y, pos_z FROM players WHERE online = 1',
     );
-    this._stmts.setPlayerOnline = this._db.prepare('UPDATE players SET online = ?, last_seen = datetime(\'now\') WHERE steam_id = ?');
+    this._stmts.setPlayerOnline = this._db.prepare(
+      "UPDATE players SET online = ?, last_seen = datetime('now') WHERE steam_id = ?",
+    );
     this._stmts.setAllOffline = this._db.prepare('UPDATE players SET online = 0');
 
     // Full log stats upsert — used by DB-first player-stats
@@ -1161,37 +1325,61 @@ class HumanitZDB {
 
     // Server peaks
     this._stmts.setServerPeak = this._db.prepare(
-      'INSERT OR REPLACE INTO server_peaks (key, value, updated_at) VALUES (?, ?, datetime(\'now\'))'
+      "INSERT OR REPLACE INTO server_peaks (key, value, updated_at) VALUES (?, ?, datetime('now'))",
     );
-    this._stmts.getServerPeak = this._db.prepare(
-      'SELECT value FROM server_peaks WHERE key = ?'
-    );
-    this._stmts.getAllServerPeaks = this._db.prepare(
-      'SELECT * FROM server_peaks'
-    );
+    this._stmts.getServerPeak = this._db.prepare('SELECT value FROM server_peaks WHERE key = ?');
+    this._stmts.getAllServerPeaks = this._db.prepare('SELECT * FROM server_peaks');
 
     // Leaderboards
-    this._stmts.topKillers = this._db.prepare('SELECT steam_id, name, lifetime_kills, lifetime_headshots, lifetime_melee_kills, lifetime_gun_kills FROM players ORDER BY lifetime_kills DESC LIMIT ?');
-    this._stmts.topPlaytime = this._db.prepare('SELECT steam_id, name, playtime_seconds, session_count FROM players ORDER BY playtime_seconds DESC LIMIT ?');
-    this._stmts.topSurvival = this._db.prepare('SELECT steam_id, name, lifetime_days_survived, days_survived FROM players ORDER BY lifetime_days_survived DESC LIMIT ?');
-    this._stmts.topFish = this._db.prepare('SELECT steam_id, name, fish_caught, fish_caught_pike FROM players WHERE fish_caught > 0 ORDER BY fish_caught DESC LIMIT ?');
-    this._stmts.topBitten = this._db.prepare('SELECT steam_id, name, times_bitten FROM players WHERE times_bitten > 0 ORDER BY times_bitten DESC LIMIT ?');
-    this._stmts.topPvp = this._db.prepare('SELECT steam_id, name, log_pvp_kills, log_pvp_deaths FROM players WHERE log_pvp_kills > 0 ORDER BY log_pvp_kills DESC LIMIT ?');
-    this._stmts.topBuilders = this._db.prepare('SELECT steam_id, name, log_builds FROM players WHERE log_builds > 0 ORDER BY log_builds DESC LIMIT ?');
-    this._stmts.topDeaths = this._db.prepare('SELECT steam_id, name, log_deaths, log_killed_by FROM players WHERE log_deaths > 0 ORDER BY log_deaths DESC LIMIT ?');
-    this._stmts.topLooters = this._db.prepare('SELECT steam_id, name, log_loots FROM players WHERE log_loots > 0 ORDER BY log_loots DESC LIMIT ?');
+    this._stmts.topKillers = this._db.prepare(
+      'SELECT steam_id, name, lifetime_kills, lifetime_headshots, lifetime_melee_kills, lifetime_gun_kills FROM players ORDER BY lifetime_kills DESC LIMIT ?',
+    );
+    this._stmts.topPlaytime = this._db.prepare(
+      'SELECT steam_id, name, playtime_seconds, session_count FROM players ORDER BY playtime_seconds DESC LIMIT ?',
+    );
+    this._stmts.topSurvival = this._db.prepare(
+      'SELECT steam_id, name, lifetime_days_survived, days_survived FROM players ORDER BY lifetime_days_survived DESC LIMIT ?',
+    );
+    this._stmts.topFish = this._db.prepare(
+      'SELECT steam_id, name, fish_caught, fish_caught_pike FROM players WHERE fish_caught > 0 ORDER BY fish_caught DESC LIMIT ?',
+    );
+    this._stmts.topBitten = this._db.prepare(
+      'SELECT steam_id, name, times_bitten FROM players WHERE times_bitten > 0 ORDER BY times_bitten DESC LIMIT ?',
+    );
+    this._stmts.topPvp = this._db.prepare(
+      'SELECT steam_id, name, log_pvp_kills, log_pvp_deaths FROM players WHERE log_pvp_kills > 0 ORDER BY log_pvp_kills DESC LIMIT ?',
+    );
+    this._stmts.topBuilders = this._db.prepare(
+      'SELECT steam_id, name, log_builds FROM players WHERE log_builds > 0 ORDER BY log_builds DESC LIMIT ?',
+    );
+    this._stmts.topDeaths = this._db.prepare(
+      'SELECT steam_id, name, log_deaths, log_killed_by FROM players WHERE log_deaths > 0 ORDER BY log_deaths DESC LIMIT ?',
+    );
+    this._stmts.topLooters = this._db.prepare(
+      'SELECT steam_id, name, log_loots FROM players WHERE log_loots > 0 ORDER BY log_loots DESC LIMIT ?',
+    );
 
     // Clans
-    this._stmts.upsertClan = this._db.prepare('INSERT OR REPLACE INTO clans (name, updated_at) VALUES (?, datetime(\'now\'))');
+    this._stmts.upsertClan = this._db.prepare(
+      "INSERT OR REPLACE INTO clans (name, updated_at) VALUES (?, datetime('now'))",
+    );
     this._stmts.deleteClanMembers = this._db.prepare('DELETE FROM clan_members WHERE clan_name = ?');
-    this._stmts.insertClanMember = this._db.prepare('INSERT OR REPLACE INTO clan_members (clan_name, steam_id, name, rank, can_invite, can_kick) VALUES (?, ?, ?, ?, ?, ?)');
+    this._stmts.insertClanMember = this._db.prepare(
+      'INSERT OR REPLACE INTO clan_members (clan_name, steam_id, name, rank, can_invite, can_kick) VALUES (?, ?, ?, ?, ?, ?)',
+    );
     this._stmts.getAllClans = this._db.prepare('SELECT * FROM clans ORDER BY name');
-    this._stmts.getClanMembers = this._db.prepare('SELECT * FROM clan_members WHERE clan_name = ? ORDER BY rank DESC, name');
+    this._stmts.getClanMembers = this._db.prepare(
+      'SELECT * FROM clan_members WHERE clan_name = ? ORDER BY rank DESC, name',
+    );
     this._stmts.getClanForSteamId = this._db.prepare('SELECT clan_name FROM clan_members WHERE steam_id = ? LIMIT 1');
-    this._stmts.areClanmates = this._db.prepare(`SELECT 1 FROM clan_members a JOIN clan_members b ON a.clan_name = b.clan_name WHERE a.steam_id = ? AND b.steam_id = ? LIMIT 1`);
+    this._stmts.areClanmates = this._db.prepare(
+      `SELECT 1 FROM clan_members a JOIN clan_members b ON a.clan_name = b.clan_name WHERE a.steam_id = ? AND b.steam_id = ? LIMIT 1`,
+    );
 
     // World state
-    this._stmts.setWorldState = this._db.prepare('INSERT OR REPLACE INTO world_state (key, value, updated_at) VALUES (?, ?, datetime(\'now\'))');
+    this._stmts.setWorldState = this._db.prepare(
+      "INSERT OR REPLACE INTO world_state (key, value, updated_at) VALUES (?, ?, datetime('now'))",
+    );
     this._stmts.getWorldState = this._db.prepare('SELECT value FROM world_state WHERE key = ?');
     this._stmts.getAllWorldState = this._db.prepare('SELECT * FROM world_state');
 
@@ -1204,7 +1392,9 @@ class HumanitZDB {
     `);
     this._stmts.getStructures = this._db.prepare('SELECT * FROM structures ORDER BY actor_class');
     this._stmts.getStructuresByOwner = this._db.prepare('SELECT * FROM structures WHERE owner_steam_id = ?');
-    this._stmts.countStructuresByOwner = this._db.prepare('SELECT owner_steam_id, COUNT(*) as count FROM structures GROUP BY owner_steam_id ORDER BY count DESC');
+    this._stmts.countStructuresByOwner = this._db.prepare(
+      'SELECT owner_steam_id, COUNT(*) as count FROM structures GROUP BY owner_steam_id ORDER BY count DESC',
+    );
 
     // Vehicles
     this._stmts.clearVehicles = this._db.prepare('DELETE FROM vehicles');
@@ -1232,7 +1422,9 @@ class HumanitZDB {
 
     // Dead bodies
     this._stmts.clearDeadBodies = this._db.prepare('DELETE FROM dead_bodies');
-    this._stmts.insertDeadBody = this._db.prepare('INSERT OR REPLACE INTO dead_bodies (actor_name, pos_x, pos_y, pos_z, updated_at) VALUES (?, ?, ?, ?, datetime(\'now\'))');
+    this._stmts.insertDeadBody = this._db.prepare(
+      "INSERT OR REPLACE INTO dead_bodies (actor_name, pos_x, pos_y, pos_z, updated_at) VALUES (?, ?, ?, ?, datetime('now'))",
+    );
 
     // Containers
     this._stmts.clearContainers = this._db.prepare('DELETE FROM containers');
@@ -1241,11 +1433,15 @@ class HumanitZDB {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `);
     this._stmts.getAllContainers = this._db.prepare('SELECT * FROM containers ORDER BY actor_name');
-    this._stmts.getContainersWithItems = this._db.prepare('SELECT * FROM containers WHERE items != \'[]\' ORDER BY actor_name');
+    this._stmts.getContainersWithItems = this._db.prepare(
+      "SELECT * FROM containers WHERE items != '[]' ORDER BY actor_name",
+    );
 
     // Loot actors
     this._stmts.clearLootActors = this._db.prepare('DELETE FROM loot_actors');
-    this._stmts.insertLootActor = this._db.prepare('INSERT INTO loot_actors (name, type, pos_x, pos_y, pos_z, items, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime(\'now\'))');
+    this._stmts.insertLootActor = this._db.prepare(
+      "INSERT INTO loot_actors (name, type, pos_x, pos_y, pos_z, items, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))",
+    );
 
     // Item instances (fingerprint tracking)
     this._stmts.insertItemInstance = this._db.prepare(`
@@ -1265,34 +1461,30 @@ class HumanitZDB {
       UPDATE item_instances SET last_seen = datetime('now'), lost = 0 WHERE id = ?
     `);
     this._stmts.findItemInstanceByFingerprint = this._db.prepare(
-      'SELECT * FROM item_instances WHERE fingerprint = ? AND lost = 0 LIMIT 1'
+      'SELECT * FROM item_instances WHERE fingerprint = ? AND lost = 0 LIMIT 1',
     );
     this._stmts.findItemInstancesByFingerprint = this._db.prepare(
-      'SELECT * FROM item_instances WHERE fingerprint = ? AND lost = 0'
+      'SELECT * FROM item_instances WHERE fingerprint = ? AND lost = 0',
     );
-    this._stmts.findItemInstanceById = this._db.prepare(
-      'SELECT * FROM item_instances WHERE id = ?'
-    );
+    this._stmts.findItemInstanceById = this._db.prepare('SELECT * FROM item_instances WHERE id = ?');
     this._stmts.getActiveItemInstances = this._db.prepare(
-      'SELECT * FROM item_instances WHERE lost = 0 ORDER BY item, location_type'
+      'SELECT * FROM item_instances WHERE lost = 0 ORDER BY item, location_type',
     );
     this._stmts.getItemInstancesByItem = this._db.prepare(
-      'SELECT * FROM item_instances WHERE item = ? AND lost = 0 ORDER BY location_type'
+      'SELECT * FROM item_instances WHERE item = ? AND lost = 0 ORDER BY location_type',
     );
     this._stmts.getItemInstancesByLocation = this._db.prepare(
-      'SELECT * FROM item_instances WHERE location_type = ? AND location_id = ? AND lost = 0'
+      'SELECT * FROM item_instances WHERE location_type = ? AND location_id = ? AND lost = 0',
     );
-    this._stmts.getItemInstanceCount = this._db.prepare(
-      'SELECT COUNT(*) as count FROM item_instances WHERE lost = 0'
-    );
+    this._stmts.getItemInstanceCount = this._db.prepare('SELECT COUNT(*) as count FROM item_instances WHERE lost = 0');
     this._stmts.searchItemInstances = this._db.prepare(
-      'SELECT * FROM item_instances WHERE (item LIKE ? OR fingerprint LIKE ?) AND lost = 0 ORDER BY item LIMIT ?'
+      'SELECT * FROM item_instances WHERE (item LIKE ? OR fingerprint LIKE ?) AND lost = 0 ORDER BY item LIMIT ?',
     );
     this._stmts.purgeOldLostItems = this._db.prepare(
-      'DELETE FROM item_instances WHERE lost = 1 AND lost_at < datetime(\'now\', ?)'
+      "DELETE FROM item_instances WHERE lost = 1 AND lost_at < datetime('now', ?)",
     );
     this._stmts.getItemInstancesByGroup = this._db.prepare(
-      'SELECT * FROM item_instances WHERE group_id = ? AND lost = 0'
+      'SELECT * FROM item_instances WHERE group_id = ? AND lost = 0',
     );
 
     // Item groups (fungible item tracking)
@@ -1316,31 +1508,27 @@ class HumanitZDB {
       UPDATE item_groups SET last_seen = datetime('now'), lost = 0 WHERE id = ?
     `);
     this._stmts.findActiveGroupByLocation = this._db.prepare(
-      'SELECT * FROM item_groups WHERE fingerprint = ? AND location_type = ? AND location_id = ? AND location_slot = ? AND lost = 0 LIMIT 1'
+      'SELECT * FROM item_groups WHERE fingerprint = ? AND location_type = ? AND location_id = ? AND location_slot = ? AND lost = 0 LIMIT 1',
     );
     this._stmts.findActiveGroupsByFingerprint = this._db.prepare(
-      'SELECT * FROM item_groups WHERE fingerprint = ? AND lost = 0'
+      'SELECT * FROM item_groups WHERE fingerprint = ? AND lost = 0',
     );
-    this._stmts.findItemGroupById = this._db.prepare(
-      'SELECT * FROM item_groups WHERE id = ?'
-    );
+    this._stmts.findItemGroupById = this._db.prepare('SELECT * FROM item_groups WHERE id = ?');
     this._stmts.getActiveItemGroups = this._db.prepare(
-      'SELECT * FROM item_groups WHERE lost = 0 ORDER BY item, location_type'
+      'SELECT * FROM item_groups WHERE lost = 0 ORDER BY item, location_type',
     );
     this._stmts.getItemGroupsByItem = this._db.prepare(
-      'SELECT * FROM item_groups WHERE item = ? AND lost = 0 ORDER BY location_type'
+      'SELECT * FROM item_groups WHERE item = ? AND lost = 0 ORDER BY location_type',
     );
     this._stmts.getItemGroupsByLocation = this._db.prepare(
-      'SELECT * FROM item_groups WHERE location_type = ? AND location_id = ? AND lost = 0'
+      'SELECT * FROM item_groups WHERE location_type = ? AND location_id = ? AND lost = 0',
     );
-    this._stmts.getItemGroupCount = this._db.prepare(
-      'SELECT COUNT(*) as count FROM item_groups WHERE lost = 0'
-    );
+    this._stmts.getItemGroupCount = this._db.prepare('SELECT COUNT(*) as count FROM item_groups WHERE lost = 0');
     this._stmts.searchItemGroups = this._db.prepare(
-      'SELECT * FROM item_groups WHERE (item LIKE ? OR fingerprint LIKE ?) AND lost = 0 ORDER BY item LIMIT ?'
+      'SELECT * FROM item_groups WHERE (item LIKE ? OR fingerprint LIKE ?) AND lost = 0 ORDER BY item LIMIT ?',
     );
     this._stmts.purgeOldLostGroups = this._db.prepare(
-      'DELETE FROM item_groups WHERE lost = 1 AND lost_at < datetime(\'now\', ?)'
+      "DELETE FROM item_groups WHERE lost = 1 AND lost_at < datetime('now', ?)",
     );
 
     // Item movements (chain-of-custody)
@@ -1349,22 +1537,22 @@ class HumanitZDB {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     this._stmts.getItemMovements = this._db.prepare(
-      'SELECT * FROM item_movements WHERE instance_id = ? ORDER BY created_at ASC'
+      'SELECT * FROM item_movements WHERE instance_id = ? ORDER BY created_at ASC',
     );
     this._stmts.getItemMovementsByGroup = this._db.prepare(
-      'SELECT * FROM item_movements WHERE group_id = ? ORDER BY created_at ASC'
+      'SELECT * FROM item_movements WHERE group_id = ? ORDER BY created_at ASC',
     );
     this._stmts.getRecentItemMovements = this._db.prepare(
-      'SELECT * FROM item_movements ORDER BY created_at DESC LIMIT ?'
+      'SELECT * FROM item_movements ORDER BY created_at DESC LIMIT ?',
     );
     this._stmts.getItemMovementsByPlayer = this._db.prepare(
-      'SELECT * FROM item_movements WHERE attributed_steam_id = ? ORDER BY created_at DESC LIMIT ?'
+      'SELECT * FROM item_movements WHERE attributed_steam_id = ? ORDER BY created_at DESC LIMIT ?',
     );
     this._stmts.getItemMovementsByLocation = this._db.prepare(
-      'SELECT * FROM item_movements WHERE (from_type = ? AND from_id = ?) OR (to_type = ? AND to_id = ?) ORDER BY created_at DESC LIMIT ?'
+      'SELECT * FROM item_movements WHERE (from_type = ? AND from_id = ?) OR (to_type = ? AND to_id = ?) ORDER BY created_at DESC LIMIT ?',
     );
     this._stmts.purgeOldMovements = this._db.prepare(
-      'DELETE FROM item_movements WHERE created_at < datetime(\'now\', ?)'
+      "DELETE FROM item_movements WHERE created_at < datetime('now', ?)",
     );
 
     // World drops
@@ -1375,14 +1563,20 @@ class HumanitZDB {
     `);
     this._stmts.getAllWorldDrops = this._db.prepare('SELECT * FROM world_drops ORDER BY type, item');
     this._stmts.getWorldDropsByType = this._db.prepare('SELECT * FROM world_drops WHERE type = ? ORDER BY item');
-    this._stmts.getWorldDropsWithItems = this._db.prepare('SELECT * FROM world_drops WHERE (item != \'\' OR items != \'[]\') ORDER BY type');
+    this._stmts.getWorldDropsWithItems = this._db.prepare(
+      "SELECT * FROM world_drops WHERE (item != '' OR items != '[]') ORDER BY type",
+    );
 
     // Quests
     this._stmts.clearQuests = this._db.prepare('DELETE FROM quests');
-    this._stmts.insertQuest = this._db.prepare('INSERT INTO quests (id, type, state, data, updated_at) VALUES (?, ?, ?, ?, datetime(\'now\'))');
+    this._stmts.insertQuest = this._db.prepare(
+      "INSERT INTO quests (id, type, state, data, updated_at) VALUES (?, ?, ?, ?, datetime('now'))",
+    );
 
     // Server settings
-    this._stmts.upsertSetting = this._db.prepare('INSERT OR REPLACE INTO server_settings (key, value, updated_at) VALUES (?, ?, datetime(\'now\'))');
+    this._stmts.upsertSetting = this._db.prepare(
+      "INSERT OR REPLACE INTO server_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))",
+    );
     this._stmts.getSetting = this._db.prepare('SELECT value FROM server_settings WHERE key = ?');
     this._stmts.getAllSettings = this._db.prepare('SELECT * FROM server_settings ORDER BY key');
 
@@ -1403,8 +1597,10 @@ class HumanitZDB {
 
     // Snapshots
     this._stmts.insertSnapshot = this._db.prepare('INSERT INTO snapshots (type, steam_id, data) VALUES (?, ?, ?)');
-    this._stmts.getLatestSnapshot = this._db.prepare('SELECT * FROM snapshots WHERE type = ? AND steam_id = ? ORDER BY created_at DESC LIMIT 1');
-    this._stmts.purgeOldSnapshots = this._db.prepare('DELETE FROM snapshots WHERE created_at < datetime(\'now\', ?)');
+    this._stmts.getLatestSnapshot = this._db.prepare(
+      'SELECT * FROM snapshots WHERE type = ? AND steam_id = ? ORDER BY created_at DESC LIMIT 1',
+    );
+    this._stmts.purgeOldSnapshots = this._db.prepare("DELETE FROM snapshots WHERE created_at < datetime('now', ?)");
 
     // Activity log
     this._stmts.insertActivity = this._db.prepare(`
@@ -1417,37 +1613,33 @@ class HumanitZDB {
     `);
     this._stmts.clearActivityLog = this._db.prepare('DELETE FROM activity_log');
     this._stmts.getRecentActivity = this._db.prepare(
-      'SELECT * FROM activity_log ORDER BY created_at DESC, id DESC LIMIT ?'
+      'SELECT * FROM activity_log ORDER BY created_at DESC, id DESC LIMIT ?',
     );
     this._stmts.getRecentActivityPaged = this._db.prepare(
-      'SELECT * FROM activity_log ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?'
+      'SELECT * FROM activity_log ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?',
     );
     this._stmts.getActivityByCategory = this._db.prepare(
-      'SELECT * FROM activity_log WHERE category = ? ORDER BY created_at DESC, id DESC LIMIT ?'
+      'SELECT * FROM activity_log WHERE category = ? ORDER BY created_at DESC, id DESC LIMIT ?',
     );
     this._stmts.getActivityByCategoryPaged = this._db.prepare(
-      'SELECT * FROM activity_log WHERE category = ? ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?'
+      'SELECT * FROM activity_log WHERE category = ? ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?',
     );
     this._stmts.getActivityByActor = this._db.prepare(
-      'SELECT * FROM activity_log WHERE actor = ? ORDER BY created_at DESC, id DESC LIMIT ?'
+      'SELECT * FROM activity_log WHERE actor = ? ORDER BY created_at DESC, id DESC LIMIT ?',
     );
     this._stmts.getActivityByActorPaged = this._db.prepare(
-      'SELECT * FROM activity_log WHERE actor = ? ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?'
+      'SELECT * FROM activity_log WHERE actor = ? ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?',
     );
     this._stmts.getActivitySince = this._db.prepare(
-      'SELECT * FROM activity_log WHERE created_at >= ? ORDER BY created_at ASC, id ASC'
+      'SELECT * FROM activity_log WHERE created_at >= ? ORDER BY created_at ASC, id ASC',
     );
     this._stmts.getActivitySinceBySource = this._db.prepare(
-      'SELECT * FROM activity_log WHERE created_at >= ? AND source = ? ORDER BY created_at ASC, id ASC'
+      'SELECT * FROM activity_log WHERE created_at >= ? AND source = ? ORDER BY created_at ASC, id ASC',
     );
-    this._stmts.purgeOldActivity = this._db.prepare(
-      'DELETE FROM activity_log WHERE created_at < datetime(\'now\', ?)'
-    );
-    this._stmts.countActivity = this._db.prepare(
-      'SELECT COUNT(*) as count FROM activity_log'
-    );
+    this._stmts.purgeOldActivity = this._db.prepare("DELETE FROM activity_log WHERE created_at < datetime('now', ?)");
+    this._stmts.countActivity = this._db.prepare('SELECT COUNT(*) as count FROM activity_log');
     this._stmts.countActivityBySource = this._db.prepare(
-      'SELECT source, COUNT(*) as count FROM activity_log GROUP BY source'
+      'SELECT source, COUNT(*) as count FROM activity_log GROUP BY source',
     );
 
     // Chat log
@@ -1459,22 +1651,16 @@ class HumanitZDB {
       INSERT INTO chat_log (type, player_name, steam_id, message, direction, discord_user, is_admin, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    this._stmts.getRecentChat = this._db.prepare(
-      'SELECT * FROM chat_log ORDER BY created_at DESC, id DESC LIMIT ?'
-    );
+    this._stmts.getRecentChat = this._db.prepare('SELECT * FROM chat_log ORDER BY created_at DESC, id DESC LIMIT ?');
     this._stmts.searchChat = this._db.prepare(
-      'SELECT * FROM chat_log WHERE (message LIKE ? OR player_name LIKE ?) ORDER BY created_at DESC, id DESC LIMIT ?'
+      'SELECT * FROM chat_log WHERE (message LIKE ? OR player_name LIKE ?) ORDER BY created_at DESC, id DESC LIMIT ?',
     );
     this._stmts.getChatSince = this._db.prepare(
-      'SELECT * FROM chat_log WHERE created_at >= ? ORDER BY created_at ASC, id ASC'
+      'SELECT * FROM chat_log WHERE created_at >= ? ORDER BY created_at ASC, id ASC',
     );
     this._stmts.clearChatLog = this._db.prepare('DELETE FROM chat_log');
-    this._stmts.purgeOldChat = this._db.prepare(
-      'DELETE FROM chat_log WHERE created_at < datetime(\'now\', ?)'
-    );
-    this._stmts.countChat = this._db.prepare(
-      'SELECT COUNT(*) as count FROM chat_log'
-    );
+    this._stmts.purgeOldChat = this._db.prepare("DELETE FROM chat_log WHERE created_at < datetime('now', ?)");
+    this._stmts.countChat = this._db.prepare('SELECT COUNT(*) as count FROM chat_log');
 
     // Meta
     this._stmts.getMeta = this._db.prepare('SELECT value FROM meta WHERE key = ?');
@@ -1494,22 +1680,20 @@ class HumanitZDB {
         is_current = excluded.is_current
     `);
     this._stmts.clearCurrentAlias = this._db.prepare(
-      'UPDATE player_aliases SET is_current = 0 WHERE steam_id = ? AND source = ?'
+      'UPDATE player_aliases SET is_current = 0 WHERE steam_id = ? AND source = ?',
     );
     this._stmts.lookupBySteamId = this._db.prepare(
-      'SELECT * FROM player_aliases WHERE steam_id = ? ORDER BY is_current DESC, last_seen DESC'
+      'SELECT * FROM player_aliases WHERE steam_id = ? ORDER BY is_current DESC, last_seen DESC',
     );
     this._stmts.lookupByName = this._db.prepare(
-      'SELECT * FROM player_aliases WHERE name_lower = ? ORDER BY is_current DESC, last_seen DESC'
+      'SELECT * FROM player_aliases WHERE name_lower = ? ORDER BY is_current DESC, last_seen DESC',
     );
     this._stmts.lookupByNameLike = this._db.prepare(
-      'SELECT * FROM player_aliases WHERE name_lower LIKE ? ORDER BY is_current DESC, last_seen DESC LIMIT 10'
+      'SELECT * FROM player_aliases WHERE name_lower LIKE ? ORDER BY is_current DESC, last_seen DESC LIMIT 10',
     );
-    this._stmts.getAllAliases = this._db.prepare(
-      'SELECT * FROM player_aliases ORDER BY steam_id, last_seen DESC'
-    );
+    this._stmts.getAllAliases = this._db.prepare('SELECT * FROM player_aliases ORDER BY steam_id, last_seen DESC');
     this._stmts.getAliasStats = this._db.prepare(
-      'SELECT COUNT(DISTINCT steam_id) as unique_players, COUNT(*) as total_aliases FROM player_aliases'
+      'SELECT COUNT(DISTINCT steam_id) as unique_players, COUNT(*) as total_aliases FROM player_aliases',
     );
 
     // ── Timeline snapshots ──
@@ -1520,22 +1704,18 @@ class HumanitZDB {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     this._stmts.getTimelineSnapshots = this._db.prepare(
-      'SELECT * FROM timeline_snapshots ORDER BY created_at DESC LIMIT ?'
+      'SELECT * FROM timeline_snapshots ORDER BY created_at DESC LIMIT ?',
     );
     this._stmts.getTimelineSnapshotRange = this._db.prepare(
-      'SELECT * FROM timeline_snapshots WHERE created_at BETWEEN ? AND ? ORDER BY created_at ASC'
+      'SELECT * FROM timeline_snapshots WHERE created_at BETWEEN ? AND ? ORDER BY created_at ASC',
     );
-    this._stmts.getTimelineSnapshotById = this._db.prepare(
-      'SELECT * FROM timeline_snapshots WHERE id = ?'
-    );
-    this._stmts.getTimelineSnapshotCount = this._db.prepare(
-      'SELECT COUNT(*) as count FROM timeline_snapshots'
-    );
+    this._stmts.getTimelineSnapshotById = this._db.prepare('SELECT * FROM timeline_snapshots WHERE id = ?');
+    this._stmts.getTimelineSnapshotCount = this._db.prepare('SELECT COUNT(*) as count FROM timeline_snapshots');
     this._stmts.purgeOldTimeline = this._db.prepare(
-      'DELETE FROM timeline_snapshots WHERE created_at < datetime(\'now\', ?)'
+      "DELETE FROM timeline_snapshots WHERE created_at < datetime('now', ?)",
     );
     this._stmts.getTimelineSnapshotBounds = this._db.prepare(
-      'SELECT MIN(created_at) as earliest, MAX(created_at) as latest, COUNT(*) as count FROM timeline_snapshots'
+      'SELECT MIN(created_at) as earliest, MAX(created_at) as latest, COUNT(*) as count FROM timeline_snapshots',
     );
 
     // ── Timeline entity inserts (bulk via transactions) ──
@@ -1570,27 +1750,13 @@ class HumanitZDB {
     `);
 
     // ── Timeline queries (for time-scroll API) ──
-    this._stmts.getTimelinePlayers = this._db.prepare(
-      'SELECT * FROM timeline_players WHERE snapshot_id = ?'
-    );
-    this._stmts.getTimelineAI = this._db.prepare(
-      'SELECT * FROM timeline_ai WHERE snapshot_id = ?'
-    );
-    this._stmts.getTimelineVehicles = this._db.prepare(
-      'SELECT * FROM timeline_vehicles WHERE snapshot_id = ?'
-    );
-    this._stmts.getTimelineStructures = this._db.prepare(
-      'SELECT * FROM timeline_structures WHERE snapshot_id = ?'
-    );
-    this._stmts.getTimelineHouses = this._db.prepare(
-      'SELECT * FROM timeline_houses WHERE snapshot_id = ?'
-    );
-    this._stmts.getTimelineCompanions = this._db.prepare(
-      'SELECT * FROM timeline_companions WHERE snapshot_id = ?'
-    );
-    this._stmts.getTimelineBackpacks = this._db.prepare(
-      'SELECT * FROM timeline_backpacks WHERE snapshot_id = ?'
-    );
+    this._stmts.getTimelinePlayers = this._db.prepare('SELECT * FROM timeline_players WHERE snapshot_id = ?');
+    this._stmts.getTimelineAI = this._db.prepare('SELECT * FROM timeline_ai WHERE snapshot_id = ?');
+    this._stmts.getTimelineVehicles = this._db.prepare('SELECT * FROM timeline_vehicles WHERE snapshot_id = ?');
+    this._stmts.getTimelineStructures = this._db.prepare('SELECT * FROM timeline_structures WHERE snapshot_id = ?');
+    this._stmts.getTimelineHouses = this._db.prepare('SELECT * FROM timeline_houses WHERE snapshot_id = ?');
+    this._stmts.getTimelineCompanions = this._db.prepare('SELECT * FROM timeline_companions WHERE snapshot_id = ?');
+    this._stmts.getTimelineBackpacks = this._db.prepare('SELECT * FROM timeline_backpacks WHERE snapshot_id = ?');
 
     // Player position history (for trails/heatmaps)
     this._stmts.getPlayerPositionHistory = this._db.prepare(`
@@ -1617,17 +1783,15 @@ class HumanitZDB {
       INSERT INTO death_causes (victim_name, victim_steam_id, cause_type, cause_name, cause_raw, damage_total, pos_x, pos_y, pos_z)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    this._stmts.getDeathCauses = this._db.prepare(
-      'SELECT * FROM death_causes ORDER BY created_at DESC LIMIT ?'
-    );
+    this._stmts.getDeathCauses = this._db.prepare('SELECT * FROM death_causes ORDER BY created_at DESC LIMIT ?');
     this._stmts.getDeathCausesByPlayer = this._db.prepare(
-      'SELECT * FROM death_causes WHERE victim_name = ? OR victim_steam_id = ? ORDER BY created_at DESC LIMIT ?'
+      'SELECT * FROM death_causes WHERE victim_name = ? OR victim_steam_id = ? ORDER BY created_at DESC LIMIT ?',
     );
     this._stmts.getDeathCauseStats = this._db.prepare(
-      'SELECT cause_type, cause_name, COUNT(*) as count FROM death_causes GROUP BY cause_type, cause_name ORDER BY count DESC'
+      'SELECT cause_type, cause_name, COUNT(*) as count FROM death_causes GROUP BY cause_type, cause_name ORDER BY count DESC',
     );
     this._stmts.getDeathCausesSince = this._db.prepare(
-      'SELECT * FROM death_causes WHERE created_at >= ? ORDER BY created_at ASC'
+      'SELECT * FROM death_causes WHERE created_at >= ? ORDER BY created_at ASC',
     );
 
     // ── Anticheat: flags, risk scores, fingerprints ─────────────────────────
@@ -1636,25 +1800,25 @@ class HumanitZDB {
       VALUES (@steam_id, @player_name, @detector, @severity, @score, @details, @evidence, @auto_escalated)
     `);
     this._stmts.getAcFlags = this._db.prepare(
-      'SELECT * FROM anticheat_flags WHERE status = ? ORDER BY created_at DESC LIMIT ?'
+      'SELECT * FROM anticheat_flags WHERE status = ? ORDER BY created_at DESC LIMIT ?',
     );
     this._stmts.getAcFlagsBySteam = this._db.prepare(
-      'SELECT * FROM anticheat_flags WHERE steam_id = ? ORDER BY created_at DESC LIMIT ?'
+      'SELECT * FROM anticheat_flags WHERE steam_id = ? ORDER BY created_at DESC LIMIT ?',
     );
     this._stmts.getAcFlagsByDetector = this._db.prepare(
-      'SELECT * FROM anticheat_flags WHERE detector = ? AND status = ? ORDER BY created_at DESC LIMIT ?'
+      'SELECT * FROM anticheat_flags WHERE detector = ? AND status = ? ORDER BY created_at DESC LIMIT ?',
     );
     this._stmts.getAcFlagsSince = this._db.prepare(
-      'SELECT * FROM anticheat_flags WHERE steam_id = ? AND created_at >= ? ORDER BY created_at ASC'
+      'SELECT * FROM anticheat_flags WHERE steam_id = ? AND created_at >= ? ORDER BY created_at ASC',
     );
     this._stmts.getAcFlagCount = this._db.prepare(
-      'SELECT COUNT(*) as count FROM anticheat_flags WHERE steam_id = ? AND severity IN (?, ?) AND status = ? AND created_at >= ?'
+      'SELECT COUNT(*) as count FROM anticheat_flags WHERE steam_id = ? AND severity IN (?, ?) AND status = ? AND created_at >= ?',
     );
     this._stmts.updateAcFlagStatus = this._db.prepare(
-      'UPDATE anticheat_flags SET status = ?, reviewed_by = ?, reviewed_at = datetime(\'now\'), review_notes = ? WHERE id = ?'
+      "UPDATE anticheat_flags SET status = ?, reviewed_by = ?, reviewed_at = datetime('now'), review_notes = ? WHERE id = ?",
     );
     this._stmts.escalateAcFlag = this._db.prepare(
-      'UPDATE anticheat_flags SET severity = ?, auto_escalated = 1 WHERE id = ?'
+      'UPDATE anticheat_flags SET severity = ?, auto_escalated = 1 WHERE id = ?',
     );
 
     this._stmts.upsertRiskScore = this._db.prepare(`
@@ -1670,12 +1834,8 @@ class HumanitZDB {
         baseline_data = excluded.baseline_data,
         updated_at = datetime('now')
     `);
-    this._stmts.getRiskScore = this._db.prepare(
-      'SELECT * FROM player_risk_scores WHERE steam_id = ?'
-    );
-    this._stmts.getAllRiskScores = this._db.prepare(
-      'SELECT * FROM player_risk_scores ORDER BY risk_score DESC'
-    );
+    this._stmts.getRiskScore = this._db.prepare('SELECT * FROM player_risk_scores WHERE steam_id = ?');
+    this._stmts.getAllRiskScores = this._db.prepare('SELECT * FROM player_risk_scores ORDER BY risk_score DESC');
 
     this._stmts.upsertFingerprint = this._db.prepare(`
       INSERT INTO entity_fingerprints (entity_type, entity_id, fingerprint, parent_id, creator_steam_id, last_validated, tamper_score, metadata)
@@ -1687,17 +1847,15 @@ class HumanitZDB {
         metadata = excluded.metadata
     `);
     this._stmts.getFingerprint = this._db.prepare(
-      'SELECT * FROM entity_fingerprints WHERE entity_type = ? AND entity_id = ?'
+      'SELECT * FROM entity_fingerprints WHERE entity_type = ? AND entity_id = ?',
     );
-    this._stmts.getFingerprintsByType = this._db.prepare(
-      'SELECT * FROM entity_fingerprints WHERE entity_type = ?'
-    );
+    this._stmts.getFingerprintsByType = this._db.prepare('SELECT * FROM entity_fingerprints WHERE entity_type = ?');
     this._stmts.insertFingerprintEvent = this._db.prepare(`
       INSERT INTO fingerprint_events (fingerprint_id, event_type, old_state, new_state, attributed_to, source, confidence)
       VALUES (@fingerprint_id, @event_type, @old_state, @new_state, @attributed_to, @source, @confidence)
     `);
     this._stmts.getFingerprintEvents = this._db.prepare(
-      'SELECT * FROM fingerprint_events WHERE fingerprint_id = ? ORDER BY created_at DESC LIMIT ?'
+      'SELECT * FROM fingerprint_events WHERE fingerprint_id = ? ORDER BY created_at DESC LIMIT ?',
     );
   }
 
@@ -1858,13 +2016,15 @@ class HumanitZDB {
 
   /** Update kill tracker JSON for a player. */
   updateKillTracker(steamId, killData) {
-    this._db.prepare('UPDATE players SET kill_tracker = ?, updated_at = datetime(\'now\') WHERE steam_id = ?')
+    this._db
+      .prepare("UPDATE players SET kill_tracker = ?, updated_at = datetime('now') WHERE steam_id = ?")
       .run(JSON.stringify(killData), steamId);
   }
 
   /** Update name and name history. */
   updatePlayerName(steamId, name, nameHistory) {
-    this._db.prepare('UPDATE players SET name = ?, name_history = ?, updated_at = datetime(\'now\') WHERE steam_id = ?')
+    this._db
+      .prepare("UPDATE players SET name = ?, name_history = ?, updated_at = datetime('now') WHERE steam_id = ?")
       .run(name, JSON.stringify(nameHistory || []), steamId);
   }
 
@@ -1932,9 +2092,7 @@ class HumanitZDB {
    * Set a server peak value (e.g. all_time_peak, today_peak, unique_today).
    */
   setServerPeak(key, value) {
-    const stored = (value !== null && typeof value === 'object')
-      ? JSON.stringify(value)
-      : String(value ?? '');
+    const stored = value !== null && typeof value === 'object' ? JSON.stringify(value) : String(value ?? '');
     this._stmts.setServerPeak.run(key, stored);
   }
 
@@ -2062,7 +2220,7 @@ class HumanitZDB {
     const priority = { idmap: 5, connect_log: 4, save: 3, playtime: 2, log: 1, manual: 0 };
 
     // Among is_current=1 entries, pick the highest-priority source
-    const current = rows.filter(r => r.is_current);
+    const current = rows.filter((r) => r.is_current);
     if (current.length > 0) {
       current.sort((a, b) => (priority[b.source] || 0) - (priority[a.source] || 0));
       return current[0].name;
@@ -2078,7 +2236,7 @@ class HumanitZDB {
    * @returns {Array<{ name: string, source: string, firstSeen: string, lastSeen: string, isCurrent: boolean }>}
    */
   getPlayerAliases(steamId) {
-    return this._stmts.lookupBySteamId.all(steamId).map(r => ({
+    return this._stmts.lookupBySteamId.all(steamId).map((r) => ({
       name: r.name,
       source: r.source,
       firstSeen: r.first_seen,
@@ -2118,19 +2276,39 @@ class HumanitZDB {
   //  Leaderboards
   // ═══════════════════════════════════════════════════════════════════════════
 
-  topKillers(limit = 10) { return this._stmts.topKillers.all(limit); }
-  topPlaytime(limit = 10) { return this._stmts.topPlaytime.all(limit); }
-  topSurvival(limit = 10) { return this._stmts.topSurvival.all(limit); }
-  topFish(limit = 10) { return this._stmts.topFish.all(limit); }
-  topBitten(limit = 10) { return this._stmts.topBitten.all(limit); }
-  topPvp(limit = 10) { return this._stmts.topPvp.all(limit); }
-  topBuilders(limit = 10) { return this._stmts.topBuilders.all(limit); }
-  topDeaths(limit = 10) { return this._stmts.topDeaths.all(limit); }
-  topLooters(limit = 10) { return this._stmts.topLooters.all(limit); }
+  topKillers(limit = 10) {
+    return this._stmts.topKillers.all(limit);
+  }
+  topPlaytime(limit = 10) {
+    return this._stmts.topPlaytime.all(limit);
+  }
+  topSurvival(limit = 10) {
+    return this._stmts.topSurvival.all(limit);
+  }
+  topFish(limit = 10) {
+    return this._stmts.topFish.all(limit);
+  }
+  topBitten(limit = 10) {
+    return this._stmts.topBitten.all(limit);
+  }
+  topPvp(limit = 10) {
+    return this._stmts.topPvp.all(limit);
+  }
+  topBuilders(limit = 10) {
+    return this._stmts.topBuilders.all(limit);
+  }
+  topDeaths(limit = 10) {
+    return this._stmts.topDeaths.all(limit);
+  }
+  topLooters(limit = 10) {
+    return this._stmts.topLooters.all(limit);
+  }
 
   /** Aggregate server totals. */
   getServerTotals() {
-    return this._db.prepare(`
+    return this._db
+      .prepare(
+        `
       SELECT
         COUNT(*) as total_players,
         SUM(CASE WHEN online = 1 THEN 1 ELSE 0 END) as online_players,
@@ -2144,7 +2322,9 @@ class HumanitZDB {
         SUM(fish_caught) as total_fish,
         SUM(playtime_seconds) as total_playtime
       FROM players
-    `).get();
+    `,
+      )
+      .get();
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -2161,9 +2341,9 @@ class HumanitZDB {
 
   getAllClans() {
     const clans = this._stmts.getAllClans.all();
-    return clans.map(c => ({
+    return clans.map((c) => ({
       ...c,
-      members: this._stmts.getClanMembers.all(c.name).map(m => ({
+      members: this._stmts.getClanMembers.all(c.name).map((m) => ({
         steamId: m.steam_id,
         name: m.name,
         rank: m.rank,
@@ -2204,10 +2384,13 @@ class HumanitZDB {
   // ═══════════════════════════════════════════════════════════════════════════
 
   setWorldState(key, value) {
-    const stored = (value !== null && typeof value === 'object') ? JSON.stringify(value) : String(value);
+    const stored = value !== null && typeof value === 'object' ? JSON.stringify(value) : String(value);
     this._stmts.setWorldState.run(key, stored);
   }
-  getWorldState(key) { const r = this._stmts.getWorldState.get(key); return r ? r.value : null; }
+  getWorldState(key) {
+    const r = this._stmts.getWorldState.get(key);
+    return r ? r.value : null;
+  }
   getAllWorldState() {
     const rows = this._stmts.getAllWorldState.all();
     const result = {};
@@ -2224,20 +2407,34 @@ class HumanitZDB {
       this._stmts.clearStructures.run();
       for (const s of items) {
         this._stmts.insertStructure.run(
-          s.actorClass, s.displayName || '', s.ownerSteamId || '',
-          s.x ?? null, s.y ?? null, s.z ?? null,
-          s.currentHealth || 0, s.maxHealth || 0, s.upgradeLevel || 0,
-          s.attachedToTrailer ? 1 : 0, _json(s.inventory), s.noSpawn ? 1 : 0,
-          s.extraData || ''
+          s.actorClass,
+          s.displayName || '',
+          s.ownerSteamId || '',
+          s.x ?? null,
+          s.y ?? null,
+          s.z ?? null,
+          s.currentHealth || 0,
+          s.maxHealth || 0,
+          s.upgradeLevel || 0,
+          s.attachedToTrailer ? 1 : 0,
+          _json(s.inventory),
+          s.noSpawn ? 1 : 0,
+          s.extraData || '',
         );
       }
     });
     insert(structures);
   }
 
-  getStructures() { return this._stmts.getStructures.all(); }
-  getStructuresByOwner(steamId) { return this._stmts.getStructuresByOwner.all(steamId); }
-  getStructureCounts() { return this._stmts.countStructuresByOwner.all(); }
+  getStructures() {
+    return this._stmts.getStructures.all();
+  }
+  getStructuresByOwner(steamId) {
+    return this._stmts.getStructuresByOwner.all(steamId);
+  }
+  getStructureCounts() {
+    return this._stmts.countStructuresByOwner.all();
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  Vehicles
@@ -2248,17 +2445,26 @@ class HumanitZDB {
       this._stmts.clearVehicles.run();
       for (const v of items) {
         this._stmts.insertVehicle.run(
-          v.class, v.displayName || '',
-          v.x ?? null, v.y ?? null, v.z ?? null,
-          v.health || 0, v.maxHealth || 0, v.fuel || 0,
-          _json(v.inventory), _json(v.upgrades), _json(v.extra)
+          v.class,
+          v.displayName || '',
+          v.x ?? null,
+          v.y ?? null,
+          v.z ?? null,
+          v.health || 0,
+          v.maxHealth || 0,
+          v.fuel || 0,
+          _json(v.inventory),
+          _json(v.upgrades),
+          _json(v.extra),
         );
       }
     });
     insert(vehicles);
   }
 
-  getAllVehicles() { return this._stmts.getAllVehicles.all(); }
+  getAllVehicles() {
+    return this._stmts.getAllVehicles.all();
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  Companions
@@ -2269,17 +2475,23 @@ class HumanitZDB {
       this._stmts.clearCompanions.run();
       for (const c of items) {
         this._stmts.insertCompanion.run(
-          c.type, c.actorName,
+          c.type,
+          c.actorName,
           c.ownerSteamId || '',
-          c.x ?? null, c.y ?? null, c.z ?? null,
-          c.health || 0, _json(c.extra)
+          c.x ?? null,
+          c.y ?? null,
+          c.z ?? null,
+          c.health || 0,
+          _json(c.extra),
         );
       }
     });
     insert(companions);
   }
 
-  getAllCompanions() { return this._stmts.getAllCompanions.all(); }
+  getAllCompanions() {
+    return this._stmts.getAllCompanions.all();
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  World horses
@@ -2294,16 +2506,28 @@ class HumanitZDB {
     this._stmts.clearWorldHorses.run();
     for (const h of horses) {
       this._stmts.insertWorldHorse.run(
-        h.actorName || h.class || '', h.class || '', h.displayName || '', h.name || '',
+        h.actorName || h.class || '',
+        h.class || '',
+        h.displayName || '',
+        h.name || '',
         h.ownerSteamId || '',
-        h.x ?? null, h.y ?? null, h.z ?? null,
-        h.health || 0, h.maxHealth || 0, h.energy || 0, h.stamina || 0,
-        _json(h.saddleInventory), _json(h.inventory), _json(h.extra)
+        h.x ?? null,
+        h.y ?? null,
+        h.z ?? null,
+        h.health || 0,
+        h.maxHealth || 0,
+        h.energy || 0,
+        h.stamina || 0,
+        _json(h.saddleInventory),
+        _json(h.inventory),
+        _json(h.extra),
       );
     }
   }
 
-  getAllWorldHorses() { return this._stmts.getAllWorldHorses.all(); }
+  getAllWorldHorses() {
+    return this._stmts.getAllWorldHorses.all();
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  Dead bodies
@@ -2317,9 +2541,7 @@ class HumanitZDB {
   _replaceDeadBodiesInner(bodies) {
     this._stmts.clearDeadBodies.run();
     for (const b of bodies) {
-      this._stmts.insertDeadBody.run(
-        b.actorName, b.x ?? null, b.y ?? null, b.z ?? null
-      );
+      this._stmts.insertDeadBody.run(b.actorName, b.x ?? null, b.y ?? null, b.z ?? null);
     }
   }
 
@@ -2348,14 +2570,20 @@ class HumanitZDB {
         c.doesSpawnLoot ? 1 : 0,
         c.alarmOff ? 1 : 0,
         JSON.stringify(c.craftingContent || []),
-        c.x ?? null, c.y ?? null, c.z ?? null,
-        JSON.stringify(extra)
+        c.x ?? null,
+        c.y ?? null,
+        c.z ?? null,
+        JSON.stringify(extra),
       );
     }
   }
 
-  getAllContainers() { return this._stmts.getAllContainers.all(); }
-  getContainersWithItems() { return this._stmts.getContainersWithItems.all(); }
+  getAllContainers() {
+    return this._stmts.getAllContainers.all();
+  }
+  getContainersWithItems() {
+    return this._stmts.getContainersWithItems.all();
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  Loot actors
@@ -2370,7 +2598,12 @@ class HumanitZDB {
     this._stmts.clearLootActors.run();
     for (const la of lootActors) {
       this._stmts.insertLootActor.run(
-        la.name, la.type, la.x ?? null, la.y ?? null, la.z ?? null, JSON.stringify(la.items)
+        la.name,
+        la.type,
+        la.x ?? null,
+        la.y ?? null,
+        la.z ?? null,
+        JSON.stringify(la.items),
       );
     }
   }
@@ -2391,11 +2624,21 @@ class HumanitZDB {
    */
   createItemInstance(item) {
     const result = this._stmts.insertItemInstance.run(
-      item.fingerprint, item.item, item.durability || 0, item.ammo || 0,
-      _json(item.attachments), item.cap || 0, item.maxDur || 0,
-      item.locationType, item.locationId || '', item.locationSlot || '',
-      item.x ?? null, item.y ?? null, item.z ?? null,
-      item.amount || 1, item.groupId ?? null
+      item.fingerprint,
+      item.item,
+      item.durability || 0,
+      item.ammo || 0,
+      _json(item.attachments),
+      item.cap || 0,
+      item.maxDur || 0,
+      item.locationType,
+      item.locationId || '',
+      item.locationSlot || '',
+      item.x ?? null,
+      item.y ?? null,
+      item.z ?? null,
+      item.amount || 1,
+      item.groupId ?? null,
     );
     return result.lastInsertRowid;
   }
@@ -2413,20 +2656,35 @@ class HumanitZDB {
 
     // Update location
     this._stmts.updateItemInstanceLocation.run(
-      to.locationType, to.locationId || '', to.locationSlot || '',
-      to.x ?? null, to.y ?? null, to.z ?? null,
-      to.amount ?? old.amount, to.groupId ?? null,
-      instanceId
+      to.locationType,
+      to.locationId || '',
+      to.locationSlot || '',
+      to.x ?? null,
+      to.y ?? null,
+      to.z ?? null,
+      to.amount ?? old.amount,
+      to.groupId ?? null,
+      instanceId,
     );
 
     // Record movement
     this._stmts.insertItemMovement.run(
-      instanceId, null, moveType, old.item,
-      old.location_type, old.location_id, old.location_slot,
-      to.locationType, to.locationId || '', to.locationSlot || '',
+      instanceId,
+      null,
+      moveType,
+      old.item,
+      old.location_type,
+      old.location_id,
+      old.location_slot,
+      to.locationType,
+      to.locationId || '',
+      to.locationSlot || '',
       to.amount ?? old.amount,
-      attribution?.steamId || '', attribution?.name || '',
-      to.x ?? null, to.y ?? null, to.z ?? null
+      attribution?.steamId || '',
+      attribution?.name || '',
+      to.x ?? null,
+      to.y ?? null,
+      to.z ?? null,
     );
   }
 
@@ -2504,18 +2762,31 @@ class HumanitZDB {
    */
   upsertItemGroup(group) {
     const existing = this._stmts.findActiveGroupByLocation.get(
-      group.fingerprint, group.locationType, group.locationId || '', group.locationSlot || ''
+      group.fingerprint,
+      group.locationType,
+      group.locationId || '',
+      group.locationSlot || '',
     );
     if (existing) {
       this._stmts.updateItemGroupQuantity.run(group.quantity, existing.id);
       return { id: existing.id, created: false };
     }
     const result = this._stmts.insertItemGroup.run(
-      group.fingerprint, group.item, group.durability || 0, group.ammo || 0,
-      _json(group.attachments), group.cap || 0, group.maxDur || 0,
-      group.locationType, group.locationId || '', group.locationSlot || '',
-      group.x ?? null, group.y ?? null, group.z ?? null,
-      group.quantity || 1, group.stackSize || 1
+      group.fingerprint,
+      group.item,
+      group.durability || 0,
+      group.ammo || 0,
+      _json(group.attachments),
+      group.cap || 0,
+      group.maxDur || 0,
+      group.locationType,
+      group.locationId || '',
+      group.locationSlot || '',
+      group.x ?? null,
+      group.y ?? null,
+      group.z ?? null,
+      group.quantity || 1,
+      group.stackSize || 1,
     );
     return { id: Number(result.lastInsertRowid), created: true };
   }
@@ -2526,9 +2797,14 @@ class HumanitZDB {
 
   updateItemGroupLocation(groupId, to) {
     this._stmts.updateItemGroupLocation.run(
-      to.locationType, to.locationId || '', to.locationSlot || '',
-      to.x ?? null, to.y ?? null, to.z ?? null,
-      to.quantity ?? 1, groupId
+      to.locationType,
+      to.locationId || '',
+      to.locationSlot || '',
+      to.x ?? null,
+      to.y ?? null,
+      to.z ?? null,
+      to.quantity ?? 1,
+      groupId,
     );
   }
 
@@ -2596,13 +2872,22 @@ class HumanitZDB {
    */
   recordGroupMovement(opts) {
     this._stmts.insertItemMovement.run(
-      opts.instanceId ?? null, opts.groupId ?? null, opts.moveType,
+      opts.instanceId ?? null,
+      opts.groupId ?? null,
+      opts.moveType,
       opts.item,
-      opts.from?.type || '', opts.from?.id || '', opts.from?.slot || '',
-      opts.to?.type || '', opts.to?.id || '', opts.to?.slot || '',
+      opts.from?.type || '',
+      opts.from?.id || '',
+      opts.from?.slot || '',
+      opts.to?.type || '',
+      opts.to?.id || '',
+      opts.to?.slot || '',
       opts.amount || 1,
-      opts.attribution?.steamId || '', opts.attribution?.name || '',
-      opts.pos?.x ?? null, opts.pos?.y ?? null, opts.pos?.z ?? null
+      opts.attribution?.steamId || '',
+      opts.attribution?.name || '',
+      opts.pos?.x ?? null,
+      opts.pos?.y ?? null,
+      opts.pos?.z ?? null,
     );
   }
 
@@ -2647,18 +2932,33 @@ class HumanitZDB {
     this._stmts.clearWorldDrops.run();
     for (const d of drops) {
       this._stmts.insertWorldDrop.run(
-        d.type, d.actorName || '', d.item || '', d.amount || 0,
-        d.durability || 0, _json(d.items),
-        d.worldLoot ? 1 : 0, d.placed ? 1 : 0, d.spawned ? 1 : 0,
-        d.locked ? 1 : 0, d.doesSpawnLoot ? 1 : 0,
-        d.x ?? null, d.y ?? null, d.z ?? null
+        d.type,
+        d.actorName || '',
+        d.item || '',
+        d.amount || 0,
+        d.durability || 0,
+        _json(d.items),
+        d.worldLoot ? 1 : 0,
+        d.placed ? 1 : 0,
+        d.spawned ? 1 : 0,
+        d.locked ? 1 : 0,
+        d.doesSpawnLoot ? 1 : 0,
+        d.x ?? null,
+        d.y ?? null,
+        d.z ?? null,
       );
     }
   }
 
-  getAllWorldDrops() { return this._stmts.getAllWorldDrops.all(); }
-  getWorldDropsByType(type) { return this._stmts.getWorldDropsByType.all(type); }
-  getWorldDropsWithItems() { return this._stmts.getWorldDropsWithItems.all(); }
+  getAllWorldDrops() {
+    return this._stmts.getAllWorldDrops.all();
+  }
+  getWorldDropsByType(type) {
+    return this._stmts.getWorldDropsByType.all(type);
+  }
+  getWorldDropsWithItems() {
+    return this._stmts.getWorldDropsWithItems.all();
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  Quests
@@ -2672,9 +2972,7 @@ class HumanitZDB {
   _replaceQuestsInner(quests) {
     this._stmts.clearQuests.run();
     for (const q of quests) {
-      this._stmts.insertQuest.run(
-        q.id, q.type, q.state, JSON.stringify(q.data)
-      );
+      this._stmts.insertQuest.run(q.id, q.type, q.state, JSON.stringify(q.data));
     }
   }
 
@@ -2691,7 +2989,10 @@ class HumanitZDB {
     upsert(settings);
   }
 
-  getSetting(key) { const r = this._stmts.getSetting.get(key); return r ? r.value : null; }
+  getSetting(key) {
+    const r = this._stmts.getSetting.get(key);
+    return r ? r.value : null;
+  }
   getAllSettings() {
     const rows = this._stmts.getAllSettings.all();
     const result = {};
@@ -2726,10 +3027,20 @@ class HumanitZDB {
    */
   insertActivity(entry) {
     this._stmts.insertActivity.run(
-      entry.type, entry.category || '', entry.actor || '', entry.actorName || '',
-      entry.item || '', entry.amount || 0, JSON.stringify(entry.details || {}),
-      entry.x ?? null, entry.y ?? null, entry.z ?? null,
-      entry.steamId || '', entry.source || 'save', entry.targetName || '', entry.targetSteamId || ''
+      entry.type,
+      entry.category || '',
+      entry.actor || '',
+      entry.actorName || '',
+      entry.item || '',
+      entry.amount || 0,
+      JSON.stringify(entry.details || {}),
+      entry.x ?? null,
+      entry.y ?? null,
+      entry.z ?? null,
+      entry.steamId || '',
+      entry.source || 'save',
+      entry.targetName || '',
+      entry.targetSteamId || '',
     );
   }
 
@@ -2742,10 +3053,20 @@ class HumanitZDB {
     const tx = this._db.transaction((list) => {
       for (const entry of list) {
         this._stmts.insertActivity.run(
-          entry.type, entry.category || '', entry.actor || '', entry.actorName || '',
-          entry.item || '', entry.amount || 0, JSON.stringify(entry.details || {}),
-          entry.x ?? null, entry.y ?? null, entry.z ?? null,
-          entry.steamId || '', entry.source || 'save', entry.targetName || '', entry.targetSteamId || ''
+          entry.type,
+          entry.category || '',
+          entry.actor || '',
+          entry.actorName || '',
+          entry.item || '',
+          entry.amount || 0,
+          JSON.stringify(entry.details || {}),
+          entry.x ?? null,
+          entry.y ?? null,
+          entry.z ?? null,
+          entry.steamId || '',
+          entry.source || 'save',
+          entry.targetName || '',
+          entry.targetSteamId || '',
         );
       }
     });
@@ -2762,11 +3083,21 @@ class HumanitZDB {
     const tx = this._db.transaction((list) => {
       for (const entry of list) {
         this._stmts.insertActivityAt.run(
-          entry.type, entry.category || '', entry.actor || '', entry.actorName || '',
-          entry.item || '', entry.amount || 0, JSON.stringify(entry.details || {}),
-          entry.x ?? null, entry.y ?? null, entry.z ?? null,
+          entry.type,
+          entry.category || '',
+          entry.actor || '',
+          entry.actorName || '',
+          entry.item || '',
+          entry.amount || 0,
+          JSON.stringify(entry.details || {}),
+          entry.x ?? null,
+          entry.y ?? null,
+          entry.z ?? null,
           entry.createdAt,
-          entry.steamId || '', entry.source || 'save', entry.targetName || '', entry.targetSteamId || ''
+          entry.steamId || '',
+          entry.source || 'save',
+          entry.targetName || '',
+          entry.targetSteamId || '',
         );
       }
     });
@@ -2832,9 +3163,13 @@ class HumanitZDB {
    */
   insertChat(entry) {
     this._stmts.insertChat.run(
-      entry.type, entry.playerName || '', entry.steamId || '',
-      entry.message || '', entry.direction || 'game',
-      entry.discordUser || '', entry.isAdmin ? 1 : 0
+      entry.type,
+      entry.playerName || '',
+      entry.steamId || '',
+      entry.message || '',
+      entry.direction || 'game',
+      entry.discordUser || '',
+      entry.isAdmin ? 1 : 0,
     );
   }
 
@@ -2844,10 +3179,14 @@ class HumanitZDB {
    */
   insertChatAt(entry) {
     this._stmts.insertChatAt.run(
-      entry.type, entry.playerName || '', entry.steamId || '',
-      entry.message || '', entry.direction || 'game',
-      entry.discordUser || '', entry.isAdmin ? 1 : 0,
-      entry.createdAt
+      entry.type,
+      entry.playerName || '',
+      entry.steamId || '',
+      entry.message || '',
+      entry.direction || 'game',
+      entry.discordUser || '',
+      entry.isAdmin ? 1 : 0,
+      entry.createdAt,
     );
   }
 
@@ -2959,7 +3298,7 @@ class HumanitZDB {
     // World state
     if (parsed.worldState) {
       for (const [key, value] of Object.entries(parsed.worldState)) {
-        const stored = (value !== null && typeof value === 'object') ? JSON.stringify(value) : String(value);
+        const stored = value !== null && typeof value === 'object' ? JSON.stringify(value) : String(value);
         this._stmts.setWorldState.run(key, stored);
       }
     }
@@ -2969,11 +3308,19 @@ class HumanitZDB {
       this._stmts.clearStructures.run();
       for (const s of parsed.structures) {
         this._stmts.insertStructure.run(
-          s.actorClass, s.displayName || '', s.ownerSteamId || '',
-          s.x ?? null, s.y ?? null, s.z ?? null,
-          s.currentHealth || 0, s.maxHealth || 0, s.upgradeLevel || 0,
-          s.attachedToTrailer ? 1 : 0, _json(s.inventory), s.noSpawn ? 1 : 0,
-          s.extraData || ''
+          s.actorClass,
+          s.displayName || '',
+          s.ownerSteamId || '',
+          s.x ?? null,
+          s.y ?? null,
+          s.z ?? null,
+          s.currentHealth || 0,
+          s.maxHealth || 0,
+          s.upgradeLevel || 0,
+          s.attachedToTrailer ? 1 : 0,
+          _json(s.inventory),
+          s.noSpawn ? 1 : 0,
+          s.extraData || '',
         );
       }
     }
@@ -2983,10 +3330,17 @@ class HumanitZDB {
       this._stmts.clearVehicles.run();
       for (const v of parsed.vehicles) {
         this._stmts.insertVehicle.run(
-          v.class, v.displayName || '',
-          v.x ?? null, v.y ?? null, v.z ?? null,
-          v.health || 0, v.maxHealth || 0, v.fuel || 0,
-          _json(v.inventory), _json(v.upgrades), _json(v.extra)
+          v.class,
+          v.displayName || '',
+          v.x ?? null,
+          v.y ?? null,
+          v.z ?? null,
+          v.health || 0,
+          v.maxHealth || 0,
+          v.fuel || 0,
+          _json(v.inventory),
+          _json(v.upgrades),
+          _json(v.extra),
         );
       }
     }
@@ -2996,9 +3350,14 @@ class HumanitZDB {
       this._stmts.clearCompanions.run();
       for (const c of parsed.companions) {
         this._stmts.insertCompanion.run(
-          c.type, c.actorName, c.ownerSteamId || '',
-          c.x ?? null, c.y ?? null, c.z ?? null,
-          c.health || 0, _json(c.extra)
+          c.type,
+          c.actorName,
+          c.ownerSteamId || '',
+          c.x ?? null,
+          c.y ?? null,
+          c.z ?? null,
+          c.health || 0,
+          _json(c.extra),
         );
       }
     }
@@ -3009,7 +3368,14 @@ class HumanitZDB {
         this._stmts.upsertClan.run(clan.name);
         this._stmts.deleteClanMembers.run(clan.name);
         for (const m of clan.members) {
-          this._stmts.insertClanMember.run(clan.name, m.steamId, m.name, m.rank, m.canInvite ? 1 : 0, m.canKick ? 1 : 0);
+          this._stmts.insertClanMember.run(
+            clan.name,
+            m.steamId,
+            m.name,
+            m.rank,
+            m.canInvite ? 1 : 0,
+            m.canKick ? 1 : 0,
+          );
         }
       }
     }
@@ -3037,7 +3403,7 @@ class HumanitZDB {
           item.typeRaw || '',
           item.specificType || '',
           item.wearPosition || '',
-          item.type || '',   // category = type
+          item.type || '', // category = type
           item.chanceToSpawn ?? 0,
           item.durabilityLoss ?? 0,
           item.armorProtection ?? 0,
@@ -3065,33 +3431,50 @@ class HumanitZDB {
           item.useAsFertilizer ? 1 : 0,
           String(item.state ?? ''),
           item.tag || '',
-          typeof item.openItem === 'string' ? item.openItem : (item.openItem ? '1' : ''),
+          typeof item.openItem === 'string' ? item.openItem : item.openItem ? '1' : '',
           item.bodyAttachSocket || '',
           _json(item.supportedAttachments),
           _json(item.itemsInside),
           _json(item.skillBookData),
-          _json({})
+          _json({}),
         );
       }
     });
     tx(items);
   }
 
-  getGameItem(id) { return this._stmts.getGameItem.get(id); }
-  searchGameItems(query) { const q = `%${query}%`; return this._stmts.searchGameItems.all(q, q); }
+  getGameItem(id) {
+    return this._stmts.getGameItem.get(id);
+  }
+  searchGameItems(query) {
+    const q = `%${query}%`;
+    return this._stmts.searchGameItems.all(q, q);
+  }
 
   seedGameProfessions(professions) {
-    const stmt = this._db.prepare('INSERT OR REPLACE INTO game_professions (id, enum_value, enum_index, perk, description, affliction, skills) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    const stmt = this._db.prepare(
+      'INSERT OR REPLACE INTO game_professions (id, enum_value, enum_index, perk, description, affliction, skills) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    );
     const tx = this._db.transaction((list) => {
       for (const p of list) {
-        stmt.run(p.id, p.enumValue || '', p.enumIndex || 0, p.perk || '', p.description || '', p.affliction || '', _json(p.skills));
+        stmt.run(
+          p.id,
+          p.enumValue || '',
+          p.enumIndex || 0,
+          p.perk || '',
+          p.description || '',
+          p.affliction || '',
+          _json(p.skills),
+        );
       }
     });
     tx(professions);
   }
 
   seedGameAfflictions(afflictions) {
-    const stmt = this._db.prepare('INSERT OR REPLACE INTO game_afflictions (idx, name, description, icon) VALUES (?, ?, ?, ?)');
+    const stmt = this._db.prepare(
+      'INSERT OR REPLACE INTO game_afflictions (idx, name, description, icon) VALUES (?, ?, ?, ?)',
+    );
     const tx = this._db.transaction((list) => {
       for (const a of list) {
         stmt.run(a.idx, a.name, a.description || '', a.icon || '');
@@ -3101,7 +3484,9 @@ class HumanitZDB {
   }
 
   seedGameSkills(skills) {
-    const stmt = this._db.prepare('INSERT OR REPLACE INTO game_skills (id, name, description, effect, category, icon) VALUES (?, ?, ?, ?, ?, ?)');
+    const stmt = this._db.prepare(
+      'INSERT OR REPLACE INTO game_skills (id, name, description, effect, category, icon) VALUES (?, ?, ?, ?, ?, ?)',
+    );
     const tx = this._db.transaction((list) => {
       for (const s of list) {
         stmt.run(s.id, s.name, s.description || '', s.effect || '', s.category || '', s.icon || '');
@@ -3111,7 +3496,9 @@ class HumanitZDB {
   }
 
   seedGameChallenges(challenges) {
-    const stmt = this._db.prepare('INSERT OR REPLACE INTO game_challenges (id, name, description, save_field, target) VALUES (?, ?, ?, ?, ?)');
+    const stmt = this._db.prepare(
+      'INSERT OR REPLACE INTO game_challenges (id, name, description, save_field, target) VALUES (?, ?, ?, ?, ?)',
+    );
     const tx = this._db.transaction((list) => {
       for (const c of list) {
         stmt.run(c.id, c.name, c.description || '', c.saveField || '', c.target || 0);
@@ -3146,11 +3533,24 @@ class HumanitZDB {
     const tx = this._db.transaction((list) => {
       for (const b of list) {
         stmt.run(
-          b.id, b.name || '', b.description || '', b.category || '', b.categoryRaw || '', b.health ?? 0,
-          b.showInBuildMenu ? 1 : 0, b.requiresBuildTool ? 1 : 0, b.moveableAfterPlacement ? 1 : 0,
-          b.learnedBuilding ? 1 : 0, b.placementOnLandscapeOnly ? 1 : 0, b.placementInWaterOnly ? 1 : 0,
-          b.placementOnStructureOnly ? 1 : 0, b.wallPlacement ? 1 : 0, b.requireFoundation ? 1 : 0,
-          b.xpMultiplier ?? 1, _json(b.resources), _json(b.upgrades)
+          b.id,
+          b.name || '',
+          b.description || '',
+          b.category || '',
+          b.categoryRaw || '',
+          b.health ?? 0,
+          b.showInBuildMenu ? 1 : 0,
+          b.requiresBuildTool ? 1 : 0,
+          b.moveableAfterPlacement ? 1 : 0,
+          b.learnedBuilding ? 1 : 0,
+          b.placementOnLandscapeOnly ? 1 : 0,
+          b.placementInWaterOnly ? 1 : 0,
+          b.placementOnStructureOnly ? 1 : 0,
+          b.wallPlacement ? 1 : 0,
+          b.requireFoundation ? 1 : 0,
+          b.xpMultiplier ?? 1,
+          _json(b.resources),
+          _json(b.upgrades),
         );
       }
     });
@@ -3159,12 +3559,21 @@ class HumanitZDB {
 
   seedGameLootPools(lootTables) {
     const poolStmt = this._db.prepare('INSERT OR REPLACE INTO game_loot_pools (id, name, item_count) VALUES (?, ?, ?)');
-    const itemStmt = this._db.prepare('INSERT OR REPLACE INTO game_loot_pool_items (pool_id, item_id, name, chance_to_spawn, type, max_stack_size) VALUES (?, ?, ?, ?, ?, ?)');
+    const itemStmt = this._db.prepare(
+      'INSERT OR REPLACE INTO game_loot_pool_items (pool_id, item_id, name, chance_to_spawn, type, max_stack_size) VALUES (?, ?, ?, ?, ?, ?)',
+    );
     const tx = this._db.transaction((tables) => {
       for (const [poolId, pool] of Object.entries(tables)) {
         poolStmt.run(poolId, pool.name || poolId, pool.itemCount || 0);
         for (const [itemId, item] of Object.entries(pool.items || {})) {
-          itemStmt.run(poolId, itemId, item.name || '', item.chanceToSpawn ?? 0, item.type || '', item.maxStackSize ?? 1);
+          itemStmt.run(
+            poolId,
+            itemId,
+            item.name || '',
+            item.chanceToSpawn ?? 0,
+            item.type || '',
+            item.maxStackSize ?? 1,
+          );
         }
       }
     });
@@ -3182,7 +3591,9 @@ class HumanitZDB {
   }
 
   seedGameAnimals(animals) {
-    const stmt = this._db.prepare('INSERT OR REPLACE INTO game_animals (id, name, type, hide_item_id) VALUES (?, ?, ?, ?)');
+    const stmt = this._db.prepare(
+      'INSERT OR REPLACE INTO game_animals (id, name, type, hide_item_id) VALUES (?, ?, ?, ?)',
+    );
     const tx = this._db.transaction((list) => {
       for (const a of list) {
         stmt.run(a.id, a.name || a.id, a.type || '', a.hideItemId || '');
@@ -3197,8 +3608,16 @@ class HumanitZDB {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
     const tx = this._db.transaction((list) => {
       for (const c of list) {
-        stmt.run(c.id, c.cropId ?? 0, c.growthTimeDays ?? 0, c.gridColumns ?? 1, c.gridRows ?? 1,
-          c.harvestResult || '', c.harvestCount ?? 0, _json(c.growSeasons));
+        stmt.run(
+          c.id,
+          c.cropId ?? 0,
+          c.growthTimeDays ?? 0,
+          c.gridColumns ?? 1,
+          c.gridRows ?? 1,
+          c.harvestResult || '',
+          c.harvestCount ?? 0,
+          _json(c.growSeasons),
+        );
       }
     });
     tx(crops);
@@ -3210,15 +3629,26 @@ class HumanitZDB {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     const tx = this._db.transaction((list) => {
       for (const u of list) {
-        stmt.run(u.id, u.type || '', u.typeRaw || '', u.level ?? 0, u.socket || '',
-          u.toolDurabilityLost ?? 0, u.craftTimeMinutes ?? 0, u.health ?? 0, _json(u.craftCost));
+        stmt.run(
+          u.id,
+          u.type || '',
+          u.typeRaw || '',
+          u.level ?? 0,
+          u.socket || '',
+          u.toolDurabilityLost ?? 0,
+          u.craftTimeMinutes ?? 0,
+          u.health ?? 0,
+          _json(u.craftCost),
+        );
       }
     });
     tx(upgrades);
   }
 
   seedGameAmmoTypes(ammo) {
-    const stmt = this._db.prepare('INSERT OR REPLACE INTO game_ammo_types (id, damage, headshot_multiplier, range, penetration) VALUES (?, ?, ?, ?, ?)');
+    const stmt = this._db.prepare(
+      'INSERT OR REPLACE INTO game_ammo_types (id, damage, headshot_multiplier, range, penetration) VALUES (?, ?, ?, ?, ?)',
+    );
     const tx = this._db.transaction((list) => {
       for (const a of list) {
         stmt.run(a.id, a.damage ?? 0, a.headshotMultiplier ?? 1, a.range ?? 0, a.penetration ?? 0);
@@ -3233,15 +3663,24 @@ class HumanitZDB {
     ) VALUES (?, ?, ?, ?, ?, ?, ?)`);
     const tx = this._db.transaction((list) => {
       for (const r of list) {
-        stmt.run(r.id, r.resourceType || '', r.resourceTypeRaw || '', r.amount ?? 0,
-          r.healthToAdd ?? 0, r.isRepairable ? 1 : 0, _json(r.extraResources));
+        stmt.run(
+          r.id,
+          r.resourceType || '',
+          r.resourceTypeRaw || '',
+          r.amount ?? 0,
+          r.healthToAdd ?? 0,
+          r.isRepairable ? 1 : 0,
+          _json(r.extraResources),
+        );
       }
     });
     tx(repairs);
   }
 
   seedGameFurniture(furniture) {
-    const stmt = this._db.prepare('INSERT OR REPLACE INTO game_furniture (id, name, mesh_count, drop_resources) VALUES (?, ?, ?, ?)');
+    const stmt = this._db.prepare(
+      'INSERT OR REPLACE INTO game_furniture (id, name, mesh_count, drop_resources) VALUES (?, ?, ?, ?)',
+    );
     const tx = this._db.transaction((list) => {
       for (const f of list) {
         stmt.run(f.id, f.name || f.id, f.meshCount ?? 0, _json(f.dropResources));
@@ -3251,18 +3690,28 @@ class HumanitZDB {
   }
 
   seedGameTraps(traps) {
-    const stmt = this._db.prepare('INSERT OR REPLACE INTO game_traps (id, item_id, requires_weapon, requires_ammo, requires_items, required_ammo_id) VALUES (?, ?, ?, ?, ?, ?)');
+    const stmt = this._db.prepare(
+      'INSERT OR REPLACE INTO game_traps (id, item_id, requires_weapon, requires_ammo, requires_items, required_ammo_id) VALUES (?, ?, ?, ?, ?, ?)',
+    );
     const tx = this._db.transaction((list) => {
       for (const t of list) {
-        stmt.run(t.id, t.itemId || '', t.requiresWeapon ? 1 : 0, t.requiresAmmo ? 1 : 0,
-          t.requiresItems ? 1 : 0, t.requiredAmmoId || '');
+        stmt.run(
+          t.id,
+          t.itemId || '',
+          t.requiresWeapon ? 1 : 0,
+          t.requiresAmmo ? 1 : 0,
+          t.requiresItems ? 1 : 0,
+          t.requiredAmmoId || '',
+        );
       }
     });
     tx(traps);
   }
 
   seedGameSprays(sprays) {
-    const stmt = this._db.prepare('INSERT OR REPLACE INTO game_sprays (id, name, description, color) VALUES (?, ?, ?, ?)');
+    const stmt = this._db.prepare(
+      'INSERT OR REPLACE INTO game_sprays (id, name, description, color) VALUES (?, ?, ?, ?)',
+    );
     const tx = this._db.transaction((list) => {
       for (const s of list) {
         stmt.run(s.id, s.name || s.id, s.description || '', s.color || '');
@@ -3282,15 +3731,29 @@ class HumanitZDB {
     const tx = this._db.transaction((list) => {
       for (const r of list) {
         stmt.run(
-          r.id, r.name || '', r.description || '',
-          r.station || '', r.stationRaw || '', r.recipeType || '', r.craftTime ?? 0,
-          r.profession || '', r.professionRaw || '',
-          r.requiresRecipe ? 1 : 0, r.hidden ? 1 : 0, r.inventorySearchOnly ? 1 : 0,
-          r.xpMultiplier ?? 1, r.useAny ? 1 : 0, r.copyCapacity ? 1 : 0,
-          r.noSpoiled ? 1 : 0, r.ignoreMeleeCheck ? 1 : 0,
-          r.overrideName || '', r.overrideDescription || '',
-          _json(r.craftedItem), _json(r.alsoGiveItem), _json(r.alsoGiveArr),
-          _json(r.ingredients)
+          r.id,
+          r.name || '',
+          r.description || '',
+          r.station || '',
+          r.stationRaw || '',
+          r.recipeType || '',
+          r.craftTime ?? 0,
+          r.profession || '',
+          r.professionRaw || '',
+          r.requiresRecipe ? 1 : 0,
+          r.hidden ? 1 : 0,
+          r.inventorySearchOnly ? 1 : 0,
+          r.xpMultiplier ?? 1,
+          r.useAny ? 1 : 0,
+          r.copyCapacity ? 1 : 0,
+          r.noSpoiled ? 1 : 0,
+          r.ignoreMeleeCheck ? 1 : 0,
+          r.overrideName || '',
+          r.overrideDescription || '',
+          _json(r.craftedItem),
+          _json(r.alsoGiveItem),
+          _json(r.alsoGiveArr),
+          _json(r.ingredients),
         );
       }
     });
@@ -3298,7 +3761,9 @@ class HumanitZDB {
   }
 
   seedGameLore(lore) {
-    const stmt = this._db.prepare('INSERT OR REPLACE INTO game_lore (id, title, text, category, sort_order) VALUES (?, ?, ?, ?, ?)');
+    const stmt = this._db.prepare(
+      'INSERT OR REPLACE INTO game_lore (id, title, text, category, sort_order) VALUES (?, ?, ?, ?, ?)',
+    );
     const tx = this._db.transaction((list) => {
       for (const l of list) {
         stmt.run(l.id, l.title || '', l.text || '', l.category || '', l.order ?? 0);
@@ -3308,7 +3773,9 @@ class HumanitZDB {
   }
 
   seedGameQuests(quests) {
-    const stmt = this._db.prepare('INSERT OR REPLACE INTO game_quests (id, name, description, xp_reward, requirements, rewards) VALUES (?, ?, ?, ?, ?, ?)');
+    const stmt = this._db.prepare(
+      'INSERT OR REPLACE INTO game_quests (id, name, description, xp_reward, requirements, rewards) VALUES (?, ?, ?, ?, ?, ?)',
+    );
     const tx = this._db.transaction((list) => {
       for (const q of list) {
         stmt.run(q.id, q.name || '', q.description || '', q.xpReward ?? 0, _json(q.requirements), _json(q.rewards));
@@ -3318,7 +3785,9 @@ class HumanitZDB {
   }
 
   seedGameSpawnLocations(spawns) {
-    const stmt = this._db.prepare('INSERT OR REPLACE INTO game_spawn_locations (id, name, description, map) VALUES (?, ?, ?, ?)');
+    const stmt = this._db.prepare(
+      'INSERT OR REPLACE INTO game_spawn_locations (id, name, description, map) VALUES (?, ?, ?, ?)',
+    );
     const tx = this._db.transaction((list) => {
       for (const s of list) {
         stmt.run(s.id, s.name || s.id, s.description || '', s.map || '');
@@ -3328,7 +3797,9 @@ class HumanitZDB {
   }
 
   seedGameServerSettingDefs(settings) {
-    const stmt = this._db.prepare('INSERT OR REPLACE INTO game_server_setting_defs (key, label, description, type, default_val, options) VALUES (?, ?, ?, ?, ?, ?)');
+    const stmt = this._db.prepare(
+      'INSERT OR REPLACE INTO game_server_setting_defs (key, label, description, type, default_val, options) VALUES (?, ?, ?, ?, ?, ?)',
+    );
     const tx = this._db.transaction((list) => {
       for (const s of list) {
         stmt.run(s.key, s.label || '', s.description || '', s.type || 'string', s.defaultVal || '', _json(s.options));
@@ -3359,12 +3830,22 @@ class HumanitZDB {
   insertTimelineSnapshot(data) {
     const s = data.snapshot || {};
     const result = this._stmts.insertTimelineSnapshot.run(
-      s.gameDay || 0, s.gameTime || 0, s.playerCount || 0, s.onlineCount || 0,
-      s.aiCount || 0, s.structureCount || 0, s.vehicleCount || 0,
-      s.containerCount || 0, s.worldItemCount || 0,
-      s.weatherType || '', s.season || '',
-      s.airdropActive ? 1 : 0, s.airdropX ?? null, s.airdropY ?? null,
-      s.airdropAiAlive || 0, JSON.stringify(s.summary || {})
+      s.gameDay || 0,
+      s.gameTime || 0,
+      s.playerCount || 0,
+      s.onlineCount || 0,
+      s.aiCount || 0,
+      s.structureCount || 0,
+      s.vehicleCount || 0,
+      s.containerCount || 0,
+      s.worldItemCount || 0,
+      s.weatherType || '',
+      s.season || '',
+      s.airdropActive ? 1 : 0,
+      s.airdropX ?? null,
+      s.airdropY ?? null,
+      s.airdropAiAlive || 0,
+      JSON.stringify(s.summary || {}),
     );
     const snapId = result.lastInsertRowid;
 
@@ -3373,11 +3854,23 @@ class HumanitZDB {
       if (data.players) {
         for (const p of data.players) {
           this._stmts.insertTimelinePlayer.run(
-            snapId, p.steamId, p.name || '', p.online ? 1 : 0,
-            p.x ?? null, p.y ?? null, p.z ?? null,
-            p.health || 0, p.maxHealth || 100,
-            p.hunger || 0, p.thirst || 0, p.infection || 0, p.stamina || 0,
-            p.level || 0, p.zeeksKilled || 0, p.daysSurvived || 0, p.lifetimeKills || 0
+            snapId,
+            p.steamId,
+            p.name || '',
+            p.online ? 1 : 0,
+            p.x ?? null,
+            p.y ?? null,
+            p.z ?? null,
+            p.health || 0,
+            p.maxHealth || 100,
+            p.hunger || 0,
+            p.thirst || 0,
+            p.infection || 0,
+            p.stamina || 0,
+            p.level || 0,
+            p.zeeksKilled || 0,
+            p.daysSurvived || 0,
+            p.lifetimeKills || 0,
           );
         }
       }
@@ -3386,8 +3879,14 @@ class HumanitZDB {
       if (data.ai) {
         for (const a of data.ai) {
           this._stmts.insertTimelineAI.run(
-            snapId, a.aiType, a.category || '', a.displayName || '',
-            a.nodeUid || '', a.x ?? null, a.y ?? null, a.z ?? null
+            snapId,
+            a.aiType,
+            a.category || '',
+            a.displayName || '',
+            a.nodeUid || '',
+            a.x ?? null,
+            a.y ?? null,
+            a.z ?? null,
           );
         }
       }
@@ -3396,9 +3895,16 @@ class HumanitZDB {
       if (data.vehicles) {
         for (const v of data.vehicles) {
           this._stmts.insertTimelineVehicle.run(
-            snapId, v.class, v.displayName || '',
-            v.x ?? null, v.y ?? null, v.z ?? null,
-            v.health || 0, v.maxHealth || 0, v.fuel || 0, v.itemCount || 0
+            snapId,
+            v.class,
+            v.displayName || '',
+            v.x ?? null,
+            v.y ?? null,
+            v.z ?? null,
+            v.health || 0,
+            v.maxHealth || 0,
+            v.fuel || 0,
+            v.itemCount || 0,
           );
         }
       }
@@ -3407,9 +3913,16 @@ class HumanitZDB {
       if (data.structures) {
         for (const st of data.structures) {
           this._stmts.insertTimelineStructure.run(
-            snapId, st.actorClass, st.displayName || '', st.ownerSteamId || '',
-            st.x ?? null, st.y ?? null, st.z ?? null,
-            st.currentHealth || 0, st.maxHealth || 0, st.upgradeLevel || 0
+            snapId,
+            st.actorClass,
+            st.displayName || '',
+            st.ownerSteamId || '',
+            st.x ?? null,
+            st.y ?? null,
+            st.z ?? null,
+            st.currentHealth || 0,
+            st.maxHealth || 0,
+            st.upgradeLevel || 0,
           );
         }
       }
@@ -3418,12 +3931,20 @@ class HumanitZDB {
       if (data.houses) {
         for (const h of data.houses) {
           this._stmts.insertTimelineHouse.run(
-            snapId, h.uid, h.name || '',
-            h.windowsOpen || 0, h.windowsTotal || 0,
-            h.doorsOpen || 0, h.doorsLocked || 0, h.doorsTotal || 0,
-            h.destroyedFurniture || 0, h.hasGenerator ? 1 : 0,
-            h.sleepers || 0, h.clean || 0,
-            h.x ?? null, h.y ?? null
+            snapId,
+            h.uid,
+            h.name || '',
+            h.windowsOpen || 0,
+            h.windowsTotal || 0,
+            h.doorsOpen || 0,
+            h.doorsLocked || 0,
+            h.doorsTotal || 0,
+            h.destroyedFurniture || 0,
+            h.hasGenerator ? 1 : 0,
+            h.sleepers || 0,
+            h.clean || 0,
+            h.x ?? null,
+            h.y ?? null,
           );
         }
       }
@@ -3432,10 +3953,16 @@ class HumanitZDB {
       if (data.companions) {
         for (const c of data.companions) {
           this._stmts.insertTimelineCompanion.run(
-            snapId, c.entityType, c.actorName || '', c.displayName || '',
+            snapId,
+            c.entityType,
+            c.actorName || '',
+            c.displayName || '',
             c.ownerSteamId || '',
-            c.x ?? null, c.y ?? null, c.z ?? null,
-            c.health || 0, JSON.stringify(c.extra || {})
+            c.x ?? null,
+            c.y ?? null,
+            c.z ?? null,
+            c.health || 0,
+            JSON.stringify(c.extra || {}),
           );
         }
       }
@@ -3444,8 +3971,13 @@ class HumanitZDB {
       if (data.backpacks) {
         for (const b of data.backpacks) {
           this._stmts.insertTimelineBackpack.run(
-            snapId, b.class || '', b.x ?? null, b.y ?? null, b.z ?? null,
-            b.itemCount || 0, JSON.stringify(b.items || [])
+            snapId,
+            b.class || '',
+            b.x ?? null,
+            b.y ?? null,
+            b.z ?? null,
+            b.itemCount || 0,
+            JSON.stringify(b.items || []),
           );
         }
       }
@@ -3457,16 +3989,26 @@ class HumanitZDB {
 
   /** Get recent timeline snapshots (metadata only). */
   getTimelineSnapshots(limit = 50) {
-    return this._stmts.getTimelineSnapshots.all(limit).map(r => {
-      if (r.summary) try { r.summary = JSON.parse(r.summary); } catch { /* */ }
+    return this._stmts.getTimelineSnapshots.all(limit).map((r) => {
+      if (r.summary)
+        try {
+          r.summary = JSON.parse(r.summary);
+        } catch {
+          /* */
+        }
       return r;
     });
   }
 
   /** Get timeline snapshots in a date range. */
   getTimelineSnapshotRange(from, to) {
-    return this._stmts.getTimelineSnapshotRange.all(from, to).map(r => {
-      if (r.summary) try { r.summary = JSON.parse(r.summary); } catch { /* */ }
+    return this._stmts.getTimelineSnapshotRange.all(from, to).map((r) => {
+      if (r.summary)
+        try {
+          r.summary = JSON.parse(r.summary);
+        } catch {
+          /* */
+        }
       return r;
     });
   }
@@ -3475,7 +4017,12 @@ class HumanitZDB {
   getTimelineSnapshotFull(snapshotId) {
     const snap = this._stmts.getTimelineSnapshotById.get(snapshotId);
     if (!snap) return null;
-    if (snap.summary) try { snap.summary = JSON.parse(snap.summary); } catch { /* */ }
+    if (snap.summary)
+      try {
+        snap.summary = JSON.parse(snap.summary);
+      } catch {
+        /* */
+      }
     return {
       snapshot: snap,
       players: this._stmts.getTimelinePlayers.all(snapshotId),
@@ -3484,8 +4031,13 @@ class HumanitZDB {
       structures: this._stmts.getTimelineStructures.all(snapshotId),
       houses: this._stmts.getTimelineHouses.all(snapshotId),
       companions: this._stmts.getTimelineCompanions.all(snapshotId),
-      backpacks: this._stmts.getTimelineBackpacks.all(snapshotId).map(b => {
-        if (b.items_summary) try { b.items_summary = JSON.parse(b.items_summary); } catch { /* */ }
+      backpacks: this._stmts.getTimelineBackpacks.all(snapshotId).map((b) => {
+        if (b.items_summary)
+          try {
+            b.items_summary = JSON.parse(b.items_summary);
+          } catch {
+            /* */
+          }
         return b;
       }),
     };
@@ -3530,10 +4082,15 @@ class HumanitZDB {
    */
   insertDeathCause(data) {
     this._stmts.insertDeathCause.run(
-      data.victimName, data.victimSteamId || '',
-      data.causeType, data.causeName || '', data.causeRaw || '',
+      data.victimName,
+      data.victimSteamId || '',
+      data.causeType,
+      data.causeName || '',
+      data.causeRaw || '',
       data.damageTotal || 0,
-      data.x ?? null, data.y ?? null, data.z ?? null
+      data.x ?? null,
+      data.y ?? null,
+      data.z ?? null,
     );
   }
 
@@ -3627,7 +4184,8 @@ class HumanitZDB {
       confirmed_flags: data.confirmed_flags || 0,
       dismissed_flags: data.dismissed_flags || 0,
       last_flag_at: data.last_flag_at || null,
-      baseline_data: typeof data.baseline_data === 'string' ? data.baseline_data : JSON.stringify(data.baseline_data || {}),
+      baseline_data:
+        typeof data.baseline_data === 'string' ? data.baseline_data : JSON.stringify(data.baseline_data || {}),
     });
   }
 
@@ -3705,17 +4263,42 @@ function _parsePlayerRow(row) {
   if (!row) return null;
   // Parse JSON columns back to objects
   const jsonCols = [
-    'name_history', 'char_profile', 'player_states', 'body_conditions',
-    'crafting_recipes', 'building_recipes', 'unlocked_professions', 'unlocked_skills',
-    'skills_data', 'inventory', 'equipment', 'quick_slots', 'backpack_items',
-    'backpack_data', 'lore', 'unique_loots', 'crafted_uniques', 'loot_item_unique',
-    'quest_data', 'mini_quest', 'challenges', 'quest_spawner_done',
-    'companion_data', 'horses', 'extended_stats', 'kill_tracker', 'custom_data',
+    'name_history',
+    'char_profile',
+    'player_states',
+    'body_conditions',
+    'crafting_recipes',
+    'building_recipes',
+    'unlocked_professions',
+    'unlocked_skills',
+    'skills_data',
+    'inventory',
+    'equipment',
+    'quick_slots',
+    'backpack_items',
+    'backpack_data',
+    'lore',
+    'unique_loots',
+    'crafted_uniques',
+    'loot_item_unique',
+    'quest_data',
+    'mini_quest',
+    'challenges',
+    'quest_spawner_done',
+    'companion_data',
+    'horses',
+    'extended_stats',
+    'kill_tracker',
+    'custom_data',
   ];
   const parsed = { ...row };
   for (const col of jsonCols) {
     if (parsed[col] && typeof parsed[col] === 'string') {
-      try { parsed[col] = JSON.parse(parsed[col]); } catch { /* leave as string */ }
+      try {
+        parsed[col] = JSON.parse(parsed[col]);
+      } catch {
+        /* leave as string */
+      }
     }
   }
   // Convert SQLite integers to booleans where appropriate
@@ -3746,7 +4329,11 @@ function _parsePlayerRowForDiff(row) {
   };
   for (const col of ['inventory', 'equipment', 'quick_slots', 'backpack_items']) {
     if (row[col] && typeof row[col] === 'string') {
-      try { parsed[col] = JSON.parse(row[col]); } catch { parsed[col] = row[col]; }
+      try {
+        parsed[col] = JSON.parse(row[col]);
+      } catch {
+        parsed[col] = row[col];
+      }
     }
   }
   return parsed;
@@ -3756,7 +4343,11 @@ function _parseActivityRow(row) {
   if (!row) return null;
   const parsed = { ...row };
   if (parsed.details && typeof parsed.details === 'string') {
-    try { parsed.details = JSON.parse(parsed.details); } catch { /* leave as string */ }
+    try {
+      parsed.details = JSON.parse(parsed.details);
+    } catch {
+      /* leave as string */
+    }
   }
   return parsed;
 }
@@ -3766,7 +4357,11 @@ function _parseAcFlagRow(row) {
   const parsed = { ...row };
   for (const col of ['details', 'evidence']) {
     if (parsed[col] && typeof parsed[col] === 'string') {
-      try { parsed[col] = JSON.parse(parsed[col]); } catch { /* leave as string */ }
+      try {
+        parsed[col] = JSON.parse(parsed[col]);
+      } catch {
+        /* leave as string */
+      }
     }
   }
   parsed.auto_escalated = !!parsed.auto_escalated;
@@ -3777,7 +4372,11 @@ function _parseRiskRow(row) {
   if (!row) return null;
   const parsed = { ...row };
   if (parsed.baseline_data && typeof parsed.baseline_data === 'string') {
-    try { parsed.baseline_data = JSON.parse(parsed.baseline_data); } catch { /* leave as string */ }
+    try {
+      parsed.baseline_data = JSON.parse(parsed.baseline_data);
+    } catch {
+      /* leave as string */
+    }
   }
   return parsed;
 }
@@ -3786,7 +4385,11 @@ function _parseFingerprintRow(row) {
   if (!row) return null;
   const parsed = { ...row };
   if (parsed.metadata && typeof parsed.metadata === 'string') {
-    try { parsed.metadata = JSON.parse(parsed.metadata); } catch { /* leave as string */ }
+    try {
+      parsed.metadata = JSON.parse(parsed.metadata);
+    } catch {
+      /* leave as string */
+    }
   }
   return parsed;
 }
@@ -3796,7 +4399,11 @@ function _parseFingerprintEventRow(row) {
   const parsed = { ...row };
   for (const col of ['old_state', 'new_state']) {
     if (parsed[col] && typeof parsed[col] === 'string') {
-      try { parsed[col] = JSON.parse(parsed[col]); } catch { /* leave as string */ }
+      try {
+        parsed[col] = JSON.parse(parsed[col]);
+      } catch {
+        /* leave as string */
+      }
     }
   }
   return parsed;

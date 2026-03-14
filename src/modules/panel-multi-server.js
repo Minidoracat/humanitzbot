@@ -13,8 +13,12 @@
 'use strict';
 
 const {
-  ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  ModalBuilder, TextInputBuilder, TextInputStyle,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   MessageFlags,
 } = require('discord.js');
 const config = require('../config');
@@ -37,27 +41,49 @@ function _modalTitle(prefix, name, suffix) {
 // ═════════════════════════════════════════════════════════════
 
 async function _handleAddServerButton(interaction) {
-  if (!await this._requireAdmin(interaction, 'manage servers')) return true;
+  if (!(await this._requireAdmin(interaction, 'manage servers'))) return true;
 
-  const modal = new ModalBuilder()
-    .setCustomId('panel_add_modal_step1')
-    .setTitle('Add Server — Step 1: Connection');
+  const modal = new ModalBuilder().setCustomId('panel_add_modal_step1').setTitle('Add Server — Step 1: Connection');
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('name').setLabel('Server Name').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('e.g. PvP Server')
+      new TextInputBuilder()
+        .setCustomId('name')
+        .setLabel('Server Name')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setPlaceholder('e.g. PvP Server'),
     ),
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('rcon_host').setLabel('RCON Host').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('e.g. 192.168.1.100')
+      new TextInputBuilder()
+        .setCustomId('rcon_host')
+        .setLabel('RCON Host')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setPlaceholder('e.g. 192.168.1.100'),
     ),
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('rcon_port').setLabel('RCON Port').setStyle(TextInputStyle.Short).setRequired(false).setValue('14541')
+      new TextInputBuilder()
+        .setCustomId('rcon_port')
+        .setLabel('RCON Port')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false)
+        .setValue('14541'),
     ),
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('rcon_password').setLabel('RCON Password').setStyle(TextInputStyle.Short).setRequired(true)
+      new TextInputBuilder()
+        .setCustomId('rcon_password')
+        .setLabel('RCON Password')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true),
     ),
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('game_port').setLabel('Game Port').setStyle(TextInputStyle.Short).setRequired(false).setValue('14242')
+      new TextInputBuilder()
+        .setCustomId('game_port')
+        .setLabel('Game Port')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false)
+        .setValue('14242'),
     ),
   );
 
@@ -66,7 +92,7 @@ async function _handleAddServerButton(interaction) {
 }
 
 async function _handleAddServerStep1Modal(interaction) {
-  if (!await this._requireAdmin(interaction, 'manage servers')) return true;
+  if (!(await this._requireAdmin(interaction, 'manage servers'))) return true;
 
   const name = interaction.fields.getTextInputValue('name').trim();
   const rconHost = interaction.fields.getTextInputValue('rcon_host').trim();
@@ -75,7 +101,10 @@ async function _handleAddServerStep1Modal(interaction) {
   const gamePort = parseInt(interaction.fields.getTextInputValue('game_port'), 10) || 14242;
 
   if (!name || !rconHost || !rconPassword) {
-    await interaction.reply({ content: '❌ Name, RCON Host, and RCON Password are required.', flags: MessageFlags.Ephemeral });
+    await interaction.reply({
+      content: '❌ Name, RCON Host, and RCON Password are required.',
+      flags: MessageFlags.Ephemeral,
+    });
     return true;
   }
 
@@ -104,7 +133,8 @@ async function _handleAddServerStep1Modal(interaction) {
     .setStyle(ButtonStyle.Secondary);
 
   await interaction.reply({
-    content: `✅ **Step 1 complete!** Server "${name}" connection configured.\n\n` +
+    content:
+      `✅ **Step 1 complete!** Server "${name}" connection configured.\n\n` +
       `**Next:** Configure SFTP for log watching, player stats, and save reading (file paths auto-discover).\n` +
       `Or skip SFTP to inherit the primary server's connection.\n` +
       `You can also configure channels or save now.`,
@@ -115,12 +145,15 @@ async function _handleAddServerStep1Modal(interaction) {
 }
 
 async function _handleAddSftpButton(interaction, customId) {
-  if (!await this._requireAdmin(interaction, 'manage servers')) return true;
+  if (!(await this._requireAdmin(interaction, 'manage servers'))) return true;
 
   const userId = customId.replace('panel_add_sftp:', '');
   const pending = this._pendingServers.get(userId);
   if (!pending) {
-    await interaction.reply({ content: '❌ Session expired. Please start over with "Add Server".', flags: MessageFlags.Ephemeral });
+    await interaction.reply({
+      content: '❌ Session expired. Please start over with "Add Server".',
+      flags: MessageFlags.Ephemeral,
+    });
     return true;
   }
 
@@ -133,21 +166,44 @@ async function _handleAddSftpButton(interaction, customId) {
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('sftp_host').setLabel('SFTP Host').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('e.g. atlas.realm.se')
+      new TextInputBuilder()
+        .setCustomId('sftp_host')
+        .setLabel('SFTP Host')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setPlaceholder('e.g. atlas.realm.se'),
     ),
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('sftp_port').setLabel('SFTP Port').setStyle(TextInputStyle.Short).setRequired(false).setValue('22')
+      new TextInputBuilder()
+        .setCustomId('sftp_port')
+        .setLabel('SFTP Port')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false)
+        .setValue('22'),
     ),
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('sftp_user').setLabel('SFTP Username').setStyle(TextInputStyle.Short).setRequired(true)
+      new TextInputBuilder()
+        .setCustomId('sftp_user')
+        .setLabel('SFTP Username')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true),
     ),
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('sftp_password').setLabel('SFTP Password (blank if using SSH key)').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('Leave blank if using key auth')
+      new TextInputBuilder()
+        .setCustomId('sftp_password')
+        .setLabel('SFTP Password (blank if using SSH key)')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false)
+        .setPlaceholder('Leave blank if using key auth'),
     ),
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('sftp_key_path').setLabel('SSH Key Path on bot host (optional)').setStyle(TextInputStyle.Short).setRequired(false)
+      new TextInputBuilder()
+        .setCustomId('sftp_key_path')
+        .setLabel('SSH Key Path on bot host (optional)')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false)
         .setValue(detectedKey)
-        .setPlaceholder(detectedKey ? `Detected: ${detectedKey}` : 'No keys found — use password instead')
+        .setPlaceholder(detectedKey ? `Detected: ${detectedKey}` : 'No keys found — use password instead'),
     ),
   );
 
@@ -156,12 +212,15 @@ async function _handleAddSftpButton(interaction, customId) {
 }
 
 async function _handleAddSftpModal(interaction) {
-  if (!await this._requireAdmin(interaction, 'manage servers')) return true;
+  if (!(await this._requireAdmin(interaction, 'manage servers'))) return true;
 
   const userId = interaction.customId.replace('panel_add_sftp_modal:', '');
   const pending = this._pendingServers.get(userId);
   if (!pending) {
-    await interaction.reply({ content: '❌ Session expired. Please start over with "Add Server".', flags: MessageFlags.Ephemeral });
+    await interaction.reply({
+      content: '❌ Session expired. Please start over with "Add Server".',
+      flags: MessageFlags.Ephemeral,
+    });
     return true;
   }
 
@@ -172,7 +231,10 @@ async function _handleAddSftpModal(interaction) {
   const privateKeyPath = interaction.fields.getTextInputValue('sftp_key_path').trim();
 
   if (!host || !user || (!password && !privateKeyPath)) {
-    await interaction.reply({ content: '❌ SFTP host, username, and either a password or SSH key path are required.', flags: MessageFlags.Ephemeral });
+    await interaction.reply({
+      content: '❌ SFTP host, username, and either a password or SSH key path are required.',
+      flags: MessageFlags.Ephemeral,
+    });
     return true;
   }
 
@@ -194,7 +256,8 @@ async function _handleAddSftpModal(interaction) {
     .setStyle(ButtonStyle.Secondary);
 
   await interaction.reply({
-    content: `✅ **SFTP configured!** \`${host}:${port}\`\n` +
+    content:
+      `✅ **SFTP configured!** \`${host}:${port}\`\n` +
       `File paths will auto-discover when the server starts.\n\n` +
       `**Next:** Configure channels or save now.`,
     components: [new ActionRowBuilder().addComponents(continueBtn, skipBtn)],
@@ -204,12 +267,15 @@ async function _handleAddSftpModal(interaction) {
 }
 
 async function _handleAddServerStep2Button(interaction, customId) {
-  if (!await this._requireAdmin(interaction, 'manage servers')) return true;
+  if (!(await this._requireAdmin(interaction, 'manage servers'))) return true;
 
   const userId = customId.replace('panel_add_step2:', '');
   const pending = this._pendingServers.get(userId);
   if (!pending) {
-    await interaction.reply({ content: '❌ Session expired. Please start over with "Add Server".', flags: MessageFlags.Ephemeral });
+    await interaction.reply({
+      content: '❌ Session expired. Please start over with "Add Server".',
+      flags: MessageFlags.Ephemeral,
+    });
     return true;
   }
 
@@ -219,19 +285,40 @@ async function _handleAddServerStep2Button(interaction, customId) {
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('ch_status').setLabel('Server Status Channel ID').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('Right-click channel → Copy Channel ID')
+      new TextInputBuilder()
+        .setCustomId('ch_status')
+        .setLabel('Server Status Channel ID')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false)
+        .setPlaceholder('Right-click channel → Copy Channel ID'),
     ),
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('ch_stats').setLabel('Player Stats Channel ID').setStyle(TextInputStyle.Short).setRequired(false)
+      new TextInputBuilder()
+        .setCustomId('ch_stats')
+        .setLabel('Player Stats Channel ID')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false),
     ),
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('ch_log').setLabel('Log Channel ID').setStyle(TextInputStyle.Short).setRequired(false)
+      new TextInputBuilder()
+        .setCustomId('ch_log')
+        .setLabel('Log Channel ID')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false),
     ),
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('ch_chat').setLabel('Chat Relay Channel ID').setStyle(TextInputStyle.Short).setRequired(false)
+      new TextInputBuilder()
+        .setCustomId('ch_chat')
+        .setLabel('Chat Relay Channel ID')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false),
     ),
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('ch_admin').setLabel('Admin Channel ID').setStyle(TextInputStyle.Short).setRequired(false)
+      new TextInputBuilder()
+        .setCustomId('ch_admin')
+        .setLabel('Admin Channel ID')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false),
     ),
   );
 
@@ -278,41 +365,46 @@ async function _handleAddServerStep2Modal(interaction) {
   const channelCount = Object.keys(channels).length;
 
   // Reply immediately — addServer triggers SFTP auto-discovery which can take 60s+
-  await interaction.editReply(
-    `⏳ **${serverDef.name}** saved — starting up (SFTP discovery may take a moment)...`
-  );
+  await interaction.editReply(`⏳ **${serverDef.name}** saved — starting up (SFTP discovery may take a moment)...`);
 
   // Run the long operation in the background so the user isn't staring at "thinking..."
-  this.multiServerManager.addServer(serverDef).then(async (saved) => {
-    // Post a per-server management embed
-    try {
-      const instance = this.multiServerManager.getInstance(saved.id);
-      const embed = this._buildManagedServerEmbed(saved, instance);
-      const components = this._buildManagedServerComponents(saved.id, instance?.running || false);
-      const msg = await this.channel.send({ embeds: [embed], components });
-      this._serverMessages.set(saved.id, msg);
-      this._saveMessageIds();
-    } catch (embedErr) {
-      console.error(`[PANEL CH] Failed to post embed for new server ${saved.name}:`, embedErr.message);
-    }
+  this.multiServerManager
+    .addServer(serverDef)
+    .then(async (saved) => {
+      // Post a per-server management embed
+      try {
+        const instance = this.multiServerManager.getInstance(saved.id);
+        const embed = this._buildManagedServerEmbed(saved, instance);
+        const components = this._buildManagedServerComponents(saved.id, instance?.running || false);
+        const msg = await this.channel.send({ embeds: [embed], components });
+        this._serverMessages.set(saved.id, msg);
+        this._saveMessageIds();
+      } catch (embedErr) {
+        console.error(`[PANEL CH] Failed to post embed for new server ${saved.name}:`, embedErr.message);
+      }
 
-    try {
-      await interaction.editReply(
-        `✅ **${saved.name}** added and started!\n` +
-        `• RCON: \`${saved.rcon.host}:${saved.rcon.port}\`\n` +
-        `• Game Port: \`${saved.gamePort}\`\n` +
-        `• Channels: ${channelCount} configured\n` +
-        `• SFTP: ${serverDef.sftp ? 'Configured' : 'Inherited from primary server'}`
-      );
-    } catch { /* interaction may have expired after 15 min */ }
+      try {
+        await interaction.editReply(
+          `✅ **${saved.name}** added and started!\n` +
+            `• RCON: \`${saved.rcon.host}:${saved.rcon.port}\`\n` +
+            `• Game Port: \`${saved.gamePort}\`\n` +
+            `• Channels: ${channelCount} configured\n` +
+            `• SFTP: ${serverDef.sftp ? 'Configured' : 'Inherited from primary server'}`,
+        );
+      } catch {
+        /* interaction may have expired after 15 min */
+      }
 
-    // Refresh the bot controls embed
-    setTimeout(() => this._update(true), 1000);
-  }).catch(async (err) => {
-    try {
-      await interaction.editReply(`❌ Failed to add server: ${err.message}`);
-    } catch { /* interaction may have expired */ }
-  });
+      // Refresh the bot controls embed
+      setTimeout(() => this._update(true), 1000);
+    })
+    .catch(async (err) => {
+      try {
+        await interaction.editReply(`❌ Failed to add server: ${err.message}`);
+      } catch {
+        /* interaction may have expired */
+      }
+    });
 
   return true;
 }
@@ -322,11 +414,11 @@ async function _handleAddServerStep2Modal(interaction) {
 // ═════════════════════════════════════════════════════════════
 
 async function _handleServerSelect(interaction) {
-  if (!await this._requireAdmin(interaction, 'manage servers')) return true;
+  if (!(await this._requireAdmin(interaction, 'manage servers'))) return true;
 
   const serverId = interaction.values[0];
   const servers = this.multiServerManager?.getAllServers() || [];
-  const server = servers.find(s => s.id === serverId);
+  const server = servers.find((s) => s.id === serverId);
   if (!server) {
     await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
     return true;
@@ -351,10 +443,7 @@ async function _handleServerSelect(interaction) {
       .setCustomId(`panel_srv_edit:${serverId}`)
       .setLabel('Edit Connection')
       .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId(`panel_srv_remove:${serverId}`)
-      .setLabel('Remove')
-      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(`panel_srv_remove:${serverId}`).setLabel('Remove').setStyle(ButtonStyle.Danger),
   );
 
   const row2 = new ActionRowBuilder().addComponents(
@@ -362,10 +451,7 @@ async function _handleServerSelect(interaction) {
       .setCustomId(`panel_srv_channels:${serverId}`)
       .setLabel('Edit Channels')
       .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(`panel_srv_sftp:${serverId}`)
-      .setLabel('Edit SFTP')
-      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`panel_srv_sftp:${serverId}`).setLabel('Edit SFTP').setStyle(ButtonStyle.Secondary),
   );
 
   // Build info text
@@ -386,7 +472,7 @@ async function _handleServerSelect(interaction) {
       `• RCON: \`${server.rcon?.host || '?'}:${server.rcon?.port || 14541}\``,
       `• Game Port: \`${server.gamePort || 14242}\``,
       `• SFTP: ${sftpInfo}`,
-      `• Channels: ${channelLines.length > 0 ? '\n' + channelLines.map(l => `  ${l}`).join('\n') : 'None configured'}`,
+      `• Channels: ${channelLines.length > 0 ? '\n' + channelLines.map((l) => `  ${l}`).join('\n') : 'None configured'}`,
       `• Modules: ${moduleList}`,
     ].join('\n'),
     components: [row1, row2],
@@ -396,7 +482,7 @@ async function _handleServerSelect(interaction) {
 }
 
 async function _handleServerAction(interaction, customId) {
-  if (!await this._requireAdmin(interaction, 'manage servers')) return true;
+  if (!(await this._requireAdmin(interaction, 'manage servers'))) return true;
 
   // Handle skip channels button from add wizard
   if (customId.startsWith('panel_srv_skip_channels:')) {
@@ -425,8 +511,7 @@ async function _handleServerAction(interaction, customId) {
         console.error(`[PANEL CH] Failed to post embed for new server ${saved.name}:`, embedErr.message);
       }
       await interaction.editReply(
-        `✅ **${saved.name}** added (no channels configured).\n` +
-        `Use the server actions menu to configure channels.`
+        `✅ **${saved.name}** added (no channels configured).\n` + `Use the server actions menu to configure channels.`,
       );
       setTimeout(() => this._update(true), 1000);
     } catch (err) {
@@ -483,13 +568,15 @@ async function _handleServerAction(interaction, customId) {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       try {
         const servers = this.multiServerManager.getAllServers();
-        const server = servers.find(s => s.id === serverId);
+        const server = servers.find((s) => s.id === serverId);
         const name = server?.name || serverId;
         await this.multiServerManager.removeServer(serverId);
         // Delete the per-server embed message
         const srvMsg = this._serverMessages.get(serverId);
         if (srvMsg) {
-          try { await srvMsg.delete(); } catch {}
+          try {
+            await srvMsg.delete();
+          } catch {}
           this._serverMessages.delete(serverId);
           this._lastServerKeys.delete(serverId);
           this._saveMessageIds();
@@ -505,7 +592,7 @@ async function _handleServerAction(interaction, customId) {
     case 'edit': {
       // Show modal with current connection values
       const servers = this.multiServerManager.getAllServers();
-      const server = servers.find(s => s.id === serverId);
+      const server = servers.find((s) => s.id === serverId);
       if (!server) {
         await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
         return true;
@@ -517,19 +604,40 @@ async function _handleServerAction(interaction, customId) {
 
       modal.addComponents(
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('name').setLabel('Server Name').setStyle(TextInputStyle.Short).setValue(server.name || '')
+          new TextInputBuilder()
+            .setCustomId('name')
+            .setLabel('Server Name')
+            .setStyle(TextInputStyle.Short)
+            .setValue(server.name || ''),
         ),
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('rcon_host').setLabel('RCON Host').setStyle(TextInputStyle.Short).setValue(server.rcon?.host || '')
+          new TextInputBuilder()
+            .setCustomId('rcon_host')
+            .setLabel('RCON Host')
+            .setStyle(TextInputStyle.Short)
+            .setValue(server.rcon?.host || ''),
         ),
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('rcon_port').setLabel('RCON Port').setStyle(TextInputStyle.Short).setValue(String(server.rcon?.port || 14541))
+          new TextInputBuilder()
+            .setCustomId('rcon_port')
+            .setLabel('RCON Port')
+            .setStyle(TextInputStyle.Short)
+            .setValue(String(server.rcon?.port || 14541)),
         ),
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('rcon_password').setLabel('RCON Password (blank = keep current)').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder(server.rcon?.password ? '(unchanged)' : 'Enter password')
+          new TextInputBuilder()
+            .setCustomId('rcon_password')
+            .setLabel('RCON Password (blank = keep current)')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(false)
+            .setPlaceholder(server.rcon?.password ? '(unchanged)' : 'Enter password'),
         ),
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('game_port').setLabel('Game Port').setStyle(TextInputStyle.Short).setValue(String(server.gamePort || 14242))
+          new TextInputBuilder()
+            .setCustomId('game_port')
+            .setLabel('Game Port')
+            .setStyle(TextInputStyle.Short)
+            .setValue(String(server.gamePort || 14242)),
         ),
       );
 
@@ -539,7 +647,7 @@ async function _handleServerAction(interaction, customId) {
 
     case 'channels': {
       const servers = this.multiServerManager.getAllServers();
-      const server = servers.find(s => s.id === serverId);
+      const server = servers.find((s) => s.id === serverId);
       if (!server) {
         await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
         return true;
@@ -552,19 +660,44 @@ async function _handleServerAction(interaction, customId) {
 
       modal.addComponents(
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('ch_status').setLabel('Server Status Channel ID').setStyle(TextInputStyle.Short).setValue(ch.serverStatus || '').setRequired(false)
+          new TextInputBuilder()
+            .setCustomId('ch_status')
+            .setLabel('Server Status Channel ID')
+            .setStyle(TextInputStyle.Short)
+            .setValue(ch.serverStatus || '')
+            .setRequired(false),
         ),
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('ch_stats').setLabel('Player Stats Channel ID').setStyle(TextInputStyle.Short).setValue(ch.playerStats || '').setRequired(false)
+          new TextInputBuilder()
+            .setCustomId('ch_stats')
+            .setLabel('Player Stats Channel ID')
+            .setStyle(TextInputStyle.Short)
+            .setValue(ch.playerStats || '')
+            .setRequired(false),
         ),
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('ch_log').setLabel('Log Channel ID').setStyle(TextInputStyle.Short).setValue(ch.log || '').setRequired(false)
+          new TextInputBuilder()
+            .setCustomId('ch_log')
+            .setLabel('Log Channel ID')
+            .setStyle(TextInputStyle.Short)
+            .setValue(ch.log || '')
+            .setRequired(false),
         ),
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('ch_chat').setLabel('Chat Relay Channel ID').setStyle(TextInputStyle.Short).setValue(ch.chat || '').setRequired(false)
+          new TextInputBuilder()
+            .setCustomId('ch_chat')
+            .setLabel('Chat Relay Channel ID')
+            .setStyle(TextInputStyle.Short)
+            .setValue(ch.chat || '')
+            .setRequired(false),
         ),
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('ch_admin').setLabel('Admin Channel ID').setStyle(TextInputStyle.Short).setValue(ch.admin || '').setRequired(false)
+          new TextInputBuilder()
+            .setCustomId('ch_admin')
+            .setLabel('Admin Channel ID')
+            .setStyle(TextInputStyle.Short)
+            .setValue(ch.admin || '')
+            .setRequired(false),
         ),
       );
 
@@ -574,7 +707,7 @@ async function _handleServerAction(interaction, customId) {
 
     case 'sftp': {
       const servers = this.multiServerManager.getAllServers();
-      const server = servers.find(s => s.id === serverId);
+      const server = servers.find((s) => s.id === serverId);
       if (!server) {
         await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
         return true;
@@ -588,21 +721,45 @@ async function _handleServerAction(interaction, customId) {
 
       modal.addComponents(
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('sftp_host').setLabel('SFTP Host (blank = inherit primary)').setStyle(TextInputStyle.Short).setValue(sftp.host || '').setRequired(false)
+          new TextInputBuilder()
+            .setCustomId('sftp_host')
+            .setLabel('SFTP Host (blank = inherit primary)')
+            .setStyle(TextInputStyle.Short)
+            .setValue(sftp.host || '')
+            .setRequired(false),
         ),
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('sftp_port').setLabel('SFTP Port').setStyle(TextInputStyle.Short).setValue(String(sftp.port || 22)).setRequired(false)
+          new TextInputBuilder()
+            .setCustomId('sftp_port')
+            .setLabel('SFTP Port')
+            .setStyle(TextInputStyle.Short)
+            .setValue(String(sftp.port || 22))
+            .setRequired(false),
         ),
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('sftp_user').setLabel('SFTP Username (blank = inherit)').setStyle(TextInputStyle.Short).setValue(sftp.user || '').setRequired(false)
+          new TextInputBuilder()
+            .setCustomId('sftp_user')
+            .setLabel('SFTP Username (blank = inherit)')
+            .setStyle(TextInputStyle.Short)
+            .setValue(sftp.user || '')
+            .setRequired(false),
         ),
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('sftp_password').setLabel('SFTP Password (blank = inherit primary)').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder(sftp.password ? '(unchanged)' : 'blank = inherit')
+          new TextInputBuilder()
+            .setCustomId('sftp_password')
+            .setLabel('SFTP Password (blank = inherit primary)')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(false)
+            .setPlaceholder(sftp.password ? '(unchanged)' : 'blank = inherit'),
         ),
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('sftp_key_path').setLabel('SSH Key Path on bot host (optional)').setStyle(TextInputStyle.Short).setRequired(false)
+          new TextInputBuilder()
+            .setCustomId('sftp_key_path')
+            .setLabel('SSH Key Path on bot host (optional)')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(false)
             .setValue(detectedKey)
-            .setPlaceholder(detectedKey ? `Detected: ${detectedKey}` : 'No keys found — use password')
+            .setPlaceholder(detectedKey ? `Detected: ${detectedKey}` : 'No keys found — use password'),
         ),
       );
 
@@ -613,7 +770,7 @@ async function _handleServerAction(interaction, customId) {
     case 'welcome': {
       // Show modal to edit the server's WelcomeMessage.txt
       const servers = this.multiServerManager.getAllServers();
-      const server = servers.find(s => s.id === serverId);
+      const server = servers.find((s) => s.id === serverId);
       if (!server) {
         await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
         return true;
@@ -621,7 +778,10 @@ async function _handleServerAction(interaction, customId) {
 
       const sftpCfg = _getSrvSftpConfig(server);
       if (!sftpCfg) {
-        await interaction.reply({ content: '❌ No SFTP credentials configured for this server.', flags: MessageFlags.Ephemeral });
+        await interaction.reply({
+          content: '❌ No SFTP credentials configured for this server.',
+          flags: MessageFlags.Ephemeral,
+        });
         return true;
       }
 
@@ -629,7 +789,7 @@ async function _handleServerAction(interaction, customId) {
       // Since modals must be shown within 3s and SFTP may be slow, we show the modal
       // immediately with empty content, and the user can paste/type their message.
       // Store server ID in pending state so we can pre-fill if needed.
-      let currentContent = '';
+      let currentContent;
       try {
         // Try a quick SFTP fetch — if it takes too long, the modal will be empty
         const sftp = new SftpClient();
@@ -638,7 +798,7 @@ async function _handleServerAction(interaction, customId) {
         const buf = await sftp.get(welcomePath);
         currentContent = buf.toString('utf8');
         await sftp.end().catch(() => {});
-      } catch (err) {
+      } catch (_err) {
         // Couldn't read — show modal with empty content, user can still type
         currentContent = '';
       }
@@ -658,7 +818,7 @@ async function _handleServerAction(interaction, customId) {
             .setStyle(TextInputStyle.Paragraph)
             .setValue(currentContent)
             .setRequired(false)
-            .setMaxLength(4000)
+            .setMaxLength(4000),
         ),
       );
 
@@ -669,7 +829,7 @@ async function _handleServerAction(interaction, customId) {
     case 'automsg': {
       // Show modal to edit per-server auto-message settings
       const servers = this.multiServerManager.getAllServers();
-      const server = servers.find(s => s.id === serverId);
+      const server = servers.find((s) => s.id === serverId);
       if (!server) {
         await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
         return true;
@@ -689,14 +849,16 @@ async function _handleServerAction(interaction, customId) {
             .setCustomId('toggles')
             .setLabel('Toggles (welcome_msg,welcome_file,link,promo)')
             .setStyle(TextInputStyle.Short)
-            .setValue([
-              (am.enableWelcomeMsg  ?? srvConfig.enableWelcomeMsg  ?? true) ? '1' : '0',
-              (am.enableWelcomeFile ?? srvConfig.enableWelcomeFile ?? true) ? '1' : '0',
-              (am.enableAutoMsgLink ?? srvConfig.enableAutoMsgLink ?? true) ? '1' : '0',
-              (am.enableAutoMsgPromo ?? srvConfig.enableAutoMsgPromo ?? true) ? '1' : '0',
-            ].join(','))
+            .setValue(
+              [
+                (am.enableWelcomeMsg ?? srvConfig.enableWelcomeMsg ?? true) ? '1' : '0',
+                (am.enableWelcomeFile ?? srvConfig.enableWelcomeFile ?? true) ? '1' : '0',
+                (am.enableAutoMsgLink ?? srvConfig.enableAutoMsgLink ?? true) ? '1' : '0',
+                (am.enableAutoMsgPromo ?? srvConfig.enableAutoMsgPromo ?? true) ? '1' : '0',
+              ].join(','),
+            )
             .setPlaceholder('1,1,1,1 (1=on, 0=off)')
-            .setRequired(true)
+            .setRequired(true),
         ),
         new ActionRowBuilder().addComponents(
           new TextInputBuilder()
@@ -706,7 +868,7 @@ async function _handleServerAction(interaction, customId) {
             .setValue(am.linkText || '')
             .setRequired(false)
             .setMaxLength(4000)
-            .setPlaceholder('Join our Discord! {discord_link}')
+            .setPlaceholder('Join our Discord! {discord_link}'),
         ),
         new ActionRowBuilder().addComponents(
           new TextInputBuilder()
@@ -716,7 +878,7 @@ async function _handleServerAction(interaction, customId) {
             .setValue(am.promoText || '')
             .setRequired(false)
             .setMaxLength(4000)
-            .setPlaceholder('Have any issues? Join our Discord: {discord_link}')
+            .setPlaceholder('Have any issues? Join our Discord: {discord_link}'),
         ),
         new ActionRowBuilder().addComponents(
           new TextInputBuilder()
@@ -725,7 +887,7 @@ async function _handleServerAction(interaction, customId) {
             .setStyle(TextInputStyle.Short)
             .setValue(am.discordLink || '')
             .setRequired(false)
-            .setPlaceholder('https://discord.gg/...')
+            .setPlaceholder('https://discord.gg/...'),
         ),
       );
 
@@ -833,7 +995,7 @@ async function _handleEditSftpModal(interaction) {
 
     // If SFTP host changed, clear old paths so auto-discovery re-runs on restart
     const servers = this.multiServerManager.getAllServers();
-    const currentServer = servers.find(s => s.id === serverId);
+    const currentServer = servers.find((s) => s.id === serverId);
     const hostChanged = host && currentServer?.sftp?.host !== host;
     const updates = { sftp };
     if (hostChanged) updates.paths = {};
@@ -841,7 +1003,9 @@ async function _handleEditSftpModal(interaction) {
     const saved = await this.multiServerManager.updateServer(serverId, updates);
     const sftpStatus = sftp.host ? `${sftp.host}:${sftp.port || 22}` : 'Inherited from primary';
     const extra = hostChanged ? ' Paths will auto-discover on startup.' : '';
-    await interaction.editReply(`✅ **${saved.name}** SFTP updated to: ${sftpStatus}${extra}\nServer restarted with new settings.`);
+    await interaction.editReply(
+      `✅ **${saved.name}** SFTP updated to: ${sftpStatus}${extra}\nServer restarted with new settings.`,
+    );
     setTimeout(() => this._update(true), 2000);
   } catch (err) {
     await interaction.editReply(`❌ Failed to update: ${err.message}`);
@@ -879,19 +1043,19 @@ function _getSrvSftpConfig(serverDef) {
 }
 
 async function _handleSrvGameSettingsSelect(interaction) {
-  if (!await this._requireAdmin(interaction, 'edit server settings')) return true;
+  if (!(await this._requireAdmin(interaction, 'edit server settings'))) return true;
 
   // customId = panel_srv_settings:<serverId>, value = categoryId
   const serverId = interaction.customId.replace('panel_srv_settings:', '');
   const categoryId = interaction.values[0];
-  const category = GAME_SETTINGS_CATEGORIES.find(c => c.id === categoryId);
+  const category = GAME_SETTINGS_CATEGORIES.find((c) => c.id === categoryId);
   if (!category) {
     await interaction.reply({ content: '❌ Unknown category.', flags: MessageFlags.Ephemeral });
     return true;
   }
 
   const servers = this.multiServerManager?.getAllServers() || [];
-  const serverDef = servers.find(s => s.id === serverId);
+  const serverDef = servers.find((s) => s.id === serverId);
   if (!serverDef) {
     await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
     return true;
@@ -905,7 +1069,10 @@ async function _handleSrvGameSettingsSelect(interaction) {
 
   // Read current settings from bot_state cache
   let cached = {};
-  if (this._db) try { cached = this._db.getStateJSON(`server_settings_${serverId}`, {}) || {}; } catch {}
+  if (this._db)
+    try {
+      cached = this._db.getStateJSON(`server_settings_${serverId}`, {}) || {};
+    } catch {}
 
   const modal = new ModalBuilder()
     .setCustomId(`panel_srv_game_modal:${serverId}:${categoryId}`)
@@ -927,20 +1094,20 @@ async function _handleSrvGameSettingsSelect(interaction) {
 }
 
 async function _handleSrvGameSettingsModal(interaction) {
-  if (!await this._requireAdmin(interaction, 'edit server settings')) return true;
+  if (!(await this._requireAdmin(interaction, 'edit server settings'))) return true;
 
   // customId = panel_srv_game_modal:<serverId>:<categoryId>
   const parts = interaction.customId.replace('panel_srv_game_modal:', '').split(':');
   const serverId = parts[0];
   const categoryId = parts[1];
-  const category = GAME_SETTINGS_CATEGORIES.find(c => c.id === categoryId);
+  const category = GAME_SETTINGS_CATEGORIES.find((c) => c.id === categoryId);
   if (!category) {
     await interaction.reply({ content: '❌ Unknown category.', flags: MessageFlags.Ephemeral });
     return true;
   }
 
   const servers = this.multiServerManager?.getAllServers() || [];
-  const serverDef = servers.find(s => s.id === serverId);
+  const serverDef = servers.find((s) => s.id === serverId);
   if (!serverDef) {
     await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
     return true;
@@ -964,12 +1131,15 @@ async function _handleSrvGameSettingsModal(interaction) {
       content = (await sftp.get(settingsPath)).toString('utf8');
     } catch (readErr) {
       await sftp.end().catch(() => {});
-      throw new Error(`Could not read settings file: ${readErr.message}`);
+      throw new Error(`Could not read settings file: ${readErr.message}`, { cause: readErr });
     }
 
     // Read/update cache
     let cached = {};
-    if (this._db) try { cached = this._db.getStateJSON(`server_settings_${serverId}`, {}) || {}; } catch {}
+    if (this._db)
+      try {
+        cached = this._db.getStateJSON(`server_settings_${serverId}`, {}) || {};
+      } catch {}
 
     const changes = [];
     for (const setting of category.settings) {
@@ -995,7 +1165,10 @@ async function _handleSrvGameSettingsModal(interaction) {
     await sftp.put(Buffer.from(content, 'utf8'), settingsPath);
     await sftp.end().catch(() => {});
 
-    if (this._db) try { this._db.setStateJSON(`server_settings_${serverId}`, cached); } catch (_) {}
+    if (this._db)
+      try {
+        this._db.setStateJSON(`server_settings_${serverId}`, cached);
+      } catch (_) {}
 
     let msg = `✅ **${serverDef.name} — ${category.label}** updated:\n${changes.join('\n')}`;
     msg += '\n\n⚠️ **Restart the game server** for these changes to take effect.';
@@ -1012,12 +1185,12 @@ async function _handleSrvGameSettingsModal(interaction) {
 // ═════════════════════════════════════════════════════════════
 
 async function _handleSrvWelcomeModal(interaction) {
-  if (!await this._requireAdmin(interaction, 'manage servers')) return true;
+  if (!(await this._requireAdmin(interaction, 'manage servers'))) return true;
 
   const serverId = interaction.customId.replace('panel_srv_welcome_modal:', '');
 
   const servers = this.multiServerManager?.getAllServers() || [];
-  const serverDef = servers.find(s => s.id === serverId);
+  const serverDef = servers.find((s) => s.id === serverId);
   if (!serverDef) {
     await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
     return true;
@@ -1047,12 +1220,12 @@ async function _handleSrvWelcomeModal(interaction) {
 }
 
 async function _handleSrvAutoMsgModal(interaction) {
-  if (!await this._requireAdmin(interaction, 'manage servers')) return true;
+  if (!(await this._requireAdmin(interaction, 'manage servers'))) return true;
 
   const serverId = interaction.customId.replace('panel_srv_automsg_modal:', '');
 
   const servers = this.multiServerManager?.getAllServers() || [];
-  const idx = servers.findIndex(s => s.id === serverId);
+  const idx = servers.findIndex((s) => s.id === serverId);
   if (idx === -1) {
     await interaction.reply({ content: '❌ Server not found.', flags: MessageFlags.Ephemeral });
     return true;
@@ -1067,11 +1240,11 @@ async function _handleSrvAutoMsgModal(interaction) {
     const discordLink = interaction.fields.getTextInputValue('discord_link').trim();
 
     // Parse toggles: "1,1,0,1" → [true, true, false, true]
-    const bits = togglesRaw.split(',').map(s => s.trim() === '1');
+    const bits = togglesRaw.split(',').map((s) => s.trim() === '1');
     const am = {
-      enableWelcomeMsg:   bits[0] ?? true,
-      enableWelcomeFile:  bits[1] ?? true,
-      enableAutoMsgLink:  bits[2] ?? true,
+      enableWelcomeMsg: bits[0] ?? true,
+      enableWelcomeFile: bits[1] ?? true,
+      enableAutoMsgLink: bits[2] ?? true,
       enableAutoMsgPromo: bits[3] ?? true,
     };
     if (linkText) am.linkText = linkText;
@@ -1081,7 +1254,7 @@ async function _handleSrvAutoMsgModal(interaction) {
     // Persist to servers.json
     const { loadServers, saveServers } = require('../server/multi-server');
     const allServers = loadServers();
-    const srvIdx = allServers.findIndex(s => s.id === serverId);
+    const srvIdx = allServers.findIndex((s) => s.id === serverId);
     if (srvIdx !== -1) {
       allServers[srvIdx].autoMessages = am;
       saveServers(allServers);
@@ -1090,11 +1263,11 @@ async function _handleSrvAutoMsgModal(interaction) {
     // Hot-update the running instance's config
     const instance = this.multiServerManager.getInstance(serverId);
     if (instance) {
-      instance.config.enableWelcomeMsg  = am.enableWelcomeMsg;
+      instance.config.enableWelcomeMsg = am.enableWelcomeMsg;
       instance.config.enableWelcomeFile = am.enableWelcomeFile;
       instance.config.enableAutoMsgLink = am.enableAutoMsgLink;
       instance.config.enableAutoMsgPromo = am.enableAutoMsgPromo;
-      instance.config.autoMsgLinkText  = am.linkText || '';
+      instance.config.autoMsgLinkText = am.linkText || '';
       instance.config.autoMsgPromoText = am.promoText || '';
       if (am.discordLink) instance.config.discordInviteLink = am.discordLink;
     }
@@ -1109,8 +1282,8 @@ async function _handleSrvAutoMsgModal(interaction) {
 
     await interaction.editReply(
       `✅ **Auto Messages updated for ${servers[idx].name}**\n${summary}` +
-      (extras.length > 0 ? `\n${extras.join('\n')}` : '') +
-      `\n\n⚠️ Restart the server to apply toggle changes.`
+        (extras.length > 0 ? `\n${extras.join('\n')}` : '') +
+        `\n\n⚠️ Restart the server to apply toggle changes.`,
     );
   } catch (err) {
     await interaction.editReply(`❌ Failed to save: ${err.message}`);

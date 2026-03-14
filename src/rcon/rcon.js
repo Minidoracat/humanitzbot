@@ -222,7 +222,7 @@ class RconManager extends EventEmitter {
   // ── Private ──────────────────────────────────────────────
 
   _nextId() {
-    this.requestId = (this.requestId + 1) & 0x7FFFFFFF;
+    this.requestId = (this.requestId + 1) & 0x7fffffff;
     return this.requestId;
   }
 
@@ -296,7 +296,9 @@ class RconManager extends EventEmitter {
     this._commandCallback = null;
     this._authCallback = null;
     if (this.socket) {
-      try { this.socket.destroy(); } catch (_) {}
+      try {
+        this.socket.destroy();
+      } catch (_) {}
       this.socket = null;
     }
     this._responseBuffer = Buffer.alloc(0);

@@ -2,7 +2,6 @@ const { EmbedBuilder } = require('discord.js');
 const SftpClient = require('ssh2-sftp-client');
 const _defaultConfig = require('../config');
 const _defaultRcon = require('../rcon/rcon');
-const { color } = require('../rcon/rcon-colors');
 
 const WARNINGS = [10, 5, 3, 2, 1]; // countdown warnings in minutes
 
@@ -11,7 +10,7 @@ class PvpScheduler {
     this._config = deps.config || _defaultConfig;
     this._rcon = deps.rcon || _defaultRcon;
     this._label = deps.label || 'PVP';
-    this._client = client;       // Discord client (for posting announcements)
+    this._client = client; // Discord client (for posting announcements)
     this._logWatcher = logWatcher || null; // for posting to activity thread
     this._interval = null;
     this._countdownTimer = null;
@@ -19,13 +18,13 @@ class PvpScheduler {
     this._currentPvp = null; // true = PvP ON, false = PvP OFF, null = unknown
     this._adminChannel = null;
     this._originalServerName = null; // cached base server name (before PvP suffix)
-    this._originalSettings = null;   // cached original .ini values before PvP overrides
+    this._originalSettings = null; // cached original .ini values before PvP overrides
   }
 
   async start() {
     // Resolve default start/end as total minutes from midnight.
     this._pvpStart = this._config.pvpStartMinutes;
-    this._pvpEnd   = this._config.pvpEndMinutes;
+    this._pvpEnd = this._config.pvpEndMinutes;
     this._pvpDayHours = this._config.pvpDayHours; // Map<dayNum, { start, end }> | null
 
     if (isNaN(this._pvpStart) || isNaN(this._pvpEnd)) {
@@ -42,25 +41,35 @@ class PvpScheduler {
 
     const fmt = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
     const dayLabel = this._config.pvpDays
-      ? [...this._config.pvpDays].sort().map(d => ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]).join(', ')
+      ? [...this._config.pvpDays]
+          .sort()
+          .map((d) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d])
+          .join(', ')
       : 'every day';
-    const defaultRange = (!isNaN(this._pvpStart) && !isNaN(this._pvpEnd))
-      ? `${fmt(this._pvpStart)}–${fmt(this._pvpEnd)}`
-      : 'none (per-day only)';
-    console.log(`[${this._label}] Scheduler active: default ${defaultRange} (${this._config.botTimezone}), days: ${dayLabel}`);
+    const defaultRange =
+      !isNaN(this._pvpStart) && !isNaN(this._pvpEnd)
+        ? `${fmt(this._pvpStart)}–${fmt(this._pvpEnd)}`
+        : 'none (per-day only)';
+    console.log(
+      `[${this._label}] Scheduler active: default ${defaultRange} (${this._config.botTimezone}), days: ${dayLabel}`,
+    );
     if (this._pvpDayHours) {
-      const dayKeys = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const dayKeys = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       for (const [d, h] of this._pvpDayHours) {
         console.log(`[${this._label}]   ${dayKeys[d]}: ${fmt(h.start)}–${fmt(h.end)}`);
       }
     }
-    console.log(`[${this._label}] Restart delay: ${this._config.pvpRestartDelay} minutes (warnings start before scheduled time)`);
+    console.log(
+      `[${this._label}] Restart delay: ${this._config.pvpRestartDelay} minutes (warnings start before scheduled time)`,
+    );
 
     // Resolve admin channel for announcements
     if (this._config.adminChannelId) {
       try {
         this._adminChannel = await this._client.channels.fetch(this._config.adminChannelId);
-      } catch { /* no channel, just log to console */ }
+      } catch {
+        /* no channel, just log to console */
+      }
     }
 
     // Read current PvP state from server
@@ -96,9 +105,12 @@ class PvpScheduler {
           if (m) this._originalSettings[key] = m[1];
         }
         if (Object.keys(this._originalSettings).length > 0) {
-          console.log(`[${this._label}] Pre-cached ${Object.keys(this._originalSettings).length} PvE setting(s) for PvP override revert`);
+          console.log(
+            `[${this._label}] Pre-cached ${Object.keys(this._originalSettings).length} PvE setting(s) for PvP override revert`,
+          );
         }
-      }    } catch (err) {
+      }
+    } catch (err) {
       console.error(`[${this._label}] Failed to read server settings:`, err.message);
       this._currentPvp = null;
     } finally {
@@ -150,9 +162,16 @@ class PvpScheduler {
       const prevDay = (dayOfWeek + 6) % 7;
       const { start: prevStart, end: prevEnd } = this._getHoursForDay(prevDay);
       const startDayOk = !pvpDays || pvpDays.has(dayOfWeek);
-      const prevDayOk  = !pvpDays || pvpDays.has(prevDay);
+      const prevDayOk = !pvpDays || pvpDays.has(prevDay);
       // Tail end from yesterday's overnight window
-      if (prevDayOk && prevStart !== undefined && prevEnd !== undefined && prevStart > prevEnd && totalMinutes < prevEnd) return true;
+      if (
+        prevDayOk &&
+        prevStart !== undefined &&
+        prevEnd !== undefined &&
+        prevStart > prevEnd &&
+        totalMinutes < prevEnd
+      )
+        return true;
       // Start of today's overnight window
       return startDayOk && totalMinutes >= start;
     }
@@ -190,7 +209,7 @@ class PvpScheduler {
           minutesUntil = prev.end - totalMinutes;
         } else {
           // Today's overnight start — end is tomorrow
-          minutesUntil = (1440 - totalMinutes) + end;
+          minutesUntil = 1440 - totalMinutes + end;
         }
       }
     } else {
@@ -211,7 +230,7 @@ class PvpScheduler {
             }
             continue;
           }
-          minutesUntil = (d * 1440) - totalMinutes + h.start;
+          minutesUntil = d * 1440 - totalMinutes + h.start;
           break;
         }
       } else {
@@ -231,7 +250,7 @@ class PvpScheduler {
             continue; // start already passed today
           }
           // Future day
-          minutesUntil = (d * 1440) - totalMinutes + h.start;
+          minutesUntil = d * 1440 - totalMinutes + h.start;
           break;
         }
       }
@@ -269,7 +288,7 @@ class PvpScheduler {
     const delay = minutesUntilToggle !== undefined ? minutesUntilToggle : this._config.pvpRestartDelay;
 
     // Build warning schedule: which standard warnings fit within the remaining time
-    const warnings = WARNINGS.filter(m => m <= delay);
+    const warnings = WARNINGS.filter((m) => m <= delay);
     if (warnings.length === 0 || warnings[0] < delay) {
       warnings.unshift(delay);
     }
@@ -290,7 +309,7 @@ class PvpScheduler {
       // Send warning
       const msg = `Server restart in ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''} — PvP turning ${targetLabel}`;
       this._announce(msg);
-      this._rcon.send(`admin ${msg}`).catch(err => {
+      this._rcon.send(`admin ${msg}`).catch((err) => {
         console.error(`[${this._label}] Failed to send in-game warning:`, err.message);
       });
 
@@ -369,7 +388,6 @@ class PvpScheduler {
           console.warn(`[${this._label}] Could not restore permissions:`, err.message);
         }
       }
-
     } catch (err) {
       console.error(`[${this._label}] SFTP toggle failed:`, err.message);
       this._transitioning = false;
@@ -379,7 +397,6 @@ class PvpScheduler {
     }
 
     // Announce and restart
-    const pvpColor = targetPvp ? 'red' : 'green';
     const restartMsg = `PvP is now ${targetLabel}! Server restarting...`;
     this._announce(restartMsg);
     await this._rcon.send(`admin ${restartMsg}`).catch(() => {});
@@ -415,7 +432,8 @@ class PvpScheduler {
           const { exec } = require('child_process');
           await new Promise((resolve, reject) => {
             exec(`docker stop ${container} && docker start ${container}`, { timeout: 120000 }, (err) => {
-              if (err) reject(err); else resolve();
+              if (err) reject(err);
+              else resolve();
             });
           });
           console.log(`[${this._label}] Restart via Docker stop+start (${container})`);
@@ -478,7 +496,9 @@ class PvpScheduler {
       }
       if (Date.now() - start >= maxWait) {
         clearInterval(timer);
-        console.warn(`[${this._label}] RCON health check FAILED — no connection after ${maxWait / 1000}s, restarting game process`);
+        console.warn(
+          `[${this._label}] RCON health check FAILED — no connection after ${maxWait / 1000}s, restarting game process`,
+        );
         try {
           const { exec } = require('child_process');
           // Try LinuxGSM first, fall back to docker stop+start
@@ -486,7 +506,8 @@ class PvpScheduler {
             exec(`docker exec -u linuxgsm ${container} /app/hzserver restart`, { timeout: 120000 }, (err) => {
               if (err) {
                 exec(`docker stop ${container} && docker start ${container}`, { timeout: 120000 }, (err2) => {
-                  if (err2) reject(err2); else resolve();
+                  if (err2) reject(err2);
+                  else resolve();
                 });
               } else resolve();
             });
@@ -550,7 +571,9 @@ class PvpScheduler {
             this._originalSettings[key] = match[1];
           }
         }
-        console.log(`[${this._label}] Cached ${Object.keys(this._originalSettings).length} original setting(s) for PvP revert`);
+        console.log(
+          `[${this._label}] Cached ${Object.keys(this._originalSettings).length} original setting(s) for PvP revert`,
+        );
       }
 
       for (const [key, value] of Object.entries(overrides)) {
@@ -596,8 +619,8 @@ class PvpScheduler {
 
   _updateServerName(content, pvpOn) {
     // Match ServerName="value" or ServerName=value (greedy inside quotes)
-    const nameMatch = content.match(/^ServerName\s*=\s*"([^"]*)"\s*$/m)
-                   || content.match(/^ServerName\s*=\s*(.+?)\s*$/m);
+    const nameMatch =
+      content.match(/^ServerName\s*=\s*"([^"]*)"\s*$/m) || content.match(/^ServerName\s*=\s*(.+?)\s*$/m);
     if (!nameMatch) {
       console.error(`[${this._label}] Could not find ServerName= line in settings file`);
       return content;
@@ -621,10 +644,7 @@ class PvpScheduler {
     }
 
     // Replace the entire ServerName line (handles both quoted and unquoted)
-    const updatedContent = content.replace(
-      /^ServerName\s*=.*$/m,
-      `ServerName="${newName}"`
-    );
+    const updatedContent = content.replace(/^ServerName\s*=.*$/m, `ServerName="${newName}"`);
     console.log(`[${this._label}] ServerName → ${newName}`);
     return updatedContent;
   }
@@ -635,7 +655,9 @@ class PvpScheduler {
     const color = targetPvp ? 0xe74c3c : 0x2ecc71; // red for PvP on, green for PvP off
     const embed = new EmbedBuilder()
       .setAuthor({ name: `⚔️ PvP ${label}` })
-      .setDescription(`PvP has been **${label.toLowerCase()}** by the PvP scheduler.\nServer is restarting to apply the change.`)
+      .setDescription(
+        `PvP has been **${label.toLowerCase()}** by the PvP scheduler.\nServer is restarting to apply the change.`,
+      )
       .setColor(color)
       .setTimestamp();
     try {

@@ -1,6 +1,3 @@
-/* eslint-env browser */
-/* global L, map, authFetch, simplifyName */
-
 /**
  * Timeline Controller — time-scroll playback of world state snapshots.
  *
@@ -11,33 +8,40 @@
 
 // ── Layer groups for each entity type ──────────────────────
 const timelineLayers = {
-  players:    L.layerGroup(),
-  zombies:    L.layerGroup(),
-  animals:    L.layerGroup(),
-  bandits:    L.layerGroup(),
-  vehicles:   L.layerGroup(),
+  players: L.layerGroup(),
+  zombies: L.layerGroup(),
+  animals: L.layerGroup(),
+  bandits: L.layerGroup(),
+  vehicles: L.layerGroup(),
   structures: L.layerGroup(),
   companions: L.layerGroup(),
-  backpacks:  L.layerGroup(),
-  trails:     L.layerGroup(),
-  deaths:     L.layerGroup(),
+  backpacks: L.layerGroup(),
+  trails: L.layerGroup(),
+  deaths: L.layerGroup(),
 };
 
 // ── State ──────────────────────────────────────────────────
 let timelineActive = false;
-let snapshots = [];         // metadata list for slider
-let currentSnapIndex = -1;  // current position in snapshots[]
+let snapshots = []; // metadata list for slider
+let currentSnapIndex = -1; // current position in snapshots[]
 let currentSnapData = null; // full entity data for current snapshot
 let playbackTimer = null;
-let playbackSpeed = 1;      // 1 = 1x, 2 = 2x, etc.
+let playbackSpeed = 1; // 1 = 1x, 2 = 2x, etc.
 let selectedTrailPlayer = null;
 let trailData = [];
 
 // Layer visibility
 const layerVisibility = {
-  players: true, zombies: true, animals: true, bandits: true,
-  vehicles: true, structures: false, companions: true, backpacks: false,
-  trails: true, deaths: true,
+  players: true,
+  zombies: true,
+  animals: true,
+  bandits: true,
+  vehicles: true,
+  structures: false,
+  companions: true,
+  backpacks: false,
+  trails: true,
+  deaths: true,
 };
 
 function tTimeline(key, vars) {
@@ -47,11 +51,12 @@ function tTimeline(key, vars) {
 // ── Entity Icons ───────────────────────────────────────────
 
 function makeIcon(color, size, shape = 'circle', label = '') {
-  const shapeCSS = shape === 'diamond'
-    ? `width:${size}px;height:${size}px;transform:rotate(45deg);border-radius:2px;`
-    : shape === 'square'
-      ? `width:${size}px;height:${size}px;border-radius:2px;`
-      : `width:${size}px;height:${size}px;border-radius:50%;`;
+  const shapeCSS =
+    shape === 'diamond'
+      ? `width:${size}px;height:${size}px;transform:rotate(45deg);border-radius:2px;`
+      : shape === 'square'
+        ? `width:${size}px;height:${size}px;border-radius:2px;`
+        : `width:${size}px;height:${size}px;border-radius:50%;`;
 
   return L.divIcon({
     className: 'timeline-marker',
@@ -63,22 +68,22 @@ function makeIcon(color, size, shape = 'circle', label = '') {
 
 function _getIcons() {
   return {
-    playerOnline:  (name) => makeIcon('#3fb950', 14, 'circle', name),
+    playerOnline: (name) => makeIcon('#3fb950', 14, 'circle', name),
     playerOffline: (name) => makeIcon('#da3633', 10, 'circle', name),
-    zombie:    makeIcon('#9b59b6', 6, 'circle', tTimeline('entity_labels.zombie')),
-    animal:    makeIcon('#e67e22', 7, 'diamond', tTimeline('entity_labels.animal')),
-    bandit:    makeIcon('#e74c3c', 8, 'square', tTimeline('entity_labels.bandit')),
-    vehicle:   makeIcon('#3498db', 10, 'square', tTimeline('entity_labels.vehicle')),
+    zombie: makeIcon('#9b59b6', 6, 'circle', tTimeline('entity_labels.zombie')),
+    animal: makeIcon('#e67e22', 7, 'diamond', tTimeline('entity_labels.animal')),
+    bandit: makeIcon('#e74c3c', 8, 'square', tTimeline('entity_labels.bandit')),
+    vehicle: makeIcon('#3498db', 10, 'square', tTimeline('entity_labels.vehicle')),
     structure: makeIcon('#95a5a6', 5, 'square', tTimeline('entity_labels.structure')),
     companion: makeIcon('#f1c40f', 8, 'diamond', tTimeline('entity_labels.companion')),
-    backpack:  makeIcon('#8e44ad', 7, 'square', tTimeline('entity_labels.backpack')),
-    death:     makeIcon('#ff0000', 10, 'circle', tTimeline('entity_labels.death')),
+    backpack: makeIcon('#8e44ad', 7, 'square', tTimeline('entity_labels.backpack')),
+    death: makeIcon('#ff0000', 10, 'circle', tTimeline('entity_labels.death')),
   };
 }
 var ICONS = _getIcons();
 
 // Rebuild icons + re-render on language change
-document.addEventListener('languageChanged', function() {
+document.addEventListener('languageChanged', function () {
   ICONS = _getIcons();
   // Re-render current snapshot entities with new labels
   if (currentSnapData) renderTimelineEntities();
@@ -92,7 +97,7 @@ document.addEventListener('languageChanged', function() {
     playBtn.setAttribute('aria-label', tTimeline(isPlaying ? 'controls.pause' : 'controls.play'));
   }
   // Update speed button labels
-  document.querySelectorAll('.tl-speed-btn').forEach(function(btn) {
+  document.querySelectorAll('.tl-speed-btn').forEach(function (btn) {
     if (btn.dataset.speed) btn.title = tTimeline('controls.speed') + ' ' + btn.dataset.speed + 'x';
   });
 });
@@ -195,7 +200,7 @@ function renderTimelineEntities() {
   if (!currentSnapData) return;
 
   // Clear all timeline layers
-  Object.values(timelineLayers).forEach(layer => {
+  Object.values(timelineLayers).forEach((layer) => {
     layer.clearLayers();
   });
 
@@ -251,7 +256,7 @@ function renderTimelineEntities() {
       if (v.lat == null || v.lng == null) continue;
       const m = L.marker([v.lat, v.lng], { icon: ICONS.vehicle });
       const name = v.display_name || simplifyName(v.class) || tTimeline('entity_labels.vehicle');
-      const fuelPct = v.max_health > 0 ? Math.round((v.health / v.max_health) * 100) : 0;
+      const _fuelPct = v.max_health > 0 ? Math.round((v.health / v.max_health) * 100) : 0;
       m.bindTooltip(name, { direction: 'top', offset: [0, -8] });
       m.bindPopup(`
         <div class="tl-popup">
@@ -314,9 +319,9 @@ function renderTimelineEntities() {
 function updateLayerCounts(d) {
   const counts = {
     players: d.players?.length || 0,
-    zombies: d.ai?.filter(a => a.category === 'zombie').length || 0,
-    animals: d.ai?.filter(a => a.category === 'animal').length || 0,
-    bandits: d.ai?.filter(a => a.category === 'bandit').length || 0,
+    zombies: d.ai?.filter((a) => a.category === 'zombie').length || 0,
+    animals: d.ai?.filter((a) => a.category === 'animal').length || 0,
+    bandits: d.ai?.filter((a) => a.category === 'bandit').length || 0,
     vehicles: d.vehicles?.length || 0,
     structures: d.structures?.length || 0,
     companions: d.companions?.length || 0,
@@ -348,25 +353,30 @@ function renderTrail(name) {
   if (!layerVisibility.trails || !trailData.length) return;
 
   // Build polyline from positions
-  const latlngs = trailData.map(p => [p.lat, p.lng]);
+  const latlngs = trailData.map((p) => [p.lat, p.lng]);
   const trail = L.polyline(latlngs, {
     color: '#58a6ff',
     weight: 2,
     opacity: 0.7,
     dashArray: '5, 5',
   });
-  trail.bindTooltip(tTimeline('trail.tooltip', {
-    name: name || tTimeline('trail.player'),
-    points: trailData.length,
-  }), { sticky: true });
+  trail.bindTooltip(
+    tTimeline('trail.tooltip', {
+      name: name || tTimeline('trail.player'),
+      points: trailData.length,
+    }),
+    { sticky: true },
+  );
   trail.addTo(timelineLayers.trails);
 
   // Add start/end markers
   if (latlngs.length >= 2) {
     L.circleMarker(latlngs[0], { radius: 5, color: '#3fb950', fillOpacity: 0.8, weight: 1 })
-      .bindTooltip(tTimeline('trail.start')).addTo(timelineLayers.trails);
+      .bindTooltip(tTimeline('trail.start'))
+      .addTo(timelineLayers.trails);
     L.circleMarker(latlngs[latlngs.length - 1], { radius: 5, color: '#da3633', fillOpacity: 0.8, weight: 1 })
-      .bindTooltip(tTimeline('trail.end')).addTo(timelineLayers.trails);
+      .bindTooltip(tTimeline('trail.end'))
+      .addTo(timelineLayers.trails);
   }
 }
 
@@ -382,9 +392,10 @@ async function loadDeaths() {
       const m = L.marker([d.lat, d.lng], { icon: ICONS.death, zIndexOffset: -100 });
       const cause = d.cause_name || d.cause_type || tTimeline('popup.unknown');
       const deathDate = new Date(d.created_at);
-      const time = window.fmtDate && window.fmtTime
-        ? `${window.fmtDate(deathDate)} ${window.fmtTime(deathDate)}`
-        : deathDate.toLocaleString();
+      const time =
+        window.fmtDate && window.fmtTime
+          ? `${window.fmtDate(deathDate)} ${window.fmtTime(deathDate)}`
+          : deathDate.toLocaleString();
       m.bindPopup(`
         <div class="tl-popup">
           <b>💀 ${d.victim_name}</b><br>
@@ -447,7 +458,7 @@ function stopPlayback() {
   }
 }
 
-function setPlaybackSpeed(speed) {
+function _setPlaybackSpeed(speed) {
   playbackSpeed = speed;
   const wasPlaying = !!playbackTimer;
   if (wasPlaying) {
@@ -455,7 +466,7 @@ function setPlaybackSpeed(speed) {
     startPlayback();
   }
   // Update speed button styles
-  document.querySelectorAll('.tl-speed-btn').forEach(b => {
+  document.querySelectorAll('.tl-speed-btn').forEach((b) => {
     b.classList.toggle('active', parseInt(b.dataset.speed, 10) === speed);
     b.title = tTimeline('controls.speed', { speed: b.dataset.speed });
     b.setAttribute('aria-label', tTimeline('controls.speed', { speed: b.dataset.speed }));
@@ -492,11 +503,11 @@ function goToLatest() {
 
 // ── Toggle timeline mode (live vs timeline) ────────────────
 
-function toggleTimelineMode() {
+function _toggleTimelineMode() {
   timelineActive = !timelineActive;
-  const panel = document.getElementById('timeline-panel');
+  const _panel = document.getElementById('timeline-panel');
   const btn = document.getElementById('btn-timeline');
-  const liveControls = document.getElementById('topbar');
+  const _liveControls = document.getElementById('topbar');
 
   if (timelineActive) {
     if (btn) btn.classList.add('active');
@@ -514,7 +525,7 @@ function toggleTimelineMode() {
   } else {
     if (btn) btn.classList.remove('active');
     // Remove all timeline layers
-    Object.values(timelineLayers).forEach(layer => {
+    Object.values(timelineLayers).forEach((layer) => {
       map.removeLayer(layer);
     });
     // Restore live player markers
@@ -525,7 +536,7 @@ function toggleTimelineMode() {
 
 // ── Layer toggle ───────────────────────────────────────────
 
-function toggleLayer(layerKey) {
+function _toggleLayer(layerKey) {
   layerVisibility[layerKey] = !layerVisibility[layerKey];
   const cb = document.getElementById(`tl-layer-${layerKey}`);
   if (cb) cb.checked = layerVisibility[layerKey];

@@ -20,13 +20,15 @@
 require('dotenv').config();
 
 // ── Timestamped console logging ──────────────────────────────
-const _origLog   = console.log;
+const _origLog = console.log;
 const _origError = console.error;
-const _origWarn  = console.warn;
-function _ts() { return new Date().toLocaleTimeString('en-GB', { hour12: false }); }
-console.log   = (...args) => _origLog(`[${_ts()}]`, ...args);
+const _origWarn = console.warn;
+function _ts() {
+  return new Date().toLocaleTimeString('en-GB', { hour12: false });
+}
+console.log = (...args) => _origLog(`[${_ts()}]`, ...args);
 console.error = (...args) => _origError(`[${_ts()}]`, ...args);
-console.warn  = (...args) => _origWarn(`[${_ts()}]`, ...args);
+console.warn = (...args) => _origWarn(`[${_ts()}]`, ...args);
 
 const fs = require('fs');
 const path = require('path');
@@ -58,18 +60,20 @@ if (process.env.FTP_PRIVATE_KEY_PATH) {
   }
 }
 
-const ftpBasePath = (process.env.FTP_BASE_PATH || '').replace(/\/+$/, '');  // strip trailing slash
+const ftpBasePath = (process.env.FTP_BASE_PATH || '').replace(/\/+$/, ''); // strip trailing slash
 let ftpLogPath = process.env.FTP_LOG_PATH || '/HumanitZServer/HMZLog.log';
 let ftpConnectLogPath = process.env.FTP_CONNECT_LOG_PATH || '/HumanitZServer/PlayerConnectedLog.txt';
 let ftpIdMapPath = process.env.FTP_ID_MAP_PATH || '/HumanitZServer/PlayerIDMapped.txt';
-let ftpSavePath = process.env.FTP_SAVE_PATH || '/HumanitZServer/Saved/SaveGames/SaveList/Default/Save_DedicatedSaveMP.sav';
+let ftpSavePath =
+  process.env.FTP_SAVE_PATH || '/HumanitZServer/Saved/SaveGames/SaveList/Default/Save_DedicatedSaveMP.sav';
 let ftpSettingsPath = process.env.FTP_SETTINGS_PATH || '/HumanitZServer/GameServerSettings.ini';
 let ftpWelcomePath = process.env.FTP_WELCOME_PATH || '/HumanitZServer/WelcomeMessage.txt';
 
 // Prepend base path if configured and paths are relative (don't start with /)
 if (ftpBasePath) {
   if (ftpLogPath && !ftpLogPath.startsWith('/')) ftpLogPath = ftpBasePath + '/' + ftpLogPath;
-  if (ftpConnectLogPath && !ftpConnectLogPath.startsWith('/')) ftpConnectLogPath = ftpBasePath + '/' + ftpConnectLogPath;
+  if (ftpConnectLogPath && !ftpConnectLogPath.startsWith('/'))
+    ftpConnectLogPath = ftpBasePath + '/' + ftpConnectLogPath;
   if (ftpIdMapPath && !ftpIdMapPath.startsWith('/')) ftpIdMapPath = ftpBasePath + '/' + ftpIdMapPath;
   if (ftpSavePath && !ftpSavePath.startsWith('/')) ftpSavePath = ftpBasePath + '/' + ftpSavePath;
   if (ftpSettingsPath && !ftpSettingsPath.startsWith('/')) ftpSettingsPath = ftpBasePath + '/' + ftpSettingsPath;
@@ -166,11 +170,11 @@ function backupAndSave(filePath, data, label) {
 
 // Target filenames to locate on the server
 const DISCOVERY_TARGETS = {
-  'HMZLog.log':              'FTP_LOG_PATH',
-  'PlayerConnectedLog.txt':  'FTP_CONNECT_LOG_PATH',
-  'PlayerIDMapped.txt':      'FTP_ID_MAP_PATH',
-  'GameServerSettings.ini':  'FTP_SETTINGS_PATH',
-  'WelcomeMessage.txt':      'FTP_WELCOME_PATH',
+  'HMZLog.log': 'FTP_LOG_PATH',
+  'PlayerConnectedLog.txt': 'FTP_CONNECT_LOG_PATH',
+  'PlayerIDMapped.txt': 'FTP_ID_MAP_PATH',
+  'GameServerSettings.ini': 'FTP_SETTINGS_PATH',
+  'WelcomeMessage.txt': 'FTP_WELCOME_PATH',
 };
 
 /**
@@ -199,7 +203,11 @@ const DISCOVERY_DIR_TARGETS = ['HZLogs'];
 async function discoverFiles(sftp, dir, depth, maxDepth, found) {
   if (depth >= maxDepth) return;
   let items;
-  try { items = await sftp.list(dir); } catch { return; }
+  try {
+    items = await sftp.list(dir);
+  } catch {
+    return;
+  }
   const maxCount = Object.keys(DISCOVERY_TARGETS).length + 1 + DISCOVERY_DIR_TARGETS.length;
   for (const item of items) {
     const fullPath = dir === '/' ? `/${item.name}` : `${dir}/${item.name}`;
@@ -210,9 +218,17 @@ async function discoverFiles(sftp, dir, depth, maxDepth, found) {
         console.log(`  Found ${item.name}/ directory → ${fullPath}`);
       }
       // Skip obviously irrelevant directories for faster discovery
-      if (/^(\.|node_modules|__pycache__|Engine|Content|Binaries|proc|sys|run|tmp|lost\+found|snap|boot|usr|lib|lib64|sbin|bin|var|etc|dev|mnt|media|srv)$/i.test(item.name)) continue;
+      if (
+        /^(\.|node_modules|__pycache__|Engine|Content|Binaries|proc|sys|run|tmp|lost\+found|snap|boot|usr|lib|lib64|sbin|bin|var|etc|dev|mnt|media|srv)$/i.test(
+          item.name,
+        )
+      )
+        continue;
       // Game server directories — always recurse into these regardless of depth
-      const isGameDir = /^(Saved|Logs|SaveGames|SaveList|Default|HumanitZServer|HZLogs|serverfiles|hzserver|humanitz|LinuxServer)/i.test(item.name);
+      const isGameDir =
+        /^(Saved|Logs|SaveGames|SaveList|Default|HumanitZServer|HZLogs|serverfiles|hzserver|humanitz|LinuxServer)/i.test(
+          item.name,
+        );
       // General hosting directories — recurse when not too deep
       const isHostDir = /^(data|home|opt|root|app|container|steam|server|servers|game|games|lgsm)/i.test(item.name);
       if (isGameDir || isHostDir || depth < 4) {
@@ -241,12 +257,12 @@ async function autoDiscoverPaths(sftp) {
 
   // First: try the currently configured paths (fast check)
   const quickChecks = [
-    { name: 'HMZLog.log',              path: ftpLogPath },
-    { name: 'PlayerConnectedLog.txt',  path: ftpConnectLogPath },
-    { name: 'PlayerIDMapped.txt',      path: ftpIdMapPath },
-    { name: '__save_file__',           path: ftpSavePath },
-    { name: 'GameServerSettings.ini',  path: ftpSettingsPath },
-    { name: 'WelcomeMessage.txt',      path: ftpWelcomePath },
+    { name: 'HMZLog.log', path: ftpLogPath },
+    { name: 'PlayerConnectedLog.txt', path: ftpConnectLogPath },
+    { name: 'PlayerIDMapped.txt', path: ftpIdMapPath },
+    { name: '__save_file__', path: ftpSavePath },
+    { name: 'GameServerSettings.ini', path: ftpSettingsPath },
+    { name: 'WelcomeMessage.txt', path: ftpWelcomePath },
   ];
   for (const { name, path: p } of quickChecks) {
     try {
@@ -255,7 +271,9 @@ async function autoDiscoverPaths(sftp) {
         found.set(name, p);
         console.log(`  ✓ ${path.basename(p)} — confirmed at ${p}`);
       }
-    } catch { /* not there, will search */ }
+    } catch {
+      /* not there, will search */
+    }
   }
 
   // Quick check for HZLogs directory (per-restart rotated logs)
@@ -271,15 +289,17 @@ async function autoDiscoverPaths(sftp) {
       found.set('HZLogs', hzLogsDir);
       console.log(`  ✓ HZLogs/ — per-restart log directory at ${hzLogsDir}`);
     }
-  } catch { /* not there */ }
+  } catch {
+    /* not there */
+  }
 
   // Search for any files we didn't find at the default locations
   const totalExpected = Object.keys(DISCOVERY_TARGETS).length + 1 + DISCOVERY_DIR_TARGETS.length;
   if (found.size < totalExpected) {
-    const missingFiles = Object.keys(DISCOVERY_TARGETS).filter(n => !found.has(n));
+    const missingFiles = Object.keys(DISCOVERY_TARGETS).filter((n) => !found.has(n));
     if (!found.has('__save_file__')) missingFiles.push('Save_*.sav');
-    const missingDirs = DISCOVERY_DIR_TARGETS.filter(n => !found.has(n));
-    const missing = [...missingFiles, ...missingDirs.map(d => d + '/')];
+    const missingDirs = DISCOVERY_DIR_TARGETS.filter((n) => !found.has(n));
+    const missing = [...missingFiles, ...missingDirs.map((d) => d + '/')];
     console.log(`  Searching for: ${missing.join(', ')}`);
     await discoverFiles(sftp, '/', 0, 12, found);
   }
@@ -295,24 +315,28 @@ async function autoDiscoverPaths(sftp) {
         const saveDir = iniDir + '/Saved/SaveGames/SaveList/Default';
         try {
           const items = await sftp.list(saveDir);
-          const saveFile = items.find(f => f.name === `Save_${saveName}.sav`);
+          const saveFile = items.find((f) => f.name === `Save_${saveName}.sav`);
           if (saveFile) {
             found.set('__save_file__', `${saveDir}/${saveFile.name}`);
             console.log(`  Found custom save: Save_${saveName}.sav (from GameServerSettings.ini SaveName)`);
           }
-        } catch { /* SaveList dir not at expected location */ }
+        } catch {
+          /* SaveList dir not at expected location */
+        }
       }
-    } catch { /* couldn't read settings — non-critical */ }
+    } catch {
+      /* couldn't read settings — non-critical */
+    }
   }
 
   // Report results
   const results = {
-    ftpLogPath:        found.get('HMZLog.log')              || ftpLogPath,
-    ftpConnectLogPath: found.get('PlayerConnectedLog.txt')  || ftpConnectLogPath,
-    ftpIdMapPath:      found.get('PlayerIDMapped.txt')      || ftpIdMapPath,
-    ftpSavePath:       found.get('__save_file__')           || ftpSavePath,
-    ftpSettingsPath:   found.get('GameServerSettings.ini')  || ftpSettingsPath,
-    ftpWelcomePath:    found.get('WelcomeMessage.txt')      || ftpWelcomePath,
+    ftpLogPath: found.get('HMZLog.log') || ftpLogPath,
+    ftpConnectLogPath: found.get('PlayerConnectedLog.txt') || ftpConnectLogPath,
+    ftpIdMapPath: found.get('PlayerIDMapped.txt') || ftpIdMapPath,
+    ftpSavePath: found.get('__save_file__') || ftpSavePath,
+    ftpSettingsPath: found.get('GameServerSettings.ini') || ftpSettingsPath,
+    ftpWelcomePath: found.get('WelcomeMessage.txt') || ftpWelcomePath,
   };
 
   // Log the discovered save file name if it differs from default
@@ -335,7 +359,7 @@ async function autoDiscoverPaths(sftp) {
     console.log(`  ℹ Per-restart log rotation detected — LogWatcher will auto-switch to newest file`);
   }
 
-  const notFound = Object.keys(DISCOVERY_TARGETS).filter(n => !found.has(n));
+  const notFound = Object.keys(DISCOVERY_TARGETS).filter((n) => !found.has(n));
   if (!found.has('__save_file__')) notFound.push('Save file (Save_*.sav)');
   if (notFound.length > 0) {
     console.log(`\n  ⚠️  Could not locate: ${notFound.join(', ')}`);
@@ -384,15 +408,15 @@ function findCommonParent(paths) {
   if (paths.length === 1) return path.dirname(paths[0]);
 
   // Split all paths into segments
-  const segments = paths.map(p => p.split('/').filter(Boolean));
-  
+  const segments = paths.map((p) => p.split('/').filter(Boolean));
+
   // Find common prefix
   let commonDepth = 0;
-  const minLength = Math.min(...segments.map(s => s.length));
-  
+  const minLength = Math.min(...segments.map((s) => s.length));
+
   for (let i = 0; i < minLength; i++) {
     const first = segments[0][i];
-    if (segments.every(s => s[i] === first)) {
+    if (segments.every((s) => s[i] === first)) {
       commonDepth = i + 1;
     } else {
       break;
@@ -418,13 +442,13 @@ function updateEnvFile(paths) {
   let updated = 0;
 
   const mapping = {
-    FTP_BASE_PATH:        paths.ftpBasePath,
-    FTP_LOG_PATH:         paths.ftpLogPath,
+    FTP_BASE_PATH: paths.ftpBasePath,
+    FTP_LOG_PATH: paths.ftpLogPath,
     FTP_CONNECT_LOG_PATH: paths.ftpConnectLogPath,
-    FTP_ID_MAP_PATH:      paths.ftpIdMapPath,
-    FTP_SAVE_PATH:        paths.ftpSavePath,
-    FTP_SETTINGS_PATH:    paths.ftpSettingsPath,
-    FTP_WELCOME_PATH:     paths.ftpWelcomePath,
+    FTP_ID_MAP_PATH: paths.ftpIdMapPath,
+    FTP_SAVE_PATH: paths.ftpSavePath,
+    FTP_SETTINGS_PATH: paths.ftpSettingsPath,
+    FTP_WELCOME_PATH: paths.ftpWelcomePath,
   };
 
   for (const [key, value] of Object.entries(mapping)) {
@@ -481,7 +505,9 @@ async function downloadFiles() {
   }
 
   const sftp = new SftpClient();
-  let hmzLog = null, connectedLog = null, idMapRaw = null;
+  let hmzLog = null,
+    connectedLog = null,
+    idMapRaw = null;
 
   try {
     console.log(`Connecting to ${ftpConfig.host}:${ftpConfig.port}...`);
@@ -541,7 +567,9 @@ async function downloadFiles() {
 /** Load previously downloaded files from data/ */
 function loadLocalFiles() {
   console.log('Loading cached files from data/...\n');
-  let hmzLog = null, connectedLog = null, idMapRaw = null;
+  let hmzLog = null,
+    connectedLog = null,
+    idMapRaw = null;
 
   if (fs.existsSync(LOG_CACHE)) {
     hmzLog = fs.readFileSync(LOG_CACHE, 'utf8');
@@ -592,8 +620,8 @@ function parseIdMap(content) {
  */
 function parseFullLog(content) {
   const result = {
-    players: {},     // steamId → full record
-    nameOnly: {},    // name → partial record (deaths, damage — no SteamID in log)
+    players: {}, // steamId → full record
+    nameOnly: {}, // name → partial record (deaths, damage — no SteamID in log)
     totalEvents: 0,
     earliestEvent: null,
     counts: { deaths: 0, builds: 0, damage: 0, loots: 0, raids: 0, admin: 0, cheat: 0, skipped: 0 },
@@ -629,12 +657,15 @@ function parseFullLog(content) {
     if (sampleLines.length < 5) sampleLines.push(line);
 
     const lm = line.match(tsRegex);
-    if (!lm) { result.counts.skipped++; continue; }
+    if (!lm) {
+      result.counts.skipped++;
+      continue;
+    }
 
     const [, day, month, rawYear, hour, min, body] = lm;
     const year = rawYear.replace(',', '');
     const ts = new Date(
-      `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${min.padStart(2, '0')}:00Z`
+      `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${min.padStart(2, '0')}:00Z`,
     ).toISOString();
 
     if (!result.earliestEvent || ts < result.earliestEvent) result.earliestEvent = ts;
@@ -691,7 +722,7 @@ function parseFullLog(content) {
 
     // ── Raid (building damage by another player) ──
     m = body.match(
-      /^Building \(([^)]+)\) owned by \((\d{17}[^)]*)\) damaged \([\d.]+\) by (.+?)(?:\((\d{17})[^)]*\))?(\s*\(Destroyed\))?$/
+      /^Building \(([^)]+)\) owned by \((\d{17}[^)]*)\) damaged \([\d.]+\) by (.+?)(?:\((\d{17})[^)]*\))?(\s*\(Destroyed\))?$/,
     );
     if (m) {
       const ownerSteamId = m[2].match(/^(\d{17})/)?.[1];
@@ -710,7 +741,11 @@ function parseFullLog(content) {
         a.lastEvent = ts;
       }
       const o = result.players[ownerSteamId];
-      if (o) { o.raidsIn++; if (destroyed) o.destroyedIn++; o.lastEvent = ts; }
+      if (o) {
+        o.raidsIn++;
+        if (destroyed) o.destroyedIn++;
+        o.lastEvent = ts;
+      }
       result.counts.raids++;
       continue;
     }
@@ -746,11 +781,15 @@ function parseFullLog(content) {
  * Format: Player Connected PlayerName NetID(steamId_+_|...) (DD/MM/YYYY HH:MM)
  */
 function parseConnectedLog(content) {
-  const lines = content.replace(/^\uFEFF/, '').split(/\r?\n/).filter(l => l.trim());
+  const lines = content
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .filter((l) => l.trim());
   const events = [];
 
   // Flexible: handle optional seconds, alternative date separators, and comma in year (2,026)
-  const connectRegex = /^Player (Connected|Disconnected)\s+(.+?)\s+NetID\((\d{17})[^)]*\)\s*\((\d{1,2})[/\-.](\d{1,2})[/\-.](\d{1,2},?\d{3})\s+(\d{1,2}):(\d{1,2})(?::\d{1,2})?\)/;
+  const connectRegex =
+    /^Player (Connected|Disconnected)\s+(.+?)\s+NetID\((\d{17})[^)]*\)\s*\((\d{1,2})[/\-.](\d{1,2})[/\-.](\d{1,2},?\d{3})\s+(\d{1,2}):(\d{1,2})(?::\d{1,2})?\)/;
 
   for (const line of lines) {
     const m = line.match(connectRegex);
@@ -758,15 +797,15 @@ function parseConnectedLog(content) {
     const [, action, name, steamId, day, month, rawYear, hour, min] = m;
     const year = rawYear.replace(',', '');
     const ts = new Date(
-      `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${min.padStart(2, '0')}:00Z`
+      `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${min.padStart(2, '0')}:00Z`,
     );
     events.push({ action, name: name.trim(), steamId, ts });
   }
 
   // Build sessions
-  const players = {};       // steamId → { name, sessions[] }
+  const players = {}; // steamId → { name, sessions[] }
   const activeSessions = {}; // steamId → start Date
-  const connectCounts = {};  // steamId → { connects, disconnects }
+  const connectCounts = {}; // steamId → { connects, disconnects }
 
   for (const evt of events) {
     if (!players[evt.steamId]) players[evt.steamId] = { name: evt.name, sessions: [] };
@@ -840,15 +879,12 @@ function parseConnectedLog(content) {
 
   for (const [steamId, info] of Object.entries(players)) {
     const totalMs = info.sessions.reduce((s, sess) => s + sess.durationMs, 0);
-    const firstSeen = info.sessions.length > 0
-      ? new Date(Math.min(...info.sessions.map(s => s.start))).toISOString()
-      : null;
-    const lastSeen = info.sessions.length > 0
-      ? new Date(Math.max(...info.sessions.map(s => s.end))).toISOString()
-      : null;
-    const lastLogin = info.sessions.length > 0
-      ? new Date(info.sessions[info.sessions.length - 1].start).toISOString()
-      : null;
+    const firstSeen =
+      info.sessions.length > 0 ? new Date(Math.min(...info.sessions.map((s) => s.start))).toISOString() : null;
+    const lastSeen =
+      info.sessions.length > 0 ? new Date(Math.max(...info.sessions.map((s) => s.end))).toISOString() : null;
+    const lastLogin =
+      info.sessions.length > 0 ? new Date(info.sessions[info.sessions.length - 1].start).toISOString() : null;
 
     playtimeData.players[steamId] = {
       name: cleanName(info.name),
@@ -885,19 +921,28 @@ function estimatePlaytimeFromLog(content) {
     const [, day, month, rawYear, hour, min, body] = lm;
     const year = rawYear.replace(',', '');
     const ts = new Date(
-      `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${min.padStart(2, '0')}:00Z`
+      `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${min.padStart(2, '0')}:00Z`,
     );
 
     let m;
     // Build events
     m = body.match(/^(.+?)\((\d{17})[^)]*\)\s*finished building/);
-    if (m) { addEvt(m[2], m[1].trim(), ts); continue; }
+    if (m) {
+      addEvt(m[2], m[1].trim(), ts);
+      continue;
+    }
     // Loot events
     m = body.match(/^(.+?)\s*\((\d{17})[^)]*\)\s*looted a container/);
-    if (m) { addEvt(m[2], m[1].trim(), ts); continue; }
+    if (m) {
+      addEvt(m[2], m[1].trim(), ts);
+      continue;
+    }
     // Raid events (attacker)
     m = body.match(/damaged \([\d.]+\) by (.+?)\((\d{17})[^)]*\)/);
-    if (m && !body.includes('Decayfalse')) { addEvt(m[2], m[1].trim(), ts); continue; }
+    if (m && !body.includes('Decayfalse')) {
+      addEvt(m[2], m[1].trim(), ts);
+      continue;
+    }
   }
 
   function addEvt(steamId, name, ts) {
@@ -939,7 +984,8 @@ function estimatePlaytimeFromLog(content) {
     if (timestamps.length === 0) continue;
 
     const sessions = [];
-    let sStart = timestamps[0], sEnd = timestamps[0];
+    let sStart = timestamps[0],
+      sEnd = timestamps[0];
     for (let i = 1; i < timestamps.length; i++) {
       if (timestamps[i] - sEnd > SESSION_GAP) {
         sessions.push({ start: sStart, end: sEnd });
@@ -950,7 +996,7 @@ function estimatePlaytimeFromLog(content) {
     sessions.push({ start: sStart, end: sEnd });
 
     let totalMs = 0;
-    for (const s of sessions) totalMs += (s.end - s.start) + SESSION_BUFFER;
+    for (const s of sessions) totalMs += s.end - s.start + SESSION_BUFFER;
 
     playtimeData.players[steamId] = {
       name: cleanName(info.name),
@@ -1021,7 +1067,7 @@ function validateData(parsed) {
   console.log('\n--- Validation ---\n');
 
   // Orphaned name: keys
-  const orphans = Object.keys(existingStats.players).filter(k => k.startsWith('name:'));
+  const orphans = Object.keys(existingStats.players).filter((k) => k.startsWith('name:'));
   if (orphans.length > 0) {
     console.log(`  Orphaned name: records: ${orphans.length}`);
     for (const k of orphans) {
@@ -1044,7 +1090,8 @@ function validateData(parsed) {
     if (existing.deaths !== fresh.deaths) diffs.push(`deaths: ${existing.deaths} vs ${fresh.deaths}`);
     if (existing.builds !== fresh.builds) diffs.push(`builds: ${existing.builds} vs ${fresh.builds}`);
     if (existing.raidsOut !== fresh.raidsOut) diffs.push(`raidsOut: ${existing.raidsOut} vs ${fresh.raidsOut}`);
-    if (existing.containersLooted !== fresh.containersLooted) diffs.push(`loots: ${existing.containersLooted} vs ${fresh.containersLooted}`);
+    if (existing.containersLooted !== fresh.containersLooted)
+      diffs.push(`loots: ${existing.containersLooted} vs ${fresh.containersLooted}`);
     if (diffs.length > 0) {
       console.log(`  DIFF ${fresh.name}: ${diffs.join(', ')}`);
       discrepancies++;
@@ -1087,42 +1134,101 @@ function buildActivityEntries(hmzLog, connectedLog) {
 
       // Player death
       m = body.match(/^Player died \((.+)\)$/);
-      if (m) { entries.push({ type: 'player_death', category: 'death', actorName: m[1].trim(), item: 'Unknown', source: 'log', createdAt: ts }); continue; }
+      if (m) {
+        entries.push({
+          type: 'player_death',
+          category: 'death',
+          actorName: m[1].trim(),
+          item: 'Unknown',
+          source: 'log',
+          createdAt: ts,
+        });
+        continue;
+      }
 
       // Build
       m = body.match(/^(.+?)\((\d{17})[^)]*\)\s*finished building\s+(.+)$/);
-      if (m) { entries.push({ type: 'player_build', category: 'build', actor: m[2], actorName: m[1].trim(), item: simplifyBlueprintName(m[3].trim()), source: 'log', createdAt: ts }); continue; }
+      if (m) {
+        entries.push({
+          type: 'player_build',
+          category: 'build',
+          actor: m[2],
+          actorName: m[1].trim(),
+          item: simplifyBlueprintName(m[3].trim()),
+          source: 'log',
+          createdAt: ts,
+        });
+        continue;
+      }
 
       // Container looted (skip self-loot)
       m = body.match(/^(.+?)\s*\((\d{17})[^)]*\)\s*looted a container\s*\(([^)]+)\)\s*owner by\s*(\d{17})/);
-      if (m && m[2] !== m[4]) { entries.push({ type: 'container_looted', category: 'loot', actor: m[2], actorName: m[1].trim(), item: m[3], details: { owner: m[4] }, source: 'log', createdAt: ts }); continue; }
+      if (m && m[2] !== m[4]) {
+        entries.push({
+          type: 'container_looted',
+          category: 'loot',
+          actor: m[2],
+          actorName: m[1].trim(),
+          item: m[3],
+          details: { owner: m[4] },
+          source: 'log',
+          createdAt: ts,
+        });
+        continue;
+      }
 
       // Raid
-      m = body.match(/^Building \(([^)]+)\) owned by \((\d{17}[^)]*)\) damaged \([\d.]+\) by (.+?)(?:\((\d{17})[^)]*\))?(\s*\(Destroyed\))?$/);
+      m = body.match(
+        /^Building \(([^)]+)\) owned by \((\d{17}[^)]*)\) damaged \([\d.]+\) by (.+?)(?:\((\d{17})[^)]*\))?(\s*\(Destroyed\))?$/,
+      );
       if (m) {
         const ownerId = m[2].match(/^(\d{17})/)?.[1];
         const atkRaw = m[3].trim();
         const atkId = m[4];
         const destroyed = !!m[5];
         if (atkRaw !== 'Decayfalse' && atkRaw !== 'Zeek' && ownerId && !(atkId && atkId === ownerId)) {
-          entries.push({ type: destroyed ? 'raid_destroy' : 'raid_hit', category: 'raid', actor: atkId || '', actorName: atkRaw, item: simplifyBlueprintName(m[1]), details: { owner: ownerId }, source: 'log', createdAt: ts });
+          entries.push({
+            type: destroyed ? 'raid_destroy' : 'raid_hit',
+            category: 'raid',
+            actor: atkId || '',
+            actorName: atkRaw,
+            item: simplifyBlueprintName(m[1]),
+            details: { owner: ownerId },
+            source: 'log',
+            createdAt: ts,
+          });
         }
         continue;
       }
 
       // Admin access
       m = body.match(/^(.+?)\s+gained admin access!$/);
-      if (m) { entries.push({ type: 'admin_access', category: 'admin', actorName: m[1].trim(), source: 'log', createdAt: ts }); continue; }
+      if (m) {
+        entries.push({ type: 'admin_access', category: 'admin', actorName: m[1].trim(), source: 'log', createdAt: ts });
+        continue;
+      }
 
       // Anti-cheat
       m = body.match(/^(Stack limit detected in drop function|Odd behavior.*?Cheat)\s*\((.+?)\s*-\s*(\d{17})/);
-      if (m) { entries.push({ type: 'cheat_flag', category: 'admin', actor: m[3], actorName: m[2].trim(), item: m[1].trim(), source: 'log', createdAt: ts }); continue; }
+      if (m) {
+        entries.push({
+          type: 'cheat_flag',
+          category: 'admin',
+          actor: m[3],
+          actorName: m[2].trim(),
+          item: m[1].trim(),
+          source: 'log',
+          createdAt: ts,
+        });
+        continue;
+      }
     }
   }
 
   // ── Connected log events ──
   if (connectedLog) {
-    const connectRegex = /^Player (Connected|Disconnected)\s+(.+?)\s+NetID\((\d{17})[^)]*\)\s*\((\d{1,2})[/\-.](\d{1,2})[/\-.](\d{1,2},?\d{3})\s+(\d{1,2}):(\d{1,2})(?::\d{1,2})?\)/;
+    const connectRegex =
+      /^Player (Connected|Disconnected)\s+(.+?)\s+NetID\((\d{17})[^)]*\)\s*\((\d{1,2})[/\-.](\d{1,2})[/\-.](\d{1,2},?\d{3})\s+(\d{1,2}):(\d{1,2})(?::\d{1,2})?\)/;
     for (const rawLine of connectedLog.split('\n')) {
       const line = rawLine.replace(/^\uFEFF/, '').trim();
       if (!line) continue;
@@ -1243,7 +1349,9 @@ function backfillActivityLog(hmzLog, connectedLog) {
 
     // Count by category
     const cats = {};
-    for (const e of entries) { cats[e.category] = (cats[e.category] || 0) + 1; }
+    for (const e of entries) {
+      cats[e.category] = (cats[e.category] || 0) + 1;
+    }
     for (const [cat, count] of Object.entries(cats)) {
       console.log(`    ${cat}: ${count}`);
     }
@@ -1289,7 +1397,9 @@ async function main() {
       const root = await sftp.list('/');
       console.log('/ contents:');
       for (const item of root) {
-        console.log(`  ${item.type === 'd' ? '[DIR]' : '[FILE]'} ${item.name}${item.type !== 'd' ? ` (${item.size} bytes)` : ''}`);
+        console.log(
+          `  ${item.type === 'd' ? '[DIR]' : '[FILE]'} ${item.name}${item.type !== 'd' ? ` (${item.size} bytes)` : ''}`,
+        );
       }
     } catch (err) {
       console.error('SFTP Error:', err.message);
@@ -1449,18 +1559,27 @@ async function main() {
 if (MODE_BACKFILL && require.main === module) {
   (async () => {
     console.log('=== Activity Log Backfill ===\n');
-    if (!fs.existsSync(DATA_DIR)) { console.error('data/ directory not found.'); process.exit(1); }
+    if (!fs.existsSync(DATA_DIR)) {
+      console.error('data/ directory not found.');
+      process.exit(1);
+    }
     let hmzLog, connectedLog;
     if (MODE_LOCAL) {
       ({ hmzLog, connectedLog } = loadLocalFiles());
     } else {
       ({ hmzLog, connectedLog } = await downloadFiles());
     }
-    if (!hmzLog && !connectedLog) { console.error('No log files available.'); process.exit(1); }
+    if (!hmzLog && !connectedLog) {
+      console.error('No log files available.');
+      process.exit(1);
+    }
     backfillActivityLog(hmzLog, connectedLog);
-  })().catch(err => { console.error('Fatal error:', err); process.exit(1); });
+  })().catch((err) => {
+    console.error('Fatal error:', err);
+    process.exit(1);
+  });
 } else if (require.main === module) {
-  main().catch(err => {
+  main().catch((err) => {
     console.error('Fatal error:', err);
     process.exit(1);
   });

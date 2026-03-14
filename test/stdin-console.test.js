@@ -14,7 +14,7 @@
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
-const path = require('path');
+
 const HumanitZDB = require('../src/db/database');
 const StdinConsole = require('../src/stdin-console');
 
@@ -22,18 +22,23 @@ const StdinConsole = require('../src/stdin-console');
 function captureOutput(console, fn) {
   const lines = [];
   const origWrite = process.stdout.write;
-  process.stdout.write = (chunk) => { lines.push(chunk.toString().replace(/\n$/, '')); return true; };
+  process.stdout.write = (chunk) => {
+    lines.push(chunk.toString().replace(/\n$/, ''));
+    return true;
+  };
   try {
     const result = fn();
     // Handle async
     if (result && typeof result.then === 'function') {
-      return result.then(() => {
-        process.stdout.write = origWrite;
-        return lines;
-      }).catch((err) => {
-        process.stdout.write = origWrite;
-        throw err;
-      });
+      return result
+        .then(() => {
+          process.stdout.write = origWrite;
+          return lines;
+        })
+        .catch((err) => {
+          process.stdout.write = origWrite;
+          throw err;
+        });
     }
     process.stdout.write = origWrite;
     return lines;
@@ -280,7 +285,9 @@ describe('StdinConsole', () => {
   });
 
   it('sql shows (no rows) for empty result', async () => {
-    const lines = await captureOutput(sc, () => sc._dispatch("sql SELECT * FROM players WHERE steam_id = 'nonexistent'"));
+    const lines = await captureOutput(sc, () =>
+      sc._dispatch("sql SELECT * FROM players WHERE steam_id = 'nonexistent'"),
+    );
     const joined = lines.join('\n');
     assert.ok(joined.includes('(no rows)'), 'Should show no rows');
   });
@@ -304,7 +311,21 @@ describe('StdinConsole', () => {
 
   it('commands work gracefully without DB', async () => {
     const noDb = new StdinConsole({ db: null });
-    const cmds = ['players', 'player 123', 'online', 'search x', 'stats', 'tables', 'state.list', 'state.get x', 'activity', 'chat', 'world', 'clans', 'vehicles'];
+    const cmds = [
+      'players',
+      'player 123',
+      'online',
+      'search x',
+      'stats',
+      'tables',
+      'state.list',
+      'state.get x',
+      'activity',
+      'chat',
+      'world',
+      'clans',
+      'vehicles',
+    ];
     for (const cmd of cmds) {
       const lines = await captureOutput(noDb, () => noDb._dispatch(cmd));
       const joined = lines.join('\n');

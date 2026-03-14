@@ -16,15 +16,15 @@ const panelApi = require('./panel-api');
 // All numeric values in human-friendly units (%, MB/GB).
 function _emptyResult() {
   return {
-    cpu: null,          // percent (0-100+)
-    memUsed: null,      // bytes
-    memTotal: null,     // bytes
-    memPercent: null,   // percent
-    diskUsed: null,     // bytes
-    diskTotal: null,    // bytes
-    diskPercent: null,  // percent
-    uptime: null,       // seconds
-    source: null,       // 'pterodactyl' | 'ssh'
+    cpu: null, // percent (0-100+)
+    memUsed: null, // bytes
+    memTotal: null, // bytes
+    memPercent: null, // percent
+    diskUsed: null, // bytes
+    diskTotal: null, // bytes
+    diskPercent: null, // percent
+    uptime: null, // seconds
+    source: null, // 'pterodactyl' | 'ssh'
   };
 }
 
@@ -99,7 +99,7 @@ function parseSshOutput(output) {
   const memTotal = output.match(/MemTotal:\s+(\d+)\s+kB/);
   const memAvail = output.match(/MemAvailable:\s+(\d+)\s+kB/);
   if (memTotal) {
-    result.memTotal = parseInt(memTotal[1], 10) * 1024;  // kB → bytes
+    result.memTotal = parseInt(memTotal[1], 10) * 1024; // kB → bytes
     if (memAvail) {
       const avail = parseInt(memAvail[1], 10) * 1024;
       result.memUsed = result.memTotal - avail;
@@ -109,7 +109,7 @@ function parseSshOutput(output) {
 
   // ── Disk from `df` output ──
   // Filesystem  1K-blocks  Used  Available  Use%  Mounted
-  const dfLines = output.split('\n').filter(l => /^\S+\s+\d/.test(l));
+  const dfLines = output.split('\n').filter((l) => /^\S+\s+\d/.test(l));
   // Try to find the mount for the game server path, fall back to "/"
   const gamePath = config.ftpBasePath || '/';
   let bestLine = null;
@@ -131,14 +131,11 @@ function parseSshOutput(output) {
     if (!isNaN(totalKB) && !isNaN(usedKB)) {
       result.diskTotal = totalKB * 1024;
       result.diskUsed = usedKB * 1024;
-      result.diskPercent = result.diskTotal > 0
-        ? Math.round((result.diskUsed / result.diskTotal) * 1000) / 10
-        : null;
+      result.diskPercent = result.diskTotal > 0 ? Math.round((result.diskUsed / result.diskTotal) * 1000) / 10 : null;
     }
   }
 
   // ── Uptime from /proc/uptime ──
-  const uptimeMatch = output.match(/^(\d+(?:\.\d+)?)\s+/m);
   // Only grab if it looks like the /proc/uptime line (two floats)
   if (output.includes('/proc/uptime') || /^\d+\.\d+\s+\d+\.\d+$/m.test(output)) {
     const upMatch = output.match(/^(\d+\.\d+)\s+\d+\.\d+$/m);
@@ -161,13 +158,20 @@ async function _fetchSsh() {
 
     conn.on('ready', () => {
       // Combine commands to minimise round-trips
-      const cmd = 'cat /proc/stat 2>/dev/null; echo "---MEMINFO---"; cat /proc/meminfo 2>/dev/null; echo "---DF---"; df -k 2>/dev/null; echo "---UPTIME---"; cat /proc/uptime 2>/dev/null';
+      const cmd =
+        'cat /proc/stat 2>/dev/null; echo "---MEMINFO---"; cat /proc/meminfo 2>/dev/null; echo "---DF---"; df -k 2>/dev/null; echo "---UPTIME---"; cat /proc/uptime 2>/dev/null';
 
       conn.exec(cmd, (err, stream) => {
-        if (err) { clearTimeout(timeout); conn.end(); return reject(err); }
+        if (err) {
+          clearTimeout(timeout);
+          conn.end();
+          return reject(err);
+        }
 
         let data = '';
-        stream.on('data', chunk => { data += chunk.toString(); });
+        stream.on('data', (chunk) => {
+          data += chunk.toString();
+        });
         stream.stderr.on('data', () => {}); // ignore stderr
         stream.on('close', () => {
           clearTimeout(timeout);
@@ -181,7 +185,7 @@ async function _fetchSsh() {
       });
     });
 
-    conn.on('error', err => {
+    conn.on('error', (err) => {
       clearTimeout(timeout);
       reject(err);
     });
@@ -229,7 +233,7 @@ class ServerResources {
     if (!this._backend) return null;
 
     const now = Date.now();
-    if (this._cache && (now - this._cacheTime) < this._ttl) {
+    if (this._cache && now - this._cacheTime < this._ttl) {
       return this._cache;
     }
 

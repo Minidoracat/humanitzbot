@@ -22,16 +22,16 @@ class AutoMessages {
     this.discordLink = this._config.discordInviteLink;
 
     // Intervals (configurable via .env, defaults in ms)
-    this.linkInterval = this._config.autoMsgLinkInterval;   // 30 min
-    this.promoInterval = this._config.autoMsgPromoInterval;  // 45 min
+    this.linkInterval = this._config.autoMsgLinkInterval; // 30 min
+    this.promoInterval = this._config.autoMsgPromoInterval; // 45 min
 
     this._linkTimer = null;
     this._promoTimer = null;
 
     // Track currently online players (for join detection + playtime seeding)
     this._onlinePlayers = new Set();
-    this._lastWelcomeTime = 0;      // anti-spam: last RCON welcome sent
-    this._welcomeCooldown = 5000;   // ms between welcome messages
+    this._lastWelcomeTime = 0; // anti-spam: last RCON welcome sent
+    this._welcomeCooldown = 5000; // ms between welcome messages
     this._initialised = false;
   }
 
@@ -112,7 +112,9 @@ class AutoMessages {
   }
 
   /** Colorize a Discord invite link (instance wrapper). */
-  _colorLink(link) { return content._colorLink(link); }
+  _colorLink(link) {
+    return content._colorLink(link);
+  }
 
   async _sendDiscordLink() {
     if (!this.discordLink) return;
@@ -153,7 +155,7 @@ class AutoMessages {
     try {
       const list = await this._getPlayerList();
       const currentOnline = new Set();
-      const newJoiners = [];   // players who just appeared
+      const newJoiners = []; // players who just appeared
 
       if (list.players && list.players.length > 0) {
         for (const p of list.players) {
@@ -171,7 +173,7 @@ class AutoMessages {
       this._onlinePlayers = currentOnline;
 
       // Record peak player count and unique players for today (SteamID only)
-      const steamOnly = [...currentOnline].filter(id => /^\d{17}$/.test(id));
+      const steamOnly = [...currentOnline].filter((id) => /^\d{17}$/.test(id));
       this._playtime.recordPlayerCount(steamOnly.length);
       for (const id of steamOnly) {
         this._playtime.recordUniqueToday(id);
@@ -192,7 +194,7 @@ class AutoMessages {
     // Anti-spam: don't stack welcome messages too close together
     const now = Date.now();
     if (now - this._lastWelcomeTime < this._welcomeCooldown) {
-      await new Promise(r => setTimeout(r, this._welcomeCooldown));
+      await new Promise((r) => setTimeout(r, this._welcomeCooldown));
     }
 
     try {
@@ -223,7 +225,7 @@ class AutoMessages {
     if (lines.length > 0) {
       // User-defined lines — resolve placeholders
       const info = await this._getServerInfoSafe();
-      return lines.map(line => this._resolvePlaceholders(line, info)).join('\n');
+      return lines.map((line) => this._resolvePlaceholders(line, info)).join('\n');
     }
     // Default: use the standalone builder (no RCON needed)
     return buildWelcomeContent({

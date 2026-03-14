@@ -14,7 +14,7 @@ const _defaultPlaytime = require('../tracking/playtime-tracker');
 const _defaultPlayerStats = require('../tracking/player-stats');
 const { getServerInfo } = require('../rcon/server-info');
 const { getDayOffset, getRotatedProfileIndex } = require('./schedule-utils');
-const { difficultyLabel: diffLabel, spawnLabel, DIFFICULTY_LABELS } = require('../server/server-display');
+const { difficultyLabel: diffLabel, spawnLabel } = require('../server/server-display');
 
 // ── Color tag helpers for RCON messages ──────────────────
 const { COLOR } = require('../rcon/rcon-colors');
@@ -118,13 +118,16 @@ function _getWeekdayInTz(date, timeZone) {
 function pvpScheduleLabel() {
   if (!_defaultConfig.enablePvpScheduler) return '';
   const startMin = _defaultConfig.pvpStartMinutes;
-  const endMin   = _defaultConfig.pvpEndMinutes;
+  const endMin = _defaultConfig.pvpEndMinutes;
   if (isNaN(startMin) || isNaN(endMin)) return '';
   const fmt = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
   const pvpDays = _defaultConfig.pvpDays;
   const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const daysLabel = pvpDays
-    ? [...pvpDays].sort().map(d => DAY_NAMES[d]).join(', ') + ' '
+    ? [...pvpDays]
+        .sort()
+        .map((d) => DAY_NAMES[d])
+        .join(', ') + ' '
     : '';
   return `PvP Schedule: ${daysLabel}${fmt(startMin)}\u2013${fmt(endMin)} ${_defaultConfig.botTimezone}`;
 }
@@ -139,8 +142,14 @@ function difficultyScheduleLines(cfg) {
   if (!cfg.enableServerScheduler) return [];
   const timesStr = cfg.restartTimes || process.env.RESTART_TIMES || '';
   const profilesStr = cfg.restartProfiles || process.env.RESTART_PROFILES || '';
-  const times = timesStr.split(',').map(s => s.trim()).filter(Boolean);
-  const profiles = profilesStr.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  const times = timesStr
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const profiles = profilesStr
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
   if (times.length === 0 || profiles.length === 0) return [];
 
   // Daily rotation offset
@@ -150,13 +159,16 @@ function difficultyScheduleLines(cfg) {
   const now = new Date();
   const { hour: h, minute: m } = _getTimePartsInTz(now, cfg.botTimezone);
   const nowMin = h * 60 + m;
-  const timeMins = times.map(t => {
+  const timeMins = times.map((t) => {
     const [th, tm] = t.split(':').map(Number);
     return th * 60 + (tm || 0);
   });
   let activeSlot = 0;
   for (let i = timeMins.length - 1; i >= 0; i--) {
-    if (nowMin >= timeMins[i]) { activeSlot = i; break; }
+    if (nowMin >= timeMins[i]) {
+      activeSlot = i;
+      break;
+    }
   }
 
   // Build lines — iterate by time slot, resolve profile via rotation
@@ -167,7 +179,9 @@ function difficultyScheduleLines(cfg) {
     const name = profiles[profileIdx];
     const envKey = `RESTART_PROFILE_${name.toUpperCase()}`;
     let settings = {};
-    try { settings = JSON.parse(process.env[envKey] || '{}'); } catch {}
+    try {
+      settings = JSON.parse(process.env[envKey] || '{}');
+    } catch {}
     const startTime = times[slotIdx];
     const endTime = times[(slotIdx + 1) % times.length] || times[0];
     // Build a short description
@@ -190,7 +204,9 @@ function difficultyScheduleLines(cfg) {
     const profileColors = { calm: 'green', surge: 'ember', horde: 'red' };
     const nameColor = profileColors[name] || 'gray';
     if (isActive) {
-      lines.push(`${fileColor(nameColor, nameDisplay)} ${fileColor('gray', label)} ${fileColor('gray', descStr)}${fileColor('ember', marker)}`);
+      lines.push(
+        `${fileColor(nameColor, nameDisplay)} ${fileColor('gray', label)} ${fileColor('gray', descStr)}${fileColor('ember', marker)}`,
+      );
     } else {
       lines.push(`${fileColor(nameColor, nameDisplay)} ${fileColor('gray', label)} ${fileColor('gray', descStr)}`);
     }
@@ -214,7 +230,9 @@ async function buildWelcomeContent(deps = {}) {
 
   // ── Title ──
   let serverName = '';
-  try { serverName = (await getInfo()).name || ''; } catch {}
+  try {
+    serverName = (await getInfo()).name || '';
+  } catch {}
   if (!serverName && settings.ServerName) {
     serverName = settings.ServerName.replace(/^"|"$/g, '');
   }
@@ -249,9 +267,7 @@ async function buildWelcomeContent(deps = {}) {
   // ── Helper: build an inline row of top entries ──
   const RANKS = ['1st', '2nd', '3rd'];
   function inlineRow(entries, colorTag) {
-    return entries.map((text, i) =>
-      `${fileColor(colorTag, RANKS[i])} ${text}`
-    ).join('  |  ');
+    return entries.map((text, i) => `${fileColor(colorTag, RANKS[i])} ${text}`).join('  |  ');
   }
 
   // ── Leaderboards ──
@@ -261,25 +277,25 @@ async function buildWelcomeContent(deps = {}) {
   if (leaderboard.length > 0) {
     parts.push('');
     parts.push(fileColor('ember', '--- Top Survivors ---'));
-    const top = leaderboard.slice(0, 3).map(e =>
-      `${fileColor('green', e.name)} - ${fileColor('gray', formatMs(e.totalMs))}`
-    );
+    const top = leaderboard
+      .slice(0, 3)
+      .map((e) => `${fileColor('green', e.name)} - ${fileColor('gray', formatMs(e.totalMs))}`);
     parts.push(inlineRow(top, 'ember'));
   }
 
   if (welcomeStats.topKillers && welcomeStats.topKillers.length > 0) {
     parts.push(fileColor('ember', '--- Top Zombie Killers ---'));
-    const topK = welcomeStats.topKillers.slice(0, 3).map(e =>
-      `${fileColor('green', e.name)} - ${fileColor('gray', e.kills.toLocaleString() + ' kills')}`
-    );
+    const topK = welcomeStats.topKillers
+      .slice(0, 3)
+      .map((e) => `${fileColor('green', e.name)} - ${fileColor('gray', e.kills.toLocaleString() + ' kills')}`);
     parts.push(inlineRow(topK, 'ember'));
   }
 
   if (welcomeStats.topPvpKillers && welcomeStats.topPvpKillers.length > 0) {
     parts.push(fileColor('ember', '--- Top PvP Killers ---'));
-    const topP = welcomeStats.topPvpKillers.slice(0, 3).map(e =>
-      `${fileColor('green', e.name)} - ${fileColor('gray', e.kills + ' kills')}`
-    );
+    const topP = welcomeStats.topPvpKillers
+      .slice(0, 3)
+      .map((e) => `${fileColor('green', e.name)} - ${fileColor('gray', e.kills + ' kills')}`);
     parts.push(inlineRow(topP, 'ember'));
   }
 
@@ -287,11 +303,15 @@ async function buildWelcomeContent(deps = {}) {
   const funParts = [];
   if (welcomeStats.topFishers && welcomeStats.topFishers.length > 0) {
     const f = welcomeStats.topFishers[0];
-    funParts.push(`${fileColor('ember', 'Top Fisher:')} ${fileColor('green', f.name)} ${fileColor('gray', f.count + ' fish')}`);
+    funParts.push(
+      `${fileColor('ember', 'Top Fisher:')} ${fileColor('green', f.name)} ${fileColor('gray', f.count + ' fish')}`,
+    );
   }
   if (welcomeStats.topBitten && welcomeStats.topBitten.length > 0) {
     const b = welcomeStats.topBitten[0];
-    funParts.push(`${fileColor('ember', 'Most Bitten:')} ${fileColor('green', b.name)} ${fileColor('gray', b.count + ' bites')}`);
+    funParts.push(
+      `${fileColor('ember', 'Most Bitten:')} ${fileColor('green', b.name)} ${fileColor('gray', b.count + ' bites')}`,
+    );
   }
   if (funParts.length > 0) {
     parts.push(funParts.join('  |  '));
@@ -304,7 +324,9 @@ async function buildWelcomeContent(deps = {}) {
     topC.forEach((c, i) => {
       const pt = formatMs(c.playtimeMs || 0);
       const mem = c.members === 1 ? '1 member' : `${c.members} members`;
-      parts.push(`${fileColor('ember', RANKS[i])} ${fileColor('green', c.name)} ${fileColor('gray', '(' + mem + ')')} - ${fileColor('gray', c.kills.toLocaleString() + ' kills')} - ${fileColor('gray', pt + ' played')}`);
+      parts.push(
+        `${fileColor('ember', RANKS[i])} ${fileColor('green', c.name)} ${fileColor('gray', '(' + mem + ')')} - ${fileColor('gray', c.kills.toLocaleString() + ' kills')} - ${fileColor('gray', pt + ' played')}`,
+      );
     });
   }
 
@@ -312,10 +334,22 @@ async function buildWelcomeContent(deps = {}) {
   const w = welcomeStats.weekly;
   if (w) {
     const wp = [];
-    if (w.topKillers?.length > 0)    wp.push(`${fileColor('ember', 'Kills:')} ${fileColor('green', w.topKillers[0].name)} ${fileColor('gray', String(w.topKillers[0].kills))}`);
-    if (w.topPvpKillers?.length > 0) wp.push(`${fileColor('ember', 'PvP:')} ${fileColor('green', w.topPvpKillers[0].name)} ${fileColor('gray', String(w.topPvpKillers[0].kills))}`);
-    if (w.topPlaytime?.length > 0)   wp.push(`${fileColor('ember', 'Time:')} ${fileColor('green', w.topPlaytime[0].name)} ${fileColor('gray', formatMs(w.topPlaytime[0].ms))}`);
-    if (w.topFishers?.length > 0)    wp.push(`${fileColor('ember', 'Fish:')} ${fileColor('green', w.topFishers[0].name)} ${fileColor('gray', String(w.topFishers[0].count))}`);
+    if (w.topKillers?.length > 0)
+      wp.push(
+        `${fileColor('ember', 'Kills:')} ${fileColor('green', w.topKillers[0].name)} ${fileColor('gray', String(w.topKillers[0].kills))}`,
+      );
+    if (w.topPvpKillers?.length > 0)
+      wp.push(
+        `${fileColor('ember', 'PvP:')} ${fileColor('green', w.topPvpKillers[0].name)} ${fileColor('gray', String(w.topPvpKillers[0].kills))}`,
+      );
+    if (w.topPlaytime?.length > 0)
+      wp.push(
+        `${fileColor('ember', 'Time:')} ${fileColor('green', w.topPlaytime[0].name)} ${fileColor('gray', formatMs(w.topPlaytime[0].ms))}`,
+      );
+    if (w.topFishers?.length > 0)
+      wp.push(
+        `${fileColor('ember', 'Fish:')} ${fileColor('green', w.topFishers[0].name)} ${fileColor('gray', String(w.topFishers[0].count))}`,
+      );
     if (wp.length > 0) {
       parts.push(fileColor('ember', '--- This Week ---'));
       parts.push(wp.join('  |  '));
@@ -341,7 +375,9 @@ async function buildWelcomeContent(deps = {}) {
   const updateInfo = fileColor('gray', 'Updated each restart');
 
   if (cfg.discordInviteLink) {
-    parts.push(`Type ${fileColor('red', '!admin')} for help  |  Join our ${fileColor('blue', 'Discord:')} ${_colorLink(cfg.discordInviteLink)}  |  ${updateInfo}`);
+    parts.push(
+      `Type ${fileColor('red', '!admin')} for help  |  Join our ${fileColor('blue', 'Discord:')} ${_colorLink(cfg.discordInviteLink)}  |  ${updateInfo}`,
+    );
   } else {
     parts.push(`Type ${fileColor('red', '!admin')} in chat for help  |  ${updateInfo}`);
   }
@@ -357,8 +393,14 @@ function _difficultyText() {
   if (!cfg.enableServerScheduler) return '';
   const profilesStr = cfg.restartProfiles || process.env.RESTART_PROFILES || '';
   const timesStr = cfg.restartTimes || process.env.RESTART_TIMES || '';
-  const profiles = profilesStr.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-  const times = timesStr.split(',').map(s => s.trim()).filter(Boolean);
+  const profiles = profilesStr
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const times = timesStr
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   if (profiles.length === 0 || times.length === 0) return '';
 
   // Daily rotation offset
@@ -368,10 +410,16 @@ function _difficultyText() {
   const now = new Date();
   const { hour: h, minute: m } = _getTimePartsInTz(now, cfg.botTimezone);
   const nowMin = h * 60 + m;
-  const timeMins = times.map(t => { const [th, tm] = t.split(':').map(Number); return th * 60 + (tm || 0); });
+  const timeMins = times.map((t) => {
+    const [th, tm] = t.split(':').map(Number);
+    return th * 60 + (tm || 0);
+  });
   let activeSlot = 0;
   for (let i = timeMins.length - 1; i >= 0; i--) {
-    if (nowMin >= timeMins[i]) { activeSlot = i; break; }
+    if (nowMin >= timeMins[i]) {
+      activeSlot = i;
+      break;
+    }
   }
 
   // Resolve profile for this slot via rotation
@@ -380,7 +428,12 @@ function _difficultyText() {
   const displayName = name.charAt(0).toUpperCase() + name.slice(1);
   // Find next restart
   let nextTime = null;
-  for (const t of timeMins) { if (t > nowMin) { nextTime = t; break; } }
+  for (const t of timeMins) {
+    if (t > nowMin) {
+      nextTime = t;
+      break;
+    }
+  }
   if (nextTime === null) nextTime = timeMins[0] + 1440; // tomorrow
   const minsLeft = nextTime - nowMin;
   const hrs = Math.floor(minsLeft / 60);
@@ -395,8 +448,8 @@ function _difficultyText() {
 function _pvpScheduleText() {
   if (!this._config.enablePvpScheduler) return '';
   const defaultStart = this._config.pvpStartMinutes;
-  const defaultEnd   = this._config.pvpEndMinutes;
-  const pvpDayHours  = this._config.pvpDayHours; // Map<dayNum, { start, end }> | null
+  const defaultEnd = this._config.pvpEndMinutes;
+  const pvpDayHours = this._config.pvpDayHours; // Map<dayNum, { start, end }> | null
 
   // Need at least global defaults OR per-day overrides
   const hasDefaults = !isNaN(defaultStart) && !isNaN(defaultEnd);
@@ -433,8 +486,14 @@ function _pvpScheduleText() {
       const prevDay = (dayOfWeek + 6) % 7;
       const prev = getHours(prevDay);
       const startDayOk = !pvpDays || pvpDays.has(dayOfWeek);
-      const prevDayOk  = !pvpDays || pvpDays.has(prevDay);
-      if (prevDayOk && prev.start !== undefined && prev.end !== undefined && prev.start > prev.end && nowMin < prev.end) {
+      const prevDayOk = !pvpDays || pvpDays.has(prevDay);
+      if (
+        prevDayOk &&
+        prev.start !== undefined &&
+        prev.end !== undefined &&
+        prev.start > prev.end &&
+        nowMin < prev.end
+      ) {
         insidePvp = true;
       } else {
         insidePvp = startDayOk && nowMin >= startMin;
@@ -452,19 +511,26 @@ function _pvpScheduleText() {
 
   // Day schedule label (e.g. "Mon, Wed, Fri")
   const daysLabel = pvpDays
-    ? [...pvpDays].sort().map(d => DAY_NAMES[d]).join(', ')
+    ? [...pvpDays]
+        .sort()
+        .map((d) => DAY_NAMES[d])
+        .join(', ')
     : '';
 
   if (insidePvp) {
     // Determine end time for the active window
     let activeEnd = endMin;
-    if (startMin === undefined || endMin === undefined || (startMin < endMin && (nowMin < startMin || nowMin >= endMin))) {
+    if (
+      startMin === undefined ||
+      endMin === undefined ||
+      (startMin < endMin && (nowMin < startMin || nowMin >= endMin))
+    ) {
       // Must be in yesterday's overnight tail
       const prevDay = (dayOfWeek + 6) % 7;
       const prev = getHours(prevDay);
       activeEnd = prev.end;
     }
-    let minsLeft = activeEnd > nowMin ? activeEnd - nowMin : (1440 - nowMin) + activeEnd;
+    const minsLeft = activeEnd > nowMin ? activeEnd - nowMin : 1440 - nowMin + activeEnd;
     const hours = Math.floor(minsLeft / 60);
     const mins = minsLeft % 60;
     const timeLeft = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
@@ -483,7 +549,7 @@ function _pvpScheduleText() {
         break;
       }
       if (d === 0) continue;
-      minsUntil = (d * 1440) - nowMin + h2.start;
+      minsUntil = d * 1440 - nowMin + h2.start;
       break;
     }
     if (minsUntil === Infinity) return '';
@@ -505,7 +571,9 @@ function _pvpScheduleText() {
       if (nextH.start !== undefined) nextStart = nextH.start;
     }
     const schedStart = nextStart !== undefined ? fmt(nextStart) : fmt(defaultStart);
-    const nextEnd = getHours(pvpDays ? [...checkDays].find(d2 => getHours(d2).start !== undefined) ?? dayOfWeek : dayOfWeek).end;
+    const nextEnd = getHours(
+      pvpDays ? ([...checkDays].find((d2) => getHours(d2).start !== undefined) ?? dayOfWeek) : dayOfWeek,
+    ).end;
     const schedEnd = nextEnd !== undefined ? fmt(nextEnd) : fmt(defaultEnd);
 
     const schedule = daysLabel

@@ -28,28 +28,32 @@ function buildPlayerEmbed(stats, { isAdmin = false, playtime, config } = {}) {
   const cfg = config || _defaultConfig;
   const locale = getLocale({ serverConfig: cfg });
 
-  const embed = new EmbedBuilder()
-    .setTitle(stats.name)
-    .setColor(0x5865F2)
-    .setTimestamp();
+  const embed = new EmbedBuilder().setTitle(stats.name).setColor(0x5865f2).setTimestamp();
 
   const pt = pt_inst.getPlaytime(stats.id);
 
   // ── Description: playtime, sessions, last active, name history ──
   const desc = [];
   if (pt) {
-    desc.push(_pe(locale, 'playtime_sessions', {
-      playtime: pt.totalFormatted,
-      sessions: fmtNumber(pt.sessions, locale),
-      plural_suffix: pt.sessions !== 1 ? 's' : '',
-    }));
+    desc.push(
+      _pe(locale, 'playtime_sessions', {
+        playtime: pt.totalFormatted,
+        sessions: fmtNumber(pt.sessions, locale),
+        plural_suffix: pt.sessions !== 1 ? 's' : '',
+      }),
+    );
   }
   if (stats.lastEvent) {
     const d = new Date(stats.lastEvent);
-    desc.push(_pe(locale, 'last_seen', { date: fmtDate(d, locale, cfg.botTimezone), time: fmtTime(d, locale, cfg.botTimezone) }));
+    desc.push(
+      _pe(locale, 'last_seen', {
+        date: fmtDate(d, locale, cfg.botTimezone),
+        time: fmtTime(d, locale, cfg.botTimezone),
+      }),
+    );
   }
   if (stats.nameHistory?.length > 0) {
-    desc.push(_pe(locale, 'aka_names', { names: stats.nameHistory.map(h => h.name).join(', ') }));
+    desc.push(_pe(locale, 'aka_names', { names: stats.nameHistory.map((h) => h.name).join(', ') }));
   }
   if (desc.length > 0) embed.setDescription(desc.join('\n'));
 
@@ -82,7 +86,8 @@ function buildPlayerEmbed(stats, { isAdmin = false, playtime, config } = {}) {
     const p = [];
     if (stats.pvpKills > 0) p.push(_pe(locale, 'pvp_kills', { count: fmtNumber(stats.pvpKills, locale) }));
     if (stats.pvpDeaths > 0) p.push(_pe(locale, 'pvp_deaths', { count: fmtNumber(stats.pvpDeaths, locale) }));
-    const kd = stats.pvpDeaths > 0 ? (stats.pvpKills / stats.pvpDeaths).toFixed(2) : (stats.pvpKills > 0 ? '\u221E' : '0');
+    const kd =
+      stats.pvpDeaths > 0 ? (stats.pvpKills / stats.pvpDeaths).toFixed(2) : stats.pvpKills > 0 ? '\u221E' : '0';
     p.push(_pe(locale, 'pvp_kd', { kd }));
     embed.addFields({ name: _pe(locale, 'pvp'), value: p.join(' \xB7 '), inline: true });
   }
@@ -93,10 +98,12 @@ function buildPlayerEmbed(stats, { isAdmin = false, playtime, config } = {}) {
     const buildEntries = Object.entries(stats.buildItems || {});
     if (buildEntries.length > 0) {
       const top3 = buildEntries.sort((a, b) => b[1] - a[1]).slice(0, 3);
-      baseParts.push(_pe(locale, 'base_built_with_items', {
-        count: fmtNumber(stats.builds, locale),
-        items: top3.map(([item, c]) => `${item} \xD7${fmtNumber(c, locale)}`).join(', '),
-      }));
+      baseParts.push(
+        _pe(locale, 'base_built_with_items', {
+          count: fmtNumber(stats.builds, locale),
+          items: top3.map(([item, c]) => `${item} \xD7${fmtNumber(c, locale)}`).join(', '),
+        }),
+      );
     } else {
       baseParts.push(_pe(locale, 'base_built', { count: fmtNumber(stats.builds, locale) }));
     }
@@ -104,26 +111,31 @@ function buildPlayerEmbed(stats, { isAdmin = false, playtime, config } = {}) {
   if (cfg.canShow('showRaidStats', isAdmin)) {
     const raidParts = [];
     if (stats.raidsOut > 0) raidParts.push(_pe(locale, 'base_attacked', { count: fmtNumber(stats.raidsOut, locale) }));
-    if (stats.destroyedOut > 0) raidParts.push(_pe(locale, 'base_destroyed', { count: fmtNumber(stats.destroyedOut, locale) }));
+    if (stats.destroyedOut > 0)
+      raidParts.push(_pe(locale, 'base_destroyed', { count: fmtNumber(stats.destroyedOut, locale) }));
     if (stats.raidsIn > 0) raidParts.push(_pe(locale, 'base_raided', { count: fmtNumber(stats.raidsIn, locale) }));
     if (raidParts.length > 0) baseParts.push(_pe(locale, 'base_raid_summary', { parts: raidParts.join(' \xB7 ') }));
   }
-  if (stats.containersLooted > 0) baseParts.push(_pe(locale, 'base_looted', { count: fmtNumber(stats.containersLooted, locale) }));
+  if (stats.containersLooted > 0)
+    baseParts.push(_pe(locale, 'base_looted', { count: fmtNumber(stats.containersLooted, locale) }));
   if (baseParts.length > 0) embed.addFields({ name: _pe(locale, 'base_activity'), value: baseParts.join('\n') });
 
   // ── Connections (admin-gated) ──
   if (cfg.canShow('showConnections', isAdmin)) {
     const conn = [];
     if (stats.connects > 0) conn.push(_pe(locale, 'connections_in', { count: fmtNumber(stats.connects, locale) }));
-    if (stats.disconnects > 0) conn.push(_pe(locale, 'connections_out', { count: fmtNumber(stats.disconnects, locale) }));
-    if (stats.adminAccess > 0) conn.push(_pe(locale, 'connections_admin', { count: fmtNumber(stats.adminAccess, locale) }));
-    if (conn.length > 0) embed.addFields({ name: _pe(locale, 'connections'), value: conn.join(' \xB7 '), inline: true });
+    if (stats.disconnects > 0)
+      conn.push(_pe(locale, 'connections_out', { count: fmtNumber(stats.disconnects, locale) }));
+    if (stats.adminAccess > 0)
+      conn.push(_pe(locale, 'connections_admin', { count: fmtNumber(stats.adminAccess, locale) }));
+    if (conn.length > 0)
+      embed.addFields({ name: _pe(locale, 'connections'), value: conn.join(' \xB7 '), inline: true });
   }
 
   // ── AC Flags (admin only) ──
   if (isAdmin && stats.cheatFlags?.length > 0) {
     const flags = stats.cheatFlags.slice(-3);
-    const lines = flags.map(f => {
+    const lines = flags.map((f) => {
       const d = new Date(f.timestamp);
       return `${fmtDate(d, locale, cfg.botTimezone)} \u2014 \`${f.type}\``;
     });

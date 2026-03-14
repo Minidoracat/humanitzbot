@@ -142,11 +142,7 @@ describe('parsePlayerList', () => {
   });
 
   it('handles player count header', () => {
-    const raw = [
-      'Players: 2',
-      'Alpha (76561100000000001)',
-      'Beta (76561100000000002)',
-    ].join('\n');
+    const raw = ['Players: 2', 'Alpha (76561100000000001)', 'Beta (76561100000000002)'].join('\n');
     const r = parsePlayerList(raw);
     assert.equal(r.count, 2);
     assert.equal(r.players.length, 2);
@@ -161,12 +157,7 @@ describe('parsePlayerList', () => {
   });
 
   it('skips junk lines', () => {
-    const raw = [
-      'Players',
-      '---',
-      '===',
-      'no players found',
-    ].join('\n');
+    const raw = ['Players', '---', '===', 'no players found'].join('\n');
     const r = parsePlayerList(raw);
     assert.equal(r.count, 0);
     assert.deepEqual(r.players, []);

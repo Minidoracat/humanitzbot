@@ -35,14 +35,16 @@ module.exports = {
       if (list.count === 0 && list.players.length === 0) {
         embed.setDescription(t('commands:players.reply.no_players_online', locale));
       } else {
-        embed.setDescription(t('commands:players.reply.players_online_count', locale, {
-          count: list.count,
-          suffix: list.count !== 1 ? 's' : '',
-        }));
+        embed.setDescription(
+          t('commands:players.reply.players_online_count', locale, {
+            count: list.count,
+            suffix: list.count !== 1 ? 's' : '',
+          }),
+        );
 
         if (list.players.length > 0) {
           const playerLines = list.players.map((p, i) => {
-            const id = (p.steamId && p.steamId !== 'N/A') ? p.steamId : p.name;
+            const id = p.steamId && p.steamId !== 'N/A' ? p.steamId : p.name;
             const pt = playtime.getPlaytime(id);
             const time = pt ? ` \u2014 ${pt.totalFormatted}` : '';
             return `\`${i + 1}.\` **${p.name}**${time}`;
@@ -54,9 +56,10 @@ module.exports = {
           }
           chunks.forEach((chunk, idx) => {
             embed.addFields({
-              name: chunks.length > 1
-                ? t('commands:players.reply.players_field_paged', locale, { page: idx + 1, total: chunks.length })
-                : t('commands:players.reply.players_field', locale),
+              name:
+                chunks.length > 1
+                  ? t('commands:players.reply.players_field_paged', locale, { page: idx + 1, total: chunks.length })
+                  : t('commands:players.reply.players_field', locale),
               value: chunk.join('\n'),
             });
           });

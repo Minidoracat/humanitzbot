@@ -55,7 +55,7 @@ const API_ERRORS = {
   INVALID_SNAPSHOT_ID: 'INVALID_SNAPSHOT_ID',
   SNAPSHOT_NOT_FOUND: 'SNAPSHOT_NOT_FOUND',
   FROM_AND_TO_REQUIRED: 'FROM_AND_TO_REQUIRED',
-  INTERNAL_SERVER_ERROR: 'INTERNAL_SERVER_ERROR'
+  INTERNAL_SERVER_ERROR: 'INTERNAL_SERVER_ERROR',
 };
 
 const EN_MESSAGES = {
@@ -115,7 +115,7 @@ const EN_MESSAGES = {
   [API_ERRORS.INVALID_SNAPSHOT_ID]: 'Invalid snapshot ID',
   [API_ERRORS.SNAPSHOT_NOT_FOUND]: 'Snapshot not found',
   [API_ERRORS.FROM_AND_TO_REQUIRED]: 'from and to are required',
-  [API_ERRORS.INTERNAL_SERVER_ERROR]: 'Internal server error'
+  [API_ERRORS.INTERNAL_SERVER_ERROR]: 'Internal server error',
 };
 
 function sendError(res, code, status = 400, details) {
@@ -133,7 +133,7 @@ function sendError(res, code, status = 400, details) {
     ok: false,
     code,
     error: msg,
-    ...(details ? { details } : {})
+    ...(details ? { details } : {}),
   });
 }
 

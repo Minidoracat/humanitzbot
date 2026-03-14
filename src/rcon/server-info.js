@@ -48,7 +48,10 @@ function parseServerInfo(raw) {
 
   if (!raw || raw.trim() === '') return result;
 
-  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  const lines = raw
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
 
   for (const line of lines) {
     // Handle "X connected." format (no colon separator)
@@ -116,7 +119,10 @@ function parsePlayerList(raw) {
     return { count: 0, players: [], raw: '' };
   }
 
-  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  const lines = raw
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
   const players = [];
   let count = 0;
 
@@ -126,7 +132,7 @@ function parsePlayerList(raw) {
     if (/^players?\s*$/i.test(line)) continue;
 
     // Try to extract player count from a header like "Players: 5" or "Players: 5/32"
-    const countMatch = line.match(/players?\s*[:\-]\s*(\d+)(?:\s*\/\s*(\d+))?/i);
+    const countMatch = line.match(/players?\s*[:-]\s*(\d+)(?:\s*\/\s*(\d+))?/i);
     if (countMatch) {
       count = parseInt(countMatch[1], 10);
       continue;
@@ -138,9 +144,7 @@ function parsePlayerList(raw) {
     //   or just "PlayerName"
     // Extract the name and the 17-digit SteamID64 from the parenthesized block.
     // Trailing metadata (Lv, Clan, DPassed) after the closing paren is ignored.
-    const playerMatch = line.match(
-      /^(.+?)\s*\((\d{17})[^)]*\)/
-    );
+    const playerMatch = line.match(/^(.+?)\s*\((\d{17})[^)]*\)/);
 
     if (playerMatch) {
       // Matched "Name (SteamID...)" format
@@ -152,8 +156,18 @@ function parsePlayerList(raw) {
       // Fallback: line might just be a plain name
       const name = line.replace(/^[\d#.)\s]+/, '').trim();
       // Reject lines that look like RCON admin messages or chat contamination
-      if (name && name !== '-' && !name.toLowerCase().startsWith('player') && !name.startsWith('=') && !name.startsWith('-') && !/no\s+players?/i.test(name)
-          && !/<(?:SP|FO|FR|CL|PR|FC|BG)>/.test(name) && !/\[\d+\/\d+\/\d/.test(name) && !/Admin:\s/.test(name) && !/Welcome/.test(name)) {
+      if (
+        name &&
+        name !== '-' &&
+        !name.toLowerCase().startsWith('player') &&
+        !name.startsWith('=') &&
+        !name.startsWith('-') &&
+        !/no\s+players?/i.test(name) &&
+        !/<(?:SP|FO|FR|CL|PR|FC|BG)>/.test(name) &&
+        !/\[\d+\/\d+\/\d/.test(name) &&
+        !/Admin:\s/.test(name) &&
+        !/Welcome/.test(name)
+      ) {
         players.push({ name, steamId: 'N/A' });
       }
     }
