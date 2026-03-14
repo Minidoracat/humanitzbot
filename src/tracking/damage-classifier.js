@@ -13,38 +13,36 @@
 // ── Ordered rules: specific variants first, generic catch-alls last ──
 
 const ZOMBIE_RULES = [
-  [/Dogzombie/i,                           'Dog Zombie'],
-  [/ZombieBear/i,                          'Zombie Bear'],
-  [/Mutant/i,                              'Mutant'],
+  [/Dogzombie/i, 'Dog Zombie'],
+  [/ZombieBear/i, 'Zombie Bear'],
+  [/Mutant/i, 'Mutant'],
   [/Runner.*Brute|Brute.*Runner|RunnerBrute/i, 'Runner Brute'],
-  [/Runner/i,                              'Runner'],
-  [/BruteCop/i,                            'Riot Brute'],
-  [/Brute/i,                               'Brute'],
-  [/Pudge|BellyToxic/i,                    'Bloater'],
-  [/MilitaryArmoured/i,                    'Military Armoured'],
-  [/PoliceArmor/i,                         'Police Armoured'],
-  [/Police|Cop/i,                          'Police Zombie'],
-  [/Medic/i,                               'Medic Zombie'],
-  [/Hazmat/i,                              'Hazmat Zombie'],
-  [/Camo/i,                                'Camo Zombie'],
-  [/Urban/i,                               'Urban Zombie'],
-  [/Girl|Female/i,                         'Female Zombie'],
-  [/Zombie/i,                              'Zombie'],         // generic catch-all
+  [/Runner/i, 'Runner'],
+  [/BruteCop/i, 'Riot Brute'],
+  [/Brute/i, 'Brute'],
+  [/Pudge|BellyToxic/i, 'Bloater'],
+  [/MilitaryArmoured/i, 'Military Armoured'],
+  [/PoliceArmor/i, 'Police Armoured'],
+  [/Police|Cop/i, 'Police Zombie'],
+  [/Medic/i, 'Medic Zombie'],
+  [/Hazmat/i, 'Hazmat Zombie'],
+  [/Camo/i, 'Camo Zombie'],
+  [/Urban/i, 'Urban Zombie'],
+  [/Girl|Female/i, 'Female Zombie'],
+  [/Zombie/i, 'Zombie'], // generic catch-all
 ];
 
-const BANDIT_RULES = [
-  [/KaiHuman/i, 'Bandit'],
-];
+const BANDIT_RULES = [[/KaiHuman/i, 'Bandit']];
 
 const ANIMAL_RULES = [
-  [/Wolf/i,                    'Wolf'],
-  [/Bear(?!.*Zombie)/i,       'Bear'],
-  [/Deer|Stag|Doe/i,          'Deer'],
-  [/Snake/i,                   'Snake'],
-  [/Spider/i,                  'Spider'],
-  [/Pig/i,                     'Pig'],
-  [/Rabbit/i,                  'Rabbit'],
-  [/Chicken/i,                 'Chicken'],
+  [/Wolf/i, 'Wolf'],
+  [/Bear(?!.*Zombie)/i, 'Bear'],
+  [/Deer|Stag|Doe/i, 'Deer'],
+  [/Snake/i, 'Snake'],
+  [/Spider/i, 'Spider'],
+  [/Pig/i, 'Pig'],
+  [/Rabbit/i, 'Rabbit'],
+  [/Chicken/i, 'Chicken'],
 ];
 
 /**
@@ -115,7 +113,9 @@ function isNpcDamageSource(source) {
   if (source.includes('_')) return true;
   // Space-separated UE4 pawn format: "Pawn Zombie Runner C 2147019193(25m) Weapon()"
   if (/^Pawn\s/i.test(source)) return true;
-  return /^(?:Zombie|ZombieBear|KaiHuman|Mutant|Runner|Brute|RunnerBrute|Pudge|Dogzombie|BellyToxic|Police|Cop|Military|MilitaryArmoured|Hazmat|Camo|Wolf|Bear|Deer|Snake|Spider)$/i.test(source);
+  return /^(?:Zombie|ZombieBear|KaiHuman|Mutant|Runner|Brute|RunnerBrute|Pudge|Dogzombie|BellyToxic|Police|Cop|Military|MilitaryArmoured|Hazmat|Camo|Wolf|Bear|Deer|Snake|Spider)$/i.test(
+    source,
+  );
 }
 
 module.exports = { classifyDamageSource, classifyDamageLabel, isNpcDamageSource };

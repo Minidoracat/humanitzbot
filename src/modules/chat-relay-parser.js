@@ -45,7 +45,7 @@ const DIED_RE = /^Player Died \(<PN>(.+?)<\/>\)$/;
 const BOT_ADMIN_RE = /^<SP>Admin:\s*<\/>/;
 // Plain chat fallback — admin player lines may lack <PN> tags
 // Must NOT match timestamp-prefixed lines like "[28/2/2,026 - 23:18] ..."
-const PLAIN_CHAT_RE = /^([^\[:<>\n][^:<>\n]{0,31}):\s*(.+)$/;
+const PLAIN_CHAT_RE = /^([^[:<>\n][^:<>\n]{0,31}):\s*(.+)$/;
 
 /** Strip [Admin] prefix from admin player lines so the other regexes can match. */
 function stripAdminPrefix(line) {
@@ -100,24 +100,27 @@ function _parseLine(line) {
 
   // Player joined
   m = JOIN_RE.exec(cleaned);
-  if (m) return {
-    formatted: `📥 **${m[1]}** joined the server`,
-    entry: { type: 'join', playerName: m[1], message: 'joined', direction: 'game', isAdmin: false },
-  };
+  if (m)
+    return {
+      formatted: `📥 **${m[1]}** joined the server`,
+      entry: { type: 'join', playerName: m[1], message: 'joined', direction: 'game', isAdmin: false },
+    };
 
   // Player left
   m = LEFT_RE.exec(cleaned);
-  if (m) return {
-    formatted: `📤 **${m[1]}** left the server`,
-    entry: { type: 'leave', playerName: m[1], message: 'left', direction: 'game', isAdmin: false },
-  };
+  if (m)
+    return {
+      formatted: `📤 **${m[1]}** left the server`,
+      entry: { type: 'leave', playerName: m[1], message: 'left', direction: 'game', isAdmin: false },
+    };
 
   // Player died
   m = DIED_RE.exec(cleaned);
-  if (m) return {
-    formatted: `💀 **${m[1]}** died`,
-    entry: { type: 'death', playerName: m[1], message: 'died', direction: 'game', isAdmin: false },
-  };
+  if (m)
+    return {
+      formatted: `💀 **${m[1]}** died`,
+      entry: { type: 'death', playerName: m[1], message: 'died', direction: 'game', isAdmin: false },
+    };
 
   // Unknown format — skip silently
   return null;
@@ -172,18 +175,21 @@ function _diff(currentLines) {
 
 /** Sanitize text from in-game chat for safe Discord display. */
 function _sanitize(text) {
-  return text
-    .replace(/@everyone/g, '@\u200beveryone')
-    .replace(/@here/g, '@\u200bhere')
-    .replace(/<@!?(\d+)>/g, '@user')
-    .replace(/<@&(\d+)>/g, '@role')
-    // Escape Discord markdown characters to prevent formatting injection
-    .replace(/```/g, '\u200b`\u200b`\u200b`')
-    .replace(/([*_~`|\\])/g, '\\$1');
+  return (
+    text
+      .replace(/@everyone/g, '@\u200beveryone')
+      .replace(/@here/g, '@\u200bhere')
+      .replace(/<@!?(\d+)>/g, '@user')
+      .replace(/<@&(\d+)>/g, '@role')
+      // Escape Discord markdown characters to prevent formatting injection
+      .replace(/```/g, '\u200b`\u200b`\u200b`')
+      .replace(/([*_~`|\\])/g, '\\$1')
+  );
 }
 
 /** Sanitize text for use in RCON commands — strip control characters and null bytes. */
 function _sanitizeRcon(text) {
+  // eslint-disable-next-line no-control-regex -- intentional: strip control chars from RCON input
   return text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '').replace(/[\r\n]+/g, ' ');
 }
 

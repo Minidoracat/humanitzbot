@@ -17,7 +17,7 @@ const fs = require('fs');
 const config = require('../config');
 const { parseSave, PERK_MAP } = require('../parsers/save-parser');
 const { AFFLICTION_MAP } = require('../parsers/game-data');
-const { cleanName: cleanActorName, cleanItemName, cleanItemArray, isHexGuid } = require('../parsers/ue4-names');
+const { cleanName: cleanActorName, cleanItemName, cleanItemArray } = require('../parsers/ue4-names');
 const playerStats = require('../tracking/player-stats');
 const playtime = require('../tracking/playtime-tracker');
 const rcon = require('../rcon/rcon');
@@ -95,8 +95,14 @@ const CALIBRATION_FILE = path.join(DATA_DIR, 'map-calibration.json');
  */
 function _extractLandingSettings(ss) {
   if (!ss || typeof ss !== 'object') return null;
-  const n = (k, fb) => { const v = parseFloat(ss[k]); return isNaN(v) ? fb : v; };
-  const i = (k, fb) => { const v = parseInt(ss[k], 10); return isNaN(v) ? fb : v; };
+  const n = (k, fb) => {
+    const v = parseFloat(ss[k]);
+    return isNaN(v) ? fb : v;
+  };
+  const i = (k, fb) => {
+    const v = parseInt(ss[k], 10);
+    return isNaN(v) ? fb : v;
+  };
   return {
     // PvP & death
     pvp: i('PVP', 0),
@@ -156,18 +162,24 @@ class WebMapServer {
     this._scheduler = opts.scheduler || null;
     this._saveService = opts.saveService || null;
     this._multiServerManager = opts.multiServerManager || null;
-    this._plugins = [];  // Registered plugins (private modules)
+    this._plugins = []; // Registered plugins (private modules)
 
     // World coordinate bounds — loaded from calibration file or defaults
     this._worldBounds = this._loadCalibration();
 
     // Setter methods — allow late-binding of dependencies that start after the web panel
     /** @param {object} scheduler ServerScheduler instance */
-    this.setScheduler = (scheduler) => { this._scheduler = scheduler; };
+    this.setScheduler = (scheduler) => {
+      this._scheduler = scheduler;
+    };
     /** @param {object} saveService SaveService instance */
-    this.setSaveService = (saveService) => { this._saveService = saveService; };
+    this.setSaveService = (saveService) => {
+      this._saveService = saveService;
+    };
     /** @param {object} msm MultiServerManager instance */
-    this.setMultiServerManager = (msm) => { this._multiServerManager = msm; };
+    this.setMultiServerManager = (msm) => {
+      this._multiServerManager = msm;
+    };
 
     // Response cache — keyed by "endpoint:serverId", entries = { data, ts }
     this._responseCache = new Map();
@@ -186,18 +198,21 @@ class WebMapServer {
       res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
       res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
       // CSP: allow self + CDN scripts/styles + Google Fonts used by the panel frontend
-      res.setHeader('Content-Security-Policy', [
-        "default-src 'self'",
-        "script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net https://static.cloudflareinsights.com",
-        "style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com",
-        "img-src 'self' https://cdn.discordapp.com data: blob:",
-        "connect-src 'self' https://unpkg.com https://cdn.jsdelivr.net https://static.cloudflareinsights.com",
-        "font-src 'self' https://fonts.gstatic.com",
-        "frame-ancestors 'none'",
-        "base-uri 'self'",
-        "form-action 'self'",
-        "object-src 'none'",
-      ].join('; '));
+      res.setHeader(
+        'Content-Security-Policy',
+        [
+          "default-src 'self'",
+          "script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net https://static.cloudflareinsights.com",
+          "style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com",
+          "img-src 'self' https://cdn.discordapp.com data: blob:",
+          "connect-src 'self' https://unpkg.com https://cdn.jsdelivr.net https://static.cloudflareinsights.com",
+          "font-src 'self' https://fonts.gstatic.com",
+          "frame-ancestors 'none'",
+          "base-uri 'self'",
+          "form-action 'self'",
+          "object-src 'none'",
+        ].join('; '),
+      );
       res.removeHeader('X-Powered-By');
       next();
     });
@@ -224,10 +239,10 @@ class WebMapServer {
     // yMin = world Y at the LEFT of the map, yMax = world Y at the RIGHT
     // Source: developer-provided values — Width: 395900, Offset X=201200 Y=-200600
     return {
-      xMin: 3250,      // south edge (bottom of map)
-      xMax: 399150,    // north edge (top of map)
-      yMin: -398550,   // west edge (left of map)
-      yMax: -2650,     // east edge (right of map)
+      xMin: 3250, // south edge (bottom of map)
+      xMax: 399150, // north edge (top of map)
+      yMin: -398550, // west edge (left of map)
+      yMax: -2650, // east edge (right of map)
     };
   }
 
@@ -249,7 +264,7 @@ class WebMapServer {
   _getCached(endpoint, serverId, maxAgeMs = 15000) {
     const key = `${endpoint}:${serverId || 'primary'}`;
     const entry = this._responseCache.get(key);
-    if (entry && (Date.now() - entry.ts) < maxAgeMs) return entry.data;
+    if (entry && Date.now() - entry.ts < maxAgeMs) return entry.data;
     return null;
   }
 
@@ -372,16 +387,20 @@ class WebMapServer {
         const m = line.trim().match(/^(\d{17})_\+_\|[^@]+@(.+)$/);
         if (m) map[m[1]] = m[2].trim();
       }
-    } catch { /* file may not exist for this server */ }
+    } catch {
+      /* file may not exist for this server */
+    }
 
     // Fall back to DB player names if file was empty/missing
     if (Object.keys(map).length === 0 && db) {
       try {
-        const rows = db._db.prepare('SELECT steam_id, name FROM players WHERE name != \'\'').all();
+        const rows = db._db.prepare("SELECT steam_id, name FROM players WHERE name != ''").all();
         for (const row of rows) {
           if (row.steam_id && row.name) map[row.steam_id] = row.name;
         }
-      } catch { /* DB may not have players yet */ }
+      } catch {
+        /* DB may not have players yet */
+      }
     }
     return map;
   }
@@ -396,7 +415,9 @@ class WebMapServer {
       const data = JSON.parse(raw);
       const players = data.players || {};
       return {
-        getStats(steamId) { return players[steamId] || null; },
+        getStats(steamId) {
+          return players[steamId] || null;
+        },
         getStatsByName(name) {
           const lower = (name || '').toLowerCase();
           for (const rec of Object.values(players)) {
@@ -405,7 +426,16 @@ class WebMapServer {
           return null;
         },
       };
-    } catch { return { getStats() { return null; }, getStatsByName() { return null; } }; }
+    } catch {
+      return {
+        getStats() {
+          return null;
+        },
+        getStatsByName() {
+          return null;
+        },
+      };
+    }
   }
 
   /** Load playtime.json from a data directory. */
@@ -421,7 +451,13 @@ class WebMapServer {
           return { totalMs: p.totalMs || 0, lastSeen: p.lastSeen || null };
         },
       };
-    } catch { return { getPlaytime() { return null; } }; }
+    } catch {
+      return {
+        getPlaytime() {
+          return null;
+        },
+      };
+    }
   }
 
   /**
@@ -444,7 +480,9 @@ class WebMapServer {
           return map;
         }
       }
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
 
     // 2. Try humanitz-cache.json (agent output)
     try {
@@ -457,7 +495,9 @@ class WebMapServer {
         }
         return map;
       }
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
 
     // 3. Try raw .sav files
     const saveFiles = [
@@ -470,7 +510,9 @@ class WebMapServer {
         if (!fs.existsSync(savePath)) continue;
         const buf = fs.readFileSync(savePath);
         return parseSave(buf).players;
-      } catch { /* try next */ }
+      } catch {
+        /* try next */
+      }
     }
 
     return new Map();
@@ -573,10 +615,21 @@ class WebMapServer {
       }
       // Read panel.html and inject plugin assets
       let html;
-      try { html = fs.readFileSync(path.join(PUBLIC_DIR, 'panel.html'), 'utf8'); } catch { return res.sendFile(path.join(PUBLIC_DIR, 'panel.html')); }
-      const cssLinks = this._plugins.flatMap(p => (p.css || []).map(href => `<link rel="stylesheet" href="${href}"`)).join('\n    ');
-      const jsScripts = this._plugins.flatMap(p => (p.js || []).map(src => `<script src="${src}"></script>`)).join('\n    ');
-      const dashHtml = this._plugins.map(p => p.dashboardHtml || '').filter(Boolean).join('\n            ');
+      try {
+        html = fs.readFileSync(path.join(PUBLIC_DIR, 'panel.html'), 'utf8');
+      } catch {
+        return res.sendFile(path.join(PUBLIC_DIR, 'panel.html'));
+      }
+      const cssLinks = this._plugins
+        .flatMap((p) => (p.css || []).map((href) => `<link rel="stylesheet" href="${href}"`))
+        .join('\n    ');
+      const jsScripts = this._plugins
+        .flatMap((p) => (p.js || []).map((src) => `<script src="${src}"></script>`))
+        .join('\n    ');
+      const dashHtml = this._plugins
+        .map((p) => p.dashboardHtml || '')
+        .filter(Boolean)
+        .join('\n            ');
       if (cssLinks) html = html.replace('</head>', `    ${cssLinks}\n  </head>`);
       if (jsScripts) html = html.replace('</body>', `    ${jsScripts}\n  </body>`);
       if (dashHtml) html = html.replace('<!-- plugin-dashboard-slot -->', dashHtml);
@@ -682,26 +735,30 @@ class WebMapServer {
       const playtimeProvider = srv.playtime;
 
       // Query RCON for online players (non-blocking — if it fails, all show offline)
-      let onlineSteamIds = new Set();
+      const onlineSteamIds = new Set();
       try {
         const list = await srv.getPlayerList();
         const playerArr = list?.players || (Array.isArray(list) ? list : []);
         for (const p of playerArr) {
           if (p.steamId) onlineSteamIds.add(p.steamId);
         }
-      } catch { /* RCON unavailable — all players show offline */ }
+      } catch {
+        /* RCON unavailable — all players show offline */
+      }
 
       // Build clan membership lookup from DB
-      let clanLookup = {}; // steamId → { clanName, rank }
+      const clanLookup = {}; // steamId → { clanName, rank }
       if (srv.db) {
         try {
           const clans = srv.db.getAllClans?.() || [];
           for (const clan of clans) {
-            for (const m of (clan.members || [])) {
+            for (const m of clan.members || []) {
               clanLookup[m.steam_id] = { clanName: clan.name, rank: m.rank };
             }
           }
-        } catch { /* clan data unavailable */ }
+        } catch {
+          /* clan data unavailable */
+        }
       }
 
       const result = [];
@@ -710,7 +767,8 @@ class WebMapServer {
         const hasPosition = data.x !== null && !(data.x === 0 && data.y === 0 && data.z === 0);
 
         const name = idMap[steamId] || steamId;
-        let lat = null, lng = null;
+        let lat = null,
+          lng = null;
         if (hasPosition) {
           [lat, lng] = this._worldToLeaflet(data.x, data.y);
         }
@@ -739,7 +797,7 @@ class WebMapServer {
           male: data.male,
           profession: professionName,
           affliction: AFFLICTION_MAP[data.affliction] || 'Unknown',
-          unlockedProfessions: (data.unlockedProfessions || []).map(p => PERK_MAP[p] || p),
+          unlockedProfessions: (data.unlockedProfessions || []).map((p) => PERK_MAP[p] || p),
 
           // Current-life kill stats
           zeeksKilled: data.zeeksKilled || 0,
@@ -790,8 +848,8 @@ class WebMapServer {
           infectionBuildup: data.infectionBuildup,
 
           // Status effects (cleaned)
-          playerStates: (data.playerStates || []).map(s => cleanItemName(s)),
-          bodyConditions: (data.bodyConditions || []).map(s => cleanItemName(s)),
+          playerStates: (data.playerStates || []).map((s) => cleanItemName(s)),
+          bodyConditions: (data.bodyConditions || []).map((s) => cleanItemName(s)),
 
           // Inventory (server-side cleaned)
           equipment: _cleanInventorySlots(data.equipment),
@@ -810,8 +868,8 @@ class WebMapServer {
           craftedUniques: cleanItemArray(data.craftedUniques || []),
 
           // Companions (cleaned)
-          companionData: (data.companionData || []).map(c =>
-            typeof c === 'object' ? { ...c, type: cleanItemName(c.type || '') } : cleanItemName(c)
+          companionData: (data.companionData || []).map((c) =>
+            typeof c === 'object' ? { ...c, type: cleanItemName(c.type || '') } : cleanItemName(c),
           ),
           horses: data.horses || [],
 
@@ -853,7 +911,8 @@ class WebMapServer {
 
       const name = srv.idMap[req.params.steamId] || req.params.steamId;
       const hasPosition = data.x !== null && !(data.x === 0 && data.y === 0 && data.z === 0);
-      let lat = null, lng = null;
+      let lat = null,
+        lng = null;
       if (hasPosition) {
         [lat, lng] = this._worldToLeaflet(data.x, data.y);
       }
@@ -867,11 +926,14 @@ class WebMapServer {
         steamId: req.params.steamId,
         name,
         hasPosition,
-        lat, lng,
-        worldX: data.x, worldY: data.y, worldZ: data.z,
+        lat,
+        lng,
+        worldX: data.x,
+        worldY: data.y,
+        worldZ: data.z,
         profession: professionName,
         affliction: AFFLICTION_MAP[data.affliction] || 'Unknown',
-        unlockedProfessions: (data.unlockedProfessions || []).map(p => PERK_MAP[p] || p),
+        unlockedProfessions: (data.unlockedProfessions || []).map((p) => PERK_MAP[p] || p),
         ...data,
         // Override raw enum values with resolved names
         startingPerk: professionName,
@@ -900,7 +962,7 @@ class WebMapServer {
     // ── API: Save calibration ──
     app.post('/api/calibration', requireTier('admin'), (req, res) => {
       const { xMin, xMax, yMin, yMax } = req.body;
-      if ([xMin, xMax, yMin, yMax].some(v => typeof v !== 'number' || isNaN(v))) {
+      if ([xMin, xMax, yMin, yMax].some((v) => typeof v !== 'number' || isNaN(v))) {
         return sendError(res, API_ERRORS.INVALID_BOUNDS, 400);
       }
       this._saveCalibration({ xMin, xMax, yMin, yMax });
@@ -988,7 +1050,9 @@ class WebMapServer {
       if (!message || typeof message !== 'string') return sendError(res, API_ERRORS.MISSING_MESSAGE, 400);
       if (message.length > 500) return sendError(res, API_ERRORS.MESSAGE_TOO_LONG, 400);
       // Sanitize: strip control chars and collapse newlines to prevent RCON injection
-      const safe = stripControlChars(message).replace(/[\r\n]+/g, ' ').trim();
+      const safe = stripControlChars(message)
+        .replace(/[\r\n]+/g, ' ')
+        .trim();
       if (!safe) return sendError(res, API_ERRORS.MESSAGE_EMPTY_AFTER_SANITIZATION, 400);
       try {
         // Use 'admin' command — 'say' no longer returns a response as of game update March 2026.
@@ -1049,14 +1113,21 @@ class WebMapServer {
         await this._buildLandingData(rconTimeout);
         const built = this._getCached('landing', 'global', 30000);
         if (built) return res.json(built);
-      } catch { /* build failed */ }
-      res.json({ primary: { name: config.serverName || 'HumanitZ Server', status: 'unknown', onlineCount: 0, totalPlayers: 0 }, servers: [] });
+      } catch {
+        /* build failed */
+      }
+      res.json({
+        primary: { name: config.serverName || 'HumanitZ Server', status: 'unknown', onlineCount: 0, totalPlayers: 0 },
+        servers: [],
+      });
     });
 
     // Plugin-registered routes
     for (const plugin of this._plugins) {
       if (typeof plugin.registerRoutes === 'function') {
-        try { plugin.registerRoutes(app, { rateLimit, requireTier }); } catch (err) {
+        try {
+          plugin.registerRoutes(app, { rateLimit, requireTier });
+        } catch (err) {
           console.error(`[WEB MAP] Plugin ${plugin.name} route registration failed:`, err.message);
         }
       }
@@ -1079,7 +1150,9 @@ class WebMapServer {
         await this._buildStatusCache(srv, rconTimeout);
         const built = this._getCached('status', srv.serverId, 30000);
         if (built) return res.json(built);
-      } catch { /* build failed */ }
+      } catch {
+        /* build failed */
+      }
       res.json({ serverState: 'unknown', onlineCount: 0, timezone: srv.config.botTimezone || 'UTC' });
     });
 
@@ -1096,7 +1169,9 @@ class WebMapServer {
         await this._buildStatsCache(srv, rconTimeout);
         const built = this._getCached('stats', srv.serverId, 30000);
         if (built) return res.json(built);
-      } catch { /* build failed */ }
+      } catch {
+        /* build failed */
+      }
       res.json({ totalPlayers: 0, onlinePlayers: 0, eventsToday: 0, chatsToday: 0 });
     });
 
@@ -1112,7 +1187,7 @@ class WebMapServer {
         scheduler: !!(srv.scheduler && srv.scheduler.isActive?.()),
         saveService: srv.isPrimary ? !!this._saveService : !!srv.db,
         resources: srv.isPrimary && !!serverResources,
-        hasPlugin: this._plugins.some(p => {
+        hasPlugin: this._plugins.some((p) => {
           // Check if this plugin is associated with this server
           if (srv.isPrimary) return false; // plugins are typically non-primary
           return !!p.name;
@@ -1126,9 +1201,16 @@ class WebMapServer {
         if (plugin.name === 'hzmod') {
           // hzmod is registered with a serverId — only show on that server's dashboard
           const pluginSrv = plugin.serverId;
-          if (!pluginSrv) { caps.hzmod = true; break; }            // no serverId set → show everywhere
-          if (pluginSrv === srv.serverId) { caps.hzmod = true; }   // matches this server
-          else if (srv.isPrimary && !pluginSrv) { caps.hzmod = true; } // primary fallback
+          if (!pluginSrv) {
+            caps.hzmod = true;
+            break;
+          } // no serverId set → show everywhere
+          if (pluginSrv === srv.serverId) {
+            caps.hzmod = true;
+          } // matches this server
+          else if (srv.isPrimary && !pluginSrv) {
+            caps.hzmod = true;
+          } // primary fallback
           break;
         }
       }
@@ -1158,7 +1240,7 @@ class WebMapServer {
 
         // Resolve steam IDs to player names + clean UE4 blueprint names
         const idMap = srv.idMap || {};
-        const resolved = (events || []).map(e => {
+        const resolved = (events || []).map((e) => {
           const out = { ...e };
           if (!out.actor_name && out.steam_id && idMap[out.steam_id]) {
             out.actor_name = idMap[out.steam_id];
@@ -1191,7 +1273,9 @@ class WebMapServer {
         const totalRow = db.prepare('SELECT COUNT(*) as total FROM activity_log').get();
 
         // Count by type
-        const typeCounts = db.prepare('SELECT type, COUNT(*) as count FROM activity_log GROUP BY type ORDER BY count DESC').all();
+        const typeCounts = db
+          .prepare('SELECT type, COUNT(*) as count FROM activity_log GROUP BY type ORDER BY count DESC')
+          .all();
         const types = {};
         for (const r of typeCounts) types[r.type] = r.count;
 
@@ -1200,10 +1284,23 @@ class WebMapServer {
         const catMap = {
           container: ['container_item_added', 'container_item_removed', 'container_loot', 'container_destroyed'],
           inventory: ['inventory_item_added', 'inventory_item_removed'],
-          vehicle: ['vehicle_fuel_changed', 'vehicle_health_changed', 'vehicle_appeared', 'vehicle_destroyed', 'vehicle_change'],
+          vehicle: [
+            'vehicle_fuel_changed',
+            'vehicle_health_changed',
+            'vehicle_appeared',
+            'vehicle_destroyed',
+            'vehicle_change',
+          ],
           session: ['player_connect', 'player_disconnect'],
           combat: ['player_death', 'player_death_pvp', 'damage_taken'],
-          building: ['player_build', 'structure_placed', 'structure_destroyed', 'structure_damaged', 'building_destroyed', 'raid_damage'],
+          building: [
+            'player_build',
+            'structure_placed',
+            'structure_destroyed',
+            'structure_damaged',
+            'building_destroyed',
+            'raid_damage',
+          ],
           horse: ['horse_appeared', 'horse_disappeared', 'horse_change'],
           admin: ['admin_access', 'anticheat_flag'],
         };
@@ -1214,36 +1311,52 @@ class WebMapServer {
         }
 
         // Hourly distribution (last 7 days)
-        const hourly = db.prepare(`
+        const hourly = db
+          .prepare(
+            `
           SELECT CAST(strftime('%H', created_at) AS INTEGER) as hour, COUNT(*) as count
           FROM activity_log
           WHERE created_at >= datetime('now', '-7 days')
           GROUP BY hour ORDER BY hour
-        `).all();
+        `,
+          )
+          .all();
 
         // Daily totals (last 30 days)
-        const daily = db.prepare(`
+        const daily = db
+          .prepare(
+            `
           SELECT date(created_at) as day, COUNT(*) as count
           FROM activity_log
           WHERE created_at >= datetime('now', '-30 days')
           GROUP BY day ORDER BY day
-        `).all();
+        `,
+          )
+          .all();
 
         // Daily by category (last 14 days, for stacked chart)
-        const dailyByType = db.prepare(`
+        const dailyByType = db
+          .prepare(
+            `
           SELECT date(created_at) as day, type, COUNT(*) as count
           FROM activity_log
           WHERE created_at >= datetime('now', '-14 days')
           GROUP BY day, type ORDER BY day
-        `).all();
+        `,
+          )
+          .all();
 
         // Top actors (last 7 days)
-        const topActors = db.prepare(`
+        const topActors = db
+          .prepare(
+            `
           SELECT COALESCE(actor_name, actor, steam_id) as actor, COUNT(*) as count
           FROM activity_log
           WHERE created_at >= datetime('now', '-7 days') AND actor IS NOT NULL AND actor != ''
           GROUP BY actor ORDER BY count DESC LIMIT 10
-        `).all();
+        `,
+          )
+          .all();
 
         // Resolve actor names
         const idMap = srv.idMap || {};
@@ -1253,7 +1366,9 @@ class WebMapServer {
         }
 
         // Date range
-        const range = db.prepare('SELECT MIN(created_at) as earliest, MAX(created_at) as latest FROM activity_log').get();
+        const range = db
+          .prepare('SELECT MIN(created_at) as earliest, MAX(created_at) as latest FROM activity_log')
+          .get();
 
         res.json({
           total: totalRow?.total || 0,
@@ -1276,24 +1391,57 @@ class WebMapServer {
       if (!srv.db) return res.json({ tables: [] });
 
       const ALLOWED = new Set([
-        'activity_log', 'chat_log', 'players', 'player_aliases',
-        'clans', 'clan_members', 'world_state', 'structures',
-        'vehicles', 'companions', 'world_horses', 'dead_bodies',
-        'containers', 'loot_actors', 'quests', 'server_settings',
-        'snapshots', 'game_items', 'game_professions', 'game_afflictions',
-        'game_skills', 'game_challenges', 'game_recipes',
-        'item_instances', 'item_movements', 'item_groups', 'world_drops',
-        'game_buildings', 'game_loot_pools', 'game_loot_pool_items',
-        'game_vehicles_ref', 'game_animals', 'game_crops',
-        'game_car_upgrades', 'game_ammo_types', 'game_repair_data',
-        'game_furniture', 'game_traps', 'game_sprays',
-        'game_quests', 'game_lore', 'game_loading_tips',
-        'game_spawn_locations', 'game_server_setting_defs',
+        'activity_log',
+        'chat_log',
+        'players',
+        'player_aliases',
+        'clans',
+        'clan_members',
+        'world_state',
+        'structures',
+        'vehicles',
+        'companions',
+        'world_horses',
+        'dead_bodies',
+        'containers',
+        'loot_actors',
+        'quests',
+        'server_settings',
+        'snapshots',
+        'game_items',
+        'game_professions',
+        'game_afflictions',
+        'game_skills',
+        'game_challenges',
+        'game_recipes',
+        'item_instances',
+        'item_movements',
+        'item_groups',
+        'world_drops',
+        'game_buildings',
+        'game_loot_pools',
+        'game_loot_pool_items',
+        'game_vehicles_ref',
+        'game_animals',
+        'game_crops',
+        'game_car_upgrades',
+        'game_ammo_types',
+        'game_repair_data',
+        'game_furniture',
+        'game_traps',
+        'game_sprays',
+        'game_quests',
+        'game_lore',
+        'game_loading_tips',
+        'game_spawn_locations',
+        'game_server_setting_defs',
       ]);
 
       try {
         const db = srv.db.db;
-        const allTables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all();
+        const allTables = db
+          .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+          .all();
         const tables = [];
 
         for (const t of allTables) {
@@ -1304,9 +1452,11 @@ class WebMapServer {
             tables.push({
               name: t.name,
               rowCount: row?.c || 0,
-              columns: cols.map(c => ({ name: c.name, type: c.type, pk: c.pk === 1, nullable: c.notnull === 0 })),
+              columns: cols.map((c) => ({ name: c.name, type: c.type, pk: c.pk === 1, nullable: c.notnull === 0 })),
             });
-          } catch { /* skip inaccessible tables */ }
+          } catch {
+            /* skip inaccessible tables */
+          }
         }
 
         res.json({ tables });
@@ -1324,7 +1474,11 @@ class WebMapServer {
       if (!sql) return sendError(res, API_ERRORS.NO_SQL_PROVIDED, 400);
 
       // Only allow SELECT statements
-      const upper = sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '').trim().toUpperCase();
+      const upper = sql
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/--[^\n]*/g, '')
+        .trim()
+        .toUpperCase();
       if (!upper.startsWith('SELECT')) {
         return sendError(res, API_ERRORS.ONLY_SELECT_ALLOWED, 400);
       }
@@ -1376,57 +1530,108 @@ class WebMapServer {
 
       try {
         if (showAll || layers.includes('structures')) {
-          const rows = srv.db.db.prepare('SELECT id, display_name, actor_class, owner_steam_id, pos_x, pos_y, pos_z, current_health, max_health, upgrade_level, inventory FROM structures WHERE pos_x IS NOT NULL').all();
-          result.structures = rows.map(r => {
+          const rows = srv.db.db
+            .prepare(
+              'SELECT id, display_name, actor_class, owner_steam_id, pos_x, pos_y, pos_z, current_health, max_health, upgrade_level, inventory FROM structures WHERE pos_x IS NOT NULL',
+            )
+            .all();
+          result.structures = rows.map((r) => {
             const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
             let itemCount = 0;
-            try { const items = JSON.parse(r.inventory || '[]'); itemCount = items.filter(i => i && i !== 'Empty' && i !== 'None').length; } catch {}
-            return { id: r.id, name: r.display_name || cleanActorName(r.actor_class), owner: r.owner_steam_id, lat, lng, health: r.current_health, maxHealth: r.max_health, upgrade: r.upgrade_level, itemCount };
+            try {
+              const items = JSON.parse(r.inventory || '[]');
+              itemCount = items.filter((i) => i && i !== 'Empty' && i !== 'None').length;
+            } catch {}
+            return {
+              id: r.id,
+              name: r.display_name || cleanActorName(r.actor_class),
+              owner: r.owner_steam_id,
+              lat,
+              lng,
+              health: r.current_health,
+              maxHealth: r.max_health,
+              upgrade: r.upgrade_level,
+              itemCount,
+            };
           });
         }
 
         if (showAll || layers.includes('vehicles')) {
-          const rows = srv.db.db.prepare('SELECT id, display_name, class, pos_x, pos_y, pos_z, health, max_health, fuel FROM vehicles WHERE pos_x IS NOT NULL').all();
-          result.vehicles = rows.map(r => {
+          const rows = srv.db.db
+            .prepare(
+              'SELECT id, display_name, class, pos_x, pos_y, pos_z, health, max_health, fuel FROM vehicles WHERE pos_x IS NOT NULL',
+            )
+            .all();
+          result.vehicles = rows.map((r) => {
             const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
-            return { id: r.id, name: r.display_name || cleanActorName(r.class), lat, lng, health: r.health, maxHealth: r.max_health, fuel: Math.round(r.fuel * 10) / 10 };
+            return {
+              id: r.id,
+              name: r.display_name || cleanActorName(r.class),
+              lat,
+              lng,
+              health: r.health,
+              maxHealth: r.max_health,
+              fuel: Math.round(r.fuel * 10) / 10,
+            };
           });
         }
 
         if (showAll || layers.includes('containers')) {
-          const rows = srv.db.db.prepare('SELECT actor_name, pos_x, pos_y, pos_z, items, locked FROM containers WHERE pos_x IS NOT NULL AND pos_x != 0').all();
-          result.containers = rows.map(r => {
+          const rows = srv.db.db
+            .prepare(
+              'SELECT actor_name, pos_x, pos_y, pos_z, items, locked FROM containers WHERE pos_x IS NOT NULL AND pos_x != 0',
+            )
+            .all();
+          result.containers = rows.map((r) => {
             const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
             let itemCount = 0;
-            try { const items = JSON.parse(r.items || '[]'); itemCount = items.filter(i => i && i.item && i.item !== 'None' && i.item !== 'Empty').length; } catch {}
+            try {
+              const items = JSON.parse(r.items || '[]');
+              itemCount = items.filter((i) => i && i.item && i.item !== 'None' && i.item !== 'Empty').length;
+            } catch {}
             return { name: cleanActorName(r.actor_name), lat, lng, locked: !!r.locked, itemCount };
           });
         }
 
         if (showAll || layers.includes('companions')) {
-          const rows = srv.db.db.prepare('SELECT id, type, actor_name, owner_steam_id, pos_x, pos_y, pos_z, health, extra FROM companions WHERE pos_x IS NOT NULL').all();
-          result.companions = rows.map(r => {
+          const rows = srv.db.db
+            .prepare(
+              'SELECT id, type, actor_name, owner_steam_id, pos_x, pos_y, pos_z, health, extra FROM companions WHERE pos_x IS NOT NULL',
+            )
+            .all();
+          result.companions = rows.map((r) => {
             const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
             return { id: r.id, type: r.type, owner: r.owner_steam_id, lat, lng, health: r.health };
           });
         }
 
         if (showAll || layers.includes('deadBodies')) {
-          const rows = srv.db.db.prepare('SELECT actor_name, pos_x, pos_y, pos_z FROM dead_bodies WHERE pos_x IS NOT NULL').all();
-          result.deadBodies = rows.map(r => {
+          const rows = srv.db.db
+            .prepare('SELECT actor_name, pos_x, pos_y, pos_z FROM dead_bodies WHERE pos_x IS NOT NULL')
+            .all();
+          result.deadBodies = rows.map((r) => {
             const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
             return { name: r.actor_name, lat, lng };
           });
         }
 
         // AI layers from latest timeline snapshot
-        const wantAI = showAll || layers.includes('zombies') || layers.includes('animals') || layers.includes('bandits');
+        const wantAI =
+          showAll || layers.includes('zombies') || layers.includes('animals') || layers.includes('bandits');
         if (wantAI) {
           try {
-            const latestSnap = srv.db.db.prepare('SELECT id FROM timeline_snapshots ORDER BY created_at DESC LIMIT 1').get();
+            const latestSnap = srv.db.db
+              .prepare('SELECT id FROM timeline_snapshots ORDER BY created_at DESC LIMIT 1')
+              .get();
             if (latestSnap) {
-              const aiRows = srv.db.db.prepare('SELECT ai_type, category, display_name, pos_x, pos_y FROM timeline_ai WHERE snapshot_id = ? AND pos_x IS NOT NULL').all(latestSnap.id);
-              const zombies = [], animals = [], bandits = [];
+              const aiRows = srv.db.db
+                .prepare(
+                  'SELECT ai_type, category, display_name, pos_x, pos_y FROM timeline_ai WHERE snapshot_id = ? AND pos_x IS NOT NULL',
+                )
+                .all(latestSnap.id);
+              const zombies = [],
+                animals = [],
+                bandits = [];
               for (const r of aiRows) {
                 if (r.pos_x === 0 && r.pos_y === 0) continue;
                 const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
@@ -1439,7 +1644,9 @@ class WebMapServer {
               if (showAll || layers.includes('animals')) result.animals = animals;
               if (showAll || layers.includes('bandits')) result.bandits = bandits;
             }
-          } catch { /* timeline_ai may not exist yet */ }
+          } catch {
+            /* timeline_ai may not exist yet */
+          }
         }
 
         // Build steam_id → name lookup for owner resolution
@@ -1481,23 +1688,45 @@ class WebMapServer {
 
         // Parse attachments JSON
         for (const inst of instances) {
-          try { inst.attachments = JSON.parse(inst.attachments); } catch { inst.attachments = []; }
+          try {
+            inst.attachments = JSON.parse(inst.attachments);
+          } catch {
+            inst.attachments = [];
+          }
         }
         for (const grp of groups) {
-          try { grp.attachments = JSON.parse(grp.attachments); } catch { grp.attachments = []; }
+          try {
+            grp.attachments = JSON.parse(grp.attachments);
+          } catch {
+            grp.attachments = [];
+          }
         }
 
         // Build location summary for sidebar
         const locationSummary = {};
         for (const inst of instances) {
           const key = `${inst.location_type}|${inst.location_id}`;
-          if (!locationSummary[key]) locationSummary[key] = { type: inst.location_type, id: inst.location_id, instanceCount: 0, groupCount: 0, totalItems: 0 };
+          if (!locationSummary[key])
+            locationSummary[key] = {
+              type: inst.location_type,
+              id: inst.location_id,
+              instanceCount: 0,
+              groupCount: 0,
+              totalItems: 0,
+            };
           locationSummary[key].instanceCount++;
           locationSummary[key].totalItems += inst.amount || 1;
         }
         for (const grp of groups) {
           const key = `${grp.location_type}|${grp.location_id}`;
-          if (!locationSummary[key]) locationSummary[key] = { type: grp.location_type, id: grp.location_id, instanceCount: 0, groupCount: 0, totalItems: 0 };
+          if (!locationSummary[key])
+            locationSummary[key] = {
+              type: grp.location_type,
+              id: grp.location_id,
+              instanceCount: 0,
+              groupCount: 0,
+              totalItems: 0,
+            };
           locationSummary[key].groupCount++;
           locationSummary[key].totalItems += grp.quantity * (grp.stack_size || 1);
         }
@@ -1540,7 +1769,11 @@ class WebMapServer {
         const id = parseInt(req.params.id, 10);
         const group = srv.db.getItemGroup(id);
         if (!group) return sendError(res, API_ERRORS.GROUP_NOT_FOUND, 404);
-        try { group.attachments = JSON.parse(group.attachments); } catch { group.attachments = []; }
+        try {
+          group.attachments = JSON.parse(group.attachments);
+        } catch {
+          group.attachments = [];
+        }
 
         const movements = srv.db.getItemMovementsByGroup(id);
         res.json({ group, movements });
@@ -1594,12 +1827,16 @@ class WebMapServer {
           if (instances.length > 0) {
             // If steamId provided, prefer the instance at that player's location
             if (steamId) {
-              match = instances.find(i => i.location_type === 'player' && i.location_id === steamId) || instances[0];
+              match = instances.find((i) => i.location_type === 'player' && i.location_id === steamId) || instances[0];
             } else {
               match = instances[0];
             }
             matchType = 'instance';
-            try { match.attachments = JSON.parse(match.attachments); } catch { match.attachments = []; }
+            try {
+              match.attachments = JSON.parse(match.attachments);
+            } catch {
+              match.attachments = [];
+            }
             movements = srv.db.getItemMovements(match.id);
           }
 
@@ -1608,12 +1845,16 @@ class WebMapServer {
             const groups = srv.db.findActiveGroupsByFingerprint?.(fingerprint) || [];
             if (groups.length > 0) {
               if (steamId) {
-                match = groups.find(g => g.location_type === 'player' && g.location_id === steamId) || groups[0];
+                match = groups.find((g) => g.location_type === 'player' && g.location_id === steamId) || groups[0];
               } else {
                 match = groups[0];
               }
               matchType = 'group';
-              try { match.attachments = JSON.parse(match.attachments); } catch { match.attachments = []; }
+              try {
+                match.attachments = JSON.parse(match.attachments);
+              } catch {
+                match.attachments = [];
+              }
               movements = srv.db.getItemMovementsByGroup(match.id);
             }
           }
@@ -1624,12 +1865,16 @@ class WebMapServer {
           const instances = srv.db.getItemInstancesByItem(itemName);
           if (instances.length > 0) {
             if (steamId) {
-              match = instances.find(i => i.location_type === 'player' && i.location_id === steamId) || instances[0];
+              match = instances.find((i) => i.location_type === 'player' && i.location_id === steamId) || instances[0];
             } else {
               match = instances[0];
             }
             matchType = 'instance';
-            try { match.attachments = JSON.parse(match.attachments); } catch { match.attachments = []; }
+            try {
+              match.attachments = JSON.parse(match.attachments);
+            } catch {
+              match.attachments = [];
+            }
             movements = srv.db.getItemMovements(match.id);
           }
         }
@@ -1645,7 +1890,7 @@ class WebMapServer {
         };
 
         // Enrich movement data with resolved names
-        const enrichedMovements = movements.map(m => ({
+        const enrichedMovements = movements.map((m) => ({
           ...m,
           from_name: m.from_type === 'player' ? resolveName(m.from_id) : null,
           to_name: m.to_type === 'player' ? resolveName(m.to_id) : null,
@@ -1689,42 +1934,84 @@ class WebMapServer {
         // Route by type to appropriate reference/world table
         if (type === 'item') {
           const row = db.prepare('SELECT * FROM game_items WHERE name LIKE ? LIMIT 1').get(`%${name}%`);
-          if (row) { result.found = true; result.data = row; result.refTable = 'game_items'; }
+          if (row) {
+            result.found = true;
+            result.data = row;
+            result.refTable = 'game_items';
+          }
         } else if (type === 'structure' || type === 'building') {
           const row = db.prepare('SELECT * FROM game_buildings WHERE name LIKE ? LIMIT 1').get(`%${name}%`);
-          if (row) { result.found = true; result.data = row; result.refTable = 'game_buildings'; }
+          if (row) {
+            result.found = true;
+            result.data = row;
+            result.refTable = 'game_buildings';
+          }
           if (!result.found) {
             const wRow = db.prepare('SELECT * FROM structures WHERE type LIKE ? LIMIT 1').get(`%${name}%`);
-            if (wRow) { result.found = true; result.data = wRow; result.refTable = 'structures'; }
+            if (wRow) {
+              result.found = true;
+              result.data = wRow;
+              result.refTable = 'structures';
+            }
           }
         } else if (type === 'vehicle') {
           const row = db.prepare('SELECT * FROM game_vehicles_ref WHERE name LIKE ? LIMIT 1').get(`%${name}%`);
-          if (row) { result.found = true; result.data = row; result.refTable = 'game_vehicles_ref'; }
+          if (row) {
+            result.found = true;
+            result.data = row;
+            result.refTable = 'game_vehicles_ref';
+          }
         } else if (type === 'animal') {
           const row = db.prepare('SELECT * FROM game_animals WHERE name LIKE ? LIMIT 1').get(`%${name}%`);
-          if (row) { result.found = true; result.data = row; result.refTable = 'game_animals'; }
+          if (row) {
+            result.found = true;
+            result.data = row;
+            result.refTable = 'game_animals';
+          }
         } else if (type === 'recipe') {
           const row = db.prepare('SELECT * FROM game_recipes WHERE name LIKE ? LIMIT 1').get(`%${name}%`);
-          if (row) { result.found = true; result.data = row; result.refTable = 'game_recipes'; }
+          if (row) {
+            result.found = true;
+            result.data = row;
+            result.refTable = 'game_recipes';
+          }
         } else if (type === 'affliction') {
           const row = db.prepare('SELECT * FROM game_afflictions WHERE name LIKE ? LIMIT 1').get(`%${name}%`);
-          if (row) { result.found = true; result.data = row; result.refTable = 'game_afflictions'; }
+          if (row) {
+            result.found = true;
+            result.data = row;
+            result.refTable = 'game_afflictions';
+          }
         } else if (type === 'skill') {
           const row = db.prepare('SELECT * FROM game_skills WHERE name LIKE ? LIMIT 1').get(`%${name}%`);
-          if (row) { result.found = true; result.data = row; result.refTable = 'game_skills'; }
+          if (row) {
+            result.found = true;
+            result.data = row;
+            result.refTable = 'game_skills';
+          }
         } else if (type === 'container') {
           const row = db.prepare('SELECT * FROM containers WHERE type LIKE ? LIMIT 1').get(`%${name}%`);
-          if (row) { result.found = true; result.data = row; result.refTable = 'containers'; }
+          if (row) {
+            result.found = true;
+            result.data = row;
+            result.refTable = 'containers';
+          }
         }
 
         // Fallback: try game_items for anything not found
         if (!result.found) {
           const fallback = db.prepare('SELECT * FROM game_items WHERE name LIKE ? LIMIT 1').get(`%${name}%`);
-          if (fallback) { result.found = true; result.data = fallback; result.refTable = 'game_items'; }
+          if (fallback) {
+            result.found = true;
+            result.data = fallback;
+            result.refTable = 'game_items';
+          }
         }
 
         // Count activity log references
-        const actCount = db.prepare('SELECT COUNT(*) as c FROM activity_log WHERE details LIKE ? OR item LIKE ?').get(`%${name}%`, `%${name}%`);
+        const actCount = db
+          .prepare('SELECT COUNT(*) as c FROM activity_log WHERE details LIKE ? OR item LIKE ?')
+          .get(`%${name}%`, `%${name}%`);
         result.activityCount = actCount?.c || 0;
 
         res.json(result);
@@ -1748,20 +2035,51 @@ class WebMapServer {
 
       // Whitelist of queryable tables
       const ALLOWED = new Set([
-        'activity_log', 'chat_log', 'players', 'player_aliases',
-        'clans', 'clan_members', 'world_state', 'structures',
-        'vehicles', 'companions', 'world_horses', 'dead_bodies',
-        'containers', 'loot_actors', 'quests', 'server_settings',
-        'snapshots', 'game_items', 'game_professions', 'game_afflictions',
-        'game_skills', 'game_challenges', 'game_recipes',
-        'item_instances', 'item_movements', 'item_groups', 'world_drops',
+        'activity_log',
+        'chat_log',
+        'players',
+        'player_aliases',
+        'clans',
+        'clan_members',
+        'world_state',
+        'structures',
+        'vehicles',
+        'companions',
+        'world_horses',
+        'dead_bodies',
+        'containers',
+        'loot_actors',
+        'quests',
+        'server_settings',
+        'snapshots',
+        'game_items',
+        'game_professions',
+        'game_afflictions',
+        'game_skills',
+        'game_challenges',
+        'game_recipes',
+        'item_instances',
+        'item_movements',
+        'item_groups',
+        'world_drops',
         // v11 reference tables
-        'game_buildings', 'game_loot_pools', 'game_loot_pool_items',
-        'game_vehicles_ref', 'game_animals', 'game_crops',
-        'game_car_upgrades', 'game_ammo_types', 'game_repair_data',
-        'game_furniture', 'game_traps', 'game_sprays',
-        'game_quests', 'game_lore', 'game_loading_tips',
-        'game_spawn_locations', 'game_server_setting_defs',
+        'game_buildings',
+        'game_loot_pools',
+        'game_loot_pool_items',
+        'game_vehicles_ref',
+        'game_animals',
+        'game_crops',
+        'game_car_upgrades',
+        'game_ammo_types',
+        'game_repair_data',
+        'game_furniture',
+        'game_traps',
+        'game_sprays',
+        'game_quests',
+        'game_lore',
+        'game_loading_tips',
+        'game_spawn_locations',
+        'game_server_setting_defs',
       ]);
 
       if (!ALLOWED.has(table)) {
@@ -1777,7 +2095,7 @@ class WebMapServer {
 
         // Get column names
         const pragma = db.prepare(`PRAGMA table_info("${table}")`).all();
-        const columns = pragma.map(c => c.name);
+        const columns = pragma.map((c) => c.name);
 
         // Build query with optional search
         let query = `SELECT * FROM "${table}"`;
@@ -1785,11 +2103,11 @@ class WebMapServer {
 
         if (search) {
           // Search across text columns
-          const textCols = pragma.filter(c =>
-            c.type.toUpperCase().includes('TEXT') || c.type === '' || c.type.toUpperCase().includes('VARCHAR')
+          const textCols = pragma.filter(
+            (c) => c.type.toUpperCase().includes('TEXT') || c.type === '' || c.type.toUpperCase().includes('VARCHAR'),
           );
           if (textCols.length > 0) {
-            const clauses = textCols.map(c => `"${c.name}" LIKE ?`);
+            const clauses = textCols.map((c) => `"${c.name}" LIKE ?`);
             query += ` WHERE ${clauses.join(' OR ')}`;
             for (let i = 0; i < textCols.length; i++) params.push(`%${search}%`);
           }
@@ -1849,14 +2167,24 @@ class WebMapServer {
       if (command.length > 500) return sendError(res, API_ERRORS.COMMAND_TOO_LONG, 400);
 
       // Sanitize: strip control chars and newlines to prevent RCON protocol injection
-      const sanitized = stripControlChars(command).replace(/[\r\n]+/g, ' ').trim();
+      const sanitized = stripControlChars(command)
+        .replace(/[\r\n]+/g, ' ')
+        .trim();
       if (!sanitized) return sendError(res, API_ERRORS.COMMAND_EMPTY_AFTER_SANITIZATION, 400);
 
       // Safety: block dangerous commands by first word (consolidated blocklist)
       const cmdWord = sanitized.toLowerCase().split(/\s+/)[0];
       const BLOCKED_RCON = new Set([
-        'exit', 'quit', 'shutdown', 'destroyall', 'destroy_all',
-        'wipe', 'reset', 'restartnow', 'quickrestart', 'cancelrestart',
+        'exit',
+        'quit',
+        'shutdown',
+        'destroyall',
+        'destroy_all',
+        'wipe',
+        'reset',
+        'restartnow',
+        'quickrestart',
+        'cancelrestart',
       ]);
       if (BLOCKED_RCON.has(cmdWord)) {
         return sendError(res, API_ERRORS.COMMAND_BLOCKED_FOR_SAFETY, 403, cmdWord);
@@ -1878,10 +2206,12 @@ class WebMapServer {
         // Step 1: Tell the game server to save
         try {
           await req.srv.rcon.send('save');
-        } catch { /* RCON may not be connected — continue anyway, save file may still be recent */ }
+        } catch {
+          /* RCON may not be connected — continue anyway, save file may still be recent */
+        }
 
         // Step 2: Wait briefly for the save to flush to disk
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
 
         // Step 3: Force save service to re-poll (downloads .sav, parses, syncs DB, emits 'sync' → snapshot recorded)
         await this._saveService._poll(true);
@@ -1917,18 +2247,26 @@ class WebMapServer {
       // Fall back to Docker CLI (VPS setup)
       const { execFile } = require('child_process');
       // Use server-specific container name, fall back to env
-      const dockerContainer = (req.srv.config.dockerContainer || process.env.DOCKER_CONTAINER || 'hzserver').replace(/[^a-zA-Z0-9_.-]/g, '');
+      const dockerContainer = (req.srv.config.dockerContainer || process.env.DOCKER_CONTAINER || 'hzserver').replace(
+        /[^a-zA-Z0-9_.-]/g,
+        '',
+      );
 
       if (action === 'backup') {
         const backupDir = path.join(req.srv.dataDir, 'backups', new Date().toISOString().replace(/[:.]/g, '-'));
-        execFile('docker', ['cp', `${dockerContainer}:/home/steam/hzserver/serverfiles/HumanitZServer/Saved`, backupDir], { timeout: 30000 }, (err) => {
-          if (err) return sendError(res, API_ERRORS.BACKUP_FAILED, 500);
-          sendOk(res, { message: 'Backup created' });
-        });
+        execFile(
+          'docker',
+          ['cp', `${dockerContainer}:/home/steam/hzserver/serverfiles/HumanitZServer/Saved`, backupDir],
+          { timeout: 30000 },
+          (err) => {
+            if (err) return sendError(res, API_ERRORS.BACKUP_FAILED, 500);
+            sendOk(res, { message: 'Backup created' });
+          },
+        );
         return;
       }
 
-      execFile('docker', [action, dockerContainer], { timeout: 30000 }, (err, _stdout, stderr) => {
+      execFile('docker', [action, dockerContainer], { timeout: 30000 }, (err, _stdout, _stderr) => {
         if (err) {
           return sendError(res, API_ERRORS.DOCKER_COMMAND_FAILED, 500);
         }
@@ -1958,7 +2296,9 @@ class WebMapServer {
             return res.json({ backups });
           }
         }
-      } catch (e) { /* panel API unavailable — fall through */ }
+      } catch (_e) {
+        /* panel API unavailable — fall through */
+      }
 
       // Fall back to local data/backups/ directory
       const backupsDir = path.join(req.srv.dataDir, 'backups');
@@ -1979,7 +2319,9 @@ class WebMapServer {
           }
           backups.sort((a, b) => new Date(b.created) - new Date(a.created));
         }
-      } catch (e) { /* directory not readable */ }
+      } catch (_e) {
+        /* directory not readable */
+      }
 
       res.json({ backups });
     });
@@ -2004,7 +2346,9 @@ class WebMapServer {
           const data = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
           return res.json({ settings: filterSettings(data) });
         }
-      } catch { /* fall through to SFTP */ }
+      } catch {
+        /* fall through to SFTP */
+      }
 
       // Try reading via SFTP
       if (srv.config.ftpHost && srv.config.ftpUser) {
@@ -2044,7 +2388,7 @@ class WebMapServer {
       }
 
       // Block writes to sensitive keys — same set filtered on read, enforced on write
-      const rejected = Object.keys(settings).filter(k => HIDDEN_SETTINGS.has(k) || k.startsWith('_'));
+      const rejected = Object.keys(settings).filter((k) => HIDDEN_SETTINGS.has(k) || k.startsWith('_'));
       if (rejected.length > 0) {
         return sendError(res, API_ERRORS.CANNOT_WRITE_PROTECTED_SETTINGS, 403, rejected.join(', '));
       }
@@ -2071,7 +2415,7 @@ class WebMapServer {
 
         // Update values in-place
         const updated = new Set();
-        const newLines = lines.map(line => {
+        const newLines = lines.map((line) => {
           const trimmed = line.trim();
           if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('[') || trimmed.startsWith(';')) return line;
           const eq = trimmed.indexOf('=');
@@ -2095,7 +2439,9 @@ class WebMapServer {
           if (fs.existsSync(settingsFile)) cached = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
           Object.assign(cached, settings);
           fs.writeFileSync(settingsFile, JSON.stringify(cached, null, 2));
-        } catch { /* cache update failed, not critical */ }
+        } catch {
+          /* cache update failed, not critical */
+        }
 
         res.json({ ok: true, updated: [...updated] });
       } catch (err) {
@@ -2126,8 +2472,8 @@ class WebMapServer {
         }
       }
       // Validate profiles
-      const profileList = Array.isArray(profiles) ? profiles.filter(p => typeof p === 'string' && p.trim()) : [];
-      const settings = (profileSettings && typeof profileSettings === 'object') ? profileSettings : {};
+      const profileList = Array.isArray(profiles) ? profiles.filter((p) => typeof p === 'string' && p.trim()) : [];
+      const settings = profileSettings && typeof profileSettings === 'object' ? profileSettings : {};
 
       // Validate profile settings are JSON-safe objects
       for (const [name, val] of Object.entries(settings)) {
@@ -2143,7 +2489,7 @@ class WebMapServer {
       }
 
       const timesStr = restartTimes.join(',');
-      const profilesStr = profileList.map(p => p.trim().toLowerCase()).join(',');
+      const profilesStr = profileList.map((p) => p.trim().toLowerCase()).join(',');
 
       // ── Non-primary: write to servers.json ──
       if (!req.srv.isPrimary) {
@@ -2166,7 +2512,10 @@ class WebMapServer {
             }
           });
           if (!ok) return sendError(res, API_ERRORS.SERVER_NOT_FOUND, 404);
-          return sendOk(res, { restartRequired: true, message: 'Schedule saved to servers.json. Restart the bot for changes to take effect.' });
+          return sendOk(res, {
+            restartRequired: true,
+            message: 'Schedule saved to servers.json. Restart the bot for changes to take effect.',
+          });
         } catch (err) {
           return sendError(res, API_ERRORS.FAILED_TO_SAVE, 500, safeError(err));
         }
@@ -2200,9 +2549,9 @@ class WebMapServer {
         }
 
         // Remove old RESTART_PROFILE_* that are no longer in the profile list
-        const activeProfileKeys = new Set(profileList.map(p => `RESTART_PROFILE_${p.trim().toUpperCase()}`));
+        const activeProfileKeys = new Set(profileList.map((p) => `RESTART_PROFILE_${p.trim().toUpperCase()}`));
 
-        const newLines = lines.map(line => {
+        const newLines = lines.map((line) => {
           const trimmed = line.trim();
           const eq = trimmed.indexOf('=');
           if (eq > 0 && !trimmed.startsWith('#') && !trimmed.startsWith(';')) {
@@ -2258,14 +2607,16 @@ class WebMapServer {
     // Keys that contain credentials — values are NEVER sent to the client.
     // Write is allowed (masked placeholder is replaced only if user provides a real value).
     const ENV_SENSITIVE_KEYS = new Set([
-      'DISCORD_TOKEN', 'DISCORD_OAUTH_SECRET', 'RCON_PASSWORD',
-      'FTP_PASSWORD', 'FTP_PRIVATE_KEY_PATH', 'PANEL_API_KEY',
+      'DISCORD_TOKEN',
+      'DISCORD_OAUTH_SECRET',
+      'RCON_PASSWORD',
+      'FTP_PASSWORD',
+      'FTP_PRIVATE_KEY_PATH',
+      'PANEL_API_KEY',
     ]);
 
     // Keys that are read-only (managed by the bot, not user-editable via web)
-    const ENV_READONLY_KEYS = new Set([
-      'ENV_SCHEMA_VERSION',
-    ]);
+    const ENV_READONLY_KEYS = new Set(['ENV_SCHEMA_VERSION']);
 
     // ── Per-server bot config (servers.json) helpers ──────────────
 
@@ -2276,64 +2627,64 @@ class WebMapServer {
      */
     const ENV_TO_SERVERDEF = {
       // Identity
-      SERVER_NAME:                { jsonPath: 'name' },
-      PUBLIC_HOST:                { jsonPath: 'publicHost' },
-      GAME_PORT:                  { jsonPath: 'gamePort' },
+      SERVER_NAME: { jsonPath: 'name' },
+      PUBLIC_HOST: { jsonPath: 'publicHost' },
+      GAME_PORT: { jsonPath: 'gamePort' },
       // RCON
-      RCON_HOST:                  { jsonPath: 'rcon.host' },
-      RCON_PORT:                  { jsonPath: 'rcon.port' },
-      RCON_PASSWORD:              { jsonPath: 'rcon.password', sensitive: true },
+      RCON_HOST: { jsonPath: 'rcon.host' },
+      RCON_PORT: { jsonPath: 'rcon.port' },
+      RCON_PASSWORD: { jsonPath: 'rcon.password', sensitive: true },
       // SFTP
-      FTP_HOST:                   { jsonPath: 'sftp.host' },
-      FTP_PORT:                   { jsonPath: 'sftp.port' },
-      FTP_USER:                   { jsonPath: 'sftp.user' },
-      FTP_PASSWORD:               { jsonPath: 'sftp.password', sensitive: true },
-      FTP_PRIVATE_KEY_PATH:       { jsonPath: 'sftp.privateKeyPath', sensitive: true },
+      FTP_HOST: { jsonPath: 'sftp.host' },
+      FTP_PORT: { jsonPath: 'sftp.port' },
+      FTP_USER: { jsonPath: 'sftp.user' },
+      FTP_PASSWORD: { jsonPath: 'sftp.password', sensitive: true },
+      FTP_PRIVATE_KEY_PATH: { jsonPath: 'sftp.privateKeyPath', sensitive: true },
       // Channels
-      PANEL_CHANNEL_ID:           { jsonPath: 'channels.panel' },
-      SERVER_STATUS_CHANNEL_ID:   { jsonPath: 'channels.serverStatus' },
-      PLAYER_STATS_CHANNEL_ID:    { jsonPath: 'channels.playerStats' },
-      CHAT_CHANNEL_ID:            { jsonPath: 'channels.chat' },
-      LOG_CHANNEL_ID:             { jsonPath: 'channels.log' },
-      ADMIN_CHANNEL_ID:           { jsonPath: 'channels.admin' },
+      PANEL_CHANNEL_ID: { jsonPath: 'channels.panel' },
+      SERVER_STATUS_CHANNEL_ID: { jsonPath: 'channels.serverStatus' },
+      PLAYER_STATS_CHANNEL_ID: { jsonPath: 'channels.playerStats' },
+      CHAT_CHANNEL_ID: { jsonPath: 'channels.chat' },
+      LOG_CHANNEL_ID: { jsonPath: 'channels.log' },
+      ADMIN_CHANNEL_ID: { jsonPath: 'channels.admin' },
       // SFTP paths
-      FTP_LOG_PATH:               { jsonPath: 'paths.logPath' },
-      FTP_CONNECT_LOG_PATH:       { jsonPath: 'paths.connectLogPath' },
-      FTP_ID_MAP_PATH:            { jsonPath: 'paths.idMapPath' },
-      FTP_SAVE_PATH:              { jsonPath: 'paths.savePath' },
-      FTP_SETTINGS_PATH:          { jsonPath: 'paths.settingsPath' },
-      FTP_WELCOME_PATH:           { jsonPath: 'paths.welcomePath' },
+      FTP_LOG_PATH: { jsonPath: 'paths.logPath' },
+      FTP_CONNECT_LOG_PATH: { jsonPath: 'paths.connectLogPath' },
+      FTP_ID_MAP_PATH: { jsonPath: 'paths.idMapPath' },
+      FTP_SAVE_PATH: { jsonPath: 'paths.savePath' },
+      FTP_SETTINGS_PATH: { jsonPath: 'paths.settingsPath' },
+      FTP_WELCOME_PATH: { jsonPath: 'paths.welcomePath' },
       // Timezones
-      BOT_TIMEZONE:               { jsonPath: 'botTimezone' },
-      LOG_TIMEZONE:               { jsonPath: 'logTimezone' },
+      BOT_TIMEZONE: { jsonPath: 'botTimezone' },
+      LOG_TIMEZONE: { jsonPath: 'logTimezone' },
       // Docker / restart
-      DOCKER_CONTAINER:           { jsonPath: 'dockerContainer' },
-      ENABLE_SERVER_SCHEDULER:    { jsonPath: 'enableServerScheduler' },
-      RESTART_TIMES:              { jsonPath: 'restartTimes' },
-      RESTART_PROFILES:           { jsonPath: 'restartProfiles' },
+      DOCKER_CONTAINER: { jsonPath: 'dockerContainer' },
+      ENABLE_SERVER_SCHEDULER: { jsonPath: 'enableServerScheduler' },
+      RESTART_TIMES: { jsonPath: 'restartTimes' },
+      RESTART_PROFILES: { jsonPath: 'restartProfiles' },
       // PvP
-      PVP_START_TIME:             { jsonPath: 'pvpStartTime' },
-      PVP_END_TIME:               { jsonPath: 'pvpEndTime' },
-      PVP_SETTINGS_OVERRIDES:     { jsonPath: 'pvpSettingsOverrides' },
+      PVP_START_TIME: { jsonPath: 'pvpStartTime' },
+      PVP_END_TIME: { jsonPath: 'pvpEndTime' },
+      PVP_SETTINGS_OVERRIDES: { jsonPath: 'pvpSettingsOverrides' },
       // Auto messages
-      ENABLE_WELCOME_MSG:         { jsonPath: 'autoMessages.enableWelcomeMsg' },
-      ENABLE_WELCOME_FILE:        { jsonPath: 'autoMessages.enableWelcomeFile' },
-      ENABLE_AUTO_MSG_LINK:       { jsonPath: 'autoMessages.enableAutoMsgLink' },
-      ENABLE_AUTO_MSG_PROMO:      { jsonPath: 'autoMessages.enableAutoMsgPromo' },
-      AUTO_MSG_LINK_TEXT:         { jsonPath: 'autoMessages.linkText' },
-      AUTO_MSG_PROMO_TEXT:        { jsonPath: 'autoMessages.promoText' },
-      DISCORD_INVITE_LINK:        { jsonPath: 'autoMessages.discordLink' },
+      ENABLE_WELCOME_MSG: { jsonPath: 'autoMessages.enableWelcomeMsg' },
+      ENABLE_WELCOME_FILE: { jsonPath: 'autoMessages.enableWelcomeFile' },
+      ENABLE_AUTO_MSG_LINK: { jsonPath: 'autoMessages.enableAutoMsgLink' },
+      ENABLE_AUTO_MSG_PROMO: { jsonPath: 'autoMessages.enableAutoMsgPromo' },
+      AUTO_MSG_LINK_TEXT: { jsonPath: 'autoMessages.linkText' },
+      AUTO_MSG_PROMO_TEXT: { jsonPath: 'autoMessages.promoText' },
+      DISCORD_INVITE_LINK: { jsonPath: 'autoMessages.discordLink' },
       // Panel API
-      PANEL_SERVER_URL:           { jsonPath: 'panel.serverUrl' },
-      PANEL_API_KEY:              { jsonPath: 'panel.apiKey', sensitive: true },
+      PANEL_SERVER_URL: { jsonPath: 'panel.serverUrl' },
+      PANEL_API_KEY: { jsonPath: 'panel.apiKey', sensitive: true },
       // Module toggles (stored in modules.* in servers.json)
-      ENABLE_SERVER_STATUS:       { jsonPath: 'modules.serverStatus' },
-      ENABLE_CHAT_RELAY:          { jsonPath: 'modules.chatRelay' },
-      ENABLE_AUTO_MESSAGES:       { jsonPath: 'modules.autoMessages' },
-      ENABLE_LOG_WATCHER:         { jsonPath: 'modules.logWatcher' },
-      ENABLE_PLAYER_STATS:        { jsonPath: 'modules.playerStats' },
+      ENABLE_SERVER_STATUS: { jsonPath: 'modules.serverStatus' },
+      ENABLE_CHAT_RELAY: { jsonPath: 'modules.chatRelay' },
+      ENABLE_AUTO_MESSAGES: { jsonPath: 'modules.autoMessages' },
+      ENABLE_LOG_WATCHER: { jsonPath: 'modules.logWatcher' },
+      ENABLE_PLAYER_STATS: { jsonPath: 'modules.playerStats' },
       // Server enabled
-      ENABLED:                    { jsonPath: 'enabled' },
+      ENABLED: { jsonPath: 'enabled' },
     };
 
     /** Read a nested value from an object using dot-path: 'rcon.host' → obj.rcon.host */
@@ -2364,13 +2715,56 @@ class WebMapServer {
         { label: 'Server Identity', keys: ['SERVER_NAME', 'PUBLIC_HOST', 'GAME_PORT', 'ENABLED'] },
         { label: 'RCON', keys: ['RCON_HOST', 'RCON_PORT', 'RCON_PASSWORD'] },
         { label: 'SFTP', keys: ['FTP_HOST', 'FTP_PORT', 'FTP_USER', 'FTP_PASSWORD', 'FTP_PRIVATE_KEY_PATH'] },
-        { label: 'Channel IDs', keys: ['PANEL_CHANNEL_ID', 'SERVER_STATUS_CHANNEL_ID', 'PLAYER_STATS_CHANNEL_ID', 'CHAT_CHANNEL_ID', 'LOG_CHANNEL_ID', 'ADMIN_CHANNEL_ID'] },
-        { label: 'SFTP File Paths', keys: ['FTP_LOG_PATH', 'FTP_CONNECT_LOG_PATH', 'FTP_ID_MAP_PATH', 'FTP_SAVE_PATH', 'FTP_SETTINGS_PATH', 'FTP_WELCOME_PATH'] },
+        {
+          label: 'Channel IDs',
+          keys: [
+            'PANEL_CHANNEL_ID',
+            'SERVER_STATUS_CHANNEL_ID',
+            'PLAYER_STATS_CHANNEL_ID',
+            'CHAT_CHANNEL_ID',
+            'LOG_CHANNEL_ID',
+            'ADMIN_CHANNEL_ID',
+          ],
+        },
+        {
+          label: 'SFTP File Paths',
+          keys: [
+            'FTP_LOG_PATH',
+            'FTP_CONNECT_LOG_PATH',
+            'FTP_ID_MAP_PATH',
+            'FTP_SAVE_PATH',
+            'FTP_SETTINGS_PATH',
+            'FTP_WELCOME_PATH',
+          ],
+        },
         { label: 'Timezones', keys: ['BOT_TIMEZONE', 'LOG_TIMEZONE'] },
-        { label: 'Server Scheduler', keys: ['ENABLE_SERVER_SCHEDULER', 'RESTART_TIMES', 'RESTART_PROFILES', 'DOCKER_CONTAINER'] },
+        {
+          label: 'Server Scheduler',
+          keys: ['ENABLE_SERVER_SCHEDULER', 'RESTART_TIMES', 'RESTART_PROFILES', 'DOCKER_CONTAINER'],
+        },
         { label: 'PvP Scheduler', keys: ['PVP_START_TIME', 'PVP_END_TIME', 'PVP_SETTINGS_OVERRIDES'] },
-        { label: 'Auto Messages', keys: ['ENABLE_WELCOME_MSG', 'ENABLE_WELCOME_FILE', 'ENABLE_AUTO_MSG_LINK', 'ENABLE_AUTO_MSG_PROMO', 'AUTO_MSG_LINK_TEXT', 'AUTO_MSG_PROMO_TEXT', 'DISCORD_INVITE_LINK'] },
-        { label: 'Module Toggles', keys: ['ENABLE_SERVER_STATUS', 'ENABLE_CHAT_RELAY', 'ENABLE_AUTO_MESSAGES', 'ENABLE_LOG_WATCHER', 'ENABLE_PLAYER_STATS'] },
+        {
+          label: 'Auto Messages',
+          keys: [
+            'ENABLE_WELCOME_MSG',
+            'ENABLE_WELCOME_FILE',
+            'ENABLE_AUTO_MSG_LINK',
+            'ENABLE_AUTO_MSG_PROMO',
+            'AUTO_MSG_LINK_TEXT',
+            'AUTO_MSG_PROMO_TEXT',
+            'DISCORD_INVITE_LINK',
+          ],
+        },
+        {
+          label: 'Module Toggles',
+          keys: [
+            'ENABLE_SERVER_STATUS',
+            'ENABLE_CHAT_RELAY',
+            'ENABLE_AUTO_MESSAGES',
+            'ENABLE_LOG_WATCHER',
+            'ENABLE_PLAYER_STATS',
+          ],
+        },
         { label: 'Panel API', keys: ['PANEL_SERVER_URL', 'PANEL_API_KEY'] },
       ];
 
@@ -2388,7 +2782,7 @@ class WebMapServer {
             value: isSensitive ? '' : value,
             sensitive: isSensitive,
             readOnly: false,
-            hasValue: isSensitive ? (value.length > 0) : undefined,
+            hasValue: isSensitive ? value.length > 0 : undefined,
             commented: !value && !isSensitive, // show as "not set" if empty
           });
         }
@@ -2402,15 +2796,17 @@ class WebMapServer {
       try {
         if (!fs.existsSync(SERVERS_FILE)) return null;
         const servers = JSON.parse(fs.readFileSync(SERVERS_FILE, 'utf8'));
-        return servers.find(s => s.id === serverId) || null;
-      } catch { return null; }
+        return servers.find((s) => s.id === serverId) || null;
+      } catch {
+        return null;
+      }
     }
 
     /** Write an updated server entry back to servers.json. */
     function _saveServerDef(serverId, updater) {
       if (!fs.existsSync(SERVERS_FILE)) return false;
       const servers = JSON.parse(fs.readFileSync(SERVERS_FILE, 'utf8'));
-      const idx = servers.findIndex(s => s.id === serverId);
+      const idx = servers.findIndex((s) => s.id === serverId);
       if (idx < 0) return false;
       updater(servers[idx]);
       const tmpPath = SERVERS_FILE + '.tmp';
@@ -2428,11 +2824,21 @@ class WebMapServer {
         const trimmed = raw.trim();
 
         // Blank line
-        if (!trimmed) { entries.push({ type: 'blank', raw }); continue; }
+        if (!trimmed) {
+          entries.push({ type: 'blank', raw });
+          continue;
+        }
 
         // Section header comment (e.g. "# ── Discord Bot ──")
         if (/^#\s*[─═]/.test(trimmed)) {
-          entries.push({ type: 'section', raw, label: trimmed.replace(/^#\s*[─═]+\s*/, '').replace(/\s*[─═]+\s*$/, '').trim() });
+          entries.push({
+            type: 'section',
+            raw,
+            label: trimmed
+              .replace(/^#\s*[─═]+\s*/, '')
+              .replace(/\s*[─═]+\s*$/, '')
+              .trim(),
+          });
           continue;
         }
 
@@ -2500,7 +2906,7 @@ class WebMapServer {
               value: isSensitive ? '' : entry.value,
               sensitive: isSensitive,
               readOnly: isReadOnly,
-              hasValue: isSensitive ? (entry.value.length > 0 && !entry.value.startsWith('your_')) : undefined,
+              hasValue: isSensitive ? entry.value.length > 0 && !entry.value.startsWith('your_') : undefined,
               commented: false,
             });
           } else if (entry.type === 'commented') {
@@ -2531,7 +2937,7 @@ class WebMapServer {
       }
 
       // Block read-only keys
-      const blocked = Object.keys(changes).filter(k => ENV_READONLY_KEYS.has(k));
+      const blocked = Object.keys(changes).filter((k) => ENV_READONLY_KEYS.has(k));
       if (blocked.length > 0) {
         return sendError(res, API_ERRORS.CANNOT_MODIFY_READ_ONLY_KEYS, 403, blocked.join(', '));
       }
@@ -2561,7 +2967,24 @@ class WebMapServer {
               let coerced = val;
               if (val === 'true') coerced = true;
               else if (val === 'false') coerced = false;
-              else if (/^\d+$/.test(val) && !envKey.includes('ID') && !envKey.includes('PATH') && !envKey.includes('NAME') && !envKey.includes('TEXT') && !envKey.includes('HOST') && !envKey.includes('USER') && !envKey.includes('PASSWORD') && !envKey.includes('KEY') && !envKey.includes('LINK') && !envKey.includes('URL') && !envKey.includes('CONTAINER') && !envKey.includes('TIMEZONE') && !envKey.includes('OVERRIDES') && !envKey.includes('PROFILES') && !envKey.includes('TIMES')) {
+              else if (
+                /^\d+$/.test(val) &&
+                !envKey.includes('ID') &&
+                !envKey.includes('PATH') &&
+                !envKey.includes('NAME') &&
+                !envKey.includes('TEXT') &&
+                !envKey.includes('HOST') &&
+                !envKey.includes('USER') &&
+                !envKey.includes('PASSWORD') &&
+                !envKey.includes('KEY') &&
+                !envKey.includes('LINK') &&
+                !envKey.includes('URL') &&
+                !envKey.includes('CONTAINER') &&
+                !envKey.includes('TIMEZONE') &&
+                !envKey.includes('OVERRIDES') &&
+                !envKey.includes('PROFILES') &&
+                !envKey.includes('TIMES')
+              ) {
                 coerced = parseInt(val, 10);
               }
               // Empty string → remove the key (so it falls through to primary defaults via prototype)
@@ -2576,10 +2999,10 @@ class WebMapServer {
                 if (cur && typeof cur === 'object') delete cur[parts[parts.length - 1]];
               } else {
                 _setNestedValue(serverDef, mapping.jsonPath, coerced);
+              }
+              updated.add(envKey);
             }
-            updated.add(envKey);
-          }
-        });
+          });
 
           if (!ok) return sendError(res, API_ERRORS.SERVER_NOT_FOUND_IN_SERVERS_JSON, 404);
 
@@ -2604,7 +3027,7 @@ class WebMapServer {
         const lines = content.split('\n');
         const updated = new Set();
 
-        const newLines = lines.map(line => {
+        const newLines = lines.map((line) => {
           const trimmed = line.trim();
 
           // Active key=value line
@@ -2681,7 +3104,7 @@ class WebMapServer {
 
         // Apply severity filter client-side if both status and severity are set
         if (severity && flags) {
-          flags = flags.filter(f => f.severity === severity);
+          flags = flags.filter((f) => f.severity === severity);
         }
 
         // Resolve player names from players table
@@ -2689,9 +3112,11 @@ class WebMapServer {
         try {
           const rows = srv.db.db.prepare('SELECT steam_id, name FROM players').all();
           for (const r of rows) nameMap[r.steam_id] = r.name;
-        } catch { /* */ }
+        } catch {
+          /* */
+        }
 
-        flags = (flags || []).map(f => ({
+        flags = (flags || []).map((f) => ({
           ...f,
           player_name: f.player_name || nameMap[f.steam_id] || f.steam_id,
         }));
@@ -2742,9 +3167,12 @@ class WebMapServer {
         const srv = req.srv;
         const countByStatus = (s) => {
           try {
-            if (s) return srv.db.db.prepare('SELECT COUNT(*) as count FROM anticheat_flags WHERE status = ?').get(s).count;
+            if (s)
+              return srv.db.db.prepare('SELECT COUNT(*) as count FROM anticheat_flags WHERE status = ?').get(s).count;
             return srv.db.db.prepare('SELECT COUNT(*) as count FROM anticheat_flags').get().count;
-          } catch { return 0; }
+          } catch {
+            return 0;
+          }
         };
         const open = countByStatus('open');
         const confirmed = countByStatus('confirmed');
@@ -2819,7 +3247,9 @@ class WebMapServer {
         try {
           const rows = req.srv.db.db.prepare('SELECT steam_id, name FROM players').all();
           for (const r of rows) nameMap[r.steam_id] = r.name;
-        } catch { /* */ }
+        } catch {
+          /* */
+        }
         full.nameMap = nameMap;
 
         res.json(full);
@@ -2838,13 +3268,15 @@ class WebMapServer {
 
         const positions = req.srv.db.getPlayerPositionHistory(steamId, from, to);
         // Convert to map coordinates
-        const trail = positions.map(p => {
-          if (p.pos_x != null && p.pos_y != null && !(p.pos_x === 0 && p.pos_y === 0)) {
-            const [lat, lng] = this._worldToLeaflet(p.pos_x, p.pos_y);
-            return { lat, lng, health: p.health, online: p.online, time: p.created_at, gameDay: p.game_day };
-          }
-          return null;
-        }).filter(Boolean);
+        const trail = positions
+          .map((p) => {
+            if (p.pos_x != null && p.pos_y != null && !(p.pos_x === 0 && p.pos_y === 0)) {
+              const [lat, lng] = this._worldToLeaflet(p.pos_x, p.pos_y);
+              return { lat, lng, health: p.health, online: p.online, time: p.created_at, gameDay: p.game_day };
+            }
+            return null;
+          })
+          .filter(Boolean);
 
         res.json(trail);
       } catch (err) {
@@ -2877,7 +3309,7 @@ class WebMapServer {
           deaths = req.srv.db.getDeathCauses(parseInt(limit, 10) || 50);
         }
         // Add map coordinates
-        deaths = deaths.map(d => {
+        deaths = deaths.map((d) => {
           if (d.pos_x != null && d.pos_y != null && !(d.pos_x === 0 && d.pos_y === 0)) {
             const [lat, lng] = this._worldToLeaflet(d.pos_x, d.pos_y);
             return { ...d, lat, lng };
@@ -2940,7 +3372,9 @@ class WebMapServer {
             if (!srv) return;
             await this._buildStatusCache(srv, rconTimeout);
             await this._buildStatsCache(srv, rconTimeout);
-          } catch { /* non-critical — individual server poll failure */ }
+          } catch {
+            /* non-critical — individual server poll failure */
+          }
         });
         await Promise.all(statusPromises);
       } catch (err) {
@@ -2952,7 +3386,7 @@ class WebMapServer {
     poll();
     this._pollTimer = setInterval(poll, POLL_INTERVAL);
     this._pollTimer.unref();
-    console.log('[WEB MAP] Background polling started (every ' + (POLL_INTERVAL / 1000) + 's)');
+    console.log('[WEB MAP] Background polling started (every ' + POLL_INTERVAL / 1000 + 's)');
   }
 
   /** Build and cache the landing page data. All RCON calls parallelised. */
@@ -2980,10 +3414,7 @@ class WebMapServer {
     const primaryRcon = (async () => {
       try {
         const { getServerInfo, getPlayerList } = require('../rcon/server-info');
-        const [info, list] = await Promise.all([
-          rconTimeout(getServerInfo()),
-          rconTimeout(getPlayerList()),
-        ]);
+        const [info, list] = await Promise.all([rconTimeout(getServerInfo()), rconTimeout(getPlayerList())]);
         if (info) {
           result.primary.status = 'online';
           result.primary.maxPlayers = info.maxPlayers || null;
@@ -3015,10 +3446,7 @@ class WebMapServer {
       const srv = this._resolveServer(s.id);
       if (srv) {
         try {
-          const [info, list] = await Promise.all([
-            rconTimeout(srv.getServerInfo()),
-            rconTimeout(srv.getPlayerList()),
-          ]);
+          const [info, list] = await Promise.all([rconTimeout(srv.getServerInfo()), rconTimeout(srv.getPlayerList())]);
           if (info) {
             serverInfo.status = 'online';
             serverInfo.maxPlayers = info.maxPlayers || null;
@@ -3052,13 +3480,17 @@ class WebMapServer {
             if (ws.day) serverInfo.gameDay = ws.day;
             if (!serverInfo.season && ws.season) serverInfo.season = ws.season;
           }
-        } catch { /* DB unavailable */ }
+        } catch {
+          /* DB unavailable */
+        }
       }
       if (!serverInfo.totalPlayers) {
         try {
           const saveData = this._parseSaveDataForServer(dir);
           serverInfo.totalPlayers = saveData?.size || 0;
-        } catch { /* non-critical */ }
+        } catch {
+          /* non-critical */
+        }
       }
       if (!serverInfo.gameDay) {
         const cacheFile = path.join(dir, 'save-cache.json');
@@ -3071,22 +3503,33 @@ class WebMapServer {
               serverInfo.status = age < 600_000 ? 'online' : 'stale';
             }
           }
-        } catch { /* non-critical */ }
+        } catch {
+          /* non-critical */
+        }
       }
       if (srv?.scheduler && srv.scheduler.isActive?.()) {
-        try { serverInfo.schedule = srv.scheduler.getStatus(); } catch { /* scheduler unavailable */ }
+        try {
+          serverInfo.schedule = srv.scheduler.getStatus();
+        } catch {
+          /* scheduler unavailable */
+        }
       }
       if (srv?.db) {
         try {
           const settingsRow = srv.db.db?.prepare("SELECT value FROM bot_state WHERE key = 'server_settings'").get();
           if (settingsRow?.value) serverInfo.settings = _extractLandingSettings(JSON.parse(settingsRow.value));
-        } catch { /* non-critical */ }
+        } catch {
+          /* non-critical */
+        }
       }
       if (!serverInfo.settings) {
         try {
           const settingsFile = path.join(dir, 'server-settings.json');
-          if (fs.existsSync(settingsFile)) serverInfo.settings = _extractLandingSettings(JSON.parse(fs.readFileSync(settingsFile, 'utf8')));
-        } catch { /* non-critical */ }
+          if (fs.existsSync(settingsFile))
+            serverInfo.settings = _extractLandingSettings(JSON.parse(fs.readFileSync(settingsFile, 'utf8')));
+        } catch {
+          /* non-critical */
+        }
       }
       if (srv) {
         const mods = [];
@@ -3098,7 +3541,10 @@ class WebMapServer {
         if (inst?._modules?.logWatcher) mods.push('logs');
         if (inst?._modules?.chatRelay) mods.push('chat');
         if (inst?._modules?.anticheat?.available) mods.push('anticheat');
-        if (this._plugins.some(p => p.name === 'hzmod' && (p.serverId === s.id || (!p.serverId && s.id === 'vps_dev')))) mods.push('hzmod');
+        if (
+          this._plugins.some((p) => p.name === 'hzmod' && (p.serverId === s.id || (!p.serverId && s.id === 'vps_dev')))
+        )
+          mods.push('hzmod');
         serverInfo.modules = mods;
       }
       return serverInfo;
@@ -3106,14 +3552,18 @@ class WebMapServer {
 
     // Run ALL RCON calls in parallel
     const [, ...serverResults] = await Promise.all([primaryRcon, ...serverRcons]);
-    for (const si of serverResults) { if (si) result.servers.push(si); }
+    for (const si of serverResults) {
+      if (si) result.servers.push(si);
+    }
 
     // Non-RCON enrichment for primary (fast)
     if (this._db) {
       try {
         const cnt = this._db.db?.prepare('SELECT COUNT(*) as cnt FROM players').get();
         if (cnt?.cnt) result.primary.totalPlayers = cnt.cnt;
-      } catch { /* db unavailable */ }
+      } catch {
+        /* db unavailable */
+      }
     }
     if (!result.primary.totalPlayers) {
       const players = this._parseSaveData();
@@ -3132,7 +3582,9 @@ class WebMapServer {
         const ws = this._db.getAllWorldState?.() || {};
         if (!result.primary.gameDay && ws.day) result.primary.gameDay = ws.day;
         if (!result.primary.season && ws.season) result.primary.season = ws.season;
-      } catch { /* db unavailable */ }
+      } catch {
+        /* db unavailable */
+      }
     }
     if (!result.primary.maxPlayers) {
       try {
@@ -3141,7 +3593,9 @@ class WebMapServer {
           const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
           if (settings.MaxPlayers) result.primary.maxPlayers = parseInt(settings.MaxPlayers, 10) || null;
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     if (!result.primary.gameDay) {
       try {
@@ -3150,22 +3604,33 @@ class WebMapServer {
           const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
           if (cache.worldState?.daysPassed != null) result.primary.gameDay = cache.worldState.daysPassed;
         }
-      } catch { /* save-cache unavailable */ }
+      } catch {
+        /* save-cache unavailable */
+      }
     }
     if (this._db) {
       try {
         const settingsRow = this._db.db?.prepare("SELECT value FROM bot_state WHERE key = 'server_settings'").get();
         if (settingsRow?.value) result.primary.settings = _extractLandingSettings(JSON.parse(settingsRow.value));
-      } catch { /* non-critical */ }
+      } catch {
+        /* non-critical */
+      }
     }
     if (!result.primary.settings) {
       try {
         const settingsFile = path.join(DATA_DIR, 'server-settings.json');
-        if (fs.existsSync(settingsFile)) result.primary.settings = _extractLandingSettings(JSON.parse(fs.readFileSync(settingsFile, 'utf8')));
-      } catch { /* non-critical */ }
+        if (fs.existsSync(settingsFile))
+          result.primary.settings = _extractLandingSettings(JSON.parse(fs.readFileSync(settingsFile, 'utf8')));
+      } catch {
+        /* non-critical */
+      }
     }
     if (this._scheduler && this._scheduler.isActive()) {
-      try { result.schedule = this._scheduler.getStatus(); } catch { /* scheduler unavailable */ }
+      try {
+        result.schedule = this._scheduler.getStatus();
+      } catch {
+        /* scheduler unavailable */
+      }
     }
     {
       const mods = [];
@@ -3173,13 +3638,17 @@ class WebMapServer {
       if (this._db) mods.push('db');
       if (this._saveService) mods.push('sftp');
       if (this._scheduler && this._scheduler.isActive()) mods.push('schedule');
-      if (this._plugins.some(p => p.name === 'hzmod')) mods.push('hzmod');
+      if (this._plugins.some((p) => p.name === 'hzmod')) mods.push('hzmod');
       result.primary.modules = mods;
     }
     result.primary.discordInvite = config.discordInviteLink || '';
     for (const plugin of this._plugins) {
       if (typeof plugin.getLandingData === 'function') {
-        try { Object.assign(result, plugin.getLandingData() || {}); } catch { /* plugin error */ }
+        try {
+          Object.assign(result, plugin.getLandingData() || {});
+        } catch {
+          /* plugin error */
+        }
       }
     }
     this._setCache('landing', 'global', result);
@@ -3187,12 +3656,20 @@ class WebMapServer {
 
   /** Build and cache status data for a single server. */
   async _buildStatusCache(srv, rconTimeout) {
-    const result = { serverState: 'unknown', uptime: null, maxPlayers: null, onlineCount: 0, fps: null, gameDay: null, season: null, gameTime: null, timezone: srv.config.botTimezone || 'UTC', resources: null };
+    const result = {
+      serverState: 'unknown',
+      uptime: null,
+      maxPlayers: null,
+      onlineCount: 0,
+      fps: null,
+      gameDay: null,
+      season: null,
+      gameTime: null,
+      timezone: srv.config.botTimezone || 'UTC',
+      resources: null,
+    };
     try {
-      const [info, list] = await Promise.all([
-        rconTimeout(srv.getServerInfo()),
-        rconTimeout(srv.getPlayerList()),
-      ]);
+      const [info, list] = await Promise.all([rconTimeout(srv.getServerInfo()), rconTimeout(srv.getPlayerList())]);
       if (info) {
         result.serverState = 'running';
         result.fps = info.fps || null;
@@ -3215,7 +3692,9 @@ class WebMapServer {
           const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
           if (settings.MaxPlayers) result.maxPlayers = parseInt(settings.MaxPlayers, 10) || null;
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     if (srv.isPrimary) {
       try {
@@ -3224,17 +3703,21 @@ class WebMapServer {
           result.resources = {
             cpu: resources.cpu,
             memPercent: resources.memPercent,
-            memFormatted: resources.memUsed != null && resources.memTotal != null
-              ? `${formatBytes(resources.memUsed)} / ${formatBytes(resources.memTotal)}`
-              : null,
+            memFormatted:
+              resources.memUsed != null && resources.memTotal != null
+                ? `${formatBytes(resources.memUsed)} / ${formatBytes(resources.memTotal)}`
+                : null,
             diskPercent: resources.diskPercent,
-            diskFormatted: resources.diskUsed != null && resources.diskTotal != null
-              ? `${formatBytes(resources.diskUsed)} / ${formatBytes(resources.diskTotal)}`
-              : null,
+            diskFormatted:
+              resources.diskUsed != null && resources.diskTotal != null
+                ? `${formatBytes(resources.diskUsed)} / ${formatBytes(resources.diskTotal)}`
+                : null,
           };
           if (resources.uptime != null) result.uptime = formatUptime(resources.uptime);
         }
-      } catch { /* resources unavailable */ }
+      } catch {
+        /* resources unavailable */
+      }
     }
     if (!result.gameDay) {
       try {
@@ -3243,14 +3726,18 @@ class WebMapServer {
           const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
           if (cache.worldState?.daysPassed != null) result.gameDay = cache.worldState.daysPassed;
         }
-      } catch { /* save-cache unavailable */ }
+      } catch {
+        /* save-cache unavailable */
+      }
     }
     if (srv.db) {
       try {
         const ws = srv.db.getAllWorldState?.() || {};
         if (!result.gameDay && ws.day) result.gameDay = ws.day;
         if (!result.season && ws.season) result.season = ws.season;
-      } catch { /* db unavailable */ }
+      } catch {
+        /* db unavailable */
+      }
     }
     try {
       const settingsFile = path.join(srv.dataDir, 'server-settings.json');
@@ -3258,7 +3745,9 @@ class WebMapServer {
         const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
         if (settings.DaysPerSeason) result.daysPerSeason = parseInt(settings.DaysPerSeason, 10) || 28;
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     if (!result.daysPerSeason && srv.db) {
       try {
         const settingsRow = srv.db.db?.prepare("SELECT value FROM bot_state WHERE key = 'server_settings'").get();
@@ -3266,7 +3755,9 @@ class WebMapServer {
           const s = JSON.parse(settingsRow.value);
           if (s.DaysPerSeason) result.daysPerSeason = parseInt(s.DaysPerSeason, 10) || 28;
         }
-      } catch { /* db unavailable */ }
+      } catch {
+        /* db unavailable */
+      }
     }
     this._setCache('status', srv.serverId, result);
   }
@@ -3280,7 +3771,9 @@ class WebMapServer {
       try {
         const cnt = srv.db.db?.prepare('SELECT COUNT(*) as cnt FROM players').get();
         if (cnt?.cnt) result.totalPlayers = cnt.cnt;
-      } catch { /* db unavailable */ }
+      } catch {
+        /* db unavailable */
+      }
     }
     // Use status cache for online count (already built)
     const statusCache = this._getCached('status', srv.serverId, 30000);
@@ -3291,7 +3784,9 @@ class WebMapServer {
         const list = await rconTimeout(srv.getPlayerList());
         const playerArr = list?.players || (Array.isArray(list) ? list : []);
         result.onlinePlayers = playerArr.length;
-      } catch { /* RCON unavailable */ }
+      } catch {
+        /* RCON unavailable */
+      }
     }
     if (srv.db) {
       try {
@@ -3306,7 +3801,9 @@ class WebMapServer {
         result.eventsToday = activities.length;
         const chats = srv.db.getChatSince?.(todayIso) || [];
         result.chatsToday = chats.length;
-      } catch { /* db unavailable */ }
+      } catch {
+        /* db unavailable */
+      }
     }
     this._setCache('stats', srv.serverId, result);
   }
@@ -3328,7 +3825,10 @@ class WebMapServer {
 
   /** Stop the server. */
   stop() {
-    if (this._pollTimer) { clearInterval(this._pollTimer); this._pollTimer = null; }
+    if (this._pollTimer) {
+      clearInterval(this._pollTimer);
+      this._pollTimer = null;
+    }
     if (this._server) {
       this._server.close();
       this._server = null;
@@ -3348,7 +3848,7 @@ const { generateFingerprint } = require('../db/item-fingerprint');
  */
 function _cleanInventorySlots(slots) {
   if (!Array.isArray(slots)) return [];
-  return slots.map(slot => {
+  return slots.map((slot) => {
     if (!slot) return slot;
     if (typeof slot === 'string') {
       if (slot === 'Empty' || slot === 'None') return slot;

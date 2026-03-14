@@ -4,7 +4,9 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const { parseSave: _parseSaveFull } = require('../parsers/save-parser');
-function parseSave(buf) { return _parseSaveFull(buf).players; }
+function parseSave(buf) {
+  return _parseSaveFull(buf).players;
+}
 const Client = require('ssh2-sftp-client');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
@@ -39,7 +41,9 @@ function loadIdMap() {
       const m = line.trim().match(/^(\d{17})_\+_\|[^@]+@(.+)$/);
       if (m) idMap[m[1]] = m[2].trim();
     }
-  } catch (e) { /* ignore */ }
+  } catch (_e) {
+    /* ignore */
+  }
   return idMap;
 }
 
@@ -55,7 +59,11 @@ function parseLastSeen() {
   try {
     const raw = fs.readFileSync(path.join(DATA_DIR, 'logs', 'PlayerConnectedLog.txt'), 'utf8');
     for (const line of raw.split('\n')) {
-      const m = line.trim().match(/^Player (?:Connected|Disconnected) .+ NetID\((\d{17})_\+_\|[^)]+\) \((\d+)\/(\d+)\/(\d+) (\d+):(\d+)\)/);
+      const m = line
+        .trim()
+        .match(
+          /^Player (?:Connected|Disconnected) .+ NetID\((\d{17})_\+_\|[^)]+\) \((\d+)\/(\d+)\/(\d+) (\d+):(\d+)\)/,
+        );
       if (m) {
         const [, steamId, day, month, year, hour, minute] = m;
         const date = new Date(+year, +month - 1, +day, +hour, +minute);
@@ -64,7 +72,9 @@ function parseLastSeen() {
         }
       }
     }
-  } catch (e) { /* ignore */ }
+  } catch (_e) {
+    /* ignore */
+  }
   return lastSeen;
 }
 
@@ -110,7 +120,11 @@ async function fetchOnlinePlayers() {
     console.log('[SFTP] Online players:', ids.size, [...ids].join(', '));
   } catch (err) {
     console.error('[SFTP] Failed to fetch online players:', err.message);
-    try { await sftp.end(); } catch (e) { /* ignore */ }
+    try {
+      await sftp.end();
+    } catch (_e) {
+      /* ignore */
+    }
   }
   return onlineSteamIds;
 }
@@ -121,7 +135,11 @@ function buildPlayerList() {
   if (!savePath) return [];
 
   const players = parseSave(fs.readFileSync(savePath));
-  try { bounds = JSON.parse(fs.readFileSync(CAL_FILE, 'utf8')); } catch (e) { /* keep current */ }
+  try {
+    bounds = JSON.parse(fs.readFileSync(CAL_FILE, 'utf8'));
+  } catch (_e) {
+    /* keep current */
+  }
   idMap = loadIdMap();
   lastSeenMap = parseLastSeen();
 
@@ -133,9 +151,13 @@ function buildPlayerList() {
     const lng = hasPosition ? ((data.y - bounds.yMin) / (bounds.yMax - bounds.yMin)) * 4096 : null;
     const lastSeen = lastSeenMap[steamId] ? lastSeenMap[steamId].toISOString() : null;
     result.push({
-      steamId, name, lat, lng,
+      steamId,
+      name,
+      lat,
+      lng,
       isOnline: onlineSteamIds.has(steamId),
-      hasPosition, lastSeen,
+      hasPosition,
+      lastSeen,
       worldX: hasPosition ? Math.round(data.x) : null,
       worldY: hasPosition ? Math.round(data.y) : null,
       worldZ: hasPosition ? Math.round(data.z) : null,
@@ -145,8 +167,11 @@ function buildPlayerList() {
       meleeKills: data.lifetimeMeleeKills || data.meleeKills || 0,
       gunKills: data.lifetimeGunKills || data.gunKills || 0,
       daysSurvived: data.daysSurvived || data.lifetimeDaysSurvived || 0,
-      health: data.health, hunger: data.hunger, thirst: data.thirst,
-      stamina: data.stamina, immunity: data.infection,
+      health: data.health,
+      hunger: data.hunger,
+      thirst: data.thirst,
+      stamina: data.stamina,
+      immunity: data.infection,
       battery: data.battery,
       fatigue: data.fatigue,
       profession: data.startingPerk || 'Unknown',
@@ -160,7 +185,7 @@ function buildPlayerList() {
     });
   }
   // Sort: online first, then by name
-  result.sort((a, b) => (b.isOnline - a.isOnline) || a.name.localeCompare(b.name));
+  result.sort((a, b) => b.isOnline - a.isOnline || a.name.localeCompare(b.name));
   return result;
 }
 
@@ -177,7 +202,7 @@ app.get('/api/refresh', async (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
+    Connection: 'keep-alive',
   });
 
   function sendEvent(type, message, data) {
@@ -235,14 +260,22 @@ app.get('/api/refresh', async (req, res) => {
   } catch (err) {
     console.error('[SFTP refresh] Error:', err.message);
     sendEvent('error', 'SFTP error: ' + err.message);
-    try { await sftp.end(); } catch (e) { /* ignore */ }
+    try {
+      await sftp.end();
+    } catch (_e) {
+      /* ignore */
+    }
   } finally {
     res.end();
   }
 });
 
 app.get('/api/calibration', (req, res) => {
-  try { bounds = JSON.parse(fs.readFileSync(CAL_FILE, 'utf8')); } catch (e) { /* keep */ }
+  try {
+    bounds = JSON.parse(fs.readFileSync(CAL_FILE, 'utf8'));
+  } catch (_e) {
+    /* keep */
+  }
   res.json(bounds);
 });
 
@@ -273,7 +306,11 @@ app.get('/api/fetch-position/:steamId', async (req, res) => {
     res.json({ steamId, name, worldX: Math.round(p.x), worldY: Math.round(p.y), worldZ: Math.round(p.z) });
   } catch (err) {
     console.error('[SFTP] Error:', err.message);
-    try { await sftp.end(); } catch (e) { /* ignore */ }
+    try {
+      await sftp.end();
+    } catch (_e) {
+      /* ignore */
+    }
     res.status(500).json({ error: err.message });
   }
 });

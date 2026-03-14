@@ -24,7 +24,7 @@ class PlaytimeTracker {
 
   init() {
     if (this._data) return; // already initialised
-    this._loadFromDb();      // load from DB
+    this._loadFromDb(); // load from DB
     if (!this._data) {
       // DB has nothing yet — create empty structure
       this._data = {
@@ -147,7 +147,9 @@ class PlaytimeTracker {
 
     // Register alias in unified identity DB
     if (this._db) {
-      try { this._db.registerAlias(id, name, 'playtime'); } catch (_) {}
+      try {
+        this._db.registerAlias(id, name, 'playtime');
+      } catch (_) {}
     }
 
     console.log(`[${this._label}] ${name} (${id}) session started`);
@@ -429,7 +431,7 @@ class PlaytimeTracker {
       this._db.setServerPeak('unique_day_peak', String(p.uniqueDayPeak || 0));
       this._db.setServerPeak('unique_day_peak_date', p.uniqueDayPeakDate || '');
       this._db.setServerPeak('yesterday_unique', String(p.yesterdayUnique || 0));
-    } catch (err) {
+    } catch (_err) {
       // Non-critical
     }
   }
@@ -437,7 +439,11 @@ class PlaytimeTracker {
   /** Parse a JSON string safely, returning fallback on failure. */
   _parseJson(str, fallback) {
     if (!str) return fallback;
-    try { return JSON.parse(str); } catch { return fallback; }
+    try {
+      return JSON.parse(str);
+    } catch {
+      return fallback;
+    }
   }
 
   // ── Private ────────────────────────────────────────────────
@@ -473,7 +479,7 @@ class PlaytimeTracker {
       for (const key of toDelete) delete this._data.players[key];
       // Also clean uniqueToday of any name-based entries
       if (this._data.peaks && Array.isArray(this._data.peaks.uniqueToday)) {
-        this._data.peaks.uniqueToday = this._data.peaks.uniqueToday.filter(id => /^\d{17}$/.test(id));
+        this._data.peaks.uniqueToday = this._data.peaks.uniqueToday.filter((id) => /^\d{17}$/.test(id));
       }
       console.log(`[${this._label}] Cleaned ${toDelete.length} ghost entries`);
     }
@@ -518,7 +524,12 @@ class PlaytimeTracker {
         // Parse D/M/YYYY → ISO date
         const parts = bestDate.split('/');
         this._data.peaks.uniqueDayPeakDate = new Date(
-          parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]), 12, 0, 0
+          parseInt(parts[2]),
+          parseInt(parts[1]) - 1,
+          parseInt(parts[0]),
+          12,
+          0,
+          0,
         ).toISOString();
         console.log(`[${this._label}] Backfilled uniqueDayPeak: ${bestCount} on ${bestDate}`);
       }

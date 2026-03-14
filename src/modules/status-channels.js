@@ -2,9 +2,7 @@ const { ChannelType } = require('discord.js');
 const _defaultConfig = require('../config');
 const { getPlayerList } = require('../rcon/server-info');
 
-const STATUS_CHANNELS = [
-  { key: 'players', template: '\u{1F465} Players: {value}', fallback: '\u{1F465} Players: --' },
-];
+const STATUS_CHANNELS = [{ key: 'players', template: '\u{1F465} Players: {value}', fallback: '\u{1F465} Players: --' }];
 
 class StatusChannels {
   /**
@@ -49,7 +47,7 @@ class StatusChannels {
       console.log(`[STATUS] Found ${found} status channel(s) (updating every ${this.updateIntervalMs / 1000}s)`);
 
       // Initial update
-      this._update().catch(err => console.error('[STATUS] Initial update error:', err.message));
+      this._update().catch((err) => console.error('[STATUS] Initial update error:', err.message));
 
       // Start repeating updates
       this.interval = setInterval(() => this._update(), this.updateIntervalMs);
@@ -77,14 +75,13 @@ class StatusChannels {
     // Prefer channel in hinted category
     if (this._categoryHint) {
       const cat = allChannels.find(
-        c => c.type === ChannelType.GuildCategory &&
-             c.name.toLowerCase().includes(this._categoryHint.replace(/📊\s*/g, '').toLowerCase().substring(0, 10))
+        (c) =>
+          c.type === ChannelType.GuildCategory &&
+          c.name.toLowerCase().includes(this._categoryHint.replace(/📊\s*/g, '').toLowerCase().substring(0, 10)),
       );
       if (cat) {
         const inCat = allChannels.find(
-          c => c.parentId === cat.id &&
-               c.type === ChannelType.GuildVoice &&
-               c.name.startsWith(prefix)
+          (c) => c.parentId === cat.id && c.type === ChannelType.GuildVoice && c.name.startsWith(prefix),
         );
         if (inCat) {
           this.channels.set(spec.key, inCat);
@@ -94,9 +91,7 @@ class StatusChannels {
     }
 
     // Fallback: search across all categories
-    const found = allChannels.find(
-      c => c.type === ChannelType.GuildVoice && c.name.startsWith(prefix)
-    );
+    const found = allChannels.find((c) => c.type === ChannelType.GuildVoice && c.name.startsWith(prefix));
     if (found) {
       this.channels.set(spec.key, found);
     }
@@ -140,7 +135,9 @@ class StatusChannels {
           if (channel.name !== offlineName) {
             try {
               await channel.setName(offlineName);
-            } catch (_) { /* rate limit / permission — ignore */ }
+            } catch (_) {
+              /* rate limit / permission — ignore */
+            }
           }
         }
       } else {
@@ -148,7 +145,6 @@ class StatusChannels {
       }
     }
   }
-
 }
 
 module.exports = StatusChannels;

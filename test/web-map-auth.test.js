@@ -1,4 +1,4 @@
-const { describe, it, before, after } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
 // Stub config before requiring auth module
@@ -194,8 +194,12 @@ describe('Web Map Auth', () => {
       // Minimal Express app mock
       const routes = {};
       const app = {
-        get: (path, handler) => { routes[`GET ${path}`] = handler; },
-        post: (path, handler) => { routes[`POST ${path}`] = handler; },
+        get: (path, handler) => {
+          routes[`GET ${path}`] = handler;
+        },
+        post: (path, handler) => {
+          routes[`POST ${path}`] = handler;
+        },
         use: () => {},
       };
 
@@ -204,7 +208,9 @@ describe('Web Map Auth', () => {
 
       // No-op middleware should call next()
       let nextCalled = false;
-      middleware({}, {}, () => { nextCalled = true; });
+      middleware({}, {}, () => {
+        nextCalled = true;
+      });
       assert.equal(nextCalled, true);
 
       // Stub auth routes should still be registered (so frontend can function)
@@ -220,8 +226,12 @@ describe('Web Map Auth', () => {
 
       const routes = {};
       const app = {
-        get: (path, handler) => { routes[`GET ${path}`] = handler; },
-        post: (path, handler) => { routes[`POST ${path}`] = handler; },
+        get: (path, handler) => {
+          routes[`GET ${path}`] = handler;
+        },
+        post: (path, handler) => {
+          routes[`POST ${path}`] = handler;
+        },
         use: () => {},
       };
 
@@ -252,7 +262,9 @@ describe('Web Map Auth', () => {
       const middleware = setup(app);
 
       let nextCalled = false;
-      middleware({ path: '/auth/login', headers: {} }, {}, () => { nextCalled = true; });
+      middleware({ path: '/auth/login', headers: {} }, {}, () => {
+        nextCalled = true;
+      });
       assert.equal(nextCalled, true);
 
       delete process.env.DISCORD_OAUTH_SECRET;
@@ -280,7 +292,9 @@ describe('Web Map Auth', () => {
         redirect: () => {},
       };
 
-      middleware(req, res, () => { nextCalled = true; });
+      middleware(req, res, () => {
+        nextCalled = true;
+      });
       assert.equal(nextCalled, true);
       assert.equal(req.tier, 'public');
       assert.equal(req.tierLevel, 0);
@@ -297,8 +311,13 @@ describe('Web Map Auth', () => {
       let jsonBody = null;
       const req = { path: '/api/players', tier: 'public', tierLevel: 0 };
       const res = {
-        status: (code) => { statusCode = code; return res; },
-        json: (body) => { jsonBody = body; },
+        status: (code) => {
+          statusCode = code;
+          return res;
+        },
+        json: (body) => {
+          jsonBody = body;
+        },
         redirect: () => {},
       };
 
@@ -315,7 +334,7 @@ describe('Web Map Auth', () => {
 
       // Build a mock bot client with a guild member cache
       const mockMember = {
-        roles: { cache: { map: (fn) => fn({ id: '111' }) ? ['111'] : [] } },
+        roles: { cache: { map: (fn) => (fn({ id: '111' }) ? ['111'] : []) } },
         permissions: { bitfield: 0n },
       };
       // Fix: map returns an array with correct role IDs
@@ -325,13 +344,17 @@ describe('Web Map Auth', () => {
         members: { cache: { get: () => mockMember } },
       };
       const mockClient = {
-        guilds: { cache: { get: (id) => id === '987654321' ? mockGuild : null } },
+        guilds: { cache: { get: (id) => (id === '987654321' ? mockGuild : null) } },
       };
 
       const routes = {};
       const app = {
-        get: (path, ...handlers) => { routes[`GET ${path}`] = handlers[handlers.length - 1]; },
-        post: (path, ...handlers) => { routes[`POST ${path}`] = handlers[handlers.length - 1]; },
+        get: (path, ...handlers) => {
+          routes[`GET ${path}`] = handlers[handlers.length - 1];
+        },
+        post: (path, ...handlers) => {
+          routes[`POST ${path}`] = handlers[handlers.length - 1];
+        },
         use: () => {},
       };
 
@@ -362,7 +385,9 @@ describe('Web Map Auth', () => {
         headers: { cookie: `hmz_session=${signed}` },
       };
       let nextCalled = false;
-      middleware(req, {}, () => { nextCalled = true; });
+      middleware(req, {}, () => {
+        nextCalled = true;
+      });
       assert.equal(nextCalled, true);
 
       // The mock member has no admin role/permission → tier should downgrade

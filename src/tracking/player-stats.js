@@ -25,7 +25,7 @@ class PlayerStats {
 
   init() {
     if (this._data) return; // already initialised
-    this._loadFromDb();      // load from DB
+    this._loadFromDb(); // load from DB
     if (!this._data) this._data = { players: {} }; // empty if DB has nothing yet
     this._buildNameIndex();
     this._loadLocalIdMap(); // seed name→SteamID from cached PlayerIDMapped.txt
@@ -38,7 +38,9 @@ class PlayerStats {
   }
 
   /** Attach a HumanitZDB instance for unified alias registration. */
-  setDb(db) { this._db = db; }
+  setDb(db) {
+    this._db = db;
+  }
 
   _ensureInit() {
     if (!this._data) this.init();
@@ -54,7 +56,7 @@ class PlayerStats {
         const record = this._data.players[steamId];
         if (record.name !== name && record.name.toLowerCase() !== name.toLowerCase()) {
           if (!record.nameHistory) record.nameHistory = [];
-          const alreadyLogged = record.nameHistory.some(h => h.name.toLowerCase() === record.name.toLowerCase());
+          const alreadyLogged = record.nameHistory.some((h) => h.name.toLowerCase() === record.name.toLowerCase());
           if (!alreadyLogged) {
             record.nameHistory.push({ name: record.name, until: new Date().toISOString() });
             console.log(`[${this._label}] Name change detected via ID map: "${record.name}" → "${name}" (${steamId})`);
@@ -66,8 +68,11 @@ class PlayerStats {
 
     // Bulk-register in unified identity DB
     if (this._db) {
-      try { this._db.importIdMap(entries); }
-      catch (_) { /* non-critical */ }
+      try {
+        this._db.importIdMap(entries);
+      } catch (_) {
+        /* non-critical */
+      }
     }
   }
 
@@ -103,7 +108,7 @@ class PlayerStats {
         const damageTaken = this._parseJson(row.log_damage_detail, {});
         const damageTakenTotal = Object.values(damageTaken).reduce((a, b) => a + b, 0);
         // Sanity check: if DB has aggregate but no detail, use aggregate
-        const dtTotal = damageTakenTotal || (row.log_damage_taken || 0);
+        const dtTotal = damageTakenTotal || row.log_damage_taken || 0;
         this._data.players[row.steam_id] = {
           name: row.name || row.steam_id,
           nameHistory: [],
@@ -180,7 +185,11 @@ class PlayerStats {
   /** Parse a JSON string safely, returning fallback on failure. */
   _parseJson(str, fallback) {
     if (!str) return fallback;
-    try { return JSON.parse(str); } catch { return fallback; }
+    try {
+      return JSON.parse(str);
+    } catch {
+      return fallback;
+    }
   }
 
   // ─── Recording methods (called by LogWatcher) ────────────
@@ -324,7 +333,7 @@ class PlayerStats {
     }
     // Fallback: partial match by name history
     for (const [id, record] of Object.entries(this._data.players)) {
-      if (record.nameHistory && record.nameHistory.some(h => h.name.toLowerCase().includes(lower))) {
+      if (record.nameHistory && record.nameHistory.some((h) => h.name.toLowerCase().includes(lower))) {
         return { id, ...record };
       }
     }
@@ -406,7 +415,7 @@ class PlayerStats {
       const record = this._data.players[steamId];
       if (record.name !== name && record.name.toLowerCase() !== name.toLowerCase()) {
         if (!record.nameHistory) record.nameHistory = [];
-        const alreadyLogged = record.nameHistory.some(h => h.name.toLowerCase() === record.name.toLowerCase());
+        const alreadyLogged = record.nameHistory.some((h) => h.name.toLowerCase() === record.name.toLowerCase());
         if (!alreadyLogged) {
           record.nameHistory.push({ name: record.name, until: new Date().toISOString() });
           console.log(`[${this._label}] Name change detected: "${record.name}" → "${name}" (${steamId})`);
@@ -419,8 +428,11 @@ class PlayerStats {
 
     // Register in unified identity DB
     if (this._db) {
-      try { this._db.registerAlias(steamId, name, 'log'); }
-      catch (_) { /* non-critical */ }
+      try {
+        this._db.registerAlias(steamId, name, 'log');
+      } catch (_) {
+        /* non-critical */
+      }
     }
 
     return this._data.players[steamId];
@@ -458,7 +470,7 @@ class PlayerStats {
     // 2. Search name history (old names) across all records
     for (const [id, record] of Object.entries(this._data.players)) {
       if (!record.nameHistory || id.startsWith('name:')) continue;
-      if (record.nameHistory.some(h => h.name.toLowerCase() === nameLower)) {
+      if (record.nameHistory.some((h) => h.name.toLowerCase() === nameLower)) {
         return record;
       }
     }
@@ -476,7 +488,9 @@ class PlayerStats {
         if (resolved && /^\d{17}$/.test(resolved.steamId)) {
           return this._getOrCreate(resolved.steamId, name);
         }
-      } catch (_) { /* non-critical */ }
+      } catch (_) {
+        /* non-critical */
+      }
     }
 
     // 5. Fallback: create with name as key
@@ -585,7 +599,6 @@ class PlayerStats {
   }
 
   // ─── Persistence ──────────────────────────────────────────
-
 }
 
 const _singleton = new PlayerStats();

@@ -27,82 +27,95 @@ module.exports = {
     .setDescriptionLocalizations(getLocalizations('commands:qspanel.description'))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 
-    .addSubcommand((sub) => sub
-      .setName('status')
-      .setDescription(t('commands:qspanel.subcommands.status', 'en'))
-      .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.status')),
+    .addSubcommand((sub) =>
+      sub
+        .setName('status')
+        .setDescription(t('commands:qspanel.subcommands.status', 'en'))
+        .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.status')),
     )
 
-    .addSubcommand((sub) => sub
-      .setName('start')
-      .setDescription(t('commands:qspanel.subcommands.start', 'en'))
-      .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.start')),
+    .addSubcommand((sub) =>
+      sub
+        .setName('start')
+        .setDescription(t('commands:qspanel.subcommands.start', 'en'))
+        .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.start')),
     )
 
-    .addSubcommand((sub) => sub
-      .setName('stop')
-      .setDescription(t('commands:qspanel.subcommands.stop', 'en'))
-      .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.stop')),
+    .addSubcommand((sub) =>
+      sub
+        .setName('stop')
+        .setDescription(t('commands:qspanel.subcommands.stop', 'en'))
+        .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.stop')),
     )
 
-    .addSubcommand((sub) => sub
-      .setName('restart')
-      .setDescription(t('commands:qspanel.subcommands.restart', 'en'))
-      .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.restart')),
+    .addSubcommand((sub) =>
+      sub
+        .setName('restart')
+        .setDescription(t('commands:qspanel.subcommands.restart', 'en'))
+        .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.restart')),
     )
 
-    .addSubcommand((sub) => sub
-      .setName('kill')
-      .setDescription(t('commands:qspanel.subcommands.kill', 'en'))
-      .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.kill')),
+    .addSubcommand((sub) =>
+      sub
+        .setName('kill')
+        .setDescription(t('commands:qspanel.subcommands.kill', 'en'))
+        .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.kill')),
     )
 
-    .addSubcommand((sub) => sub
-      .setName('console')
-      .setDescription(t('commands:qspanel.subcommands.console', 'en'))
-      .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.console'))
-      .addStringOption((opt) => opt
-        .setName('command')
-        .setDescription(t('commands:qspanel.options.command', 'en'))
-        .setDescriptionLocalizations(getLocalizations('commands:qspanel.options.command'))
-        .setRequired(true),
-      ),
+    .addSubcommand((sub) =>
+      sub
+        .setName('console')
+        .setDescription(t('commands:qspanel.subcommands.console', 'en'))
+        .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.console'))
+        .addStringOption((opt) =>
+          opt
+            .setName('command')
+            .setDescription(t('commands:qspanel.options.command', 'en'))
+            .setDescriptionLocalizations(getLocalizations('commands:qspanel.options.command'))
+            .setRequired(true),
+        ),
     )
 
-    .addSubcommand((sub) => sub
-      .setName('backups')
-      .setDescription(t('commands:qspanel.subcommands.backups', 'en'))
-      .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.backups')),
+    .addSubcommand((sub) =>
+      sub
+        .setName('backups')
+        .setDescription(t('commands:qspanel.subcommands.backups', 'en'))
+        .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.backups')),
     )
 
-    .addSubcommand((sub) => sub
-      .setName('backup-create')
-      .setDescription(t('commands:qspanel.subcommands.backup_create', 'en'))
-      .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.backup_create'))
-      .addStringOption((opt) => opt
-        .setName('name')
-        .setDescription(t('commands:qspanel.options.backup_name', 'en'))
-        .setDescriptionLocalizations(getLocalizations('commands:qspanel.options.backup_name'))
-        .setRequired(false),
-      ),
+    .addSubcommand((sub) =>
+      sub
+        .setName('backup-create')
+        .setDescription(t('commands:qspanel.subcommands.backup_create', 'en'))
+        .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.backup_create'))
+        .addStringOption((opt) =>
+          opt
+            .setName('name')
+            .setDescription(t('commands:qspanel.options.backup_name', 'en'))
+            .setDescriptionLocalizations(getLocalizations('commands:qspanel.options.backup_name'))
+            .setRequired(false),
+        ),
     )
 
-    .addSubcommand((sub) => sub
-      .setName('backup-delete')
-      .setDescription(t('commands:qspanel.subcommands.backup_delete', 'en'))
-      .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.backup_delete'))
-      .addStringOption((opt) => opt
-        .setName('uuid')
-        .setDescription(t('commands:qspanel.options.backup_uuid', 'en'))
-        .setDescriptionLocalizations(getLocalizations('commands:qspanel.options.backup_uuid'))
-        .setRequired(true),
-      ),
+    .addSubcommand((sub) =>
+      sub
+        .setName('backup-delete')
+        .setDescription(t('commands:qspanel.subcommands.backup_delete', 'en'))
+        .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.backup_delete'))
+        .addStringOption((opt) =>
+          opt
+            .setName('uuid')
+            .setDescription(t('commands:qspanel.options.backup_uuid', 'en'))
+            .setDescriptionLocalizations(getLocalizations('commands:qspanel.options.backup_uuid'))
+            .setRequired(true),
+        ),
     )
 
-    .addSubcommand((sub) => sub
-      .setName('schedules')
-      .setDescription(t('commands:qspanel.subcommands.schedules', 'en'))
-      .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.schedules')),
+    .addSubcommand((sub) =>
+      sub
+        .setName('schedules')
+        .setDescription(t('commands:qspanel.subcommands.schedules', 'en'))
+        .setDescriptionLocalizations(getLocalizations('commands:qspanel.subcommands.schedules')),
     ),
 
   async execute(interaction) {
@@ -118,16 +131,26 @@ module.exports = {
     const sub = interaction.options.getSubcommand();
 
     switch (sub) {
-      case 'status': return _status(interaction);
-      case 'start': return _power(interaction, 'start');
-      case 'stop': return _power(interaction, 'stop');
-      case 'restart': return _power(interaction, 'restart');
-      case 'kill': return _power(interaction, 'kill');
-      case 'console': return _console(interaction);
-      case 'backups': return _backups(interaction);
-      case 'backup-create': return _backupCreate(interaction);
-      case 'backup-delete': return _backupDelete(interaction);
-      case 'schedules': return _schedules(interaction);
+      case 'status':
+        return _status(interaction);
+      case 'start':
+        return _power(interaction, 'start');
+      case 'stop':
+        return _power(interaction, 'stop');
+      case 'restart':
+        return _power(interaction, 'restart');
+      case 'kill':
+        return _power(interaction, 'kill');
+      case 'console':
+        return _console(interaction);
+      case 'backups':
+        return _backups(interaction);
+      case 'backup-create':
+        return _backupCreate(interaction);
+      case 'backup-delete':
+        return _backupDelete(interaction);
+      case 'schedules':
+        return _schedules(interaction);
       default:
         await interaction.reply({
           content: t('commands:qspanel.reply.unknown_subcommand', locale, { subcommand: sub }),
@@ -142,10 +165,7 @@ async function _status(interaction) {
   const locale = interaction.locale || 'en';
 
   try {
-    const [resources, details] = await Promise.all([
-      panelApi.getResources(),
-      panelApi.getServerDetails(),
-    ]);
+    const [resources, details] = await Promise.all([panelApi.getResources(), panelApi.getServerDetails()]);
 
     const si = _stateInfo(resources.state, locale);
     const embed = new EmbedBuilder()
@@ -154,19 +174,25 @@ async function _status(interaction) {
       .setTimestamp();
 
     const name = details.name || t('commands:qspanel.reply.game_server_fallback', locale);
-    embed.setDescription(t('commands:qspanel.reply.status_header', locale, {
-      name,
-      emoji: si.emoji,
-      label: si.label,
-    }));
+    embed.setDescription(
+      t('commands:qspanel.reply.status_header', locale, {
+        name,
+        emoji: si.emoji,
+        label: si.label,
+      }),
+    );
 
     const resParts = [];
     if (resources.cpu != null) resParts.push(`🖥️ CPU: **${resources.cpu}%**`);
     if (resources.memUsed != null && resources.memTotal != null) {
-      resParts.push(`🧠 RAM: **${formatBytes(resources.memUsed)}** / ${formatBytes(resources.memTotal)} (${resources.memPercent ?? '?'}%)`);
+      resParts.push(
+        `🧠 RAM: **${formatBytes(resources.memUsed)}** / ${formatBytes(resources.memTotal)} (${resources.memPercent ?? '?'}%)`,
+      );
     }
     if (resources.diskUsed != null && resources.diskTotal != null) {
-      resParts.push(`💾 Disk: **${formatBytes(resources.diskUsed)}** / ${formatBytes(resources.diskTotal)} (${resources.diskPercent ?? '?'}%)`);
+      resParts.push(
+        `💾 Disk: **${formatBytes(resources.diskUsed)}** / ${formatBytes(resources.diskTotal)} (${resources.diskPercent ?? '?'}%)`,
+      );
     }
     if (resources.uptime != null) {
       const up = formatUptime(resources.uptime);
@@ -179,10 +205,17 @@ async function _status(interaction) {
     const limits = details.limits || {};
     const limitParts = [];
     if (limits.memory) limitParts.push(`RAM: ${limits.memory} MB`);
-    if (limits.disk) limitParts.push(`Disk: ${limits.disk === 0 ? t('commands:qspanel.reply.unlimited', locale) : `${limits.disk} MB`}`);
+    if (limits.disk)
+      limitParts.push(
+        `Disk: ${limits.disk === 0 ? t('commands:qspanel.reply.unlimited', locale) : `${limits.disk} MB`}`,
+      );
     if (limits.cpu) limitParts.push(`CPU: ${limits.cpu}%`);
     if (limitParts.length > 0) {
-      embed.addFields({ name: t('commands:qspanel.embeds.plan_limits_field', locale), value: limitParts.join('  ·  '), inline: true });
+      embed.addFields({
+        name: t('commands:qspanel.embeds.plan_limits_field', locale),
+        value: limitParts.join('  ·  '),
+        inline: true,
+      });
     }
 
     const fl = details.feature_limits || {};
@@ -191,7 +224,11 @@ async function _status(interaction) {
     if (fl.allocations != null) fParts.push(`Ports: ${fl.allocations}`);
     if (fl.backups != null) fParts.push(`Backups: ${fl.backups}`);
     if (fParts.length > 0) {
-      embed.addFields({ name: t('commands:qspanel.embeds.features_field', locale), value: fParts.join('  ·  '), inline: true });
+      embed.addFields({
+        name: t('commands:qspanel.embeds.features_field', locale),
+        value: fParts.join('  ·  '),
+        inline: true,
+      });
     }
 
     if (details.node) {
@@ -203,7 +240,9 @@ async function _status(interaction) {
     await interaction.editReply({ embeds: [embed] });
   } catch (err) {
     console.error('[CMD:panel:status]', err.message);
-    await interaction.editReply({ content: t('commands:qspanel.reply.status_fetch_failed', locale, { error: err.message }) });
+    await interaction.editReply({
+      content: t('commands:qspanel.reply.status_fetch_failed', locale, { error: err.message }),
+    });
   }
 }
 
@@ -232,7 +271,9 @@ async function _power(interaction, signal) {
     await interaction.editReply({ embeds: [embed] });
   } catch (err) {
     console.error(`[CMD:panel:${signal}]`, err.message);
-    await interaction.editReply({ content: t('commands:qspanel.reply.power_action_failed', locale, { signal, error: err.message }) });
+    await interaction.editReply({
+      content: t('commands:qspanel.reply.power_action_failed', locale, { signal, error: err.message }),
+    });
   }
 }
 
@@ -247,10 +288,12 @@ async function _console(interaction) {
 
     const embed = new EmbedBuilder()
       .setTitle(t('commands:qspanel.embeds.console_title', locale))
-      .setDescription(t('commands:qspanel.reply.console_sent_body', locale, {
-        command,
-        note: t('commands:qspanel.reply.panel_console_note', locale),
-      }))
+      .setDescription(
+        t('commands:qspanel.reply.console_sent_body', locale, {
+          command,
+          note: t('commands:qspanel.reply.panel_console_note', locale),
+        }),
+      )
       .setColor(0x3498db)
       .setFooter({ text: t('commands:qspanel.reply.sent_by', locale, { user: interaction.user.tag }) })
       .setTimestamp();
@@ -258,7 +301,9 @@ async function _console(interaction) {
     await interaction.editReply({ embeds: [embed] });
   } catch (err) {
     console.error('[CMD:panel:console]', err.message);
-    await interaction.editReply({ content: t('commands:qspanel.reply.console_command_failed', locale, { error: err.message }) });
+    await interaction.editReply({
+      content: t('commands:qspanel.reply.console_command_failed', locale, { error: err.message }),
+    });
   }
 }
 
@@ -301,7 +346,9 @@ async function _backups(interaction) {
     await interaction.editReply({ embeds: [embed] });
   } catch (err) {
     console.error('[CMD:panel:backups]', err.message);
-    await interaction.editReply({ content: t('commands:qspanel.reply.backups_fetch_failed', locale, { error: err.message }) });
+    await interaction.editReply({
+      content: t('commands:qspanel.reply.backups_fetch_failed', locale, { error: err.message }),
+    });
   }
 }
 
@@ -316,10 +363,12 @@ async function _backupCreate(interaction) {
 
     const embed = new EmbedBuilder()
       .setTitle(t('commands:qspanel.embeds.backup_created_title', locale))
-      .setDescription(t('commands:qspanel.reply.backup_created_body', locale, {
-        name: backup.name || t('commands:qspanel.reply.new_backup_name', locale),
-        uuid: backup.uuid || t('commands:qspanel.reply.pending', locale),
-      }))
+      .setDescription(
+        t('commands:qspanel.reply.backup_created_body', locale, {
+          name: backup.name || t('commands:qspanel.reply.new_backup_name', locale),
+          uuid: backup.uuid || t('commands:qspanel.reply.pending', locale),
+        }),
+      )
       .setColor(0x2ecc71)
       .setFooter({ text: t('commands:qspanel.reply.requested_by', locale, { user: interaction.user.tag }) })
       .setTimestamp();
@@ -327,9 +376,10 @@ async function _backupCreate(interaction) {
     await interaction.editReply({ embeds: [embed] });
   } catch (err) {
     console.error('[CMD:panel:backup-create]', err.message);
-    const msg = err.message.includes('409') || err.message.includes('limit')
-      ? t('commands:qspanel.reply.backup_limit_reached', locale)
-      : t('commands:qspanel.reply.backup_create_failed', locale, { error: err.message });
+    const msg =
+      err.message.includes('409') || err.message.includes('limit')
+        ? t('commands:qspanel.reply.backup_limit_reached', locale)
+        : t('commands:qspanel.reply.backup_create_failed', locale, { error: err.message });
     await interaction.editReply({ content: msg });
   }
 }
@@ -345,7 +395,9 @@ async function _backupDelete(interaction) {
     await interaction.editReply({ content: t('commands:qspanel.reply.backup_deleted', locale, { uuid }) });
   } catch (err) {
     console.error('[CMD:panel:backup-delete]', err.message);
-    await interaction.editReply({ content: t('commands:qspanel.reply.backup_delete_failed', locale, { error: err.message }) });
+    await interaction.editReply({
+      content: t('commands:qspanel.reply.backup_delete_failed', locale, { error: err.message }),
+    });
   }
 }
 
@@ -391,6 +443,8 @@ async function _schedules(interaction) {
     await interaction.editReply({ embeds: [embed] });
   } catch (err) {
     console.error('[CMD:panel:schedules]', err.message);
-    await interaction.editReply({ content: t('commands:qspanel.reply.schedules_fetch_failed', locale, { error: err.message }) });
+    await interaction.editReply({
+      content: t('commands:qspanel.reply.schedules_fetch_failed', locale, { error: err.message }),
+    });
   }
 }

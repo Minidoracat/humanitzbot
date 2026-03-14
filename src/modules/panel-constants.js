@@ -9,27 +9,27 @@
 
 // ── Custom IDs ──────────────────────────────────────────────
 const BTN = {
-  START:        'panel_start',
-  STOP:         'panel_stop',
-  RESTART:      'panel_restart',
-  BACKUP:       'panel_backup',
-  KILL:         'panel_kill',
-  BOT_RESTART:  'panel_bot_restart',
-  NUKE:         'panel_nuke',
-  REIMPORT:     'panel_reimport',
-  ADD_SERVER:   'panel_add_server',
+  START: 'panel_start',
+  STOP: 'panel_stop',
+  RESTART: 'panel_restart',
+  BACKUP: 'panel_backup',
+  KILL: 'panel_kill',
+  BOT_RESTART: 'panel_bot_restart',
+  NUKE: 'panel_nuke',
+  REIMPORT: 'panel_reimport',
+  ADD_SERVER: 'panel_add_server',
   WELCOME_EDIT: 'panel_welcome_edit',
-  BROADCASTS:   'panel_broadcasts',
-  DIAGNOSTICS:  'panel_diagnostics',
-  ENV_SYNC:     'panel_env_sync',
+  BROADCASTS: 'panel_broadcasts',
+  DIAGNOSTICS: 'panel_diagnostics',
+  ENV_SYNC: 'panel_env_sync',
 };
 
 const SELECT = {
-  ENV:      'panel_env_select',
-  ENV2:     'panel_env_select2',
+  ENV: 'panel_env_select',
+  ENV2: 'panel_env_select2',
   SETTINGS: 'panel_settings_select',
-  SERVER:   'panel_server_select',
-  VIEW:     'panel_view_select',
+  SERVER: 'panel_server_select',
+  VIEW: 'panel_view_select',
   ACTIONS_BOT: 'panel_actions_bot',
   ACTIONS_SERVER: 'panel_actions_server',
   ACTIONS_MANAGED: 'panel_actions_managed',
@@ -37,20 +37,20 @@ const SELECT = {
 
 // ── Setup wizard custom IDs ─────────────────────────────────
 const SETUP = {
-  PROFILE_VPS:    'setup_profile_vps',
+  PROFILE_VPS: 'setup_profile_vps',
   PROFILE_BISECT: 'setup_profile_bisect',
-  PROFILE_RCON:   'setup_profile_rcon',
-  RCON_BTN:       'setup_rcon_btn',
-  SFTP_BTN:       'setup_sftp_btn',
-  CHANNELS_BTN:   'setup_channels_btn',
-  APPLY_BTN:      'setup_apply',
-  SKIP_SFTP_BTN:  'setup_skip_sftp',
-  RCON_MODAL:     'setup_rcon_modal',
-  SFTP_MODAL:     'setup_sftp_modal',
+  PROFILE_RCON: 'setup_profile_rcon',
+  RCON_BTN: 'setup_rcon_btn',
+  SFTP_BTN: 'setup_sftp_btn',
+  CHANNELS_BTN: 'setup_channels_btn',
+  APPLY_BTN: 'setup_apply',
+  SKIP_SFTP_BTN: 'setup_skip_sftp',
+  RCON_MODAL: 'setup_rcon_modal',
+  SFTP_MODAL: 'setup_sftp_modal',
   CHANNELS_MODAL: 'setup_channels_modal',
   // Bisect auto-detection flow
-  PANEL_BTN:      'setup_panel_btn',
-  PANEL_MODAL:    'setup_panel_modal',
+  PANEL_BTN: 'setup_panel_btn',
+  PANEL_MODAL: 'setup_panel_modal',
   PANEL_MANUAL_BTN: 'setup_panel_manual',
 };
 
@@ -65,7 +65,10 @@ const SETUP = {
 const ENV_CATEGORIES = [
   // ── Group 1: Core & Module Settings ────────────────────────
   {
-    id: 'channels', label: 'Channel IDs', emoji: '📺', group: 1,
+    id: 'channels',
+    label: 'Channel IDs',
+    emoji: '📺',
+    group: 1,
     description: 'Discord channel assignments (restart required)',
     restart: true,
     fields: [
@@ -77,19 +80,30 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'server_identity', label: 'Server & Identity', emoji: '🏷️', group: 1,
+    id: 'server_identity',
+    label: 'Server & Identity',
+    emoji: '🏷️',
+    group: 1,
     description: 'Server name, panel channel, editor toggles (restart)',
     restart: true,
     fields: [
       { env: 'SERVER_NAME', label: 'Server Display Name', cfg: 'serverName' },
       { env: 'PANEL_CHANNEL_ID', label: 'Panel Channel', cfg: 'panelChannelId' },
       { env: 'GAME_PORT', label: 'Game Port (direct connect)', cfg: 'gamePort' },
-      { env: 'ENABLE_GAME_SETTINGS_EDITOR', label: 'Settings Editor (true/false)', cfg: 'enableGameSettingsEditor', type: 'bool' },
+      {
+        env: 'ENABLE_GAME_SETTINGS_EDITOR',
+        label: 'Settings Editor (true/false)',
+        cfg: 'enableGameSettingsEditor',
+        type: 'bool',
+      },
       { env: 'ENABLE_SSH_RESOURCES', label: 'SSH Resources (true/false)', cfg: 'enableSshResources', type: 'bool' },
     ],
   },
   {
-    id: 'admin', label: 'Admin Settings', emoji: '🛡️', group: 1,
+    id: 'admin',
+    label: 'Admin Settings',
+    emoji: '🛡️',
+    group: 1,
     description: 'Admin users, roles, and alert channels (restart)',
     restart: true,
     fields: [
@@ -100,7 +114,10 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'credentials', label: 'RCON & Panel API', emoji: '🔑', group: 1,
+    id: 'credentials',
+    label: 'RCON & Panel API',
+    emoji: '🔑',
+    group: 1,
     description: 'Connection credentials (restart required)',
     restart: true,
     fields: [
@@ -112,7 +129,10 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'sftp', label: 'SFTP Connection', emoji: '📂', group: 1,
+    id: 'sftp',
+    label: 'SFTP Connection',
+    emoji: '📂',
+    group: 1,
     description: 'SFTP host, credentials, base path (restart)',
     restart: true,
     fields: [
@@ -124,7 +144,10 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'sftp_paths', label: 'SFTP File Paths', emoji: '📁', group: 1,
+    id: 'sftp_paths',
+    label: 'SFTP File Paths',
+    emoji: '📁',
+    group: 1,
     description: 'Auto-discovered paths — override if needed (restart)',
     restart: true,
     fields: [
@@ -136,7 +159,10 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'agent', label: 'Save Agent', emoji: '🤖', group: 1,
+    id: 'agent',
+    label: 'Save Agent',
+    emoji: '🤖',
+    group: 1,
     description: 'Remote save-parser agent (restart required)',
     restart: true,
     fields: [
@@ -148,11 +174,19 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'features1', label: 'Module Toggles', emoji: '⚡', group: 1,
+    id: 'features1',
+    label: 'Module Toggles',
+    emoji: '⚡',
+    group: 1,
     description: 'Enable/disable core modules (restart required)',
     restart: true,
     fields: [
-      { env: 'ENABLE_STATUS_CHANNELS', label: 'Status Channels (true/false)', cfg: 'enableStatusChannels', type: 'bool' },
+      {
+        env: 'ENABLE_STATUS_CHANNELS',
+        label: 'Status Channels (true/false)',
+        cfg: 'enableStatusChannels',
+        type: 'bool',
+      },
       { env: 'ENABLE_SERVER_STATUS', label: 'Server Status (true/false)', cfg: 'enableServerStatus', type: 'bool' },
       { env: 'ENABLE_CHAT_RELAY', label: 'Chat Relay (true/false)', cfg: 'enableChatRelay', type: 'bool' },
       { env: 'ENABLE_AUTO_MESSAGES', label: 'Auto Messages (true/false)', cfg: 'enableAutoMessages', type: 'bool' },
@@ -160,7 +194,10 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'features2', label: 'Module Toggles 2', emoji: '⚡', group: 1,
+    id: 'features2',
+    label: 'Module Toggles 2',
+    emoji: '⚡',
+    group: 1,
     description: 'More toggles (restart required)',
     restart: true,
     fields: [
@@ -172,7 +209,10 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'automsg', label: 'Auto Messages', emoji: '📢', group: 1,
+    id: 'automsg',
+    label: 'Auto Messages',
+    emoji: '📢',
+    group: 1,
     description: 'Broadcast & welcome toggles (restart required)',
     restart: true,
     fields: [
@@ -184,7 +224,10 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'automsg_custom', label: 'Custom Messages', emoji: '📝', group: 1,
+    id: 'automsg_custom',
+    label: 'Custom Messages',
+    emoji: '📝',
+    group: 1,
     description: 'Custom broadcast text and welcome lines (restart)',
     restart: true,
     fields: [
@@ -195,41 +238,68 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'log_features', label: 'Log Features', emoji: '📋', group: 1,
+    id: 'log_features',
+    label: 'Log Features',
+    emoji: '📋',
+    group: 1,
     description: 'Kill feed & death loop (restart required)',
     restart: true,
     fields: [
       { env: 'ENABLE_PVP_KILL_FEED', label: 'PvP Kill Feed (true/false)', cfg: 'enablePvpKillFeed', type: 'bool' },
       { env: 'PVP_KILL_WINDOW', label: 'Kill Window (ms)', cfg: 'pvpKillWindow', type: 'int' },
-      { env: 'ENABLE_DEATH_LOOP_DETECTION', label: 'Death Loop (true/false)', cfg: 'enableDeathLoopDetection', type: 'bool' },
+      {
+        env: 'ENABLE_DEATH_LOOP_DETECTION',
+        label: 'Death Loop (true/false)',
+        cfg: 'enableDeathLoopDetection',
+        type: 'bool',
+      },
       { env: 'DEATH_LOOP_THRESHOLD', label: 'Loop Threshold (count)', cfg: 'deathLoopThreshold', type: 'int' },
       { env: 'DEATH_LOOP_WINDOW', label: 'Loop Window (ms)', cfg: 'deathLoopWindow', type: 'int' },
     ],
   },
   {
-    id: 'activity_feeds', label: 'Activity Feeds', emoji: '📰', group: 1,
+    id: 'activity_feeds',
+    label: 'Activity Feeds',
+    emoji: '📰',
+    group: 1,
     description: 'Save-based activity feed toggles (applies live)',
     restart: false,
     fields: [
       { env: 'ENABLE_FISHING_FEED', label: 'Fishing Feed (true/false)', cfg: 'enableFishingFeed', type: 'bool' },
       { env: 'ENABLE_RECIPE_FEED', label: 'Recipe Feed (true/false)', cfg: 'enableRecipeFeed', type: 'bool' },
       { env: 'ENABLE_SKILL_FEED', label: 'Skill Feed (true/false)', cfg: 'enableSkillFeed', type: 'bool' },
-      { env: 'ENABLE_PROFESSION_FEED', label: 'Profession Feed (true/false)', cfg: 'enableProfessionFeed', type: 'bool' },
+      {
+        env: 'ENABLE_PROFESSION_FEED',
+        label: 'Profession Feed (true/false)',
+        cfg: 'enableProfessionFeed',
+        type: 'bool',
+      },
       { env: 'ENABLE_LORE_FEED', label: 'Lore Feed (true/false)', cfg: 'enableLoreFeed', type: 'bool' },
     ],
   },
   {
-    id: 'activity_feeds2', label: 'Activity Feeds 2', emoji: '📰', group: 1,
+    id: 'activity_feeds2',
+    label: 'Activity Feeds 2',
+    emoji: '📰',
+    group: 1,
     description: 'More save-based feeds (applies live)',
     restart: false,
     fields: [
       { env: 'ENABLE_UNIQUE_FEED', label: 'Unique Item Feed (true/false)', cfg: 'enableUniqueFeed', type: 'bool' },
       { env: 'ENABLE_COMPANION_FEED', label: 'Companion Feed (true/false)', cfg: 'enableCompanionFeed', type: 'bool' },
-      { env: 'ENABLE_WORLD_EVENT_FEED', label: 'World Event Feed (true/false)', cfg: 'enableWorldEventFeed', type: 'bool' },
+      {
+        env: 'ENABLE_WORLD_EVENT_FEED',
+        label: 'World Event Feed (true/false)',
+        cfg: 'enableWorldEventFeed',
+        type: 'bool',
+      },
     ],
   },
   {
-    id: 'intervals', label: 'Poll Intervals', emoji: '⏱️', group: 1,
+    id: 'intervals',
+    label: 'Poll Intervals',
+    emoji: '⏱️',
+    group: 1,
     description: 'Update frequencies in ms (restart required)',
     restart: true,
     fields: [
@@ -241,7 +311,10 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'advanced', label: 'Advanced', emoji: '⚙️', group: 1,
+    id: 'advanced',
+    label: 'Advanced',
+    emoji: '⚙️',
+    group: 1,
     description: 'Cache TTLs, auto-msg intervals (restart required)',
     restart: true,
     fields: [
@@ -254,7 +327,10 @@ const ENV_CATEGORIES = [
   },
   // ── Group 2: Display & Schedule Settings ───────────────────
   {
-    id: 'display_player', label: 'Display: Player', emoji: '👤', group: 2,
+    id: 'display_player',
+    label: 'Display: Player',
+    emoji: '👤',
+    group: 2,
     description: 'Player stats sections (applies live)',
     restart: false,
     fields: [
@@ -266,7 +342,10 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'sub_vitals', label: 'Sub: Vitals', emoji: '❤️', group: 2,
+    id: 'sub_vitals',
+    label: 'Sub: Vitals',
+    emoji: '❤️',
+    group: 2,
     description: 'Individual vital stats (parent: Vitals)',
     restart: false,
     fields: [
@@ -278,7 +357,10 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'sub_status', label: 'Sub: Status Effects', emoji: '🩹', group: 2,
+    id: 'sub_status',
+    label: 'Sub: Status Effects',
+    emoji: '🩹',
+    group: 2,
     description: 'Individual status effect types (parent: Status Effects)',
     restart: false,
     fields: [
@@ -290,7 +372,10 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'sub_inventory', label: 'Sub: Inventory', emoji: '🎒', group: 2,
+    id: 'sub_inventory',
+    label: 'Sub: Inventory',
+    emoji: '🎒',
+    group: 2,
     description: 'Individual inventory slots (parent: Inventory)',
     restart: false,
     fields: [
@@ -302,30 +387,54 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'sub_misc', label: 'Sub: Recipes/Conn/Raid', emoji: '📋', group: 2,
+    id: 'sub_misc',
+    label: 'Sub: Recipes/Conn/Raid',
+    emoji: '📋',
+    group: 2,
     description: 'Recipes, connections, raid sub-toggles',
     restart: false,
     fields: [
-      { env: 'SHOW_CRAFTING_RECIPES', label: 'Crafting Recipes (true/false)', cfg: 'showCraftingRecipes', type: 'bool' },
-      { env: 'SHOW_BUILDING_RECIPES', label: 'Building Recipes (true/false)', cfg: 'showBuildingRecipes', type: 'bool' },
+      {
+        env: 'SHOW_CRAFTING_RECIPES',
+        label: 'Crafting Recipes (true/false)',
+        cfg: 'showCraftingRecipes',
+        type: 'bool',
+      },
+      {
+        env: 'SHOW_BUILDING_RECIPES',
+        label: 'Building Recipes (true/false)',
+        cfg: 'showBuildingRecipes',
+        type: 'bool',
+      },
       { env: 'SHOW_CONNECT_COUNT', label: 'Connect Count (true/false)', cfg: 'showConnectCount', type: 'bool' },
       { env: 'SHOW_RAIDS_OUT', label: 'Raids Out (true/false)', cfg: 'showRaidsOut', type: 'bool' },
       { env: 'SHOW_RAIDS_IN', label: 'Raids In (true/false)', cfg: 'showRaidsIn', type: 'bool' },
     ],
   },
   {
-    id: 'sub_access', label: 'Sub: Access/Lore', emoji: '🔐', group: 2,
+    id: 'sub_access',
+    label: 'Sub: Access/Lore',
+    emoji: '🔐',
+    group: 2,
     description: 'Restrict sections to Discord admins (applies live)',
     restart: false,
     fields: [
       { env: 'SHOW_ADMIN_ACCESS', label: 'Admin Access (true/false)', cfg: 'showAdminAccess', type: 'bool' },
-      { env: 'SHOW_COORDINATES_ADMIN_ONLY', label: 'Coords Admin-Only (true/false)', cfg: 'showCoordinatesAdminOnly', type: 'bool' },
+      {
+        env: 'SHOW_COORDINATES_ADMIN_ONLY',
+        label: 'Coords Admin-Only (true/false)',
+        cfg: 'showCoordinatesAdminOnly',
+        type: 'bool',
+      },
       { env: 'SHOW_LORE', label: 'Lore (true/false)', cfg: 'showLore', type: 'bool' },
       { env: 'SHOW_SKILLS', label: 'Skills (true/false)', cfg: 'showSkills', type: 'bool' },
     ],
   },
   {
-    id: 'display_server', label: 'Display: Server', emoji: '🖥️', group: 2,
+    id: 'display_server',
+    label: 'Display: Server',
+    emoji: '🖥️',
+    group: 2,
     description: 'Server status sections (applies live)',
     restart: false,
     fields: [
@@ -337,23 +446,39 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'display_extra', label: 'Display: Extra', emoji: '📊', group: 2,
+    id: 'display_extra',
+    label: 'Display: Extra',
+    emoji: '📊',
+    group: 2,
     description: 'Additional display toggles (applies live)',
     restart: false,
     fields: [
       { env: 'SHOW_RAID_STATS', label: 'Raid Stats (true/false)', cfg: 'showRaidStats', type: 'bool' },
       { env: 'SHOW_PVP_KILLS', label: 'PvP Kills (true/false)', cfg: 'showPvpKills', type: 'bool' },
       { env: 'SHOW_CONNECTIONS', label: 'Connections (true/false)', cfg: 'showConnections', type: 'bool' },
-      { env: 'SHOW_CHALLENGE_DESCRIPTIONS', label: 'Challenge Desc. (true/false)', cfg: 'showChallengeDescriptions', type: 'bool' },
+      {
+        env: 'SHOW_CHALLENGE_DESCRIPTIONS',
+        label: 'Challenge Desc. (true/false)',
+        cfg: 'showChallengeDescriptions',
+        type: 'bool',
+      },
       { env: 'SHOW_WEEKLY_STATS', label: 'Weekly Stats (true/false)', cfg: 'showWeeklyStats', type: 'bool' },
     ],
   },
   {
-    id: 'display_more', label: 'Display: Status', emoji: '📺', group: 2,
+    id: 'display_more',
+    label: 'Display: Status',
+    emoji: '📺',
+    group: 2,
     description: 'Server status extras (applies live)',
     restart: false,
     fields: [
-      { env: 'SHOW_EXTENDED_SETTINGS', label: 'Extended Settings (true/false)', cfg: 'showExtendedSettings', type: 'bool' },
+      {
+        env: 'SHOW_EXTENDED_SETTINGS',
+        label: 'Extended Settings (true/false)',
+        cfg: 'showExtendedSettings',
+        type: 'bool',
+      },
       { env: 'SHOW_SERVER_VERSION', label: 'Server Version (true/false)', cfg: 'showServerVersion', type: 'bool' },
       { env: 'SHOW_SERVER_DAY', label: 'In-Game Day (true/false)', cfg: 'showServerDay', type: 'bool' },
       { env: 'SHOW_SEASON_PROGRESS', label: 'Season Progress (true/false)', cfg: 'showSeasonProgress', type: 'bool' },
@@ -361,7 +486,10 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'display_settings', label: 'Settings Grid', emoji: '🔧', group: 2,
+    id: 'display_settings',
+    label: 'Settings Grid',
+    emoji: '🔧',
+    group: 2,
     description: 'Per-category settings grid toggles (applies live)',
     restart: false,
     fields: [
@@ -373,40 +501,82 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'display_settings2', label: 'Settings Grid 2', emoji: '🔧', group: 2,
+    id: 'display_settings2',
+    label: 'Settings Grid 2',
+    emoji: '🔧',
+    group: 2,
     description: 'More settings grid toggles (applies live)',
     restart: false,
     fields: [
-      { env: 'SHOW_SETTINGS_COMPANIONS', label: 'Companions (true/false)', cfg: 'showSettingsCompanions', type: 'bool' },
+      {
+        env: 'SHOW_SETTINGS_COMPANIONS',
+        label: 'Companions (true/false)',
+        cfg: 'showSettingsCompanions',
+        type: 'bool',
+      },
       { env: 'SHOW_SETTINGS_BUILDING', label: 'Building (true/false)', cfg: 'showSettingsBuilding', type: 'bool' },
       { env: 'SHOW_SETTINGS_VEHICLES', label: 'Vehicles (true/false)', cfg: 'showSettingsVehicles', type: 'bool' },
       { env: 'SHOW_SETTINGS_ANIMALS', label: 'Animals (true/false)', cfg: 'showSettingsAnimals', type: 'bool' },
     ],
   },
   {
-    id: 'admin_only', label: 'Admin-Only Sections', emoji: '🔒', group: 2,
+    id: 'admin_only',
+    label: 'Admin-Only Sections',
+    emoji: '🔒',
+    group: 2,
     description: 'Restrict sections to Discord admins (applies live)',
     restart: false,
     fields: [
       { env: 'SHOW_VITALS_ADMIN_ONLY', label: 'Vitals (true/false)', cfg: 'showVitalsAdminOnly', type: 'bool' },
-      { env: 'SHOW_STATUS_EFFECTS_ADMIN_ONLY', label: 'Status Effects (true/false)', cfg: 'showStatusEffectsAdminOnly', type: 'bool' },
-      { env: 'SHOW_INVENTORY_ADMIN_ONLY', label: 'Inventory (true/false)', cfg: 'showInventoryAdminOnly', type: 'bool' },
+      {
+        env: 'SHOW_STATUS_EFFECTS_ADMIN_ONLY',
+        label: 'Status Effects (true/false)',
+        cfg: 'showStatusEffectsAdminOnly',
+        type: 'bool',
+      },
+      {
+        env: 'SHOW_INVENTORY_ADMIN_ONLY',
+        label: 'Inventory (true/false)',
+        cfg: 'showInventoryAdminOnly',
+        type: 'bool',
+      },
       { env: 'SHOW_RECIPES_ADMIN_ONLY', label: 'Recipes (true/false)', cfg: 'showRecipesAdminOnly', type: 'bool' },
       { env: 'SHOW_LORE_ADMIN_ONLY', label: 'Lore (true/false)', cfg: 'showLoreAdminOnly', type: 'bool' },
     ],
   },
   {
-    id: 'admin_only2', label: 'Admin-Only 2', emoji: '🔒', group: 2,
+    id: 'admin_only2',
+    label: 'Admin-Only 2',
+    emoji: '🔒',
+    group: 2,
     description: 'More admin-only restrictions (applies live)',
     restart: false,
     fields: [
-      { env: 'SHOW_CONNECTIONS_ADMIN_ONLY', label: 'Connections (true/false)', cfg: 'showConnectionsAdminOnly', type: 'bool' },
-      { env: 'SHOW_RAID_STATS_ADMIN_ONLY', label: 'Raid Stats (true/false)', cfg: 'showRaidStatsAdminOnly', type: 'bool' },
-      { env: 'SHOW_CHALLENGE_DESCRIPTIONS_ADMIN_ONLY', label: 'Challenges (true/false)', cfg: 'showChallengeDescriptionsAdminOnly', type: 'bool' },
+      {
+        env: 'SHOW_CONNECTIONS_ADMIN_ONLY',
+        label: 'Connections (true/false)',
+        cfg: 'showConnectionsAdminOnly',
+        type: 'bool',
+      },
+      {
+        env: 'SHOW_RAID_STATS_ADMIN_ONLY',
+        label: 'Raid Stats (true/false)',
+        cfg: 'showRaidStatsAdminOnly',
+        type: 'bool',
+      },
+      {
+        env: 'SHOW_CHALLENGE_DESCRIPTIONS_ADMIN_ONLY',
+        label: 'Challenges (true/false)',
+        cfg: 'showChallengeDescriptionsAdminOnly',
+        type: 'bool',
+      },
     ],
   },
   {
-    id: 'timezone', label: 'Timezone', emoji: '🌐', group: 2,
+    id: 'timezone',
+    label: 'Timezone',
+    emoji: '🌐',
+    group: 2,
     description: 'Time settings (restart required)',
     restart: true,
     fields: [
@@ -415,7 +585,10 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'threads_misc', label: 'Threads & Misc', emoji: '🧵', group: 2,
+    id: 'threads_misc',
+    label: 'Threads & Misc',
+    emoji: '🧵',
+    group: 2,
     description: 'Thread mode, leaderboards, SSH (restart required)',
     restart: true,
     fields: [
@@ -427,7 +600,10 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'activity_log', label: 'Activity Log', emoji: '📋', group: 2,
+    id: 'activity_log',
+    label: 'Activity Log',
+    emoji: '📋',
+    group: 2,
     description: 'Save-diff activity log toggles (restart required)',
     restart: true,
     fields: [
@@ -439,7 +615,10 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'pvp', label: 'PvP Schedule', emoji: '⚔️', group: 2,
+    id: 'pvp',
+    label: 'PvP Schedule',
+    emoji: '⚔️',
+    group: 2,
     description: 'PvP times, delay, server name (restart required)',
     restart: true,
     fields: [
@@ -451,7 +630,10 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'pvp_hours', label: 'PvP Daily Hours', emoji: '📅', group: 2,
+    id: 'pvp_hours',
+    label: 'PvP Daily Hours',
+    emoji: '📅',
+    group: 2,
     description: 'Per-day PvP hour overrides (restart required)',
     restart: true,
     fields: [
@@ -463,7 +645,10 @@ const ENV_CATEGORIES = [
     ],
   },
   {
-    id: 'pvp_extra', label: 'PvP Weekend & Overrides', emoji: '📅', group: 2,
+    id: 'pvp_extra',
+    label: 'PvP Weekend & Overrides',
+    emoji: '📅',
+    group: 2,
     description: 'Weekend hours + settings override JSON (restart)',
     restart: true,
     fields: [
@@ -480,7 +665,9 @@ const ENV_CATEGORIES = [
 
 const GAME_SETTINGS_CATEGORIES = [
   {
-    id: 'general', label: 'General', emoji: '⚔️',
+    id: 'general',
+    label: 'General',
+    emoji: '⚔️',
     settings: [
       { ini: 'PVP', label: 'PvP (0=Off, 1=On)' },
       { ini: 'MaxPlayers', label: 'Max Players' },
@@ -490,7 +677,9 @@ const GAME_SETTINGS_CATEGORIES = [
     ],
   },
   {
-    id: 'time', label: 'Time & Seasons', emoji: '🕐',
+    id: 'time',
+    label: 'Time & Seasons',
+    emoji: '🕐',
     settings: [
       { ini: 'DayDur', label: 'Day Length (min)' },
       { ini: 'NightDur', label: 'Night Length (min)' },
@@ -500,7 +689,9 @@ const GAME_SETTINGS_CATEGORIES = [
     ],
   },
   {
-    id: 'zombies', label: 'Zombies', emoji: '🧟',
+    id: 'zombies',
+    label: 'Zombies',
+    emoji: '🧟',
     settings: [
       { ini: 'ZombieDiffHealth', label: 'Health (0=VEasy → 5=Nmre)' },
       { ini: 'ZombieDiffSpeed', label: 'Speed (0=VEasy → 5=Nmre)' },
@@ -510,7 +701,9 @@ const GAME_SETTINGS_CATEGORIES = [
     ],
   },
   {
-    id: 'items', label: 'Items & Loot', emoji: '🎒',
+    id: 'items',
+    label: 'Items & Loot',
+    emoji: '🎒',
     settings: [
       { ini: 'WeaponBreak', label: 'Weapon Break (0=Off, 1=On)' },
       { ini: 'FoodDecay', label: 'Food Decay (0=Off, 1=On)' },
@@ -520,7 +713,9 @@ const GAME_SETTINGS_CATEGORIES = [
     ],
   },
   {
-    id: 'bandits', label: 'Bandits', emoji: '🔫',
+    id: 'bandits',
+    label: 'Bandits',
+    emoji: '🔫',
     settings: [
       { ini: 'HumanHealth', label: 'Health (0=VEasy → 5=Nmre)' },
       { ini: 'HumanSpeed', label: 'Speed (0=VEasy → 5=Nmre)' },
@@ -530,7 +725,9 @@ const GAME_SETTINGS_CATEGORIES = [
     ],
   },
   {
-    id: 'building', label: 'Building & Territory', emoji: '🏗️',
+    id: 'building',
+    label: 'Building & Territory',
+    emoji: '🏗️',
     settings: [
       { ini: 'BuildingHealth', label: 'Building HP (0=Slow,1=Norm,2=Fast)' },
       { ini: 'BuildingDecay', label: 'Building Decay (0=Off, 1=On)' },
@@ -540,7 +737,9 @@ const GAME_SETTINGS_CATEGORIES = [
     ],
   },
   {
-    id: 'loot1', label: 'Loot Rarity 1', emoji: '🎲',
+    id: 'loot1',
+    label: 'Loot Rarity 1',
+    emoji: '🎲',
     settings: [
       { ini: 'RarityFood', label: 'Food (0=Scarce → 4=Abundant)' },
       { ini: 'RarityDrink', label: 'Drink (0=Scarce → 4=Abundant)' },
@@ -550,7 +749,9 @@ const GAME_SETTINGS_CATEGORIES = [
     ],
   },
   {
-    id: 'loot2', label: 'Loot Rarity 2', emoji: '🎲',
+    id: 'loot2',
+    label: 'Loot Rarity 2',
+    emoji: '🎲',
     settings: [
       { ini: 'RarityArmor', label: 'Armor (0=Scarce → 4=Abundant)' },
       { ini: 'RarityResources', label: 'Resources (0=Scarce → 4=Abundant)' },
@@ -558,7 +759,9 @@ const GAME_SETTINGS_CATEGORIES = [
     ],
   },
   {
-    id: 'companions', label: 'Companions & Animals', emoji: '🐕',
+    id: 'companions',
+    label: 'Companions & Animals',
+    emoji: '🐕',
     settings: [
       { ini: 'DogEnabled', label: 'Dog Companion (0=Off, 1=On)' },
       { ini: 'CompanionHealth', label: 'Companion HP (0=Low,1=Def,2=Hi)' },
@@ -568,7 +771,9 @@ const GAME_SETTINGS_CATEGORIES = [
     ],
   },
   {
-    id: 'gameplay', label: 'Gameplay Toggles', emoji: '♻️',
+    id: 'gameplay',
+    label: 'Gameplay Toggles',
+    emoji: '♻️',
     settings: [
       { ini: 'ClearInfection', label: 'Clear Infection on Respawn (0/1)' },
       { ini: 'EagleEye', label: 'Eagle Eye Skill (0/1)' },
@@ -578,7 +783,9 @@ const GAME_SETTINGS_CATEGORIES = [
     ],
   },
   {
-    id: 'spawns', label: 'Spawns & Perms', emoji: '🌍',
+    id: 'spawns',
+    label: 'Spawns & Perms',
+    emoji: '🌍',
     settings: [
       { ini: 'LimitedSpawns', label: 'Limited Spawns (true/false)' },
       { ini: 'AllowDismantle', label: 'Allow Dismantle (0/1)' },
@@ -588,7 +795,9 @@ const GAME_SETTINGS_CATEGORIES = [
     ],
   },
   {
-    id: 'timers2', label: 'Respawn Timers', emoji: '⏳',
+    id: 'timers2',
+    label: 'Respawn Timers',
+    emoji: '⏳',
     settings: [
       { ini: 'RespawnTimer', label: 'Player Respawn (sec, 0=instant)' },
       { ini: 'PickupRespawnTimer', label: 'Pickup Respawn (min)' },
@@ -598,7 +807,9 @@ const GAME_SETTINGS_CATEGORIES = [
     ],
   },
   {
-    id: 'decay', label: 'Decay & Cleanup', emoji: '🧹',
+    id: 'decay',
+    label: 'Decay & Cleanup',
+    emoji: '🧹',
     settings: [
       { ini: 'Decay', label: 'Spawn Point Decay (real days)' },
       { ini: 'PickupCleanup', label: 'Pickup Cleanup (game days, 0=off)' },
@@ -608,7 +819,9 @@ const GAME_SETTINGS_CATEGORIES = [
     ],
   },
   {
-    id: 'weather1', label: 'Weather Odds 1', emoji: '🌤️',
+    id: 'weather1',
+    label: 'Weather Odds 1',
+    emoji: '🌤️',
     settings: [
       { ini: 'Weather_ClearSky', label: 'Clear Sky (multiplier)' },
       { ini: 'Weather_Cloudy', label: 'Cloudy (multiplier)' },
@@ -618,7 +831,9 @@ const GAME_SETTINGS_CATEGORIES = [
     ],
   },
   {
-    id: 'weather2', label: 'Weather Odds 2', emoji: '⛈️',
+    id: 'weather2',
+    label: 'Weather Odds 2',
+    emoji: '⛈️',
     settings: [
       { ini: 'Weather_Thunderstorm', label: 'Thunderstorm (multiplier)' },
       { ini: 'Weather_LightSnow', label: 'Light Snow (multiplier)' },
@@ -627,7 +842,9 @@ const GAME_SETTINGS_CATEGORIES = [
     ],
   },
   {
-    id: 'host', label: 'Host & Feedback', emoji: '📡',
+    id: 'host',
+    label: 'Host & Feedback',
+    emoji: '📡',
     settings: [
       { ini: 'NoJoinFeedback', label: 'Hide Join/Leave (true/false)' },
       { ini: 'NoDeathFeedback', label: 'Hide Death Notices (0/1)' },

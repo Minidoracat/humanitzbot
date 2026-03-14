@@ -58,8 +58,6 @@ describe('_formatDuration', () => {
 
 // ── Peak tracking ─────────────────────────────────────────────
 const { after } = require('node:test');
-const fs = require('fs');
-const path = require('path');
 
 /**
  * Helper: create a fresh playtime tracker isolated from any DB.

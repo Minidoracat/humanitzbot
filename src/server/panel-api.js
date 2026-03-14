@@ -22,8 +22,8 @@ const config = require('../config');
 //   https://games.bisecthosting.com/server/a1b2c3d4
 // We extract the API base URL and server identifier from it.
 
-let _baseUrl = null;   // https://games.bisecthosting.com
-let _serverId = null;  // a1b2c3d4
+let _baseUrl = null; // https://games.bisecthosting.com
+let _serverId = null; // a1b2c3d4
 
 function _parseServerUrl() {
   if (_baseUrl !== null) return; // already parsed
@@ -54,9 +54,7 @@ async function _request(endpoint, options = {}) {
     throw new Error('Panel API not configured (PANEL_SERVER_URL + PANEL_API_KEY required)');
   }
 
-  const path = endpoint.startsWith('/')
-    ? endpoint
-    : `/api/client/servers/${_serverId}/${endpoint}`;
+  const path = endpoint.startsWith('/') ? endpoint : `/api/client/servers/${_serverId}/${endpoint}`;
 
   const url = `${_baseUrl}${path}`;
 
@@ -100,16 +98,18 @@ async function getResources() {
     cpu: r.cpu_absolute != null ? Math.round(r.cpu_absolute * 10) / 10 : null,
     memUsed: r.memory_bytes ?? null,
     memTotal: r.memory_limit_bytes ?? null,
-    memPercent: (r.memory_bytes != null && r.memory_limit_bytes > 0)
-      ? Math.round((r.memory_bytes / r.memory_limit_bytes) * 1000) / 10
-      : null,
+    memPercent:
+      r.memory_bytes != null && r.memory_limit_bytes > 0
+        ? Math.round((r.memory_bytes / r.memory_limit_bytes) * 1000) / 10
+        : null,
     diskUsed: r.disk_bytes ?? null,
     diskTotal: r.disk_limit_bytes ?? null,
-    diskPercent: (r.disk_bytes != null && r.disk_limit_bytes > 0)
-      ? Math.round((r.disk_bytes / r.disk_limit_bytes) * 1000) / 10
-      : null,
+    diskPercent:
+      r.disk_bytes != null && r.disk_limit_bytes > 0
+        ? Math.round((r.disk_bytes / r.disk_limit_bytes) * 1000) / 10
+        : null,
     uptime: r.uptime != null ? Math.floor(r.uptime / 1000) : null, // ms → s
-    state: attrs.current_state || null,  // running, starting, stopping, offline
+    state: attrs.current_state || null, // running, starting, stopping, offline
   };
 }
 
@@ -164,7 +164,7 @@ async function getServerDetails() {
 async function listBackups() {
   const data = await _request('backups');
   const items = data?.data || [];
-  return items.map(b => {
+  return items.map((b) => {
     const a = b.attributes || b;
     return {
       uuid: a.uuid,
@@ -219,7 +219,7 @@ async function getBackupDownloadUrl(uuid) {
 async function listFiles(dir = '/') {
   const data = await _request(`files/list?directory=${encodeURIComponent(dir)}`);
   const items = data?.data || [];
-  return items.map(f => {
+  return items.map((f) => {
     const a = f.attributes || f;
     return {
       name: a.name,
@@ -341,7 +341,7 @@ async function getWebsocketAuth() {
 async function listSchedules() {
   const data = await _request('schedules');
   const items = data?.data || [];
-  return items.map(s => s.attributes || s);
+  return items.map((s) => s.attributes || s);
 }
 
 /**
@@ -375,7 +375,7 @@ async function deleteSchedule(scheduleId) {
 async function listAllocations() {
   const data = await _request('network/allocations');
   const items = data?.data || [];
-  return items.map(a => {
+  return items.map((a) => {
     const attrs = a.attributes || a;
     return {
       id: attrs.id,
@@ -429,11 +429,14 @@ async function listServers() {
         description: a.description || '',
         node: a.node || '',
         sftp_details: a.sftp_details || {},
-        allocations: (a.relationships?.allocations?.data || []).map(al => {
+        allocations: (a.relationships?.allocations?.data || []).map((al) => {
           const attrs = al.attributes || al;
           return {
-            id: attrs.id, ip: attrs.ip || '', ip_alias: attrs.ip_alias || null,
-            port: attrs.port || 0, is_default: attrs.is_default ?? false,
+            id: attrs.id,
+            ip: attrs.ip || '',
+            ip_alias: attrs.ip_alias || null,
+            port: attrs.port || 0,
+            is_default: attrs.is_default ?? false,
           };
         }),
         egg: a.egg || 0,
@@ -458,7 +461,7 @@ async function listServers() {
 async function getStartupVariables() {
   const data = await _request('startup');
   const items = data?.data || [];
-  return items.map(v => {
+  return items.map((v) => {
     const a = v.attributes || v;
     return {
       env_variable: a.env_variable,
@@ -560,9 +563,7 @@ function createPanelApi({ serverUrl, apiKey }) {
 
   // Create a private _request scoped to this server's credentials
   async function _scopedRequest(endpoint, options = {}) {
-    const path = endpoint.startsWith('/')
-      ? endpoint
-      : `/api/client/servers/${serverId}/${endpoint}`;
+    const path = endpoint.startsWith('/') ? endpoint : `/api/client/servers/${serverId}/${endpoint}`;
 
     const url = `${baseUrl}${path}`;
 
@@ -595,23 +596,29 @@ function createPanelApi({ serverUrl, apiKey }) {
   // Override every method to use scoped request
   api.getResources = async function () {
     const data = await _scopedRequest('resources');
-    return getResources._parseResponse ? getResources._parseResponse(data) : (() => {
-      const attrs = data?.attributes || data || {};
-      const r = attrs.resources || attrs;
-      return {
-        cpu: r.cpu_absolute != null ? Math.round(r.cpu_absolute * 10) / 10 : null,
-        memUsed: r.memory_bytes ?? null,
-        memTotal: r.memory_limit_bytes ?? null,
-        memPercent: (r.memory_bytes != null && r.memory_limit_bytes > 0)
-          ? Math.round((r.memory_bytes / r.memory_limit_bytes) * 1000) / 10 : null,
-        diskUsed: r.disk_bytes ?? null,
-        diskTotal: r.disk_limit_bytes ?? null,
-        diskPercent: (r.disk_bytes != null && r.disk_limit_bytes > 0)
-          ? Math.round((r.disk_bytes / r.disk_limit_bytes) * 1000) / 10 : null,
-        uptime: r.uptime != null ? Math.floor(r.uptime / 1000) : null,
-        state: attrs.current_state || null,
-      };
-    })();
+    return getResources._parseResponse
+      ? getResources._parseResponse(data)
+      : (() => {
+          const attrs = data?.attributes || data || {};
+          const r = attrs.resources || attrs;
+          return {
+            cpu: r.cpu_absolute != null ? Math.round(r.cpu_absolute * 10) / 10 : null,
+            memUsed: r.memory_bytes ?? null,
+            memTotal: r.memory_limit_bytes ?? null,
+            memPercent:
+              r.memory_bytes != null && r.memory_limit_bytes > 0
+                ? Math.round((r.memory_bytes / r.memory_limit_bytes) * 1000) / 10
+                : null,
+            diskUsed: r.disk_bytes ?? null,
+            diskTotal: r.disk_limit_bytes ?? null,
+            diskPercent:
+              r.disk_bytes != null && r.disk_limit_bytes > 0
+                ? Math.round((r.disk_bytes / r.disk_limit_bytes) * 1000) / 10
+                : null,
+            uptime: r.uptime != null ? Math.floor(r.uptime / 1000) : null,
+            state: attrs.current_state || null,
+          };
+        })();
   };
 
   api.sendPowerAction = async function (signal) {
@@ -632,19 +639,24 @@ function createPanelApi({ serverUrl, apiKey }) {
   api.listBackups = async function () {
     const data = await _scopedRequest('backups');
     const items = data?.data || [];
-    return items.map(b => {
+    return items.map((b) => {
       const a = b.attributes || b;
       return {
-        uuid: a.uuid, name: a.name, bytes: a.bytes || 0,
-        created_at: a.created_at, completed_at: a.completed_at,
-        is_successful: a.is_successful ?? true, is_locked: a.is_locked ?? false,
+        uuid: a.uuid,
+        name: a.name,
+        bytes: a.bytes || 0,
+        created_at: a.created_at,
+        completed_at: a.completed_at,
+        is_successful: a.is_successful ?? true,
+        is_locked: a.is_locked ?? false,
       };
     });
   };
 
   api.createBackup = async function (name) {
     const data = await _scopedRequest('backups', {
-      method: 'POST', body: JSON.stringify({ name: name || '' }),
+      method: 'POST',
+      body: JSON.stringify({ name: name || '' }),
     });
     return data?.attributes || data || {};
   };
@@ -675,11 +687,14 @@ function createPanelApi({ serverUrl, apiKey }) {
   api.listFiles = async function (dir = '/') {
     const data = await _scopedRequest(`files/list?directory=${encodeURIComponent(dir)}`);
     const items = data?.data || [];
-    return items.map(f => {
+    return items.map((f) => {
       const a = f.attributes || f;
       return {
-        name: a.name, mode: a.mode, size: a.size || 0,
-        is_file: a.is_file ?? true, modified_at: a.modified_at,
+        name: a.name,
+        mode: a.mode,
+        size: a.size || 0,
+        is_file: a.is_file ?? true,
+        modified_at: a.modified_at,
       };
     });
   };
@@ -719,12 +734,13 @@ function createPanelApi({ serverUrl, apiKey }) {
   api.listSchedules = async function () {
     const data = await _scopedRequest('schedules');
     const items = data?.data || [];
-    return items.map(s => s.attributes || s);
+    return items.map((s) => s.attributes || s);
   };
 
   api.createSchedule = async function (params) {
     const data = await _scopedRequest('schedules', {
-      method: 'POST', body: JSON.stringify(params),
+      method: 'POST',
+      body: JSON.stringify(params),
     });
     return data?.attributes || data || {};
   };
@@ -736,7 +752,7 @@ function createPanelApi({ serverUrl, apiKey }) {
   api.getStartupVariables = async function () {
     const data = await _scopedRequest('startup');
     const items = data?.data || [];
-    return items.map(v => {
+    return items.map((v) => {
       const a = v.attributes || v;
       return {
         env_variable: a.env_variable,
@@ -750,7 +766,8 @@ function createPanelApi({ serverUrl, apiKey }) {
 
   api.updateStartupVariable = async function (key, value) {
     const data = await _scopedRequest('startup/variable', {
-      method: 'PUT', body: JSON.stringify({ key, value }),
+      method: 'PUT',
+      body: JSON.stringify({ key, value }),
     });
     return data?.attributes || data || {};
   };
@@ -758,11 +775,14 @@ function createPanelApi({ serverUrl, apiKey }) {
   api.listAllocations = async function () {
     const data = await _scopedRequest('network/allocations');
     const items = data?.data || [];
-    return items.map(a => {
+    return items.map((a) => {
       const attrs = a.attributes || a;
       return {
-        id: attrs.id, ip: attrs.ip || '', ip_alias: attrs.ip_alias || null,
-        port: attrs.port || 0, is_default: attrs.is_default ?? false,
+        id: attrs.id,
+        ip: attrs.ip || '',
+        ip_alias: attrs.ip_alias || null,
+        port: attrs.port || 0,
+        is_default: attrs.is_default ?? false,
       };
     });
   };
@@ -785,15 +805,25 @@ function createPanelApi({ serverUrl, apiKey }) {
       for (const item of items) {
         const a = item.attributes || item;
         allServers.push({
-          identifier: a.identifier || '', uuid: a.uuid || '', name: a.name || '',
-          description: a.description || '', node: a.node || '',
+          identifier: a.identifier || '',
+          uuid: a.uuid || '',
+          name: a.name || '',
+          description: a.description || '',
+          node: a.node || '',
           sftp_details: a.sftp_details || {},
-          allocations: (a.relationships?.allocations?.data || []).map(al => {
+          allocations: (a.relationships?.allocations?.data || []).map((al) => {
             const attrs = al.attributes || al;
-            return { id: attrs.id, ip: attrs.ip || '', ip_alias: attrs.ip_alias || null,
-              port: attrs.port || 0, is_default: attrs.is_default ?? false };
+            return {
+              id: attrs.id,
+              ip: attrs.ip || '',
+              ip_alias: attrs.ip_alias || null,
+              port: attrs.port || 0,
+              is_default: attrs.is_default ?? false,
+            };
           }),
-          egg: a.egg || 0, docker_image: a.docker_image || '', limits: a.limits || {},
+          egg: a.egg || 0,
+          docker_image: a.docker_image || '',
+          limits: a.limits || {},
         });
       }
       totalPages = data?.meta?.pagination?.total_pages || 1;

@@ -62,7 +62,7 @@ const {
 
 // Current version — bump this whenever ENUM_MAPS, extractors, or curated data change
 // to force re-seed on existing databases.
-const GAME_REF_VERSION = 2;  // v2: corrected ENUM_MAPS, 35 skills, 116 challenges, DT_StatConfig
+const GAME_REF_VERSION = 2; // v2: corrected ENUM_MAPS, 35 skills, 116 challenges, DT_StatConfig
 
 /**
  * Seed all game reference data into the database.
@@ -84,7 +84,9 @@ function seed(db) {
     }
 
     if (count && count.n > 0 && storedVersion !== currentVersion) {
-      console.log(`[GameRef] Game reference data outdated (v${storedVersion || '?'} → v${currentVersion}) — re-seeding...`);
+      console.log(
+        `[GameRef] Game reference data outdated (v${storedVersion || '?'} → v${currentVersion}) — re-seeding...`,
+      );
     }
   } catch {
     // Table doesn't exist yet — proceed with seeding
@@ -133,7 +135,11 @@ function seedItems(db) {
 
 function seedProfessions(db) {
   let PERK_MAP;
-  try { PERK_MAP = require('./save-parser').PERK_MAP; } catch { PERK_MAP = {}; }
+  try {
+    PERK_MAP = require('./save-parser').PERK_MAP;
+  } catch {
+    PERK_MAP = {};
+  }
 
   // Build enum_value → name reverse map
   const enumToName = {};
@@ -215,7 +221,7 @@ function seedChallenges(db) {
 
   // Overlay hand-curated CHALLENGE_DESCRIPTIONS (save-field mappings + friendly names)
   for (const [field, info] of Object.entries(CHALLENGE_DESCRIPTIONS)) {
-    const existing = merged.find(m => m.name === info.name);
+    const existing = merged.find((m) => m.name === info.name);
     if (existing) {
       existing.saveField = field;
       if (info.target) existing.target = info.target;
@@ -237,7 +243,7 @@ function seedChallenges(db) {
 // ─── Loading tips ───────────────────────────────────────────────────────────
 
 function seedLoadingTips(db) {
-  const categorized = LOADING_TIPS.map(text => {
+  const categorized = LOADING_TIPS.map((text) => {
     let category = 'general';
     if (/RMB|LMB|press|toggle|click|key|ctrl|shift|spacebar|hot key|button/i.test(text)) category = 'controls';
     else if (/health|thirst|hunger|stamina|infection|vital/i.test(text)) category = 'vitals';

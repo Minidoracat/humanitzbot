@@ -2,7 +2,7 @@
  * Tests for player-stats.js — damage classification and record management.
  * Run: npm test
  */
-const { describe, it, beforeEach } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
 // The module exports a singleton instance — we use it directly.

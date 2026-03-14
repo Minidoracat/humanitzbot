@@ -23,10 +23,10 @@ const { getDayOffset, getRotatedProfileIndex } = require('../modules/schedule-ut
 // ═══════════════════════════════════════════════════════════════════════════
 
 const DIFFICULTY_LABELS = ['Very Easy', 'Easy', 'Default', 'Hard', 'Very Hard', 'Nightmare'];
-const SCARCITY_LABELS   = ['Scarce', 'Low', 'Default', 'Plentiful', 'Abundant'];
-const ON_DEATH_LABELS   = ['Lose Nothing', 'Backpack + Weapon', 'Pockets + Backpack', 'Everything'];
+const SCARCITY_LABELS = ['Scarce', 'Low', 'Default', 'Plentiful', 'Abundant'];
+const ON_DEATH_LABELS = ['Lose Nothing', 'Backpack + Weapon', 'Pockets + Backpack', 'Everything'];
 const VITAL_DRAIN_LABELS = ['Slow', 'Normal', 'Fast'];
-const AI_EVENT_LABELS    = ['Off', 'Low', 'Default', 'High', 'Insane'];
+const AI_EVENT_LABELS = ['Off', 'Low', 'Default', 'High', 'Insane'];
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Value formatters
@@ -150,7 +150,7 @@ function settingDays(val, unit = 'days') {
 function settingPermaDeath(val) {
   if (val === undefined || val === null) return null;
   const s = String(val).toLowerCase();
-  if (s === 'true')  return 'On';
+  if (s === 'true') return 'On';
   if (s === 'false') return 'Off';
   return settingLabel(val, ['Off', 'Individual', 'All']);
 }
@@ -191,13 +191,13 @@ function blockBar(ratio, width = 12) {
 function weatherEmoji(weather) {
   if (!weather) return '';
   const w = weather.toLowerCase();
-  if (w.includes('thunder'))    return '⛈️ ';
-  if (w.includes('blizzard'))   return '🌪️ ';
+  if (w.includes('thunder')) return '⛈️ ';
+  if (w.includes('blizzard')) return '🌪️ ';
   if (w.includes('heavy') && w.includes('snow')) return '❄️ ';
-  if (w.includes('snow'))       return '🌨️ ';
+  if (w.includes('snow')) return '🌨️ ';
   if (w.includes('heavy') && w.includes('rain')) return '🌧️ ';
-  if (w.includes('rain'))       return '🌦️ ';
-  if (w.includes('fog'))        return '🌫️ ';
+  if (w.includes('rain')) return '🌦️ ';
+  if (w.includes('fog')) return '🌫️ ';
   if (w.includes('cloud') || w.includes('overcast')) return '☁️ ';
   if (w.includes('sun') || w.includes('clear')) return '☀️ ';
   return '🌤️ ';
@@ -220,10 +220,10 @@ function timeEmoji(timeStr) {
   const match = timeStr.match(/^(\d{1,2})/);
   if (!match) return '';
   const hour = parseInt(match[1], 10);
-  if (hour >= 6 && hour < 8)   return '🌅 ';  // dawn
-  if (hour >= 8 && hour < 17)  return '☀️ ';  // day
-  if (hour >= 17 && hour < 19) return '🌇 ';  // dusk
-  return '🌙 ';                                // night
+  if (hour >= 6 && hour < 8) return '🌅 '; // dawn
+  if (hour >= 8 && hour < 17) return '☀️ '; // day
+  if (hour >= 17 && hour < 19) return '🌇 '; // dusk
+  return '🌙 '; // night
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -251,11 +251,11 @@ function buildSettingsFields(s, cfg = {}) {
   // ── General ──
   if (cfg.showSettingsGeneral !== false) {
     section('⚔️', 'General', [
-      ['PvP',           settingBool(s.PVP)],
-      ['Max Players',   s.MaxPlayers],
-      ['On Death',      settingLabel(s.OnDeath, ON_DEATH_LABELS)],
-      ['Perma Death',   settingPermaDeath(s.PermaDeath)],
-      ['Vital Drain',   settingLabel(s.VitalDrain, VITAL_DRAIN_LABELS)],
+      ['PvP', settingBool(s.PVP)],
+      ['Max Players', s.MaxPlayers],
+      ['On Death', settingLabel(s.OnDeath, ON_DEATH_LABELS)],
+      ['Perma Death', settingPermaDeath(s.PermaDeath)],
+      ['Vital Drain', settingLabel(s.VitalDrain, VITAL_DRAIN_LABELS)],
       ['XP Multiplier', s.XpMultiplier != null ? `${s.XpMultiplier}x` : null],
     ]);
   }
@@ -263,22 +263,22 @@ function buildSettingsFields(s, cfg = {}) {
   // ── Time & Seasons ──
   if (cfg.showSettingsTime !== false) {
     section('🕐', 'Time & Seasons', [
-      ['Day Length',    s.DayDur != null ? `${s.DayDur} min` : null],
-      ['Night Length',  s.NightDur != null ? `${s.NightDur} min` : null],
+      ['Day Length', s.DayDur != null ? `${s.DayDur} min` : null],
+      ['Night Length', s.NightDur != null ? `${s.NightDur} min` : null],
       ['Season Length', s.DaysPerSeason != null ? `${s.DaysPerSeason} days` : null],
-      ['Start Season',  settingLabel(s.StartingSeason, ['Summer', 'Autumn', 'Winter', 'Spring'])],
+      ['Start Season', settingLabel(s.StartingSeason, ['Summer', 'Autumn', 'Winter', 'Spring'])],
     ]);
   }
 
   // ── Zombies ──
   if (cfg.showSettingsZombies !== false) {
     section('🧟', 'Zombies', [
-      ['Health',   difficultyLabel(s.ZombieDiffHealth)],
-      ['Speed',    difficultyLabel(s.ZombieDiffSpeed)],
-      ['Damage',   difficultyLabel(s.ZombieDiffDamage)],
-      ['Spawns',   spawnLabel(s.ZombieAmountMulti)],
-      ['Respawn',  s.ZombieRespawnTimer != null ? `${s.ZombieRespawnTimer} min` : null],
-      ['Dogs',     spawnLabel(s.ZombieDogMulti)],
+      ['Health', difficultyLabel(s.ZombieDiffHealth)],
+      ['Speed', difficultyLabel(s.ZombieDiffSpeed)],
+      ['Damage', difficultyLabel(s.ZombieDiffDamage)],
+      ['Spawns', spawnLabel(s.ZombieAmountMulti)],
+      ['Respawn', s.ZombieRespawnTimer != null ? `${s.ZombieRespawnTimer} min` : null],
+      ['Dogs', spawnLabel(s.ZombieDogMulti)],
     ]);
   }
 
@@ -286,12 +286,15 @@ function buildSettingsFields(s, cfg = {}) {
   if (cfg.showSettingsItems !== false) {
     const itemEntries = [
       ['Weapon Break', settingBool(s.WeaponBreak)],
-      ['Food Decay',   settingMultiplier(s.FoodDecay)],
+      ['Food Decay', settingMultiplier(s.FoodDecay)],
       ['Loot Respawn', s.LootRespawnTimer != null ? `${s.LootRespawnTimer} min` : null],
-      ['Air Drops',    settingBool(s.AirDrop)],
+      ['Air Drops', settingBool(s.AirDrop)],
     ];
     if (s.AirDrop === '1' || s.AirDrop === 'true') {
-      itemEntries.push(['  Interval', s.AirDropInterval != null ? `Every ${s.AirDropInterval} day${s.AirDropInterval === '1' ? '' : 's'}` : null]);
+      itemEntries.push([
+        '  Interval',
+        s.AirDropInterval != null ? `Every ${s.AirDropInterval} day${s.AirDropInterval === '1' ? '' : 's'}` : null,
+      ]);
     }
     section('🎒', 'Items', itemEntries);
   }
@@ -301,10 +304,10 @@ function buildSettingsFields(s, cfg = {}) {
     // Bandits
     if (cfg.showSettingsBandits !== false) {
       section('🔫', 'Bandits', [
-        ['Health',  difficultyLabel(s.HumanHealth)],
-        ['Speed',   difficultyLabel(s.HumanSpeed)],
-        ['Damage',  difficultyLabel(s.HumanDamage)],
-        ['Spawns',  spawnLabel(s.HumanAmountMulti)],
+        ['Health', difficultyLabel(s.HumanHealth)],
+        ['Speed', difficultyLabel(s.HumanSpeed)],
+        ['Damage', difficultyLabel(s.HumanDamage)],
+        ['Spawns', spawnLabel(s.HumanAmountMulti)],
         ['Respawn', s.HumanRespawnTimer != null ? `${s.HumanRespawnTimer} min` : null],
         ['AI Events', settingLabel(s.AIEvent, AI_EVENT_LABELS)],
       ]);
@@ -314,7 +317,7 @@ function buildSettingsFields(s, cfg = {}) {
     if (cfg.showSettingsCompanions !== false) {
       section('🐕', 'Companions', [
         ['Dog Companion', settingBool(s.DogEnabled)],
-        ['Companion HP',  settingLabel(s.CompanionHealth, ['Low', 'Default', 'High'])],
+        ['Companion HP', settingLabel(s.CompanionHealth, ['Low', 'Default', 'High'])],
         ['Companion Dmg', settingLabel(s.CompanionDmg, ['Low', 'Default', 'High'])],
       ]);
     }
@@ -322,11 +325,11 @@ function buildSettingsFields(s, cfg = {}) {
     // Building & Territory
     if (cfg.showSettingsBuilding !== false) {
       section('🏗️', 'Building', [
-        ['Building HP',     settingMultiplier(s.BuildingHealth)],
-        ['Building Decay',  settingDays(s.BuildingDecay)],
-        ['Gen Fuel Rate',   s.GenFuel != null ? `${s.GenFuel}x` : null],
-        ['Territory',       settingBool(s.Territory)],
-        ['Dismantle Own',   settingBool(s.AllowDismantle)],
+        ['Building HP', settingMultiplier(s.BuildingHealth)],
+        ['Building Decay', settingDays(s.BuildingDecay)],
+        ['Gen Fuel Rate', s.GenFuel != null ? `${s.GenFuel}x` : null],
+        ['Territory', settingBool(s.Territory)],
+        ['Dismantle Own', settingBool(s.AllowDismantle)],
         ['Dismantle House', settingBool(s.AllowHouseDismantle)],
       ]);
     }
@@ -341,7 +344,7 @@ function buildSettingsFields(s, cfg = {}) {
     // Animals
     if (cfg.showSettingsAnimals !== false) {
       section('🦌', 'Animals', [
-        ['Animal Spawns',  spawnLabel(s.AnimalMulti)],
+        ['Animal Spawns', spawnLabel(s.AnimalMulti)],
         ['Animal Respawn', s.AnimalRespawnTimer != null ? `${s.AnimalRespawnTimer} min` : null],
       ]);
     }
@@ -359,14 +362,14 @@ function buildLootScarcity(s) {
   // Legacy fallback: old INIs may have a single LootRarity key instead of per-category
   const fb = s.LootRarity ?? undefined;
   const map = [
-    ['🍖', 'Food',      s.RarityFood   ?? fb],
-    ['🥤', 'Drink',     s.RarityDrink  ?? fb],
-    ['🔪', 'Melee',     s.RarityMelee  ?? fb],
-    ['🔫', 'Ranged',    s.RarityRanged ?? fb],
-    ['🛡️', 'Armor',     s.RarityArmor  ?? fb],
+    ['🍖', 'Food', s.RarityFood ?? fb],
+    ['🥤', 'Drink', s.RarityDrink ?? fb],
+    ['🔪', 'Melee', s.RarityMelee ?? fb],
+    ['🔫', 'Ranged', s.RarityRanged ?? fb],
+    ['🛡️', 'Armor', s.RarityArmor ?? fb],
     ['🧱', 'Resources', s.RarityResources ?? fb],
-    ['🎯', 'Ammo',      s.RarityAmmo   ?? fb],
-    ['📦', 'Other',     s.RarityOther  ?? fb],
+    ['🎯', 'Ammo', s.RarityAmmo ?? fb],
+    ['📦', 'Other', s.RarityOther ?? fb],
   ];
 
   const rows = map
@@ -387,15 +390,15 @@ function buildLootScarcity(s) {
  */
 function buildWeatherOdds(s) {
   const weatherKeys = [
-    ['☀️', 'Clear Sky',    s.Weather_ClearSky],
-    ['☁️', 'Cloudy',       s.Weather_Cloudy],
-    ['🌫️', 'Foggy',        s.Weather_Foggy],
-    ['🌦️', 'Light Rain',   s.Weather_LightRain],
-    ['🌧️', 'Rain',         s.Weather_Rain],
+    ['☀️', 'Clear Sky', s.Weather_ClearSky],
+    ['☁️', 'Cloudy', s.Weather_Cloudy],
+    ['🌫️', 'Foggy', s.Weather_Foggy],
+    ['🌦️', 'Light Rain', s.Weather_LightRain],
+    ['🌧️', 'Rain', s.Weather_Rain],
     ['⛈️', 'Thunderstorm', s.Weather_Thunderstorm],
-    ['🌨️', 'Light Snow',   s.Weather_LightSnow],
-    ['❄️', 'Snow',         s.Weather_Snow],
-    ['🌪️', 'Blizzard',     s.Weather_Blizzard],
+    ['🌨️', 'Light Snow', s.Weather_LightSnow],
+    ['❄️', 'Snow', s.Weather_Snow],
+    ['🌪️', 'Blizzard', s.Weather_Blizzard],
   ];
 
   const rows = weatherKeys
@@ -417,7 +420,11 @@ function buildWeatherOdds(s) {
  */
 function buildResourceField(res, fmtBytes) {
   if (!fmtBytes) {
-    try { fmtBytes = require('./server-resources').formatBytes; } catch (_) { fmtBytes = v => `${v}`; }
+    try {
+      fmtBytes = require('./server-resources').formatBytes;
+    } catch (_) {
+      fmtBytes = (v) => `${v}`;
+    }
   }
   const parts = [];
   if (res.cpu != null) parts.push(`🖥️ CPU: **${res.cpu}%**`);
@@ -446,8 +453,14 @@ function buildScheduleField(cfg) {
   if (!cfg.enableServerScheduler) return null;
   const timesStr = cfg.restartTimes || process.env.RESTART_TIMES || '';
   const profilesStr = cfg.restartProfiles || process.env.RESTART_PROFILES || '';
-  const times = timesStr.split(',').map(s => s.trim()).filter(Boolean);
-  const profiles = profilesStr.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  const times = timesStr
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const profiles = profilesStr
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
   if (times.length === 0 || profiles.length === 0) return null;
 
   // Daily rotation offset
@@ -456,15 +469,23 @@ function buildScheduleField(cfg) {
   // Determine active time slot
   const now = new Date();
   const timeStr = now.toLocaleTimeString('en-GB', {
-    hour: '2-digit', minute: '2-digit', hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
     timeZone: cfg.botTimezone,
   });
   const [h, m] = timeStr.split(':').map(Number);
   const nowMin = h * 60 + m;
-  const timeMins = times.map(t => { const [th, tm] = t.split(':').map(Number); return th * 60 + (tm || 0); });
+  const timeMins = times.map((t) => {
+    const [th, tm] = t.split(':').map(Number);
+    return th * 60 + (tm || 0);
+  });
   let activeSlot = 0;
   for (let i = timeMins.length - 1; i >= 0; i--) {
-    if (nowMin >= timeMins[i]) { activeSlot = i; break; }
+    if (nowMin >= timeMins[i]) {
+      activeSlot = i;
+      break;
+    }
   }
 
   // Build schedule lines
@@ -473,7 +494,9 @@ function buildScheduleField(cfg) {
     const name = profiles[profileIdx];
     const envKey = `RESTART_PROFILE_${name.toUpperCase()}`;
     let settings = {};
-    try { settings = JSON.parse(process.env[envKey] || '{}'); } catch {}
+    try {
+      settings = JSON.parse(process.env[envKey] || '{}');
+    } catch {}
     const endTime = times[(slotIdx + 1) % times.length] || times[0];
     const desc = [];
     const zombieAmt = parseFloat(settings.ZombieAmountMulti);

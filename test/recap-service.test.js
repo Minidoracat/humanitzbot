@@ -1,6 +1,6 @@
 'use strict';
 
-const { describe, it, beforeEach } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const RecapService = require('../src/modules/recap-service');
 
@@ -9,27 +9,39 @@ const RecapService = require('../src/modules/recap-service');
 function mockDb(players = [], clans = [], activityEvents = []) {
   const store = new Map();
   return {
-    getAllPlayers() { return players; },
-    getAllClans() { return clans; },
-    getActivitySince(ts) { return activityEvents.filter(e => e.timestamp >= ts); },
+    getAllPlayers() {
+      return players;
+    },
+    getAllClans() {
+      return clans;
+    },
+    getActivitySince(ts) {
+      return activityEvents.filter((e) => e.timestamp >= ts);
+    },
     topKillers(limit) {
-      return [...players]
-        .sort((a, b) => (b.lifetime_kills || 0) - (a.lifetime_kills || 0))
-        .slice(0, limit);
+      return [...players].sort((a, b) => (b.lifetime_kills || 0) - (a.lifetime_kills || 0)).slice(0, limit);
     },
     topPlaytime(limit) {
-      return [...players]
-        .sort((a, b) => (b.playtime_seconds || 0) - (a.playtime_seconds || 0))
-        .slice(0, limit);
+      return [...players].sort((a, b) => (b.playtime_seconds || 0) - (a.playtime_seconds || 0)).slice(0, limit);
     },
-    getState(key) { return store.get(key) ?? null; },
-    setState(key, value) { store.set(key, value != null ? String(value) : null); },
+    getState(key) {
+      return store.get(key) ?? null;
+    },
+    setState(key, value) {
+      store.set(key, value != null ? String(value) : null);
+    },
     getStateJSON(key, def = null) {
       const raw = store.get(key);
       if (raw == null) return def;
-      try { return JSON.parse(raw); } catch { return def; }
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return def;
+      }
     },
-    setStateJSON(key, value) { store.set(key, JSON.stringify(value)); },
+    setStateJSON(key, value) {
+      store.set(key, JSON.stringify(value));
+    },
     _store: store,
   };
 }
@@ -43,13 +55,19 @@ function mockConfig(overrides = {}) {
     botTimezone: 'UTC',
     logChannelId: null,
     weeklyResetDay: 1, // Monday
-    getToday() { return '2026-02-27'; },
+    getToday() {
+      return '2026-02-27';
+    },
     getDateLabel(date) {
       return (date || new Date()).toLocaleDateString('en-GB', {
-        day: 'numeric', month: 'short', year: 'numeric',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
       });
     },
-    formatTime(date) { return date.toISOString(); },
+    formatTime(date) {
+      return date.toISOString();
+    },
     ...overrides,
   };
 }
@@ -84,7 +102,6 @@ function makePlayer(overrides = {}) {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('RecapService', () => {
-
   describe('_gatherDayStats', () => {
     it('returns null for empty events', () => {
       const db = mockDb();
@@ -95,12 +112,22 @@ describe('RecapService', () => {
 
     it('counts unique players and event types', () => {
       const events = [
-        makeEvent({ type: 'player_connect', steam_id: 'A', player_name: 'Alice', timestamp: '2026-02-26T10:00:00.000Z' }),
+        makeEvent({
+          type: 'player_connect',
+          steam_id: 'A',
+          player_name: 'Alice',
+          timestamp: '2026-02-26T10:00:00.000Z',
+        }),
         makeEvent({ type: 'player_connect', steam_id: 'B', player_name: 'Bob', timestamp: '2026-02-26T11:00:00.000Z' }),
         makeEvent({ type: 'player_death', steam_id: 'A', player_name: 'Alice', timestamp: '2026-02-26T12:00:00.000Z' }),
         makeEvent({ type: 'player_death', steam_id: 'A', player_name: 'Alice', timestamp: '2026-02-26T13:00:00.000Z' }),
         makeEvent({ type: 'player_build', steam_id: 'B', player_name: 'Bob', timestamp: '2026-02-26T14:00:00.000Z' }),
-        makeEvent({ type: 'container_loot', steam_id: 'A', player_name: 'Alice', timestamp: '2026-02-26T15:00:00.000Z' }),
+        makeEvent({
+          type: 'container_loot',
+          steam_id: 'A',
+          player_name: 'Alice',
+          timestamp: '2026-02-26T15:00:00.000Z',
+        }),
       ];
       const db = mockDb([], [], events);
       const rs = new RecapService(mockClient(), { db, config: mockConfig() });
@@ -129,7 +156,12 @@ describe('RecapService', () => {
 
     it('identifies new players by playtime_first_seen', () => {
       const events = [
-        makeEvent({ type: 'player_connect', steam_id: 'NEW1', player_name: 'NewGuy', timestamp: '2026-02-26T10:00:00.000Z' }),
+        makeEvent({
+          type: 'player_connect',
+          steam_id: 'NEW1',
+          player_name: 'NewGuy',
+          timestamp: '2026-02-26T10:00:00.000Z',
+        }),
       ];
       const players = [
         makePlayer({ steam_id: 'NEW1', name: 'NewGuy', playtime_first_seen: '2026-02-26T10:00:00.000Z' }),
@@ -160,8 +192,18 @@ describe('RecapService', () => {
 
     it('counts PvP kills', () => {
       const events = [
-        makeEvent({ type: 'player_death_pvp', steam_id: 'A', player_name: 'Alice', timestamp: '2026-02-26T10:00:00.000Z' }),
-        makeEvent({ type: 'player_death_pvp', steam_id: 'B', player_name: 'Bob', timestamp: '2026-02-26T11:00:00.000Z' }),
+        makeEvent({
+          type: 'player_death_pvp',
+          steam_id: 'A',
+          player_name: 'Alice',
+          timestamp: '2026-02-26T10:00:00.000Z',
+        }),
+        makeEvent({
+          type: 'player_death_pvp',
+          steam_id: 'B',
+          player_name: 'Bob',
+          timestamp: '2026-02-26T11:00:00.000Z',
+        }),
       ];
       const db = mockDb([], [], events);
       const rs = new RecapService(mockClient(), { db, config: mockConfig() });
@@ -202,14 +244,14 @@ describe('RecapService', () => {
 
       assert.ok(json.title.includes('Daily Recap'));
       assert.ok(json.title.includes('26 Feb 2026'));
-      assert.ok(json.description.includes('8'));       // unique players
+      assert.ok(json.description.includes('8')); // unique players
       assert.ok(json.description.includes('Deaths'));
       assert.ok(json.description.includes('Built'));
-      assert.ok(json.description.includes('Alice'));    // top killer
+      assert.ok(json.description.includes('Alice')); // top killer
       assert.ok(json.description.includes('NewGuy1')); // new players
-      assert.ok(json.description.includes('Bob'));      // MVP
-      assert.ok(json.description.includes('Charlie'));  // unluckiest
-      assert.ok(json.footer.text.includes('150'));      // total events
+      assert.ok(json.description.includes('Bob')); // MVP
+      assert.ok(json.description.includes('Charlie')); // unluckiest
+      assert.ok(json.footer.text.includes('150')); // total events
     });
 
     it('omits sections with zero values', () => {
@@ -258,9 +300,7 @@ describe('RecapService', () => {
 
   describe('state persistence', () => {
     it('saves daily stats to bot_state', async () => {
-      const events = [
-        makeEvent({ timestamp: '2026-02-26T10:00:00.000Z' }),
-      ];
+      const events = [makeEvent({ timestamp: '2026-02-26T10:00:00.000Z' })];
       const db = mockDb([], [], events);
       const rs = new RecapService(mockClient(), { db, config: mockConfig() });
 
@@ -320,20 +360,21 @@ describe('RecapService', () => {
     });
 
     it('triggers weekly digest on reset day', async () => {
-      const events = [
-        makeEvent({ timestamp: '2026-02-26T10:00:00.000Z' }),
-      ];
+      const events = [makeEvent({ timestamp: '2026-02-26T10:00:00.000Z' })];
       const db = mockDb([makePlayer()], [], events);
 
       // Mock config where "today" is Monday (reset day = 1)
-      let weeklyPosted = false;
+      let _weeklyPosted = false;
       const cfg = mockConfig({ weeklyResetDay: 1 });
 
       const rs = new RecapService(mockClient(), { db, config: cfg });
 
       // Monkey-patch to detect weekly digest attempt
       const origWeekly = rs.postWeeklyDigest.bind(rs);
-      rs.postWeeklyDigest = async () => { weeklyPosted = true; await origWeekly(); };
+      rs.postWeeklyDigest = async () => {
+        _weeklyPosted = true;
+        await origWeekly();
+      };
 
       // The test can't easily control Intl weekday — just verify it doesn't crash
       await rs.onDayRollover('2026-02-26');
@@ -344,7 +385,7 @@ describe('RecapService', () => {
     it('handles no DB gracefully', async () => {
       const rs = new RecapService(mockClient(), { db: null, config: mockConfig() });
       await rs.postDailyRecap('2026-02-26'); // should not throw
-      await rs.postWeeklyDigest();            // should not throw
+      await rs.postWeeklyDigest(); // should not throw
     });
 
     it('handles missing playtime tracker', async () => {

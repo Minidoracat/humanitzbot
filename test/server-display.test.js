@@ -527,7 +527,7 @@ describe('buildSettingsFields', () => {
       VitalDrain: '1',
     };
     const fields = buildSettingsFields(s);
-    const general = fields.find(f => f.name.includes('General'));
+    const general = fields.find((f) => f.name.includes('General'));
     assert.ok(general, 'General section should exist');
     assert.ok(general.value.includes('On'), 'PVP=true → On');
     assert.ok(general.value.includes('Lose Nothing'), 'OnDeath=0 → Lose Nothing');
@@ -537,7 +537,7 @@ describe('buildSettingsFields', () => {
   it('uses settingMultiplier for FoodDecay', () => {
     const s = { FoodDecay: '0.5' };
     const fields = buildSettingsFields(s);
-    const items = fields.find(f => f.name.includes('Items'));
+    const items = fields.find((f) => f.name.includes('Items'));
     assert.ok(items, 'Items section should exist');
     assert.ok(items.value.includes('0.5x'), 'FoodDecay=0.5 → 0.5x');
   });
@@ -545,7 +545,7 @@ describe('buildSettingsFields', () => {
   it('FoodDecay=0 → Off', () => {
     const s = { FoodDecay: '0' };
     const fields = buildSettingsFields(s);
-    const items = fields.find(f => f.name.includes('Items'));
+    const items = fields.find((f) => f.name.includes('Items'));
     assert.ok(items);
     assert.ok(items.value.includes('Off'), 'FoodDecay=0 → Off');
   });
@@ -553,7 +553,7 @@ describe('buildSettingsFields', () => {
   it('uses settingDays for BuildingDecay', () => {
     const s = { BuildingDecay: '14' };
     const fields = buildSettingsFields(s, { showExtendedSettings: true });
-    const building = fields.find(f => f.name.includes('Building'));
+    const building = fields.find((f) => f.name.includes('Building'));
     assert.ok(building, 'Building section should exist');
     assert.ok(building.value.includes('14 days'), 'BuildingDecay=14 → 14 days');
   });
@@ -561,7 +561,7 @@ describe('buildSettingsFields', () => {
   it('BuildingDecay=0 → Off', () => {
     const s = { BuildingDecay: '0' };
     const fields = buildSettingsFields(s, { showExtendedSettings: true });
-    const building = fields.find(f => f.name.includes('Building'));
+    const building = fields.find((f) => f.name.includes('Building'));
     assert.ok(building);
     assert.ok(building.value.includes('Off'), 'BuildingDecay=0 → Off');
   });
@@ -569,7 +569,7 @@ describe('buildSettingsFields', () => {
   it('uses settingMultiplier for BuildingHealth', () => {
     const s = { BuildingHealth: '2' };
     const fields = buildSettingsFields(s, { showExtendedSettings: true });
-    const building = fields.find(f => f.name.includes('Building'));
+    const building = fields.find((f) => f.name.includes('Building'));
     assert.ok(building);
     assert.ok(building.value.includes('2x'), 'BuildingHealth=2 → 2x');
   });
@@ -577,7 +577,7 @@ describe('buildSettingsFields', () => {
   it('uses AI_EVENT_LABELS for AIEvent (5 levels)', () => {
     const s = { AIEvent: '4' };
     const fields = buildSettingsFields(s, { showExtendedSettings: true });
-    const bandits = fields.find(f => f.name.includes('Bandits'));
+    const bandits = fields.find((f) => f.name.includes('Bandits'));
     assert.ok(bandits, 'Bandits section should exist');
     assert.ok(bandits.value.includes('Insane'), 'AIEvent=4 → Insane');
   });
@@ -585,7 +585,7 @@ describe('buildSettingsFields', () => {
   it('AIEvent=3 → High', () => {
     const s = { AIEvent: '3' };
     const fields = buildSettingsFields(s, { showExtendedSettings: true });
-    const bandits = fields.find(f => f.name.includes('Bandits'));
+    const bandits = fields.find((f) => f.name.includes('Bandits'));
     assert.ok(bandits);
     assert.ok(bandits.value.includes('High'), 'AIEvent=3 → High');
   });
@@ -593,7 +593,7 @@ describe('buildSettingsFields', () => {
   it('uses spawnLabel for ZombieAmountMulti (float multiplier)', () => {
     const s = { ZombieAmountMulti: '1.5' };
     const fields = buildSettingsFields(s);
-    const zombies = fields.find(f => f.name.includes('Zombies'));
+    const zombies = fields.find((f) => f.name.includes('Zombies'));
     assert.ok(zombies, 'Zombies section should exist');
     assert.ok(zombies.value.includes('x1.5'), 'ZombieAmountMulti=1.5 → x1.5');
   });
@@ -601,7 +601,7 @@ describe('buildSettingsFields', () => {
   it('respects cfg toggle to hide sections', () => {
     const s = { PVP: 'true', ZombieAmountMulti: '1' };
     const fields = buildSettingsFields(s, { showSettingsGeneral: false });
-    const general = fields.find(f => f.name.includes('General'));
+    const general = fields.find((f) => f.name.includes('General'));
     assert.equal(general, undefined, 'General section should be hidden');
   });
 });
@@ -656,8 +656,8 @@ describe('modalTitle', () => {
 
   it('exactly 45 chars is not truncated', () => {
     // "Edit: " = 6, " (🔄)" depends on char count, so use simple suffix
-    const prefix = 'A: ';       // 3 chars
-    const suffix = ' END';       // 4 chars
+    const prefix = 'A: '; // 3 chars
+    const suffix = ' END'; // 4 chars
     const maxName = 45 - 3 - 4; // 38 chars
     const name = 'X'.repeat(maxName);
     const result = modalTitle(prefix, name, suffix);

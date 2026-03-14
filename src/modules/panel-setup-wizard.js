@@ -13,8 +13,13 @@
 
 const path = require('path');
 const {
-  EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  ModalBuilder, TextInputBuilder, TextInputStyle,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } = require('discord.js');
 const { SETUP } = require('./panel-constants');
 const { writeEnvValues } = require('./panel-env');
@@ -35,7 +40,9 @@ function _detectSshKey() {
     try {
       fs.accessSync(keyPath, fs.constants.R_OK);
       return keyPath;
-    } catch { /* not found or not readable */ }
+    } catch {
+      /* not found or not readable */
+    }
   }
   return '';
 }
@@ -44,11 +51,11 @@ function _detectSshKey() {
 function _findCommonParent(paths) {
   if (paths.length === 0) return '/';
   if (paths.length === 1) return path.dirname(paths[0]);
-  const segments = paths.map(p => p.split('/').filter(Boolean));
+  const segments = paths.map((p) => p.split('/').filter(Boolean));
   let depth = 0;
-  const min = Math.min(...segments.map(s => s.length));
+  const min = Math.min(...segments.map((s) => s.length));
   for (let i = 0; i < min; i++) {
-    if (segments.every(s => s[i] === segments[0][i])) depth = i + 1;
+    if (segments.every((s) => s[i] === segments[0][i])) depth = i + 1;
     else break;
   }
   return depth > 0 ? '/' + segments[0].slice(0, depth).join('/') : '/';
@@ -74,11 +81,7 @@ async function _detectLocalGameServer() {
   ];
 
   // Also check Docker volume mounts — try to find HumanitZServer in common docker paths
-  const dockerPaths = [
-    '/app/HumanitZServer',
-    '/data/HumanitZServer',
-    '/home/container/HumanitZServer',
-  ];
+  const dockerPaths = ['/app/HumanitZServer', '/data/HumanitZServer', '/home/container/HumanitZServer'];
 
   const allPaths = [...candidates, ...dockerPaths];
 
@@ -93,7 +96,9 @@ async function _detectLocalGameServer() {
         settingsContent = fs.readFileSync(settingsPath, 'utf8');
         break;
       }
-    } catch { /* not here */ }
+    } catch {
+      /* not here */
+    }
   }
 
   if (!serverRoot) return null;
@@ -130,21 +135,35 @@ async function _startSetupWizard() {
   const embed = new EmbedBuilder()
     .setTitle(t('discord:panel_setup_wizard.wizard_title', locale))
     .setColor(0x5865f2)
-    .setDescription([
-      'Welcome! This wizard will help you configure your bot.',
-      '',
-      '**How is your game server hosted?**',
-      '',
-      '🖥️ **VPS / Self-hosted** — Bot and game server on the same machine (localhost RCON + SFTP)',
-      '🌐 **Bisect / Remote host** — Game server on a remote host (Pterodactyl panel auto-detection)',
-      '📡 **RCON only** — No file access, basic features only (chat relay, status, commands)',
-    ].join('\n'))
+    .setDescription(
+      [
+        'Welcome! This wizard will help you configure your bot.',
+        '',
+        '**How is your game server hosted?**',
+        '',
+        '🖥️ **VPS / Self-hosted** — Bot and game server on the same machine (localhost RCON + SFTP)',
+        '🌐 **Bisect / Remote host** — Game server on a remote host (Pterodactyl panel auto-detection)',
+        '📡 **RCON only** — No file access, basic features only (chat relay, status, commands)',
+      ].join('\n'),
+    )
     .setFooter({ text: t('discord:panel_setup_wizard.step_1_footer', locale) });
 
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(SETUP.PROFILE_VPS).setLabel('VPS / Self-hosted').setStyle(ButtonStyle.Primary).setEmoji('🖥️'),
-    new ButtonBuilder().setCustomId(SETUP.PROFILE_BISECT).setLabel('Bisect / Remote').setStyle(ButtonStyle.Primary).setEmoji('🌐'),
-    new ButtonBuilder().setCustomId(SETUP.PROFILE_RCON).setLabel('RCON Only').setStyle(ButtonStyle.Secondary).setEmoji('📡'),
+    new ButtonBuilder()
+      .setCustomId(SETUP.PROFILE_VPS)
+      .setLabel('VPS / Self-hosted')
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('🖥️'),
+    new ButtonBuilder()
+      .setCustomId(SETUP.PROFILE_BISECT)
+      .setLabel('Bisect / Remote')
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('🌐'),
+    new ButtonBuilder()
+      .setCustomId(SETUP.PROFILE_RCON)
+      .setLabel('RCON Only')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('📡'),
   );
 
   this.panelMessage = await this.channel.send({ embeds: [embed], components: [row] });
@@ -218,7 +237,9 @@ async function _handleSetupProfile(interaction, id) {
           this._setupWizard.defaults.gamePort = localServer.gamePort;
         }
       }
-    } catch { /* auto-detect failed, proceed with manual */ }
+    } catch {
+      /* auto-detect failed, proceed with manual */
+    }
   }
 
   // Bisect profile goes to Panel API step, others go to RCON
@@ -248,7 +269,7 @@ async function _handleSetupPanelButton(interaction) {
           .setPlaceholder(t('discord:panel_setup_wizard.placeholder_panel_url', locale))
           .setValue(this._setupWizard.panel?.url || '')
           .setStyle(TextInputStyle.Short)
-          .setRequired(true)
+          .setRequired(true),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -256,7 +277,7 @@ async function _handleSetupPanelButton(interaction) {
           .setLabel('Panel API Key')
           .setPlaceholder(t('discord:panel_setup_wizard.placeholder_panel_api_key', locale))
           .setStyle(TextInputStyle.Short)
-          .setRequired(true)
+          .setRequired(true),
       ),
     );
   await interaction.showModal(modal);
@@ -301,7 +322,7 @@ async function _handleSetupPanelModal(interaction) {
   try {
     const details = await api.getServerDetails();
     const allocs = details.relationships?.allocations?.data || [];
-    const primary = allocs.find(a => (a.attributes || a).is_default) || allocs[0];
+    const primary = allocs.find((a) => (a.attributes || a).is_default) || allocs[0];
     const primaryAttrs = primary?.attributes || primary || {};
 
     if (primaryAttrs.ip || primaryAttrs.ip_alias) {
@@ -369,16 +390,16 @@ async function _handleSetupPanelModal(interaction) {
     // Known Bisect file layout — construct paths directly
     const knownLayout = (root) => ({
       'GameServerSettings.ini': `${root}/GameServerSettings.ini`,
-      'PlayerIDMapped.txt':     `${root}/PlayerIDMapped.txt`,
+      'PlayerIDMapped.txt': `${root}/PlayerIDMapped.txt`,
       'PlayerConnectedLog.txt': `${root}/PlayerConnectedLog.txt`,
-      'WelcomeMessage.txt':     `${root}/WelcomeMessage.txt`,
+      'WelcomeMessage.txt': `${root}/WelcomeMessage.txt`,
       'Save_DedicatedSaveMP.sav': `${root}/Saved/SaveGames/SaveList/Default/Save_DedicatedSaveMP.sav`,
       // HMZLog lives in HZLogs/ (per-restart rotated) or root (legacy)
     });
 
     try {
       const rootItems = await api.listFiles(knownRoot);
-      const fileNames = new Set(rootItems.map(i => i.name));
+      const fileNames = new Set(rootItems.map((i) => i.name));
 
       // If we can list the directory, this is our server root
       serverRoot = knownRoot;
@@ -397,7 +418,7 @@ async function _handleSetupPanelModal(interaction) {
         try {
           const logDir = `${knownRoot}/HZLogs`;
           const logItems = await api.listFiles(logDir);
-          const hmzLogs = logItems.filter(f => f.name.endsWith('_HMZLog.log'));
+          const hmzLogs = logItems.filter((f) => f.name.endsWith('_HMZLog.log'));
           if (hmzLogs.length > 0) {
             hmzLogs.sort((a, b) => (b.modified_at || '').localeCompare(a.modified_at || ''));
             found.set('HMZLog.log', `${logDir}/${hmzLogs[0].name}`);
@@ -405,13 +426,17 @@ async function _handleSetupPanelModal(interaction) {
           // ConnectLog in Login/ subdirectory
           try {
             const loginItems = await api.listFiles(`${logDir}/Login`);
-            const connectLogs = loginItems.filter(f => f.name.endsWith('_ConnectLog.txt'));
+            const connectLogs = loginItems.filter((f) => f.name.endsWith('_ConnectLog.txt'));
             if (connectLogs.length > 0) {
               connectLogs.sort((a, b) => (b.modified_at || '').localeCompare(a.modified_at || ''));
               found.set('PlayerConnectedLog.txt', `${logDir}/Login/${connectLogs[0].name}`);
             }
-          } catch { /* no Login/ subdir */ }
-        } catch { /* no HZLogs dir */ }
+          } catch {
+            /* no Login/ subdir */
+          }
+        } catch {
+          /* no HZLogs dir */
+        }
       }
 
       // Legacy monolithic HMZLog.log at root (pre-rotation)
@@ -423,29 +448,32 @@ async function _handleSetupPanelModal(interaction) {
       try {
         const saveDir = `${knownRoot}/Saved/SaveGames/SaveList/Default`;
         const saveItems = await api.listFiles(saveDir);
-        if (saveItems.some(f => f.name === 'Save_DedicatedSaveMP.sav')) {
+        if (saveItems.some((f) => f.name === 'Save_DedicatedSaveMP.sav')) {
           found.set('Save_DedicatedSaveMP.sav', layout['Save_DedicatedSaveMP.sav']);
         }
-      } catch { /* save dir doesn't exist yet (new server) */ }
+      } catch {
+        /* save dir doesn't exist yet (new server) */
+      }
     } catch {
       // /HumanitZServer doesn't exist — try alternate roots
     }
 
     // Fallback: search alternate root directories if known layout failed
     if (!serverRoot) {
-      const altRoots = [
-        '/serverfiles/HumanitZServer',
-        '/home/container/HumanitZServer',
-        '/app/HumanitZServer',
-      ];
+      const altRoots = ['/serverfiles/HumanitZServer', '/home/container/HumanitZServer', '/app/HumanitZServer'];
       for (const dir of altRoots) {
         try {
           const items = await api.listFiles(dir);
           serverRoot = dir;
           // Found a valid root — search for files
           for (const item of items) {
-            const targets = ['GameServerSettings.ini', 'PlayerIDMapped.txt',
-              'PlayerConnectedLog.txt', 'WelcomeMessage.txt', 'HMZLog.log'];
+            const targets = [
+              'GameServerSettings.ini',
+              'PlayerIDMapped.txt',
+              'PlayerConnectedLog.txt',
+              'WelcomeMessage.txt',
+              'HMZLog.log',
+            ];
             if (targets.includes(item.name) && !found.has(item.name)) {
               found.set(item.name, `${dir}/${item.name}`);
             }
@@ -455,24 +483,30 @@ async function _handleSetupPanelModal(interaction) {
             try {
               const saveDir = `${dir}/Saved/SaveGames/SaveList/Default`;
               const saveItems = await api.listFiles(saveDir);
-              if (saveItems.some(f => f.name === 'Save_DedicatedSaveMP.sav')) {
+              if (saveItems.some((f) => f.name === 'Save_DedicatedSaveMP.sav')) {
                 found.set('Save_DedicatedSaveMP.sav', `${saveDir}/Save_DedicatedSaveMP.sav`);
               }
-            } catch { /* no save dir */ }
+            } catch {
+              /* no save dir */
+            }
           }
           if (!found.has('HMZLog.log')) {
             try {
               const logDir = `${dir}/HZLogs`;
               const logItems = await api.listFiles(logDir);
-              const hmzLogs = logItems.filter(f => f.name.endsWith('_HMZLog.log'));
+              const hmzLogs = logItems.filter((f) => f.name.endsWith('_HMZLog.log'));
               if (hmzLogs.length > 0) {
                 hmzLogs.sort((a, b) => (b.modified_at || '').localeCompare(a.modified_at || ''));
                 found.set('HMZLog.log', `${logDir}/${hmzLogs[0].name}`);
               }
-            } catch { /* no HZLogs dir */ }
+            } catch {
+              /* no HZLogs dir */
+            }
           }
           break; // found valid root, stop searching
-        } catch { /* dir doesn't exist */ }
+        } catch {
+          /* dir doesn't exist */
+        }
       }
     }
 
@@ -493,12 +527,13 @@ async function _handleSetupPanelModal(interaction) {
     if (allServers.length > 1) {
       // The game server is the one matching panelUrl — find it by identifier
       const panelId = panelUrl.split('/').pop();
-      const botServer = allServers.find(s =>
-        s.identifier !== panelId &&
-        // Bot servers typically run Node.js/Python images or have 'bot' in name/description
-        (/node|bot|discord/i.test(s.name || '') ||
-         /node|bot|discord/i.test(s.description || '') ||
-         /node|python|java/i.test(s.docker_image || ''))
+      const botServer = allServers.find(
+        (s) =>
+          s.identifier !== panelId &&
+          // Bot servers typically run Node.js/Python images or have 'bot' in name/description
+          (/node|bot|discord/i.test(s.name || '') ||
+            /node|bot|discord/i.test(s.description || '') ||
+            /node|python|java/i.test(s.docker_image || '')),
       );
       if (botServer) {
         detected.botServer = {
@@ -507,13 +542,13 @@ async function _handleSetupPanelModal(interaction) {
           allocations: botServer.allocations || [],
         };
         // Find a non-default allocation for the web panel (default = bot's main port)
-        const defaultAlloc = botServer.allocations.find(a => a.is_default);
-        const extraAllocs = botServer.allocations.filter(a => !a.is_default);
+        const defaultAlloc = botServer.allocations.find((a) => a.is_default);
+        const extraAllocs = botServer.allocations.filter((a) => !a.is_default);
         if (extraAllocs.length > 0) {
           // Use the first extra allocation for the web panel
           const webAlloc = extraAllocs[0];
           detected.webPanelPort = String(webAlloc.port);
-          detected.webPanelIp = webAlloc.ip_alias || webAlloc.ip || (defaultAlloc?.ip_alias || defaultAlloc?.ip || '');
+          detected.webPanelIp = webAlloc.ip_alias || webAlloc.ip || defaultAlloc?.ip_alias || defaultAlloc?.ip || '';
         } else if (defaultAlloc) {
           // Only one allocation — web panel can't get its own port
           // User will need to request an additional allocation from Bisect
@@ -539,7 +574,8 @@ async function _handleSetupPanelModal(interaction) {
       autoDetected: true,
     };
     if (!detected.rconPassword) {
-      this._setupWizard.rcon.error = 'RCON password not found in startup variables — you may need to set it manually in Startup tab';
+      this._setupWizard.rcon.error =
+        'RCON password not found in startup variables — you may need to set it manually in Startup tab';
     }
   }
 
@@ -604,7 +640,7 @@ async function _handleSetupRconButton(interaction) {
           .setPlaceholder(d.rconHost || t('discord:panel_setup_wizard.placeholder_rcon_host', locale))
           .setValue(this._setupWizard.rcon?.host || d.rconHost || '')
           .setStyle(TextInputStyle.Short)
-          .setRequired(true)
+          .setRequired(true),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -613,16 +649,20 @@ async function _handleSetupRconButton(interaction) {
           .setPlaceholder(d.rconPort || t('discord:panel_setup_wizard.placeholder_rcon_port', locale))
           .setValue(this._setupWizard.rcon?.port || d.rconPort || '')
           .setStyle(TextInputStyle.Short)
-          .setRequired(true)
+          .setRequired(true),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('password')
           .setLabel('RCON Password')
-          .setPlaceholder(d.rconPassword ? '(auto-detected from settings)' : t('discord:panel_setup_wizard.placeholder_rcon_password', locale))
+          .setPlaceholder(
+            d.rconPassword
+              ? '(auto-detected from settings)'
+              : t('discord:panel_setup_wizard.placeholder_rcon_password', locale),
+          )
           .setValue(this._setupWizard.rcon?.password || d.rconPassword || '')
           .setStyle(TextInputStyle.Short)
-          .setRequired(true)
+          .setRequired(true),
       ),
     );
   await interaction.showModal(modal);
@@ -651,7 +691,10 @@ async function _handleSetupRconModal(interaction) {
         resolve();
       });
       socket.on('error', reject);
-      socket.on('timeout', () => { socket.destroy(); reject(new Error('Connection timed out')); });
+      socket.on('timeout', () => {
+        socket.destroy();
+        reject(new Error('Connection timed out'));
+      });
     });
     this._setupWizard.rcon.status = 'ok';
     this._setupWizard.step = this._setupWizard.profile === 'rcon-only' ? 'channels' : 'sftp';
@@ -673,13 +716,15 @@ async function _handleSetupSftpButton(interaction) {
   // For VPS, try to detect the current OS user for SFTP username default
   let defaultUser = '';
   if (this._setupWizard.profile === 'vps') {
-    try { defaultUser = require('os').userInfo().username || ''; } catch { /* */ }
+    try {
+      defaultUser = require('os').userInfo().username || '';
+    } catch {
+      /* */
+    }
   }
   // Auto-detect SSH keys on the bot host
   const detectedKey = this._setupWizard.sftp?.privateKeyPath || _detectSshKey();
-  const keyPlaceholder = detectedKey
-    ? `Detected: ${detectedKey}`
-    : 'No keys found — enter path or use password';
+  const keyPlaceholder = detectedKey ? `Detected: ${detectedKey}` : 'No keys found — enter path or use password';
   const modal = new ModalBuilder()
     .setCustomId(SETUP.SFTP_MODAL)
     .setTitle(t('discord:panel_setup_wizard.sftp_connection_title', locale))
@@ -691,7 +736,7 @@ async function _handleSetupSftpButton(interaction) {
           .setPlaceholder(d.ftpHost || t('discord:panel_setup_wizard.placeholder_sftp_host', locale))
           .setValue(this._setupWizard.sftp?.host || d.ftpHost || this._setupWizard.rcon?.host || '')
           .setStyle(TextInputStyle.Short)
-          .setRequired(true)
+          .setRequired(true),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -700,7 +745,7 @@ async function _handleSetupSftpButton(interaction) {
           .setPlaceholder(d.ftpPort || t('discord:panel_setup_wizard.placeholder_sftp_port', locale))
           .setValue(this._setupWizard.sftp?.port || d.ftpPort || '')
           .setStyle(TextInputStyle.Short)
-          .setRequired(true)
+          .setRequired(true),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -709,7 +754,7 @@ async function _handleSetupSftpButton(interaction) {
           .setPlaceholder(defaultUser || 'root / steam / your username')
           .setValue(this._setupWizard.sftp?.user || defaultUser || '')
           .setStyle(TextInputStyle.Short)
-          .setRequired(true)
+          .setRequired(true),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -717,7 +762,7 @@ async function _handleSetupSftpButton(interaction) {
           .setLabel('SFTP Password (blank if using SSH key)')
           .setPlaceholder(t('discord:panel_setup_wizard.placeholder_sftp_passphrase', locale))
           .setStyle(TextInputStyle.Short)
-          .setRequired(false)
+          .setRequired(false),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -726,7 +771,7 @@ async function _handleSetupSftpButton(interaction) {
           .setPlaceholder(keyPlaceholder)
           .setValue(detectedKey)
           .setStyle(TextInputStyle.Short)
-          .setRequired(false)
+          .setRequired(false),
       ),
     );
   await interaction.showModal(modal);
@@ -746,7 +791,16 @@ async function _handleSetupSftpModal(interaction) {
   const privateKeyPath = interaction.fields.getTextInputValue('private_key_path').trim();
 
   if (!password && !privateKeyPath) {
-    this._setupWizard.sftp = { host, port, user, password, privateKeyPath, status: 'error', error: 'Either a password or SSH private key path is required.', paths: null };
+    this._setupWizard.sftp = {
+      host,
+      port,
+      user,
+      password,
+      privateKeyPath,
+      status: 'error',
+      error: 'Either a password or SSH private key path is required.',
+      paths: null,
+    };
     await this._updateSetupEmbed(interaction);
     return true;
   }
@@ -781,7 +835,14 @@ async function _handleSetupSftpModal(interaction) {
     await sftp.connect(connectOpts);
 
     // Auto-discover game files via recursive search
-    const targets = ['HMZLog.log', 'PlayerConnectedLog.txt', 'PlayerIDMapped.txt', 'Save_DedicatedSaveMP.sav', 'GameServerSettings.ini', 'WelcomeMessage.txt'];
+    const targets = [
+      'HMZLog.log',
+      'PlayerConnectedLog.txt',
+      'PlayerIDMapped.txt',
+      'Save_DedicatedSaveMP.sav',
+      'GameServerSettings.ini',
+      'WelcomeMessage.txt',
+    ];
     const found = new Map();
 
     // Quick check: common game server paths first (fast path)
@@ -814,19 +875,28 @@ async function _handleSetupSftpModal(interaction) {
                 found.set(item.name, `${saveDir}/${item.name}`);
               }
             }
-          } catch { /* save dir doesn't exist here */ }
+          } catch {
+            /* save dir doesn't exist here */
+          }
         }
-      } catch { /* dir doesn't exist */ }
+      } catch {
+        /* dir doesn't exist */
+      }
     }
 
     // If quick check didn't find everything, do a full recursive search
     if (found.size < targets.length) {
-      const _skip = /^(\.|node_modules|__pycache__|Engine|Content|Binaries|linux64|steamapps|proc|sys|run|tmp|lost\+found|snap|boot|usr)$/i;
+      const _skip =
+        /^(\.|node_modules|__pycache__|Engine|Content|Binaries|linux64|steamapps|proc|sys|run|tmp|lost\+found|snap|boot|usr)$/i;
       const _priority = /^(data|serverfiles|home|opt|root|app|HumanitZServer|hzserver|humanitz|container)/i;
       const _recurse = async (dir, depth) => {
         if (depth >= 8 || found.size >= targets.length) return;
         let items;
-        try { items = await sftp.list(dir); } catch { return; }
+        try {
+          items = await sftp.list(dir);
+        } catch {
+          return;
+        }
         for (const item of items) {
           if (found.size >= targets.length) return;
           const fullPath = dir === '/' ? `/${item.name}` : `${dir}/${item.name}`;
@@ -850,7 +920,11 @@ async function _handleSetupSftpModal(interaction) {
     this._setupWizard.sftp.foundCount = found.size;
     this._setupWizard.step = 'channels';
   } catch (err) {
-    try { await sftp.end(); } catch { /* ignore */ }
+    try {
+      await sftp.end();
+    } catch {
+      /* ignore */
+    }
     this._setupWizard.sftp.status = 'error';
     this._setupWizard.sftp.error = err.message;
   }
@@ -887,7 +961,7 @@ async function _handleSetupChannelsButton(interaction) {
           .setPlaceholder(t('discord:panel_setup_wizard.placeholder_copy_channel_id', locale))
           .setValue(ch.serverStatus || '')
           .setStyle(TextInputStyle.Short)
-          .setRequired(false)
+          .setRequired(false),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -896,7 +970,7 @@ async function _handleSetupChannelsButton(interaction) {
           .setPlaceholder(t('discord:panel_setup_wizard.placeholder_copy_channel_id', locale))
           .setValue(ch.playerStats || '')
           .setStyle(TextInputStyle.Short)
-          .setRequired(false)
+          .setRequired(false),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -905,7 +979,7 @@ async function _handleSetupChannelsButton(interaction) {
           .setPlaceholder(t('discord:panel_setup_wizard.placeholder_copy_channel_id', locale))
           .setValue(ch.log || '')
           .setStyle(TextInputStyle.Short)
-          .setRequired(false)
+          .setRequired(false),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -914,7 +988,7 @@ async function _handleSetupChannelsButton(interaction) {
           .setPlaceholder(t('discord:panel_setup_wizard.placeholder_copy_channel_id', locale))
           .setValue(ch.chat || '')
           .setStyle(TextInputStyle.Short)
-          .setRequired(false)
+          .setRequired(false),
       ),
     );
   await interaction.showModal(modal);
@@ -1029,7 +1103,7 @@ async function _handleSetupApply(interaction) {
     const det = wiz.panel?.detected || {};
     if (det.webPanelPort && det.webPanelIp) {
       envUpdates.WEB_MAP_PORT = det.webPanelPort;
-      envUpdates.WEB_MAP_TRUST_PROXY = '1';  // Pterodactyl Docker networking
+      envUpdates.WEB_MAP_TRUST_PROXY = '1'; // Pterodactyl Docker networking
       // Callback URL for Discord OAuth — use the bot server's public IP + port
       envUpdates.WEB_MAP_CALLBACK_URL = `http://${det.webPanelIp}:${det.webPanelPort}/auth/callback`;
     }
@@ -1061,18 +1135,25 @@ async function _handleSetupApply(interaction) {
 
   if (isBisect) {
     successLines.push('✅ Panel API — auto-detected server configuration');
-    if (wiz.panel.detected.hasWebSocket) successLines.push('✅ WebSocket RCON — using panel console (no direct TCP needed)');
+    if (wiz.panel.detected.hasWebSocket)
+      successLines.push('✅ WebSocket RCON — using panel console (no direct TCP needed)');
     if (wiz.rcon) successLines.push(`✅ RCON — \`${wiz.rcon.host}:${wiz.rcon.port}\``);
-    if (wiz.panel.detected.foundCount > 0) successLines.push(`✅ Game files — found ${wiz.panel.detected.foundCount}/6 via Panel API`);
+    if (wiz.panel.detected.foundCount > 0)
+      successLines.push(`✅ Game files — found ${wiz.panel.detected.foundCount}/6 via Panel API`);
     if (wiz.panel.detected.webPanelPort) {
-      successLines.push(`✅ Web panel — port ${wiz.panel.detected.webPanelPort} on bot server \`${wiz.panel.detected.botServer?.name || 'auto-detected'}\``);
+      successLines.push(
+        `✅ Web panel — port ${wiz.panel.detected.webPanelPort} on bot server \`${wiz.panel.detected.botServer?.name || 'auto-detected'}\``,
+      );
     } else if (wiz.panel.detected.webPanelNeedsAllocation) {
-      successLines.push('⚠️ Web panel — bot server has only one port allocation. Request an extra port from Bisect to enable the web panel.');
+      successLines.push(
+        '⚠️ Web panel — bot server has only one port allocation. Request an extra port from Bisect to enable the web panel.',
+      );
     }
   } else {
     if (wiz.localDetected) successLines.push(`✅ Local server — detected at \`${wiz.localDetected.serverRoot}\``);
     if (wiz.rcon?.status === 'ok') successLines.push(`✅ RCON — \`${wiz.rcon.host}:${wiz.rcon.port}\``);
-    if (wiz.sftp?.status === 'ok') successLines.push(`✅ SFTP — \`${wiz.sftp.host}:${wiz.sftp.port}\` (${wiz.sftp.foundCount}/6 files)`);
+    if (wiz.sftp?.status === 'ok')
+      successLines.push(`✅ SFTP — \`${wiz.sftp.host}:${wiz.sftp.port}\` (${wiz.sftp.foundCount}/6 files)`);
     else if (wiz.localDetected) successLines.push('✅ File paths — set from detected server root');
   }
 
@@ -1098,7 +1179,9 @@ async function _handleSetupApply(interaction) {
 
   try {
     await this.panelMessage.edit({ embeds: [successEmbed], components: [] });
-  } catch { /* message might be gone */ }
+  } catch {
+    /* message might be gone */
+  }
 
   // Restart
   setTimeout(() => process.exit(0), 2000);
@@ -1108,12 +1191,10 @@ async function _handleSetupApply(interaction) {
 /**
  * Build and update the setup wizard embed based on current step.
  */
-async function _updateSetupEmbed(interaction) {
+async function _updateSetupEmbed(_interaction) {
   const locale = getLocale({ serverConfig: this._config });
   const wiz = this._setupWizard;
-  const embed = new EmbedBuilder()
-    .setTitle(t('discord:panel_setup_wizard.wizard_title', locale))
-    .setColor(0x5865f2);
+  const embed = new EmbedBuilder().setTitle(t('discord:panel_setup_wizard.wizard_title', locale)).setColor(0x5865f2);
 
   const lines = [];
   const profileLabels = { vps: '🖥️ VPS / Self-hosted', bisect: '🌐 Bisect / Remote', 'rcon-only': '📡 RCON Only' };
@@ -1236,17 +1317,35 @@ async function _updateSetupEmbed(interaction) {
   if (wiz.step === 'panel') {
     // Bisect Panel API flow
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(SETUP.PANEL_BTN).setLabel('Enter Panel Credentials').setStyle(ButtonStyle.Primary).setEmoji('🔑'),
-      new ButtonBuilder().setCustomId(SETUP.PANEL_MANUAL_BTN).setLabel('Manual Setup').setStyle(ButtonStyle.Secondary).setEmoji('⚙️'),
+      new ButtonBuilder()
+        .setCustomId(SETUP.PANEL_BTN)
+        .setLabel('Enter Panel Credentials')
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('🔑'),
+      new ButtonBuilder()
+        .setCustomId(SETUP.PANEL_MANUAL_BTN)
+        .setLabel('Manual Setup')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('⚙️'),
     );
     components.push(row);
   } else if (wiz.step === 'rcon') {
-    components.push(new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(SETUP.RCON_BTN).setLabel('Configure RCON').setStyle(ButtonStyle.Primary).setEmoji('🔌'),
-    ));
+    components.push(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(SETUP.RCON_BTN)
+          .setLabel('Configure RCON')
+          .setStyle(ButtonStyle.Primary)
+          .setEmoji('🔌'),
+      ),
+    );
   } else if (wiz.step === 'sftp') {
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(SETUP.SFTP_BTN).setLabel('Configure SFTP').setStyle(ButtonStyle.Primary).setEmoji('📂'),
+      new ButtonBuilder()
+        .setCustomId(SETUP.SFTP_BTN)
+        .setLabel('Configure SFTP')
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('📂'),
       new ButtonBuilder().setCustomId(SETUP.SKIP_SFTP_BTN).setLabel('Skip SFTP').setStyle(ButtonStyle.Secondary),
     );
     // Allow re-testing RCON if it failed
@@ -1258,21 +1357,43 @@ async function _updateSetupEmbed(interaction) {
     components.push(row);
   } else if (wiz.step === 'channels') {
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(SETUP.CHANNELS_BTN).setLabel('Set Channels').setStyle(ButtonStyle.Primary).setEmoji('📺'),
-      new ButtonBuilder().setCustomId(SETUP.APPLY_BTN).setLabel('Apply & Restart').setStyle(ButtonStyle.Success).setEmoji('🚀'),
+      new ButtonBuilder()
+        .setCustomId(SETUP.CHANNELS_BTN)
+        .setLabel('Set Channels')
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('📺'),
+      new ButtonBuilder()
+        .setCustomId(SETUP.APPLY_BTN)
+        .setLabel('Apply & Restart')
+        .setStyle(ButtonStyle.Success)
+        .setEmoji('🚀'),
     );
     // For Bisect: allow retry if panel detection had issues
     if (wiz.profile === 'bisect' && wiz.panel?.status === 'partial') {
       row.addComponents(
-        new ButtonBuilder().setCustomId(SETUP.PANEL_BTN).setLabel('Retry Detection').setStyle(ButtonStyle.Secondary).setEmoji('🔄'),
+        new ButtonBuilder()
+          .setCustomId(SETUP.PANEL_BTN)
+          .setLabel('Retry Detection')
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji('🔄'),
       );
     }
     components.push(row);
   } else if (wiz.step === 'apply') {
-    components.push(new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(SETUP.CHANNELS_BTN).setLabel('Edit Channels').setStyle(ButtonStyle.Secondary).setEmoji('📺'),
-      new ButtonBuilder().setCustomId(SETUP.APPLY_BTN).setLabel('Apply & Restart').setStyle(ButtonStyle.Success).setEmoji('🚀'),
-    ));
+    components.push(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(SETUP.CHANNELS_BTN)
+          .setLabel('Edit Channels')
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji('📺'),
+        new ButtonBuilder()
+          .setCustomId(SETUP.APPLY_BTN)
+          .setLabel('Apply & Restart')
+          .setStyle(ButtonStyle.Success)
+          .setEmoji('🚀'),
+      ),
+    );
   }
 
   try {

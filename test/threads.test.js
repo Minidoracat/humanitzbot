@@ -4,7 +4,15 @@
  */
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { _parseHmzLog, _parseConnectLog, _mergeDays, _buildSummaryEmbed, _dateKey, _fetchThreadMessages, _findMatchingThreads } = require('../src/commands/threads');
+const {
+  _parseHmzLog,
+  _parseConnectLog,
+  _mergeDays,
+  _buildSummaryEmbed,
+  _dateKey,
+  _fetchThreadMessages,
+  _findMatchingThreads,
+} = require('../src/commands/threads');
 
 // ══════════════════════════════════════════════════════════
 // _dateKey
@@ -127,7 +135,19 @@ describe('_parseConnectLog', () => {
 
 describe('_mergeDays', () => {
   it('merges hmz and connect data for same date', () => {
-    const hmz = { '2026-02-15': { deaths: 3, builds: 1, damage: 5, loots: 2, raidHits: 0, destroyed: 0, admin: 0, cheat: 0, players: new Set(['Alice']) } };
+    const hmz = {
+      '2026-02-15': {
+        deaths: 3,
+        builds: 1,
+        damage: 5,
+        loots: 2,
+        raidHits: 0,
+        destroyed: 0,
+        admin: 0,
+        cheat: 0,
+        players: new Set(['Alice']),
+      },
+    };
     const conn = { '2026-02-15': { connects: 4, disconnects: 2, players: new Set(['Alice', 'Bob']) } };
     const merged = _mergeDays(hmz, conn);
     assert.equal(merged['2026-02-15'].deaths, 3);
@@ -136,7 +156,19 @@ describe('_mergeDays', () => {
   });
 
   it('includes dates that appear in only one source', () => {
-    const hmz = { '2026-02-15': { deaths: 1, builds: 0, damage: 0, loots: 0, raidHits: 0, destroyed: 0, admin: 0, cheat: 0, players: new Set() } };
+    const hmz = {
+      '2026-02-15': {
+        deaths: 1,
+        builds: 0,
+        damage: 0,
+        loots: 0,
+        raidHits: 0,
+        destroyed: 0,
+        admin: 0,
+        cheat: 0,
+        players: new Set(),
+      },
+    };
     const conn = { '2026-02-16': { connects: 2, disconnects: 1, players: new Set(['X']) } };
     const merged = _mergeDays(hmz, conn);
     assert.ok('2026-02-15' in merged);
@@ -151,9 +183,17 @@ describe('_mergeDays', () => {
 describe('_buildSummaryEmbed', () => {
   it('returns an EmbedBuilder with title and description', () => {
     const embed = _buildSummaryEmbed('2026-02-15', {
-      connects: 5, disconnects: 3, deaths: 2, builds: 1,
-      damage: 10, loots: 4, raidHits: 0, destroyed: 0,
-      admin: 0, cheat: 0, uniquePlayers: 3,
+      connects: 5,
+      disconnects: 3,
+      deaths: 2,
+      builds: 1,
+      damage: 10,
+      loots: 4,
+      raidHits: 0,
+      destroyed: 0,
+      admin: 0,
+      cheat: 0,
+      uniquePlayers: 3,
     });
     const json = embed.toJSON();
     assert.ok(json.title.includes('Daily Summary'));
@@ -163,9 +203,17 @@ describe('_buildSummaryEmbed', () => {
 
   it('omits zero-count categories', () => {
     const embed = _buildSummaryEmbed('2026-02-15', {
-      connects: 0, disconnects: 0, deaths: 1, builds: 0,
-      damage: 0, loots: 0, raidHits: 0, destroyed: 0,
-      admin: 0, cheat: 0, uniquePlayers: 1,
+      connects: 0,
+      disconnects: 0,
+      deaths: 1,
+      builds: 0,
+      damage: 0,
+      loots: 0,
+      raidHits: 0,
+      destroyed: 0,
+      admin: 0,
+      cheat: 0,
+      uniquePlayers: 1,
     });
     const desc = embed.toJSON().description;
     assert.ok(desc.includes('Deaths'));
@@ -187,7 +235,7 @@ describe('_fetchThreadMessages', () => {
         async fetch({ limit, before } = {}) {
           // Sort descending by id (simulates Discord behaviour)
           let pool = [...messages].sort((a, b) => Number(b.id) - Number(a.id));
-          if (before) pool = pool.filter(m => Number(m.id) < Number(before));
+          if (before) pool = pool.filter((m) => Number(m.id) < Number(before));
           const batch = pool.slice(0, limit || 100);
           const map = new Map();
           for (const m of batch) map.set(m.id, m);
@@ -210,7 +258,10 @@ describe('_fetchThreadMessages', () => {
   it('returns messages in chronological order', async () => {
     const thread = mockThread([msg(3), msg(1), msg(2)]);
     const result = await _fetchThreadMessages(thread);
-    assert.deepEqual(result.map(m => m.id), ['1', '2', '3']);
+    assert.deepEqual(
+      result.map((m) => m.id),
+      ['1', '2', '3'],
+    );
   });
 
   it('filters out starter embeds with Activity Log title', async () => {
@@ -236,9 +287,7 @@ describe('_fetchThreadMessages', () => {
   });
 
   it('keeps text messages', async () => {
-    const thread = mockThread([
-      msg(1, { content: 'Hello world' }),
-    ]);
+    const thread = mockThread([msg(1, { content: 'Hello world' })]);
     const result = await _fetchThreadMessages(thread);
     assert.equal(result.length, 1);
     assert.equal(result[0].content, 'Hello world');
@@ -285,28 +334,19 @@ describe('_findMatchingThreads', () => {
   }
 
   it('finds active threads by name', async () => {
-    const ch = mockChannel(
-      [{ id: '1', name: '📋 Activity Log — 15 Feb 2026' }],
-      [],
-    );
+    const ch = mockChannel([{ id: '1', name: '📋 Activity Log — 15 Feb 2026' }], []);
     const result = await _findMatchingThreads(ch, '📋 Activity Log — 15 Feb 2026');
     assert.equal(result.length, 1);
   });
 
   it('finds archived threads by name', async () => {
-    const ch = mockChannel(
-      [],
-      [{ id: '2', name: '📋 Activity Log — 14 Feb 2026' }],
-    );
+    const ch = mockChannel([], [{ id: '2', name: '📋 Activity Log — 14 Feb 2026' }]);
     const result = await _findMatchingThreads(ch, '📋 Activity Log — 14 Feb 2026');
     assert.equal(result.length, 1);
   });
 
   it('returns empty array when no match', async () => {
-    const ch = mockChannel(
-      [{ id: '1', name: '📋 Activity Log — 15 Feb 2026' }],
-      [],
-    );
+    const ch = mockChannel([{ id: '1', name: '📋 Activity Log — 15 Feb 2026' }], []);
     const result = await _findMatchingThreads(ch, '📋 Activity Log — 20 Feb 2026');
     assert.equal(result.length, 0);
   });

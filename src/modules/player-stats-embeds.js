@@ -16,9 +16,7 @@ const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('dis
 const { PERK_MAP } = require('../parsers/save-parser');
 const gameData = require('../parsers/game-data');
 const { cleanItemName: _rawClean, cleanItemArray, isHexGuid } = require('../parsers/ue4-names');
-const {
-  buildScheduleField,
-} = require('../server/server-display');
+const { buildScheduleField } = require('../server/server-display');
 const { t, getLocale, fmtDate, fmtTime, fmtNumber } = require('../i18n');
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -72,7 +70,7 @@ function _tp(locale, key, vars = {}) {
 }
 
 // ─── Category enum → name ────────────────────────────────────────
-const _SKILL_CAT = { 'NewEnumerator0': 'Survival', 'NewEnumerator1': 'Crafting', 'NewEnumerator2': 'Combat' };
+const _SKILL_CAT = { NewEnumerator0: 'Survival', NewEnumerator1: 'Crafting', NewEnumerator2: 'Combat' };
 
 /** Build a lookup: { "Survival": [{ tier, column, name }, ...], ... } from SKILL_DETAILS. */
 function _buildSkillLookup() {
@@ -102,7 +100,11 @@ function _parseSkillTree(raw) {
   if (!raw) return null;
   let tree = raw;
   if (typeof raw === 'string') {
-    try { tree = JSON.parse(raw); } catch { return null; }
+    try {
+      tree = JSON.parse(raw);
+    } catch {
+      return null;
+    }
   }
   if (!Array.isArray(tree) || tree.length === 0) return null;
 
@@ -133,7 +135,7 @@ function _parseSkillTree(raw) {
         const prog = node.unlockProgress[col];
         if (prog && typeof prog === 'object' && prog.x >= prog.y && prog.y > 0) {
           result[cat].unlocked++;
-          const skill = catSkills.find(s => s.tier === tier && s.column === col);
+          const skill = catSkills.find((s) => s.tier === tier && s.column === col);
           if (skill) result[cat].names.push(skill.name);
         }
       }
@@ -150,7 +152,7 @@ function _parseSkillTree(raw) {
         const prog = node.unlockProgress[0];
         if (prog && typeof prog === 'object' && prog.x >= prog.y && prog.y > 0) {
           result[cat].unlocked++;
-          const skill = catSkills.find(s => s.tier === tier && s.column === col);
+          const skill = catSkills.find((s) => s.tier === tier && s.column === col);
           if (skill) result[cat].names.push(skill.name);
         }
       }
@@ -158,10 +160,9 @@ function _parseSkillTree(raw) {
   }
 
   // Only return if any data was found
-  const hasData = Object.values(result).some(r => r.unlocked > 0 || r.total > 0);
+  const hasData = Object.values(result).some((r) => r.unlocked > 0 || r.total > 0);
   return hasData ? result : null;
 }
-
 
 // ═════════════════════════════════════════════════════════════════════
 //  _buildOverviewEmbed — Persistent channel embed
@@ -178,7 +179,7 @@ function _buildOverviewEmbed() {
   const serverTag = this._config.serverName ? ` — ${this._config.serverName}` : '';
   const embed = new EmbedBuilder()
     .setTitle(`${_tp(locale, 'overview_title')}${serverTag}`)
-    .setColor(0x5865F2)
+    .setColor(0x5865f2)
     .setTimestamp()
     .setFooter({ text: _tp(locale, 'overview_footer') });
 
@@ -195,7 +196,7 @@ function _buildOverviewEmbed() {
   // └──────────────────────────────────────────────────────────────┘
   const roster = this._buildRoster();
   const players = Array.from(roster.values());
-  const onlineCount = players.filter(p => p.online).length;
+  const onlineCount = players.filter((p) => p.online).length;
   const totalKills = players.reduce((s, p) => s + p.kills, 0);
   const totalDeaths = players.reduce((s, p) => s + p.deaths, 0);
 
@@ -216,29 +217,35 @@ function _buildOverviewEmbed() {
   // └──────────────────────────────────────────────────────────────┘
 
   // Top Killers
-  const topKillers = players.filter(p => p.kills > 0)
-    .sort((a, b) => b.kills - a.kills).slice(0, 5);
+  const topKillers = players
+    .filter((p) => p.kills > 0)
+    .sort((a, b) => b.kills - a.kills)
+    .slice(0, 5);
   if (topKillers.length > 0) {
-    const lines = topKillers.map((p, i) =>
-      `${MEDALS[i]} **${p.name}** \u2014 ${fmtNumber(p.kills, locale)}`);
+    const lines = topKillers.map((p, i) => `${MEDALS[i]} **${p.name}** \u2014 ${fmtNumber(p.kills, locale)}`);
     embed.addFields({ name: _tp(locale, 'top_killers'), value: lines.join('\n'), inline: true });
   }
 
   // Top Playtime
-  const topPlaytime = players.filter(p => p.playtime > 0)
-    .sort((a, b) => b.playtime - a.playtime).slice(0, 5);
+  const topPlaytime = players
+    .filter((p) => p.playtime > 0)
+    .sort((a, b) => b.playtime - a.playtime)
+    .slice(0, 5);
   if (topPlaytime.length > 0) {
-    const lines = topPlaytime.map((p, i) =>
-      `${MEDALS[i]} **${p.name}** \u2014 ${_fmtTime(p.playtime, locale)}`);
+    const lines = topPlaytime.map((p, i) => `${MEDALS[i]} **${p.name}** \u2014 ${_fmtTime(p.playtime, locale)}`);
     embed.addFields({ name: _tp(locale, 'most_active'), value: lines.join('\n'), inline: true });
   }
 
   // Top Survivors
-  const topSurvivors = players.filter(p => p.daysSurvived > 0)
-    .sort((a, b) => b.daysSurvived - a.daysSurvived).slice(0, 5);
+  const topSurvivors = players
+    .filter((p) => p.daysSurvived > 0)
+    .sort((a, b) => b.daysSurvived - a.daysSurvived)
+    .slice(0, 5);
   if (topSurvivors.length > 0) {
-    const lines = topSurvivors.map((p, i) =>
-      `${MEDALS[i]} **${p.name}** \u2014 ${_tp(locale, 'days_short', { days: fmtNumber(p.daysSurvived, locale) })}`);
+    const lines = topSurvivors.map(
+      (p, i) =>
+        `${MEDALS[i]} **${p.name}** \u2014 ${_tp(locale, 'days_short', { days: fmtNumber(p.daysSurvived, locale) })}`,
+    );
     embed.addFields({ name: _tp(locale, 'longest_survival'), value: lines.join('\n'), inline: true });
   }
 
@@ -247,28 +254,35 @@ function _buildOverviewEmbed() {
   // └──────────────────────────────────────────────────────────────┘
 
   const funLines = [];
-  const mostBitten = players.filter(p => p.bitten > 0).sort((a, b) => b.bitten - a.bitten)[0];
+  const mostBitten = players.filter((p) => p.bitten > 0).sort((a, b) => b.bitten - a.bitten)[0];
   if (mostBitten) {
-    funLines.push(_tp(locale, 'fun_most_bitten', {
-      name: mostBitten.name,
-      count: fmtNumber(mostBitten.bitten, locale),
-    }));
+    funLines.push(
+      _tp(locale, 'fun_most_bitten', {
+        name: mostBitten.name,
+        count: fmtNumber(mostBitten.bitten, locale),
+      }),
+    );
   }
-  const topFisher = players.filter(p => p.fishCaught > 0).sort((a, b) => b.fishCaught - a.fishCaught)[0];
+  const topFisher = players.filter((p) => p.fishCaught > 0).sort((a, b) => b.fishCaught - a.fishCaught)[0];
   if (topFisher) {
-    funLines.push(_tp(locale, 'fun_top_angler', {
-      name: topFisher.name,
-      count: fmtNumber(topFisher.fishCaught, locale),
-    }));
+    funLines.push(
+      _tp(locale, 'fun_top_angler', {
+        name: topFisher.name,
+        count: fmtNumber(topFisher.fishCaught, locale),
+      }),
+    );
   }
-  const topPvP = players.filter(p => p.pvpKills > 0).sort((a, b) => b.pvpKills - a.pvpKills)[0];
+  const topPvP = players.filter((p) => p.pvpKills > 0).sort((a, b) => b.pvpKills - a.pvpKills)[0];
   if (topPvP) {
-    funLines.push(_tp(locale, 'fun_pvp_leader', {
-      name: topPvP.name,
-      count: fmtNumber(topPvP.pvpKills, locale),
-    }));
+    funLines.push(
+      _tp(locale, 'fun_pvp_leader', {
+        name: topPvP.name,
+        count: fmtNumber(topPvP.pvpKills, locale),
+      }),
+    );
   }
-  if (funLines.length > 0) embed.addFields({ name: _tp(locale, 'fun_stats'), value: funLines.join('\n'), inline: true });
+  if (funLines.length > 0)
+    embed.addFields({ name: _tp(locale, 'fun_stats'), value: funLines.join('\n'), inline: true });
 
   // Weekly highlights
   if (this._weeklyStats) {
@@ -276,20 +290,25 @@ function _buildOverviewEmbed() {
     const weekLines = [];
     const wk = ws.topKillers?.[0];
     if (wk) {
-      weekLines.push(_tp(locale, 'week_top_killer', {
-        name: wk.name,
-        kills: fmtNumber(wk.kills, locale),
-      }));
+      weekLines.push(
+        _tp(locale, 'week_top_killer', {
+          name: wk.name,
+          kills: fmtNumber(wk.kills, locale),
+        }),
+      );
     }
     const wp = ws.topPlaytime?.[0];
     if (wp) weekLines.push(_tp(locale, 'week_most_active', { name: wp.name, playtime: _fmtTime(wp.ms, locale) }));
     if (ws.newPlayers > 0) {
-      weekLines.push(_tp(locale, 'week_new_players', {
-        count: fmtNumber(ws.newPlayers, locale),
-        plural_suffix: ws.newPlayers > 1 ? 's' : '',
-      }));
+      weekLines.push(
+        _tp(locale, 'week_new_players', {
+          count: fmtNumber(ws.newPlayers, locale),
+          plural_suffix: ws.newPlayers > 1 ? 's' : '',
+        }),
+      );
     }
-    if (weekLines.length > 0) embed.addFields({ name: _tp(locale, 'this_week'), value: weekLines.join('\n'), inline: true });
+    if (weekLines.length > 0)
+      embed.addFields({ name: _tp(locale, 'this_week'), value: weekLines.join('\n'), inline: true });
   }
 
   // Last save update
@@ -315,7 +334,7 @@ function _buildOverviewEmbed() {
  */
 function _buildRoster() {
   const now = Date.now();
-  if (this._cachedRoster && this._rosterCacheTime && (now - this._rosterCacheTime) < 5000) {
+  if (this._cachedRoster && this._rosterCacheTime && now - this._rosterCacheTime < 5000) {
     return this._cachedRoster;
   }
 
@@ -326,8 +345,7 @@ function _buildRoster() {
   const onlineNames = new Set(Object.keys(sessions));
   const recentMs = 10 * 60000;
   for (const s of allLog) {
-    if (s.lastEvent && (now - new Date(s.lastEvent).getTime()) < recentMs)
-      onlineNames.add(s.name);
+    if (s.lastEvent && now - new Date(s.lastEvent).getTime() < recentMs) onlineNames.add(s.name);
   }
 
   const roster = new Map();
@@ -360,8 +378,13 @@ function _buildRoster() {
     } else {
       roster.set(sid, {
         name: stats.name,
-        kills: 0, deaths: stats.deaths || 0, fishCaught: 0, daysSurvived: 0,
-        bitten: 0, pvpKills: stats.pvpKills || 0, playtime: 0,
+        kills: 0,
+        deaths: stats.deaths || 0,
+        fishCaught: 0,
+        daysSurvived: 0,
+        bitten: 0,
+        pvpKills: stats.pvpKills || 0,
+        playtime: 0,
         online: onlineNames.has(stats.name),
       });
     }
@@ -374,7 +397,10 @@ function _buildRoster() {
       existing.playtime = entry.totalMs || 0;
     } else {
       for (const [, r] of roster) {
-        if (r.name === entry.name) { r.playtime = entry.totalMs || 0; break; }
+        if (r.name === entry.name) {
+          r.playtime = entry.totalMs || 0;
+          break;
+        }
       }
     }
   }
@@ -383,7 +409,6 @@ function _buildRoster() {
   this._rosterCacheTime = Date.now();
   return roster;
 }
-
 
 // ═════════════════════════════════════════════════════════════════════
 //  _buildPlayerRow — Player select menu
@@ -400,7 +425,7 @@ function _buildPlayerRow() {
     return a.name.localeCompare(b.name);
   });
 
-  const options = players.slice(0, 25).map(p => {
+  const options = players.slice(0, 25).map((p) => {
     const status = p.online ? '\uD83D\uDFE2 ' : '';
     const desc = _tp(locale, 'player_option_description', {
       kills: fmtNumber(p.kills, locale),
@@ -416,14 +441,15 @@ function _buildPlayerRow() {
 
   if (options.length === 0) return [];
 
-  return [new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(`playerstats_player_select${this._serverId ? `:${this._serverId}` : ''}`)
-      .setPlaceholder(_tp(locale, 'player_select_placeholder'))
-      .addOptions(options),
-  )];
+  return [
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`playerstats_player_select${this._serverId ? `:${this._serverId}` : ''}`)
+        .setPlaceholder(_tp(locale, 'player_select_placeholder'))
+        .addOptions(options),
+    ),
+  ];
 }
-
 
 // ═════════════════════════════════════════════════════════════════════
 //  _buildClanRow — Clan select menu
@@ -438,7 +464,7 @@ function _buildClanRow() {
     if (!clan.name) continue;
     const memberCount = clan.members?.length || 0;
     let totalKills = 0;
-    for (const m of (clan.members || [])) {
+    for (const m of clan.members || []) {
       const sid = m.steamId || m.steam_id;
       if (sid) {
         const at = this.getAllTimeKills(sid);
@@ -457,14 +483,15 @@ function _buildClanRow() {
 
   if (options.length === 0) return [];
 
-  return [new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(`playerstats_clan_select${this._serverId ? `:${this._serverId}` : ''}`)
-      .setPlaceholder(_tp(locale, 'clan_select_placeholder'))
-      .addOptions(options.slice(0, 25)),
-  )];
+  return [
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`playerstats_clan_select${this._serverId ? `:${this._serverId}` : ''}`)
+        .setPlaceholder(_tp(locale, 'clan_select_placeholder'))
+        .addOptions(options.slice(0, 25)),
+    ),
+  ];
 }
-
 
 // ═════════════════════════════════════════════════════════════════════
 //  buildClanEmbed — Ephemeral clan detail
@@ -474,7 +501,7 @@ function _buildClanRow() {
 
 function buildClanEmbed(clanName) {
   const clan = Array.isArray(this._clanData)
-    ? this._clanData.find(c => c.name === clanName)
+    ? this._clanData.find((c) => c.name === clanName)
     : this._clanData?.get?.(clanName);
   if (!clan) return null;
 
@@ -489,7 +516,10 @@ function buildClanEmbed(clanName) {
   const sessions = this._playtime.getActiveSessions() || {};
   const allLog = this._playerStats.getAllPlayers();
 
-  let totalKills = 0, totalDeaths = 0, bestDays = 0, totalPtMs = 0;
+  let totalKills = 0,
+    totalDeaths = 0,
+    bestDays = 0,
+    totalPtMs = 0;
   const memberLines = [];
 
   for (const m of members) {
@@ -498,7 +528,7 @@ function buildClanEmbed(clanName) {
     const save = sid ? this._saveData?.get(sid) : null;
     const at = sid ? this.getAllTimeKills(sid) : null;
     const kills = at?.zeeksKilled || 0;
-    const logEntry = sid ? allLog.find(l => l.id === sid) : null;
+    const logEntry = sid ? allLog.find((l) => l.id === sid) : null;
     const deaths = logEntry?.deaths || 0;
     const days = save?.daysSurvived || 0;
     const pt = sid ? this._playtime.getPlaytime(sid) : null;
@@ -511,15 +541,17 @@ function buildClanEmbed(clanName) {
     totalPtMs += ptMs;
 
     const status = online ? '\uD83D\uDFE2' : '\u26AB';
-    const role = (m.canKick || m.can_kick) ? ' \uD83D\uDC51' : '';
-    memberLines.push(_tp(locale, 'clan_member_line', {
-      status,
-      role,
-      name,
-      kills: fmtNumber(kills, locale),
-      days: fmtNumber(days, locale),
-      playtime: _fmtTime(ptMs, locale),
-    }));
+    const role = m.canKick || m.can_kick ? ' \uD83D\uDC51' : '';
+    memberLines.push(
+      _tp(locale, 'clan_member_line', {
+        status,
+        role,
+        name,
+        kills: fmtNumber(kills, locale),
+        days: fmtNumber(days, locale),
+        playtime: _fmtTime(ptMs, locale),
+      }),
+    );
   }
 
   // Aggregate stats as description
@@ -554,7 +586,7 @@ function buildClanEmbed(clanName) {
   for (const m of members) {
     const sid = m.steamId || m.steam_id;
     const name = m.name || sid;
-    const logEntry = allLog.find(l => l.id === sid || l.name === name);
+    const logEntry = allLog.find((l) => l.id === sid || l.name === name);
     if (logEntry?.lastEvent) {
       const d = new Date(logEntry.lastEvent);
       const dateStr = fmtDate(d, locale);
@@ -571,7 +603,6 @@ function buildClanEmbed(clanName) {
 
   return embed;
 }
-
 
 // ═════════════════════════════════════════════════════════════════════
 //  buildFullPlayerEmbed — Ephemeral player detail
@@ -593,18 +624,16 @@ function buildClanEmbed(clanName) {
 
 function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
   const resolved = this._resolvePlayer(steamId);
-  const log  = resolved.log;
+  const log = resolved.log;
   const save = resolved.save;
-  const pt   = resolved.playtime;
+  const pt = resolved.playtime;
   const locale = getLocale({ serverConfig: this._config });
 
   const serverTag = this._config.serverName ? ` [${this._config.serverName}]` : '';
-  const embed = new EmbedBuilder()
-    .setColor(0x5865F2)
-    .setTimestamp();
+  const embed = new EmbedBuilder().setColor(0x5865f2).setTimestamp();
 
   // Random loading tip for footer
-  const tips = gameData.LOADING_TIPS.filter(t => t.length > 20 && t.length < 120);
+  const tips = gameData.LOADING_TIPS.filter((t) => t.length > 20 && t.length < 120);
   const tip = tips.length > 0 ? tips[Math.floor(Math.random() * tips.length)] : null;
   embed.setFooter({ text: tip ? `\uD83D\uDCA1 ${tip}` : _tp(locale, 'player_stats_footer') });
 
@@ -632,10 +661,12 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
     identityBits.push(save.male ? '\u2642' : '\u2640');
     if (save.level > 0) identityBits.push(_tp(locale, 'level_short', { level: fmtNumber(save.level, locale) }));
     if (save.expCurrent != null && save.expRequired > 0) {
-      identityBits.push(_tp(locale, 'xp_progress', {
-        bar: _bar(save.expCurrent, save.expRequired),
-        percent: _pct(save.expCurrent, save.expRequired),
-      }));
+      identityBits.push(
+        _tp(locale, 'xp_progress', {
+          bar: _bar(save.expCurrent, save.expRequired),
+          percent: _pct(save.expCurrent, save.expRequired),
+        }),
+      );
     } else if (save.exp > 0) {
       identityBits.push(_tp(locale, 'xp_amount', { xp: fmtNumber(Math.round(save.exp), locale) }));
     }
@@ -653,21 +684,28 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
     metaBits.push(_tp(locale, 'first_seen', { date: fmtDate(fs, locale) }));
   }
   if (pt?.sessions > 0) {
-    metaBits.push(_tp(locale, 'session_count', {
-      count: fmtNumber(pt.sessions, locale),
-      plural_suffix: pt.sessions !== 1 ? 's' : '',
-    }));
+    metaBits.push(
+      _tp(locale, 'session_count', {
+        count: fmtNumber(pt.sessions, locale),
+        plural_suffix: pt.sessions !== 1 ? 's' : '',
+      }),
+    );
   }
   if (metaBits.length > 0) desc.push(metaBits.join(' \u00B7 '));
 
   // Affliction warning
-  if (save && typeof save.affliction === 'number' && save.affliction > 0 && save.affliction < gameData.AFFLICTION_MAP.length) {
+  if (
+    save &&
+    typeof save.affliction === 'number' &&
+    save.affliction > 0 &&
+    save.affliction < gameData.AFFLICTION_MAP.length
+  ) {
     desc.push(`\u26A0\uFE0F **${gameData.AFFLICTION_MAP[save.affliction]}**`);
   }
 
   // Name history (compact)
   if (log?.nameHistory?.length > 0) {
-    desc.push(_tp(locale, 'aka_names', { names: log.nameHistory.map(h => h.name).join(', ') }));
+    desc.push(_tp(locale, 'aka_names', { names: log.nameHistory.map((h) => h.name).join(', ') }));
   }
 
   if (desc.length > 0) embed.setDescription(desc.join('\n'));
@@ -682,14 +720,14 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
     const hasExt = save.hasExtendedStats;
 
     const killTypes = [
-      ['\uD83E\uDDDF', 'kill_type_zombie',   'zeeksKilled'],
+      ['\uD83E\uDDDF', 'kill_type_zombie', 'zeeksKilled'],
       ['\uD83C\uDFAF', 'kill_type_headshot', 'headshots'],
-      ['\u2694\uFE0F', 'kill_type_melee',    'meleeKills'],
-      ['\uD83D\uDD2B', 'kill_type_ranged',   'gunKills'],
-      ['\uD83D\uDCA5', 'kill_type_blast',    'blastKills'],
-      ['\uD83D\uDC4A', 'kill_type_unarmed',  'fistKills'],
+      ['\u2694\uFE0F', 'kill_type_melee', 'meleeKills'],
+      ['\uD83D\uDD2B', 'kill_type_ranged', 'gunKills'],
+      ['\uD83D\uDCA5', 'kill_type_blast', 'blastKills'],
+      ['\uD83D\uDC4A', 'kill_type_unarmed', 'fistKills'],
       ['\uD83D\uDDE1\uFE0F', 'kill_type_takedown', 'takedownKills'],
-      ['\uD83D\uDE97', 'kill_type_vehicle',  'vehicleKills'],
+      ['\uD83D\uDE97', 'kill_type_vehicle', 'vehicleKills'],
     ];
 
     const killLines = [];
@@ -699,18 +737,22 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
       if (allTime <= 0 && life <= 0) continue;
       const label = _tp(locale, labelKey);
       if (hasExt && life > 0 && life !== allTime) {
-        killLines.push(_tp(locale, 'kill_line_with_life', {
-          emoji,
-          label,
-          all_time: fmtNumber(allTime, locale),
-          life: fmtNumber(life, locale),
-        }));
+        killLines.push(
+          _tp(locale, 'kill_line_with_life', {
+            emoji,
+            label,
+            all_time: fmtNumber(allTime, locale),
+            life: fmtNumber(life, locale),
+          }),
+        );
       } else {
-        killLines.push(_tp(locale, 'kill_line', {
-          emoji,
-          label,
-          all_time: fmtNumber(allTime, locale),
-        }));
+        killLines.push(
+          _tp(locale, 'kill_line', {
+            emoji,
+            label,
+            all_time: fmtNumber(allTime, locale),
+          }),
+        );
       }
     }
 
@@ -718,10 +760,12 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
     if (save.daysSurvived > 0) {
       const atSurv = this.getAllTimeSurvival(steamId);
       if (atSurv?.daysSurvived > save.daysSurvived) {
-        survLines.push(_tp(locale, 'survived_with_best', {
-          days: fmtNumber(save.daysSurvived, locale),
-          best_days: fmtNumber(atSurv.daysSurvived, locale),
-        }));
+        survLines.push(
+          _tp(locale, 'survived_with_best', {
+            days: fmtNumber(save.daysSurvived, locale),
+            best_days: fmtNumber(atSurv.daysSurvived, locale),
+          }),
+        );
       } else {
         survLines.push(_tp(locale, 'survived_line', { days: fmtNumber(save.daysSurvived, locale) }));
       }
@@ -731,13 +775,16 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
       survLines.push(_tp(locale, 'bitten_line', { count: fmtNumber(save.timesBitten, locale) }));
     }
     if (save.fishCaught > 0) {
-      const pike = save.fishCaughtPike > 0
-        ? _tp(locale, 'fish_pike_suffix', { count: fmtNumber(save.fishCaughtPike, locale) })
-        : '';
-      survLines.push(_tp(locale, 'fish_line', {
-        count: fmtNumber(save.fishCaught, locale),
-        pike_suffix: pike,
-      }));
+      const pike =
+        save.fishCaughtPike > 0
+          ? _tp(locale, 'fish_pike_suffix', { count: fmtNumber(save.fishCaughtPike, locale) })
+          : '';
+      survLines.push(
+        _tp(locale, 'fish_line', {
+          count: fmtNumber(save.fishCaught, locale),
+          pike_suffix: pike,
+        }),
+      );
     }
 
     const combatValue = [...killLines, ...survLines].join('\n');
@@ -756,9 +803,7 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
     const p = [];
     if (log.pvpKills > 0) p.push(_tp(locale, 'pvp_kills_line', { count: fmtNumber(log.pvpKills, locale) }));
     if (log.pvpDeaths > 0) p.push(_tp(locale, 'pvp_deaths_line', { count: fmtNumber(log.pvpDeaths, locale) }));
-    const kd = log.pvpDeaths > 0
-      ? (log.pvpKills / log.pvpDeaths).toFixed(2)
-      : (log.pvpKills > 0 ? '\u221E' : '0');
+    const kd = log.pvpDeaths > 0 ? (log.pvpKills / log.pvpDeaths).toFixed(2) : log.pvpKills > 0 ? '\u221E' : '0';
     p.push(_tp(locale, 'pvp_kd_line', { kd }));
     embed.addFields({ name: _tp(locale, 'pvp'), value: p.join(' \u00B7 '), inline: true });
   }
@@ -769,18 +814,35 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
 
   if (this._config.canShow('showVitals', isAdmin) && save) {
     const vitals = [];
-    if (this._config.showHealth)   vitals.push(`\u2764\uFE0F \`${_bar(save.health, save.maxHealth || 100)}\` ${_pct(save.health, save.maxHealth || 100)}`);
-    if (this._config.showHunger)   vitals.push(`\uD83C\uDF56 \`${_bar(save.hunger, save.maxHunger || 100)}\` ${_pct(save.hunger, save.maxHunger || 100)}`);
-    if (this._config.showThirst)   vitals.push(`\uD83D\uDCA7 \`${_bar(save.thirst, save.maxThirst || 100)}\` ${_pct(save.thirst, save.maxThirst || 100)}`);
-    if (this._config.showStamina)  vitals.push(`\u26A1 \`${_bar(save.stamina, save.maxStamina || 100)}\` ${_pct(save.stamina, save.maxStamina || 100)}`);
-    if (this._config.showImmunity) vitals.push(`\uD83D\uDEE1\uFE0F \`${_bar(save.infection, save.maxInfection || 100)}\` ${_pct(save.infection, save.maxInfection || 100)}`);
+    if (this._config.showHealth)
+      vitals.push(
+        `\u2764\uFE0F \`${_bar(save.health, save.maxHealth || 100)}\` ${_pct(save.health, save.maxHealth || 100)}`,
+      );
+    if (this._config.showHunger)
+      vitals.push(
+        `\uD83C\uDF56 \`${_bar(save.hunger, save.maxHunger || 100)}\` ${_pct(save.hunger, save.maxHunger || 100)}`,
+      );
+    if (this._config.showThirst)
+      vitals.push(
+        `\uD83D\uDCA7 \`${_bar(save.thirst, save.maxThirst || 100)}\` ${_pct(save.thirst, save.maxThirst || 100)}`,
+      );
+    if (this._config.showStamina)
+      vitals.push(
+        `\u26A1 \`${_bar(save.stamina, save.maxStamina || 100)}\` ${_pct(save.stamina, save.maxStamina || 100)}`,
+      );
+    if (this._config.showImmunity)
+      vitals.push(
+        `\uD83D\uDEE1\uFE0F \`${_bar(save.infection, save.maxInfection || 100)}\` ${_pct(save.infection, save.maxInfection || 100)}`,
+      );
     if (this._config.showBattery && save.battery > 0 && save.battery < 100)
       vitals.push(`\uD83D\uDD0B \`${_bar(save.battery, 100)}\` ${_pct(save.battery, 100)}`);
     if (save.energy > 0) {
-      vitals.push(_tp(locale, 'energy_line', {
-        bar: _bar(save.energy, 100),
-        percent: _pct(save.energy, 100),
-      }));
+      vitals.push(
+        _tp(locale, 'energy_line', {
+          bar: _bar(save.energy, 100),
+          percent: _pct(save.energy, 100),
+        }),
+      );
     }
     if (save.wellRested) vitals.push(_tp(locale, 'well_rested'));
 
@@ -902,7 +964,8 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
   if (log) {
     const parts = [];
     if (log.builds > 0) parts.push(_tp(locale, 'base_built', { count: fmtNumber(log.builds, locale) }));
-    if (log.containersLooted > 0) parts.push(_tp(locale, 'base_looted', { count: fmtNumber(log.containersLooted, locale) }));
+    if (log.containersLooted > 0)
+      parts.push(_tp(locale, 'base_looted', { count: fmtNumber(log.containersLooted, locale) }));
     if (this._config.canShow('showRaidStats', isAdmin)) {
       if (log.raidsOut > 0) parts.push(_tp(locale, 'base_raids', { count: fmtNumber(log.raidsOut, locale) }));
       if (log.raidsIn > 0) parts.push(_tp(locale, 'base_raided', { count: fmtNumber(log.raidsIn, locale) }));
@@ -919,8 +982,8 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
   // Unlocked professions
   if (save?.unlockedProfessions?.length > 1) {
     const profNames = save.unlockedProfessions
-      .filter(p => typeof p === 'string')
-      .map(p => PERK_MAP[p] || _clean(p))
+      .filter((p) => typeof p === 'string')
+      .map((p) => PERK_MAP[p] || _clean(p))
       .filter(Boolean);
     if (profNames.length > 0) {
       embed.addFields({ name: _tp(locale, 'professions'), value: profNames.join(', '), inline: true });
@@ -941,17 +1004,17 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
       for (const [cat, info] of Object.entries(tree)) {
         const emoji = catEmoji[cat] || '\u2B50';
         const bar = `\`${_bar(info.unlocked, info.total)}\``;
-        const names = info.names.length > 0
-          ? _tp(locale, 'skills_names_suffix', { names: info.names.join(', ') })
-          : '';
-        lines.push(_tp(locale, 'skills_line', {
-          emoji,
-          category: catLabel[cat] || cat,
-          bar,
-          unlocked: fmtNumber(info.unlocked, locale),
-          total: fmtNumber(info.total, locale),
-          names_suffix: names,
-        }));
+        const names = info.names.length > 0 ? _tp(locale, 'skills_names_suffix', { names: info.names.join(', ') }) : '';
+        lines.push(
+          _tp(locale, 'skills_line', {
+            emoji,
+            category: catLabel[cat] || cat,
+            bar,
+            unlocked: fmtNumber(info.unlocked, locale),
+            total: fmtNumber(info.total, locale),
+            names_suffix: names,
+          }),
+        );
       }
       if (lines.length > 0) {
         embed.addFields({ name: _tp(locale, 'skills'), value: lines.join('\n').substring(0, 1024) });
@@ -963,25 +1026,25 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
   if (save?.hasExtendedStats) {
     const descs = gameData.CHALLENGE_DESCRIPTIONS;
     const entries = [
-      ['challengeKillZombies',         save.challengeKillZombies],
-      ['challengeKill50',              save.challengeKill50],
-      ['challengeCatch20Fish',         save.challengeCatch20Fish],
-      ['challengeRegularAngler',       save.challengeRegularAngler],
-      ['challengeKillZombieBear',      save.challengeKillZombieBear],
-      ['challenge9Squares',            save.challenge9Squares],
-      ['challengeCraftFirearm',        save.challengeCraftFirearm],
-      ['challengeCraftFurnace',        save.challengeCraftFurnace],
-      ['challengeCraftMeleeBench',     save.challengeCraftMeleeBench],
-      ['challengeCraftMeleeWeapon',    save.challengeCraftMeleeWeapon],
-      ['challengeCraftRainCollector',  save.challengeCraftRainCollector],
-      ['challengeCraftTablesaw',       save.challengeCraftTablesaw],
-      ['challengeCraftTreatment',      save.challengeCraftTreatment],
-      ['challengeCraftWeaponsBench',   save.challengeCraftWeaponsBench],
-      ['challengeCraftWorkbench',      save.challengeCraftWorkbench],
-      ['challengeFindDog',             save.challengeFindDog],
-      ['challengeFindHeli',            save.challengeFindHeli],
-      ['challengeLockpickSUV',         save.challengeLockpickSUV],
-      ['challengeRepairRadio',         save.challengeRepairRadio],
+      ['challengeKillZombies', save.challengeKillZombies],
+      ['challengeKill50', save.challengeKill50],
+      ['challengeCatch20Fish', save.challengeCatch20Fish],
+      ['challengeRegularAngler', save.challengeRegularAngler],
+      ['challengeKillZombieBear', save.challengeKillZombieBear],
+      ['challenge9Squares', save.challenge9Squares],
+      ['challengeCraftFirearm', save.challengeCraftFirearm],
+      ['challengeCraftFurnace', save.challengeCraftFurnace],
+      ['challengeCraftMeleeBench', save.challengeCraftMeleeBench],
+      ['challengeCraftMeleeWeapon', save.challengeCraftMeleeWeapon],
+      ['challengeCraftRainCollector', save.challengeCraftRainCollector],
+      ['challengeCraftTablesaw', save.challengeCraftTablesaw],
+      ['challengeCraftTreatment', save.challengeCraftTreatment],
+      ['challengeCraftWeaponsBench', save.challengeCraftWeaponsBench],
+      ['challengeCraftWorkbench', save.challengeCraftWorkbench],
+      ['challengeFindDog', save.challengeFindDog],
+      ['challengeFindHeli', save.challengeFindHeli],
+      ['challengeLockpickSUV', save.challengeLockpickSUV],
+      ['challengeRepairRadio', save.challengeRepairRadio],
     ].filter(([, val]) => val > 0);
 
     if (entries.length > 0) {
@@ -1003,12 +1066,15 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
       }
       if (inProgress.length > 0) {
         const shown = inProgress.slice(0, 5);
-        lines.push(_tp(locale, 'challenges_in_progress_line', {
-          items: shown.join(', '),
-          more_suffix: inProgress.length > 5
-            ? _tp(locale, 'challenges_more_suffix', { count: fmtNumber(inProgress.length - 5, locale) })
-            : '',
-        }));
+        lines.push(
+          _tp(locale, 'challenges_in_progress_line', {
+            items: shown.join(', '),
+            more_suffix:
+              inProgress.length > 5
+                ? _tp(locale, 'challenges_more_suffix', { count: fmtNumber(inProgress.length - 5, locale) })
+                : '',
+          }),
+        );
       }
       embed.addFields({
         name: _tp(locale, 'challenges_title', {
@@ -1026,13 +1092,24 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
     // Completed quest spawners (major story quests like helicopter, radio tower)
     const doneQuests = Array.isArray(save.questSpawnerDone) ? save.questSpawnerDone.filter(Boolean) : [];
     if (doneQuests.length > 0) {
-      questBits.push(_tp(locale, 'quests_completed', {
-        count: fmtNumber(doneQuests.length, locale),
-        plural_suffix: doneQuests.length !== 1 ? 's' : '',
-      }));
+      questBits.push(
+        _tp(locale, 'quests_completed', {
+          count: fmtNumber(doneQuests.length, locale),
+          plural_suffix: doneQuests.length !== 1 ? 's' : '',
+        }),
+      );
     }
     // Active mini-quest
-    const mq = typeof save.miniQuest === 'string' ? (() => { try { return JSON.parse(save.miniQuest); } catch { return null; } })() : save.miniQuest;
+    const mq =
+      typeof save.miniQuest === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(save.miniQuest);
+            } catch {
+              return null;
+            }
+          })()
+        : save.miniQuest;
     if (mq && typeof mq === 'object') {
       const questId = mq.QuestID || mq.questID || mq.ID || '';
       const active = mq.Active ?? mq.active;
@@ -1095,15 +1172,18 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
   const metaLines = [];
   if (resolved.lastActive) {
     const d = new Date(resolved.lastActive);
-    metaLines.push(_tp(locale, 'last_seen', {
-      date: fmtDate(d, locale),
-      time: fmtTime(d, locale),
-    }));
+    metaLines.push(
+      _tp(locale, 'last_seen', {
+        date: fmtDate(d, locale),
+        time: fmtTime(d, locale),
+      }),
+    );
   }
   if (this._config.canShow('showConnections', isAdmin) && log) {
     const conn = [];
     if (log.connects > 0) conn.push(_tp(locale, 'connections_joins', { count: fmtNumber(log.connects, locale) }));
-    if (log.disconnects > 0) conn.push(_tp(locale, 'connections_leaves', { count: fmtNumber(log.disconnects, locale) }));
+    if (log.disconnects > 0)
+      conn.push(_tp(locale, 'connections_leaves', { count: fmtNumber(log.disconnects, locale) }));
     if (log.adminAccess > 0) conn.push(_tp(locale, 'connections_admin', { count: fmtNumber(log.adminAccess, locale) }));
     if (conn.length > 0) metaLines.push(conn.join(' \u00B7 '));
   }
@@ -1126,12 +1206,13 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
     if (save.horses?.length > 0) {
       for (const h of save.horses) {
         const name = h.displayName || h.name || _clean(h.class || _tp(locale, 'horse_fallback'));
-        const hp = h.health != null && h.maxHealth > 0
-          ? _tp(locale, 'animals_hp_suffix', {
-            health: fmtNumber(Math.round(h.health), locale),
-            max_health: fmtNumber(Math.round(h.maxHealth), locale),
-          })
-          : '';
+        const hp =
+          h.health != null && h.maxHealth > 0
+            ? _tp(locale, 'animals_hp_suffix', {
+                health: fmtNumber(Math.round(h.health), locale),
+                max_health: fmtNumber(Math.round(h.maxHealth), locale),
+              })
+            : '';
         lines.push(`\uD83D\uDC34 **${name}**${hp}`);
       }
     }
@@ -1155,7 +1236,7 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
   // Anti-cheat flags (admin only)
   if (isAdmin && log?.cheatFlags?.length > 0) {
     const flags = log.cheatFlags.slice(-3);
-    const lines = flags.map(f => {
+    const lines = flags.map((f) => {
       const d = new Date(f.timestamp);
       return `${fmtDate(d, locale)} \u2014 \`${f.type}\``;
     });
@@ -1167,7 +1248,6 @@ function buildFullPlayerEmbed(steamId, { isAdmin = false } = {}) {
 
   return embed;
 }
-
 
 // ─── Exports ─────────────────────────────────────────────────────────
 module.exports = {

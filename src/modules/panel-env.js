@@ -27,7 +27,11 @@ function writeEnvValues(updates) {
   _envWriteLock = true;
   try {
     let content;
-    try { content = fs.readFileSync(ENV_PATH, 'utf8'); } catch { content = ''; }
+    try {
+      content = fs.readFileSync(ENV_PATH, 'utf8');
+    } catch {
+      content = '';
+    }
     for (const [key, rawValue] of Object.entries(updates)) {
       // Sanitize: strip newlines/carriage returns to prevent env injection
       const value = String(rawValue).replace(/[\r\n]+/g, ' ');

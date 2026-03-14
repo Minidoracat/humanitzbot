@@ -52,51 +52,51 @@
 
 ### 🎮 Discord Integration
 
-| Feature | Description |
-|---------|-------------|
-| **Server Status** | Live embed with player count, game day, season, server health, and system resources |
-| **Player Stats** | Per-player kill stats, playtime, profession, lifetime records, and progression tracking |
-| **Chat Relay** | Bidirectional chat bridge between Discord and in-game with rich formatting |
-| **Activity Log** | Real-time feeds for connects, deaths, builds, looting, raids, and PvP kills |
-| **Kill Feed** | PvP kill attribution with damage tracking, death cause classification, and death loop detection |
-| **Auto Messages** | Welcome messages, Discord link broadcasts, and SFTP-hosted welcome files with leaderboard templates |
-| **Milestones** | Automatic announcements when players hit kill milestones |
-| **Recaps** | Periodic server summary recaps with trending stats |
-| **Daily Threads** | Auto-created daily threads for activity and chat — keeps channels clean |
-| **Status Channels** | Voice channel names that display live player count, game day, and season |
-| **Panel Channel** | Interactive bot control panel in Discord with buttons for settings, diagnostics, and server management |
+| Feature             | Description                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Server Status**   | Live embed with player count, game day, season, server health, and system resources                    |
+| **Player Stats**    | Per-player kill stats, playtime, profession, lifetime records, and progression tracking                |
+| **Chat Relay**      | Bidirectional chat bridge between Discord and in-game with rich formatting                             |
+| **Activity Log**    | Real-time feeds for connects, deaths, builds, looting, raids, and PvP kills                            |
+| **Kill Feed**       | PvP kill attribution with damage tracking, death cause classification, and death loop detection        |
+| **Auto Messages**   | Welcome messages, Discord link broadcasts, and SFTP-hosted welcome files with leaderboard templates    |
+| **Milestones**      | Automatic announcements when players hit kill milestones                                               |
+| **Recaps**          | Periodic server summary recaps with trending stats                                                     |
+| **Daily Threads**   | Auto-created daily threads for activity and chat — keeps channels clean                                |
+| **Status Channels** | Voice channel names that display live player count, game day, and season                               |
+| **Panel Channel**   | Interactive bot control panel in Discord with buttons for settings, diagnostics, and server management |
 
 ### 🗺️ Web Dashboard
 
-| Feature | Description |
-|---------|-------------|
-| **Interactive Map** | Leaflet-based world map with live player positions, structures, vehicles, containers, horses, dead bodies, and AI entities |
-| **Timeline Playback** | Scrub through historical world snapshots — watch your server evolve over time |
-| **Admin Panel** | Server power controls, RCON console, player kick/ban, and game settings editor |
-| **Item Tracking** | Fingerprint-based item movement tracking with full custody chains and ownership history |
-| **Activity Feed** | Searchable, filterable event history with player attribution |
-| **Chat History** | Full searchable chat log with Discord ↔ in-game indicators |
-| **Database Browser** | Direct SQL queries against 60+ game data tables |
-| **Clan Viewer** | Clan membership, territories, and member details |
-| **Bot Config Editor** | Edit `.env` settings from the browser with validation |
-| **Server Scheduler** | Visual restart schedule with profile rotation |
-| **Discord OAuth2** | Role-based access tiers: public landing, survivor, mod, admin |
-| **Multi-Language** | Full i18n support — English, 繁體中文, 简体中文 with browser language detection and instant switching |
+| Feature               | Description                                                                                                                |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **Interactive Map**   | Leaflet-based world map with live player positions, structures, vehicles, containers, horses, dead bodies, and AI entities |
+| **Timeline Playback** | Scrub through historical world snapshots — watch your server evolve over time                                              |
+| **Admin Panel**       | Server power controls, RCON console, player kick/ban, and game settings editor                                             |
+| **Item Tracking**     | Fingerprint-based item movement tracking with full custody chains and ownership history                                    |
+| **Activity Feed**     | Searchable, filterable event history with player attribution                                                               |
+| **Chat History**      | Full searchable chat log with Discord ↔ in-game indicators                                                                 |
+| **Database Browser**  | Direct SQL queries against 60+ game data tables                                                                            |
+| **Clan Viewer**       | Clan membership, territories, and member details                                                                           |
+| **Bot Config Editor** | Edit `.env` settings from the browser with validation                                                                      |
+| **Server Scheduler**  | Visual restart schedule with profile rotation                                                                              |
+| **Discord OAuth2**    | Role-based access tiers: public landing, survivor, mod, admin                                                              |
+| **Multi-Language**    | Full i18n support — English, 繁體中文, 简体中文 with browser language detection and instant switching                      |
 
 ### ⚙️ Server Management
 
-| Feature | Description |
-|---------|-------------|
-| **Multi-Server** | Manage multiple game servers from one bot — each gets its own DB, RCON, stats, and modules |
-| **PvP Scheduler** | Automatic PvP on/off at scheduled hours via settings file edit + server restart with countdown warnings |
-| **Server Scheduler** | Timed restarts with profile rotation, per-profile setting overrides, and daily/weekly schedules |
-| **SFTP Auto-Discovery** | Automatically finds game files on your server — no manual path config needed |
-| **Panel API** | Pterodactyl panel integration for hosted servers (Bisect, etc.) — power controls, file API, WebSocket RCON |
-| **Env Sync** | Automatic `.env` management — new settings are added on updates, existing values are never overwritten |
-| **Setup Wizard** | Interactive Discord wizard for first-time setup — RCON/SFTP testing, path discovery, channel assignment |
-| **Save Parser** | Full binary `.sav` file parser — extracts players, structures, vehicles, containers, companions, world state |
-| **Snapshot Service** | Periodic world state snapshots for timeline playback and historical analysis |
-| **Diff Engine** | Tracks changes between save file parses for activity detection and item movement |
+| Feature                 | Description                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **Multi-Server**        | Manage multiple game servers from one bot — each gets its own DB, RCON, stats, and modules                   |
+| **PvP Scheduler**       | Automatic PvP on/off at scheduled hours via settings file edit + server restart with countdown warnings      |
+| **Server Scheduler**    | Timed restarts with profile rotation, per-profile setting overrides, and daily/weekly schedules              |
+| **SFTP Auto-Discovery** | Automatically finds game files on your server — no manual path config needed                                 |
+| **Panel API**           | Pterodactyl panel integration for hosted servers (Bisect, etc.) — power controls, file API, WebSocket RCON   |
+| **Env Sync**            | Automatic `.env` management — new settings are added on updates, existing values are never overwritten       |
+| **Setup Wizard**        | Interactive Discord wizard for first-time setup — RCON/SFTP testing, path discovery, channel assignment      |
+| **Save Parser**         | Full binary `.sav` file parser — extracts players, structures, vehicles, containers, companions, world state |
+| **Snapshot Service**    | Periodic world state snapshots for timeline playback and historical analysis                                 |
+| **Diff Engine**         | Tracks changes between save file parses for activity detection and item movement                             |
 
 ---
 
@@ -125,22 +125,22 @@ cp .env.example .env
 
 Fill in the required values:
 
-| Key | Description |
-|-----|-------------|
-| `DISCORD_TOKEN` | Your bot token |
-| `DISCORD_CLIENT_ID` | Discord application ID |
-| `DISCORD_GUILD_ID` | Your Discord server ID |
-| `RCON_HOST` / `RCON_PORT` / `RCON_PASSWORD` | Game server RCON connection |
-| `FTP_HOST` / `FTP_USER` / `FTP_PASSWORD` | SFTP access to the game server |
-| `PANEL_CHANNEL_ID` | Discord channel for the bot control panel |
+| Key                                         | Description                               |
+| ------------------------------------------- | ----------------------------------------- |
+| `DISCORD_TOKEN`                             | Your bot token                            |
+| `DISCORD_CLIENT_ID`                         | Discord application ID                    |
+| `DISCORD_GUILD_ID`                          | Your Discord server ID                    |
+| `RCON_HOST` / `RCON_PORT` / `RCON_PASSWORD` | Game server RCON connection               |
+| `FTP_HOST` / `FTP_USER` / `FTP_PASSWORD`    | SFTP access to the game server            |
+| `PANEL_CHANNEL_ID`                          | Discord channel for the bot control panel |
 
 Everything else has sensible defaults or is auto-discovered on first run. See `.env.example` for the full list of 80+ configurable options.
 
 #### Language / Locale
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `BOT_LOCALE` | `en` | Discord bot display language (`en`, `zh-TW`, `zh-CN`) |
+| Key          | Default | Description                                           |
+| ------------ | ------- | ----------------------------------------------------- |
+| `BOT_LOCALE` | `en`    | Discord bot display language (`en`, `zh-TW`, `zh-CN`) |
 
 The web dashboard detects your browser language automatically. You can also switch manually via the language selector in the bottom-left corner. Per-server locale overrides are supported in `servers.json` for multi-server setups.
 
@@ -151,6 +151,7 @@ npm run setup
 ```
 
 This will:
+
 1. Connect to your game server via SFTP
 2. Auto-discover file paths (saves, logs, settings)
 3. Download initial data and seed the SQLite database
@@ -179,6 +180,7 @@ The dashboard runs on port `3000` by default (`WEB_MAP_PORT` in `.env`).
 ### Public Landing Page
 
 The landing page is accessible without authentication and shows:
+
 - Server status (online/offline, player count, game day)
 - Connect info and Discord invite
 - Multi-server overview
@@ -213,15 +215,15 @@ your-domain.com {
 
 ## Slash Commands
 
-| Command | Description |
-|---------|-------------|
-| `/players` | List online players with stats |
+| Command        | Description                          |
+| -------------- | ------------------------------------ |
+| `/players`     | List online players with stats       |
 | `/playerstats` | Detailed stats for a specific player |
-| `/playtime` | Player playtime leaderboard |
-| `/server` | Server info, status, and settings |
-| `/rcon` | Execute RCON commands (admin) |
-| `/panel` | Bot control panel link |
-| `/threads` | Manage daily activity/chat threads |
+| `/playtime`    | Player playtime leaderboard          |
+| `/server`      | Server info, status, and settings    |
+| `/rcon`        | Execute RCON commands (admin)        |
+| `/panel`       | Bot control panel link               |
+| `/threads`     | Manage daily activity/chat threads   |
 
 ---
 
@@ -334,18 +336,18 @@ npm run build:template   # Rebuild template database
 
 ## Tech Stack
 
-| Component | Technology |
-|-----------|-----------|
-| **Runtime** | Node.js 18+ |
-| **Discord** | discord.js v14 |
-| **Database** | SQLite via better-sqlite3 |
-| **Web Server** | Express v5 |
-| **Map** | Leaflet with CRS.Simple |
-| **Styling** | Tailwind CSS |
-| **SFTP** | ssh2-sftp-client |
-| **RCON** | Custom TCP + WebSocket clients |
-| **WebSocket** | ws (Pterodactyl console) |
-| **Tests** | Node.js built-in test runner |
+| Component      | Technology                     |
+| -------------- | ------------------------------ |
+| **Runtime**    | Node.js 18+                    |
+| **Discord**    | discord.js v14                 |
+| **Database**   | SQLite via better-sqlite3      |
+| **Web Server** | Express v5                     |
+| **Map**        | Leaflet with CRS.Simple        |
+| **Styling**    | Tailwind CSS                   |
+| **SFTP**       | ssh2-sftp-client               |
+| **RCON**       | Custom TCP + WebSocket clients |
+| **WebSocket**  | ws (Pterodactyl console)       |
+| **Tests**      | Node.js built-in test runner   |
 
 ---
 

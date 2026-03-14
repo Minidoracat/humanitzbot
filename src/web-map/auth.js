@@ -47,7 +47,9 @@ function getSessionSecret() {
   if (process.env.WEB_MAP_SESSION_SECRET) {
     _cachedSessionSecret = process.env.WEB_MAP_SESSION_SECRET;
   } else {
-    console.warn('[WEB AUTH] WEB_MAP_SESSION_SECRET not set — generating random secret (sessions will not survive restarts)');
+    console.warn(
+      '[WEB AUTH] WEB_MAP_SESSION_SECRET not set — generating random secret (sessions will not survive restarts)',
+    );
     _cachedSessionSecret = crypto.randomBytes(32).toString('hex');
   }
   return _cachedSessionSecret;
@@ -61,11 +63,23 @@ function getAuthConfig() {
     callbackUrl: process.env.WEB_MAP_CALLBACK_URL || '',
     sessionSecret: getSessionSecret(),
     // Legacy single-tier role list (backwards compat)
-    allowedRoles: (process.env.WEB_MAP_ALLOWED_ROLES || '').split(',').map(s => s.trim()).filter(Boolean),
+    allowedRoles: (process.env.WEB_MAP_ALLOWED_ROLES || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
     // Multi-tier role lists
-    survivorRoles: (process.env.WEB_PANEL_SURVIVOR_ROLES || '').split(',').map(s => s.trim()).filter(Boolean),
-    modRoles: (process.env.WEB_PANEL_MOD_ROLES || '').split(',').map(s => s.trim()).filter(Boolean),
-    adminRoles: (process.env.WEB_PANEL_ADMIN_ROLES || '').split(',').map(s => s.trim()).filter(Boolean),
+    survivorRoles: (process.env.WEB_PANEL_SURVIVOR_ROLES || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+    modRoles: (process.env.WEB_PANEL_MOD_ROLES || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+    adminRoles: (process.env.WEB_PANEL_ADMIN_ROLES || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
   };
 }
 
@@ -169,18 +183,18 @@ function resolveTier(member, authCfg) {
 
   // Check admin tier
   if (isDiscordAdmin) return 'admin';
-  if (authCfg.adminRoles.length > 0 && memberRoles.some(r => authCfg.adminRoles.includes(r))) {
+  if (authCfg.adminRoles.length > 0 && memberRoles.some((r) => authCfg.adminRoles.includes(r))) {
     return 'admin';
   }
 
   // Check mod tier
-  if (authCfg.modRoles.length > 0 && memberRoles.some(r => authCfg.modRoles.includes(r))) {
+  if (authCfg.modRoles.length > 0 && memberRoles.some((r) => authCfg.modRoles.includes(r))) {
     return 'mod';
   }
 
   // Check survivor tier
   if (authCfg.survivorRoles.length > 0) {
-    if (memberRoles.some(r => authCfg.survivorRoles.includes(r))) return 'survivor';
+    if (memberRoles.some((r) => authCfg.survivorRoles.includes(r))) return 'survivor';
     // Has specific survivor roles configured but user doesn't have them
     return 'public';
   }
@@ -193,7 +207,7 @@ function resolveTier(member, authCfg) {
 function isAuthorised(member, allowedRoles) {
   if (!member) return false;
   if (allowedRoles.length > 0) {
-    return member.roles.some(roleId => allowedRoles.includes(roleId));
+    return member.roles.some((roleId) => allowedRoles.includes(roleId));
   }
   const permissions = BigInt(member.permissions || '0');
   return (permissions & 0x8n) !== 0n;
@@ -217,7 +231,13 @@ function setupAuth(app, client) {
     console.warn('[WEB AUTH] Discord OAuth not configured — all routes UNPROTECTED');
     // Still register /auth/me so the frontend can boot
     app.get('/auth/me', (_req, res) => {
-      res.json({ authenticated: true, tier: 'admin', tierLevel: TIER.admin, username: 'Admin (no OAuth)', devMode: true });
+      res.json({
+        authenticated: true,
+        tier: 'admin',
+        tierLevel: TIER.admin,
+        username: 'Admin (no OAuth)',
+        devMode: true,
+      });
     });
     app.get('/auth/login', (_req, res) => res.redirect('/'));
     app.get('/auth/logout', (_req, res) => res.redirect('/'));
@@ -241,13 +261,15 @@ function setupAuth(app, client) {
     const state = crypto.randomBytes(16).toString('hex');
     // Store state in a short-lived cookie
     res.setHeader('Set-Cookie', `hmz_oauth_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=300`);
-    const url = `${DISCORD_API}/oauth2/authorize?` + new URLSearchParams({
-      client_id: authCfg.clientId,
-      redirect_uri: authCfg.callbackUrl,
-      response_type: 'code',
-      scope: OAUTH_SCOPES,
-      state,
-    }).toString();
+    const url =
+      `${DISCORD_API}/oauth2/authorize?` +
+      new URLSearchParams({
+        client_id: authCfg.clientId,
+        redirect_uri: authCfg.callbackUrl,
+        response_type: 'code',
+        scope: OAUTH_SCOPES,
+        state,
+      }).toString();
     res.redirect(url);
   });
 
@@ -262,7 +284,10 @@ function setupAuth(app, client) {
         // User clicked "Cancel" on Discord's authorization page — just redirect home
         return res.redirect('/');
       }
-      const safeDesc = (error_description || error || 'Unknown error').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      const safeDesc = (error_description || error || 'Unknown error').replace(
+        /[&<>"']/g,
+        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+      );
       return res.status(400).send(`<h2>Authorization Error</h2><p>${safeDesc}</p><a href="/auth/login">Try again</a>`);
     }
     if (!code) return res.status(400).send('Missing authorization code');
@@ -270,9 +295,15 @@ function setupAuth(app, client) {
     // Verify CSRF state parameter (timing-safe comparison)
     const cookies = parseCookies(req.headers.cookie);
     const expectedState = cookies['hmz_oauth_state'];
-    if (!state || !expectedState || state.length !== expectedState.length ||
-        !crypto.timingSafeEqual(Buffer.from(state), Buffer.from(expectedState))) {
-      return res.status(403).send('<h2>Invalid OAuth State</h2><p>Please try logging in again.</p><a href="/auth/login">Login</a>');
+    if (
+      !state ||
+      !expectedState ||
+      state.length !== expectedState.length ||
+      !crypto.timingSafeEqual(Buffer.from(state), Buffer.from(expectedState))
+    ) {
+      return res
+        .status(403)
+        .send('<h2>Invalid OAuth State</h2><p>Please try logging in again.</p><a href="/auth/login">Login</a>');
     }
     // Clear state cookie
     res.setHeader('Set-Cookie', 'hmz_oauth_state=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
@@ -302,14 +333,17 @@ function setupAuth(app, client) {
 
       const signed = signSession(sessionId, authCfg.sessionSecret);
       const isSecure = authCfg.callbackUrl.startsWith('https');
-      const cookieFlags = `HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL / 1000}` + (isSecure ? '; Secure' : '');
+      const cookieFlags =
+        `HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL / 1000}` + (isSecure ? '; Secure' : '');
       res.setHeader('Set-Cookie', `${COOKIE_NAME}=${signed}; ${cookieFlags}`);
       res.redirect('/');
-
     } catch (err) {
       console.error('[WEB AUTH] OAuth callback error:', err.message);
       // Escape error message to prevent XSS
-      const safeMsg = (err.message || 'Unknown error').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const safeMsg = (err.message || 'Unknown error').replace(
+        /[&<>"']/g,
+        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+      );
       res.status(500).send(`<h2>Authentication Error</h2><p>${safeMsg}</p><a href="/auth/login">Try again</a>`);
     }
   });
@@ -361,7 +395,7 @@ function setupAuth(app, client) {
           if (member) {
             // Convert to the format resolveTier expects
             const memberData = {
-              roles: member.roles.cache.map(r => r.id),
+              roles: member.roles.cache.map((r) => r.id),
               permissions: member.permissions.bitfield.toString(),
             };
             const newTier = resolveTier(memberData, authCfg);
@@ -405,13 +439,17 @@ function setupAuth(app, client) {
     const session = getSession(req, authCfg.sessionSecret);
     if (session) {
       // Periodically re-validate roles from the bot's guild cache (no Discord API call)
-      if (client && authCfg.guildId && session.userId &&
-          Date.now() - (session.lastRoleCheck || 0) > ROLE_REFRESH_INTERVAL) {
+      if (
+        client &&
+        authCfg.guildId &&
+        session.userId &&
+        Date.now() - (session.lastRoleCheck || 0) > ROLE_REFRESH_INTERVAL
+      ) {
         const guild = client.guilds?.cache?.get(authCfg.guildId);
         const member = guild?.members?.cache?.get(session.userId);
         if (member) {
           const memberData = {
-            roles: member.roles.cache.map(r => r.id),
+            roles: member.roles.cache.map((r) => r.id),
             permissions: member.permissions.bitfield.toString(),
           };
           const newTier = resolveTier(memberData, authCfg);
@@ -462,7 +500,9 @@ function requireTier(minTier) {
     if (req.path.startsWith('/api/')) {
       return res.status(403).json({ error: `Requires ${minTier} access or higher` });
     }
-    return res.status(403).send(`<h2>Access Denied</h2><p>You need <strong>${minTier}</strong> access or higher.</p><a href="/">Back</a>`);
+    return res
+      .status(403)
+      .send(`<h2>Access Denied</h2><p>You need <strong>${minTier}</strong> access or higher.</p><a href="/">Back</a>`);
   };
 }
 
@@ -485,4 +525,12 @@ function getSession(req, secret) {
   return session;
 }
 
-module.exports = { setupAuth, requireTier, isEnabled, isAuthorised, resolveTier, TIER, _test: { signSession, verifySession, parseCookies, sessions, getSessionSecret } };
+module.exports = {
+  setupAuth,
+  requireTier,
+  isEnabled,
+  isAuthorised,
+  resolveTier,
+  TIER,
+  _test: { signSession, verifySession, parseCookies, sessions, getSessionSecret },
+};

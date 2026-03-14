@@ -76,19 +76,19 @@ class SaveService extends EventEmitter {
     }
 
     // Agent mode
-    this._agentMode = options.agentMode || 'auto';     // 'auto' | 'agent' | 'direct'
+    this._agentMode = options.agentMode || 'auto'; // 'auto' | 'agent' | 'direct'
     this._agentNodePath = options.agentNodePath || 'node';
     this._agentRemoteDir = options.agentRemoteDir || ''; // derive from savePath if empty
-    this._agentCachePath = options.agentCachePath || '';  // explicit cache path (host-managed)
+    this._agentCachePath = options.agentCachePath || ''; // explicit cache path (host-managed)
     this._sshConfig = options.sshConfig || null;
     this._agentTimeout = options.agentTimeout || 120_000;
 
     // Agent trigger strategy
-    this._agentTrigger = options.agentTrigger || 'auto';  // 'auto' | 'rcon' | 'ssh' | 'panel' | 'none'
+    this._agentTrigger = options.agentTrigger || 'auto'; // 'auto' | 'rcon' | 'ssh' | 'panel' | 'none'
     this._agentPanelCommand = options.agentPanelCommand || 'createHZSocket';
     this._agentPanelDelay = options.agentPanelDelay ?? 3000;
-    this._panelApi = options.panelApi || null;  // must be explicitly injected; null = no Panel API
-    this._rcon = null;  // lazy-loaded rcon singleton
+    this._panelApi = options.panelApi || null; // must be explicitly injected; null = no Panel API
+    this._rcon = null; // lazy-loaded rcon singleton
 
     // Internal state
     this._timer = null;
@@ -98,15 +98,15 @@ class SaveService extends EventEmitter {
     this._syncing = false;
     this._syncCount = 0;
     this._lastError = null;
-    this._mode = null;                // actual mode after auto-detection: 'agent' | 'direct'
+    this._mode = null; // actual mode after auto-detection: 'agent' | 'direct'
 
     // Agent state
     this._agentDeployed = false;
-    this._agentCapable = null;        // null = unknown, true/false after probe
-    this._panelCapable = null;        // null = unknown, true/false after probe
-    this._resolvedTrigger = null;     // actual trigger after auto-detection
-    this._agentPath = '';             // full remote path to uploaded agent
-    this._cachePath = '';             // full remote path to humanitz-cache.json
+    this._agentCapable = null; // null = unknown, true/false after probe
+    this._panelCapable = null; // null = unknown, true/false after probe
+    this._resolvedTrigger = null; // actual trigger after auto-detection
+    this._agentPath = ''; // full remote path to uploaded agent
+    this._cachePath = ''; // full remote path to humanitz-cache.json
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -123,8 +123,13 @@ class SaveService extends EventEmitter {
     // One-time DB repair: fix activity_log rows where actor_name is a raw SteamID
     this._repairSteamIdNames();
 
-    const modeLabel = this._agentMode === 'direct' ? 'direct' : `${this._agentMode} (agent-capable: ${this._agentCapable ?? 'unknown'})`;
-    console.log(`[${this._label}] Starting save service — mode: ${modeLabel}, poll every ${this._pollInterval / 1000}s`);
+    const modeLabel =
+      this._agentMode === 'direct'
+        ? 'direct'
+        : `${this._agentMode} (agent-capable: ${this._agentCapable ?? 'unknown'})`;
+    console.log(
+      `[${this._label}] Starting save service — mode: ${modeLabel}, poll every ${this._pollInterval / 1000}s`,
+    );
     await this._poll();
     this._timer = setInterval(() => this._poll(), this._pollInterval);
   }
@@ -156,7 +161,7 @@ class SaveService extends EventEmitter {
       const filePath = path.join(this._dataDir, 'data', 'logs', 'PlayerIDMapped.txt');
       // Also check per-server location (dataDir IS the data dir for multi-server)
       const altPath = path.join(this._dataDir, 'logs', 'PlayerIDMapped.txt');
-      const actualPath = fs.existsSync(filePath) ? filePath : (fs.existsSync(altPath) ? altPath : null);
+      const actualPath = fs.existsSync(filePath) ? filePath : fs.existsSync(altPath) ? altPath : null;
       if (!actualPath) return;
       const raw = fs.readFileSync(actualPath, 'utf8');
       const map = {};
@@ -188,10 +193,12 @@ class SaveService extends EventEmitter {
       const db = this._db.db || this._db._db || this._db;
       if (typeof db.prepare !== 'function') return;
 
-      const rows = db.prepare(
-        `SELECT DISTINCT actor FROM activity_log
-         WHERE actor_name = actor AND actor GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'`
-      ).all();
+      const rows = db
+        .prepare(
+          `SELECT DISTINCT actor FROM activity_log
+         WHERE actor_name = actor AND actor GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'`,
+        )
+        .all();
 
       let fixed = 0;
       const stmt = db.prepare('UPDATE activity_log SET actor_name = ? WHERE actor = ? AND actor_name = actor');
@@ -237,7 +244,7 @@ class SaveService extends EventEmitter {
       const dir = this._agentRemoteDir || this._savePath.replace(/[/\\][^/\\]+$/, '');
       this._agentRemoteDir = dir;
       this._agentPath = dir + '/humanitz-agent.js';
-      this._cachePath = this._agentCachePath || (dir + '/humanitz-cache.json');
+      this._cachePath = this._agentCachePath || dir + '/humanitz-cache.json';
     }
   }
 
@@ -251,12 +258,18 @@ class SaveService extends EventEmitter {
    */
   async deployAgent() {
     let SFTPClient;
-    try { SFTPClient = require('ssh2-sftp-client'); }
-    catch { throw new Error('ssh2-sftp-client not installed'); }
+    try {
+      SFTPClient = require('ssh2-sftp-client');
+    } catch {
+      throw new Error('ssh2-sftp-client not installed');
+    }
 
     let buildAgentScript;
-    try { ({ buildAgentScript } = require('./agent-builder')); }
-    catch (err) { throw new Error(`Failed to load agent-builder: ${err.message}`); }
+    try {
+      ({ buildAgentScript } = require('./agent-builder'));
+    } catch (err) {
+      throw new Error(`Failed to load agent-builder: ${err.message}`, { cause: err });
+    }
 
     const script = buildAgentScript();
     const sftp = new SFTPClient();
@@ -316,8 +329,11 @@ class SaveService extends EventEmitter {
    */
   async _sshExec(command) {
     let SSHClient;
-    try { ({ Client: SSHClient } = require('ssh2')); }
-    catch { throw new Error('ssh2 not installed — needed for SSH exec'); }
+    try {
+      ({ Client: SSHClient } = require('ssh2'));
+    } catch {
+      throw new Error('ssh2 not installed — needed for SSH exec');
+    }
 
     const config = this._sshConfig || this._buildSshConfig();
     if (!config || !config.host) {
@@ -326,7 +342,8 @@ class SaveService extends EventEmitter {
 
     return new Promise((resolve, reject) => {
       const conn = new SSHClient();
-      let stdout = '', stderr = '';
+      let stdout = '',
+        stderr = '';
       const timer = setTimeout(() => {
         conn.end();
         reject(new Error(`SSH exec timed out after ${this._agentTimeout}ms`));
@@ -334,9 +351,17 @@ class SaveService extends EventEmitter {
 
       conn.on('ready', () => {
         conn.exec(command, (err, stream) => {
-          if (err) { clearTimeout(timer); conn.end(); return reject(err); }
-          stream.on('data', (d) => { stdout += d; });
-          stream.stderr.on('data', (d) => { stderr += d; });
+          if (err) {
+            clearTimeout(timer);
+            conn.end();
+            return reject(err);
+          }
+          stream.on('data', (d) => {
+            stdout += d;
+          });
+          stream.stderr.on('data', (d) => {
+            stderr += d;
+          });
           stream.on('close', (code) => {
             clearTimeout(timer);
             conn.end();
@@ -401,7 +426,6 @@ class SaveService extends EventEmitter {
           this._mode = 'agent';
         }
       }
-
     } catch (err) {
       this._lastError = err.message;
       console.error(`[${this._label}] Sync error:`, err.message);
@@ -439,8 +463,11 @@ class SaveService extends EventEmitter {
     const parsed = parseSave(buf);
     let clans = [];
     if (clanBuf) {
-      try { clans = parseClanData(clanBuf); }
-      catch (err) { console.warn(`[${this._label}] Failed to parse clan data:`, err.message); }
+      try {
+        clans = parseClanData(clanBuf);
+      } catch (err) {
+        console.warn(`[${this._label}] Failed to parse clan data:`, err.message);
+      }
     }
 
     await this._syncParsedData(parsed, clans);
@@ -497,7 +524,6 @@ class SaveService extends EventEmitter {
 
       console.warn(`[${this._label}] Agent triggered (${trigger}) but cache not found at ${this._cachePath}`);
       return false;
-
     } catch (err) {
       console.warn(`[${this._label}] Agent mode failed: ${err.message}`);
       return false;
@@ -590,7 +616,11 @@ class SaveService extends EventEmitter {
    */
   _isRconAvailable() {
     if (!this._rcon) {
-      try { this._rcon = require('../rcon/rcon'); } catch { return false; }
+      try {
+        this._rcon = require('../rcon/rcon');
+      } catch {
+        return false;
+      }
     }
     return this._rcon && this._rcon.connected;
   }
@@ -602,14 +632,18 @@ class SaveService extends EventEmitter {
    */
   async _triggerViaRcon() {
     if (!this._rcon) {
-      try { this._rcon = require('../rcon/rcon'); } catch { throw new Error('RCON module not available'); }
+      try {
+        this._rcon = require('../rcon/rcon');
+      } catch {
+        throw new Error('RCON module not available');
+      }
     }
     console.log(`[${this._label}] Sending RCON command: "${this._agentPanelCommand}"`);
     await this._rcon.send(this._agentPanelCommand);
 
     // Wait for the server to write the cache file
     if (this._agentPanelDelay > 0) {
-      await new Promise(r => setTimeout(r, this._agentPanelDelay));
+      await new Promise((r) => setTimeout(r, this._agentPanelDelay));
     }
   }
 
@@ -624,7 +658,7 @@ class SaveService extends EventEmitter {
 
     // Wait for the host to parse + write the cache
     if (this._agentPanelDelay > 0) {
-      await new Promise(r => setTimeout(r, this._agentPanelDelay));
+      await new Promise((r) => setTimeout(r, this._agentPanelDelay));
     }
   }
 
@@ -659,8 +693,11 @@ class SaveService extends EventEmitter {
    */
   async _readSftp(force) {
     let SFTPClient;
-    try { SFTPClient = require('ssh2-sftp-client'); }
-    catch { throw new Error('ssh2-sftp-client not installed — needed for SFTP polling'); }
+    try {
+      SFTPClient = require('ssh2-sftp-client');
+    } catch {
+      throw new Error('ssh2-sftp-client not installed — needed for SFTP polling');
+    }
 
     const sftp = new SFTPClient();
     try {
@@ -734,7 +771,7 @@ class SaveService extends EventEmitter {
     if (!force) {
       try {
         const files = await api.listFiles(saveDir);
-        const saveFile = files.find(f => f.name === saveFilename);
+        const saveFile = files.find((f) => f.name === saveFilename);
         if (saveFile && saveFile.modified_at) {
           const mtime = new Date(saveFile.modified_at).getTime();
           if (this._lastMtime && mtime === this._lastMtime) {
@@ -759,11 +796,13 @@ class SaveService extends EventEmitter {
     if (force) {
       try {
         const files = await api.listFiles(saveDir);
-        const saveFile = files.find(f => f.name === saveFilename);
+        const saveFile = files.find((f) => f.name === saveFilename);
         if (saveFile && saveFile.modified_at) {
           this._lastMtime = new Date(saveFile.modified_at).getTime();
         }
-      } catch { /* non-critical */ }
+      } catch {
+        /* non-critical */
+      }
     }
 
     // Try to download clan save too
@@ -777,7 +816,7 @@ class SaveService extends EventEmitter {
         if (!force) {
           try {
             const clanFiles = await api.listFiles(clanDir);
-            const clanFile = clanFiles.find(f => f.name === clanFilename);
+            const clanFile = clanFiles.find((f) => f.name === clanFilename);
             if (clanFile && clanFile.modified_at) {
               const mtime = new Date(clanFile.modified_at).getTime();
               if (this._lastClanMtime && mtime === this._lastClanMtime) {
@@ -786,7 +825,9 @@ class SaveService extends EventEmitter {
                 this._lastClanMtime = mtime;
               }
             }
-          } catch { /* download anyway */ }
+          } catch {
+            /* download anyway */
+          }
         }
 
         if (shouldDownload) {
@@ -827,8 +868,11 @@ class SaveService extends EventEmitter {
    */
   async _readCacheViaSftp(force) {
     let SFTPClient;
-    try { SFTPClient = require('ssh2-sftp-client'); }
-    catch { return undefined; }
+    try {
+      SFTPClient = require('ssh2-sftp-client');
+    } catch {
+      return undefined;
+    }
 
     const sftp = new SFTPClient();
     try {
@@ -836,8 +880,11 @@ class SaveService extends EventEmitter {
 
       // Check if cache file exists
       let stat;
-      try { stat = await sftp.stat(this._cachePath); }
-      catch { return null; } // file doesn't exist
+      try {
+        stat = await sftp.stat(this._cachePath);
+      } catch {
+        return null;
+      } // file doesn't exist
 
       const mtime = stat.modifyTime;
 
@@ -870,7 +917,7 @@ class SaveService extends EventEmitter {
       const cacheFilename = this._cachePath.split(/[/\\]/).pop();
 
       const files = await api.listFiles(cacheDir);
-      const cacheFile = files.find(f => f.name === cacheFilename);
+      const cacheFile = files.find((f) => f.name === cacheFilename);
       if (!cacheFile) return null;
 
       const mtime = cacheFile.modified_at ? new Date(cacheFile.modified_at).getTime() : null;
@@ -893,8 +940,12 @@ class SaveService extends EventEmitter {
    */
   _parseCache(json, mtime) {
     let cache;
-    try { cache = JSON.parse(json); }
-    catch (err) { console.warn(`[${this._label}] Invalid cache JSON: ${err.message}`); return null; }
+    try {
+      cache = JSON.parse(json);
+    } catch (err) {
+      console.warn(`[${this._label}] Invalid cache JSON: ${err.message}`);
+      return null;
+    }
 
     // Validate cache version — accept any v >= 1 for forward-compatibility
     if (!cache || typeof cache.v !== 'number' || cache.v < 1) {
@@ -918,7 +969,11 @@ class SaveService extends EventEmitter {
     // Try SFTP first
     if (this._sftpConfig) {
       let SFTPClient;
-      try { SFTPClient = require('ssh2-sftp-client'); } catch { /* ignore */ }
+      try {
+        SFTPClient = require('ssh2-sftp-client');
+      } catch {
+        /* ignore */
+      }
       if (SFTPClient) {
         const sftp = new SFTPClient();
         try {
@@ -929,8 +984,15 @@ class SaveService extends EventEmitter {
             this._lastClanMtime = clanStat.modifyTime;
             return parseClanData(clanBuf);
           }
-        } catch { /* Clan file may not exist */ }
-        finally { try { await sftp.end(); } catch { /* ignore */ } }
+        } catch {
+          /* Clan file may not exist */
+        } finally {
+          try {
+            await sftp.end();
+          } catch {
+            /* ignore */
+          }
+        }
         return [];
       }
     }
@@ -942,7 +1004,9 @@ class SaveService extends EventEmitter {
         if (clanBuf && clanBuf.length > 0) {
           return parseClanData(clanBuf);
         }
-      } catch { /* Clan file may not exist */ }
+      } catch {
+        /* Clan file may not exist */
+      }
     }
 
     return [];
@@ -1039,10 +1103,18 @@ class SaveService extends EventEmitter {
       if (ws.lodPickups) {
         for (const p of ws.lodPickups) {
           worldDrops.push({
-            type: 'pickup', actorName: '', item: p.item, amount: p.amount || 1,
-            durability: p.durability || 0, items: [],
-            worldLoot: p.worldLoot, placed: p.placed, spawned: p.spawned,
-            x: p.x, y: p.y, z: p.z,
+            type: 'pickup',
+            actorName: '',
+            item: p.item,
+            amount: p.amount || 1,
+            durability: p.durability || 0,
+            items: [],
+            worldLoot: p.worldLoot,
+            placed: p.placed,
+            spawned: p.spawned,
+            x: p.x,
+            y: p.y,
+            z: p.z,
           });
         }
       }
@@ -1052,9 +1124,15 @@ class SaveService extends EventEmitter {
         for (let i = 0; i < ws.droppedBackpacks.length; i++) {
           const bp = ws.droppedBackpacks[i];
           worldDrops.push({
-            type: 'backpack', actorName: `backpack_${i}`, item: '',
-            amount: 0, durability: 0, items: bp.items || [],
-            x: bp.x, y: bp.y, z: bp.z,
+            type: 'backpack',
+            actorName: `backpack_${i}`,
+            item: '',
+            amount: 0,
+            durability: 0,
+            items: bp.items || [],
+            x: bp.x,
+            y: bp.y,
+            z: bp.z,
           });
         }
       }
@@ -1063,10 +1141,17 @@ class SaveService extends EventEmitter {
       if (ws.globalContainers) {
         for (const gc of ws.globalContainers) {
           worldDrops.push({
-            type: 'global_container', actorName: gc.actorName || '', item: '',
-            amount: 0, durability: 0, items: gc.items || [],
-            locked: gc.locked, doesSpawnLoot: gc.doesSpawnLoot,
-            x: gc.x ?? null, y: gc.y ?? null, z: gc.z ?? null,
+            type: 'global_container',
+            actorName: gc.actorName || '',
+            item: '',
+            amount: 0,
+            durability: 0,
+            items: gc.items || [],
+            locked: gc.locked,
+            doesSpawnLoot: gc.doesSpawnLoot,
+            x: gc.x ?? null,
+            y: gc.y ?? null,
+            z: gc.z ?? null,
           });
         }
       }
@@ -1097,14 +1182,18 @@ class SaveService extends EventEmitter {
         const p = parsed.players.get(steamId);
         return p?.name || this._idMap[steamId] || steamId;
       };
-      itemStats = reconcileItems(this._db, {
-        players: parsed.players,
-        containers: parsed.containers || [],
-        vehicles: parsed.vehicles || [],
-        horses: parsed.horses || [],
-        structures: parsed.structures || [],
-        worldState: parsed.worldState || {},
-      }, nameResolver);
+      itemStats = reconcileItems(
+        this._db,
+        {
+          players: parsed.players,
+          containers: parsed.containers || [],
+          vehicles: parsed.vehicles || [],
+          horses: parsed.horses || [],
+          structures: parsed.structures || [],
+          worldState: parsed.worldState || {},
+        },
+        nameResolver,
+      );
 
       // Periodic cleanup of old lost items
       if (this._syncCount % 100 === 0) {
@@ -1127,7 +1216,11 @@ class SaveService extends EventEmitter {
     }
 
     // Purge old activity entries (keep 30 days)
-    try { this._db.purgeOldActivity('-30 days'); } catch { /* ignore */ }
+    try {
+      this._db.purgeOldActivity('-30 days');
+    } catch {
+      /* ignore */
+    }
 
     // Update meta timestamps
     this._db.setMeta('last_save_sync', new Date().toISOString());
@@ -1138,8 +1231,15 @@ class SaveService extends EventEmitter {
     const horsesLabel = parsed.horses?.length ? `, ${parsed.horses.length} horses` : '';
     const containersLabel = parsed.containers?.length ? `, ${parsed.containers.length} containers` : '';
     const activityLabel = diffEvents.length ? `, ${diffEvents.length} activity events` : '';
-    const itemLabel = itemStats ? `, items: ${itemStats.matched}m/${itemStats.created}c/${itemStats.moved}v/${itemStats.lost}l` + (itemStats.groups ? ` grp: ${itemStats.groups.matched}m/${itemStats.groups.created}c/${itemStats.groups.adjusted}a/${itemStats.groups.transferred}t/${itemStats.groups.lost}l` : '') : '';
-    console.log(`[${this._label}] Sync complete (${mode}): ${parsed.players.size} players, ${parsed.structures.length} structures, ${parsed.vehicles.length} vehicles, ${clans.length} clans${horsesLabel}${containersLabel}${activityLabel}${itemLabel} (${elapsed}ms)`);
+    const itemLabel = itemStats
+      ? `, items: ${itemStats.matched}m/${itemStats.created}c/${itemStats.moved}v/${itemStats.lost}l` +
+        (itemStats.groups
+          ? ` grp: ${itemStats.groups.matched}m/${itemStats.groups.created}c/${itemStats.groups.adjusted}a/${itemStats.groups.transferred}t/${itemStats.groups.lost}l`
+          : '')
+      : '';
+    console.log(
+      `[${this._label}] Sync complete (${mode}): ${parsed.players.size} players, ${parsed.structures.length} structures, ${parsed.vehicles.length} vehicles, ${clans.length} clans${horsesLabel}${containersLabel}${activityLabel}${itemLabel} (${elapsed}ms)`,
+    );
 
     // Write save-cache.json for web map consumption BEFORE emitting sync,
     // while parsed data is in scope.  Writing here (instead of in a sync listener)
@@ -1199,7 +1299,9 @@ class SaveService extends EventEmitter {
       let players = [];
       try {
         players = this._db.getOnlinePlayersForDiff ? this._db.getOnlinePlayersForDiff() : [];
-      } catch { /* empty */ }
+      } catch {
+        /* empty */
+      }
 
       return { containers, horses, players, worldState, vehicles, structures };
     } catch (err) {

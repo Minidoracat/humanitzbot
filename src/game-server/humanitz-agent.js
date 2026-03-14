@@ -31,24 +31,48 @@ const _path = require('path');
 function createReader(buf) {
   let offset = 0;
 
-  function readU8()  { return buf[offset++]; }
-  function readU16() { const v = buf.readUInt16LE(offset); offset += 2; return v; }
-  function readU32() { const v = buf.readUInt32LE(offset); offset += 4; return v; }
-  function readI32() { const v = buf.readInt32LE(offset); offset += 4; return v; }
+  function readU8() {
+    return buf[offset++];
+  }
+  function readU16() {
+    const v = buf.readUInt16LE(offset);
+    offset += 2;
+    return v;
+  }
+  function readU32() {
+    const v = buf.readUInt32LE(offset);
+    offset += 4;
+    return v;
+  }
+  function readI32() {
+    const v = buf.readInt32LE(offset);
+    offset += 4;
+    return v;
+  }
   function readI64() {
     const lo = buf.readUInt32LE(offset);
     const hi = buf.readInt32LE(offset + 4);
     offset += 8;
     return Number(BigInt(hi) * 0x100000000n + BigInt(lo >>> 0));
   }
-  function readF32() { const v = buf.readFloatLE(offset); offset += 4; return v; }
-  function readF64() { const v = buf.readDoubleLE(offset); offset += 8; return v; }
+  function readF32() {
+    const v = buf.readFloatLE(offset);
+    offset += 4;
+    return v;
+  }
+  function readF64() {
+    const v = buf.readDoubleLE(offset);
+    offset += 8;
+    return v;
+  }
   function readGuid() {
     const g = buf.subarray(offset, offset + 16);
     offset += 16;
     return g.toString('hex');
   }
-  function readBool() { return readU8() !== 0; }
+  function readBool() {
+    return readU8() !== 0;
+  }
 
   /**
    * Read a UE4 FString (length-prefixed, null-terminated).
@@ -71,17 +95,39 @@ function createReader(buf) {
     throw new Error(`Bad FString length: ${len} at offset ${offset - 4}`);
   }
 
-  function getOffset() { return offset; }
-  function setOffset(o) { offset = o; }
-  function remaining() { return buf.length - offset; }
-  function peek(bytes) { return buf.subarray(offset, offset + bytes); }
-  function skip(bytes) { offset += bytes; }
+  function getOffset() {
+    return offset;
+  }
+  function setOffset(o) {
+    offset = o;
+  }
+  function remaining() {
+    return buf.length - offset;
+  }
+  function peek(bytes) {
+    return buf.subarray(offset, offset + bytes);
+  }
+  function skip(bytes) {
+    offset += bytes;
+  }
 
   return {
     buf,
-    readU8, readU16, readU32, readI32, readI64,
-    readF32, readF64, readGuid, readBool, readFString,
-    getOffset, setOffset, remaining, peek, skip,
+    readU8,
+    readU16,
+    readU32,
+    readI32,
+    readI64,
+    readF32,
+    readF64,
+    readGuid,
+    readBool,
+    readFString,
+    getOffset,
+    setOffset,
+    remaining,
+    peek,
+    skip,
     length: buf.length,
   };
 }
@@ -95,9 +141,7 @@ function cleanName(name) {
 // ─── GVAS header parser ────────────────────────────────────────────────────
 
 function parseHeader(r) {
-  const magic = Buffer.from([
-    r.readU8(), r.readU8(), r.readU8(), r.readU8(),
-  ]).toString('ascii');
+  const magic = Buffer.from([r.readU8(), r.readU8(), r.readU8(), r.readU8()]).toString('ascii');
 
   if (magic !== 'GVAS') throw new Error('Not a GVAS save file');
 
@@ -128,8 +172,13 @@ function parseHeader(r) {
 // ─── Property type names we capture MapProperty values for ─────────────────
 
 const MAP_CAPTURE = new Set([
-  'GameStats', 'FloatData', 'CustomData', 'LODHouseData',
-  'RandQuestConfig', 'SGlobalContainerSave', 'LodModularLootActor',
+  'GameStats',
+  'FloatData',
+  'CustomData',
+  'LODHouseData',
+  'RandQuestConfig',
+  'SGlobalContainerSave',
+  'LodModularLootActor',
 ]);
 
 // ─── Read a single UProperty ───────────────────────────────────────────────
@@ -151,14 +200,26 @@ function readProperty(r, options = {}) {
   const startOff = r.getOffset();
 
   let name;
-  try { name = r.readFString(); } catch { return null; }
+  try {
+    name = r.readFString();
+  } catch {
+    return null;
+  }
   if (name === 'None' || name === '') return null;
 
   let typeName;
-  try { typeName = r.readFString(); } catch { r.setOffset(startOff); return null; }
+  try {
+    typeName = r.readFString();
+  } catch {
+    r.setOffset(startOff);
+    return null;
+  }
 
   const dataSize = r.readI64();
-  if (dataSize < 0 || dataSize > r.length) { r.setOffset(startOff); return null; }
+  if (dataSize < 0 || dataSize > r.length) {
+    r.setOffset(startOff);
+    return null;
+  }
 
   const cname = cleanName(name);
   const prop = { name: cname, type: typeName, raw: name };
@@ -253,7 +314,7 @@ function readProperty(r, options = {}) {
         prop.value = null;
         break;
     }
-  } catch (e) {
+  } catch (_e) {
     // Unrecoverable parse error within this property
     return null;
   }
@@ -263,7 +324,7 @@ function readProperty(r, options = {}) {
 
 // ─── Struct subtypes ───────────────────────────────────────────────────────
 
-function _readStructProperty(r, prop, dataSize) {
+function _readStructProperty(r, prop, _dataSize) {
   const structType = r.readFString();
   r.readGuid();
   r.readU8();
@@ -316,9 +377,9 @@ function _readStructProperty(r, prop, dataSize) {
       const subProps = [];
       let sub;
       while ((sub = readProperty(r)) !== null) subProps.push(sub);
-      const translation = subProps.find(s => s.name === 'Translation');
-      const rotation = subProps.find(s => s.name === 'Rotation');
-      const scale = subProps.find(s => s.name === 'Scale3D');
+      const translation = subProps.find((s) => s.name === 'Translation');
+      const rotation = subProps.find((s) => s.name === 'Rotation');
+      const scale = subProps.find((s) => s.name === 'Scale3D');
       prop.value = {
         translation: translation?.value || null,
         rotation: rotation?.value || null,
@@ -353,23 +414,25 @@ function _readArrayProperty(r, prop, dataSize, options) {
   if (innerType === 'StructProperty') {
     r.readFString(); // arrName
     r.readFString(); // arrType
-    r.readI64();     // arrSize
+    r.readI64(); // arrSize
     const arrStructType = r.readFString();
     r.readGuid();
     r.readU8();
     prop.arrayStructType = arrStructType;
 
     // Skip large world-geometry arrays (Transform, Vector, Rotator)
-    if (options.skipLargeArrays
-        && ['Transform', 'Vector', 'Rotator'].includes(arrStructType)
-        && count > options.skipThreshold) {
+    if (
+      options.skipLargeArrays &&
+      ['Transform', 'Vector', 'Rotator'].includes(arrStructType) &&
+      count > options.skipThreshold
+    ) {
       r.setOffset(afterSep + dataSize);
       prop.value = `<skipped ${count}>`;
       return;
     }
 
     if (arrStructType === 'S_Slots') {
-      // Inventory slots — parse to extract items  
+      // Inventory slots — parse to extract items
       prop.value = _parseInventorySlots(r, count);
     } else if (arrStructType === 'Guid') {
       // Guid arrays are inline 16-byte values, not property lists
@@ -382,11 +445,13 @@ function _readArrayProperty(r, prop, dataSize, options) {
     } else if (arrStructType === 'Quat') {
       // Inline 16-byte structs (4 x float32)
       prop.value = [];
-      for (let i = 0; i < count; i++) prop.value.push({ x: r.readF32(), y: r.readF32(), z: r.readF32(), w: r.readF32() });
+      for (let i = 0; i < count; i++)
+        prop.value.push({ x: r.readF32(), y: r.readF32(), z: r.readF32(), w: r.readF32() });
     } else if (arrStructType === 'LinearColor') {
       // Inline 16-byte structs (4 x float32)
       prop.value = [];
-      for (let i = 0; i < count; i++) prop.value.push({ r: r.readF32(), g: r.readF32(), b: r.readF32(), a: r.readF32() });
+      for (let i = 0; i < count; i++)
+        prop.value.push({ r: r.readF32(), g: r.readF32(), b: r.readF32(), a: r.readF32() });
     } else if (arrStructType === 'DateTime' || arrStructType === 'Timespan') {
       // Inline 8-byte values
       prop.value = [];
@@ -443,9 +508,15 @@ function _parseInventorySlots(r, count) {
     let child;
     while ((child = readProperty(r)) !== null) slotProps.push(child);
 
-    let itemName = null, amount = 0, durability = 0;
-    let ammo = 0, attachments = [];
-    let cap = 0, weight = 0, maxDur = 0, wetness = 0;
+    let itemName = null,
+      amount = 0,
+      durability = 0;
+    let ammo = 0,
+      attachments = [];
+    let cap = 0,
+      weight = 0,
+      maxDur = 0,
+      wetness = 0;
     for (const sp of slotProps) {
       if (sp.name === 'Item' && sp.children) {
         for (const c of sp.children) {
@@ -531,14 +602,22 @@ function _readMapProperty(r, prop, dataSize, cname) {
       if (keyType === 'StrProperty' || keyType === 'NameProperty') key = r.readFString();
       else if (keyType === 'IntProperty') key = r.readI32();
       else if (keyType === 'EnumProperty') key = r.readFString();
-      else { r.setOffset(afterSep + dataSize); prop.value = null; return; }
+      else {
+        r.setOffset(afterSep + dataSize);
+        prop.value = null;
+        return;
+      }
 
       let val;
       if (valType === 'FloatProperty') val = r.readF32();
       else if (valType === 'IntProperty') val = r.readI32();
       else if (valType === 'StrProperty') val = r.readFString();
       else if (valType === 'BoolProperty') val = r.readBool();
-      else { r.setOffset(afterSep + dataSize); prop.value = null; return; }
+      else {
+        r.setOffset(afterSep + dataSize);
+        prop.value = null;
+        return;
+      }
 
       entries[key] = val;
     }
@@ -575,19 +654,18 @@ function recoverForward(r, startPos, maxScan = 500000) {
   return false;
 }
 
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  Save Parser (auto-bundled from save-parser.js)
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ─── Perk enum → display name ──────────────────────────────────────────────
 
-const  PERK_MAP = {
-  'Enum_Professions::NewEnumerator0':  'Unemployed',
-  'Enum_Professions::NewEnumerator1':  'Amateur Boxer',
-  'Enum_Professions::NewEnumerator2':  'Farmer',
-  'Enum_Professions::NewEnumerator3':  'Mechanic',
-  'Enum_Professions::NewEnumerator9':  'Car Salesman',
+const PERK_MAP = {
+  'Enum_Professions::NewEnumerator0': 'Unemployed',
+  'Enum_Professions::NewEnumerator1': 'Amateur Boxer',
+  'Enum_Professions::NewEnumerator2': 'Farmer',
+  'Enum_Professions::NewEnumerator3': 'Mechanic',
+  'Enum_Professions::NewEnumerator9': 'Car Salesman',
   'Enum_Professions::NewEnumerator10': 'Outdoorsman',
   'Enum_Professions::NewEnumerator12': 'Chemist',
   'Enum_Professions::NewEnumerator13': 'Emergency Medical Technician',
@@ -598,10 +676,18 @@ const  PERK_MAP = {
 };
 
 const PERK_INDEX_MAP = {
-  0: 'Unemployed', 1: 'Amateur Boxer', 2: 'Farmer', 3: 'Mechanic',
-  9: 'Car Salesman', 10: 'Outdoorsman', 12: 'Chemist',
-  13: 'Emergency Medical Technician', 14: 'Military Veteran',
-  15: 'Thief', 16: 'Fire Fighter', 17: 'Electrical Engineer',
+  0: 'Unemployed',
+  1: 'Amateur Boxer',
+  2: 'Farmer',
+  3: 'Mechanic',
+  9: 'Car Salesman',
+  10: 'Outdoorsman',
+  12: 'Chemist',
+  13: 'Emergency Medical Technician',
+  14: 'Military Veteran',
+  15: 'Thief',
+  16: 'Fire Fighter',
+  17: 'Electrical Engineer',
 };
 
 // ─── Clan rank → display name ──────────────────────────────────────────────
@@ -626,38 +712,38 @@ const SEASON_MAP = {
 // ─── Statistics tag path → player field mapping ────────────────────────────
 
 const STAT_TAG_MAP = {
-  'statistics.stat.game.kills.total':         'lifetimeKills',
-  'statistics.stat.game.kills.headshot':       'lifetimeHeadshots',
-  'statistics.stat.game.kills.type.melee':     'lifetimeMeleeKills',
-  'statistics.stat.game.kills.type.ranged':    'lifetimeGunKills',
-  'statistics.stat.game.kills.type.blast':     'lifetimeBlastKills',
-  'statistics.stat.game.kills.type.unarmed':   'lifetimeFistKills',
-  'statistics.stat.game.kills.type.takedown':  'lifetimeTakedownKills',
-  'statistics.stat.game.kills.type.vehicle':   'lifetimeVehicleKills',
-  'statistics.stat.progress.survivefor3days':  'lifetimeDaysSurvived',
-  'statistics.stat.game.bitten':               'timesBitten',
-  'statistics.stat.game.activity.FishCaught':       'fishCaught',
-  'statistics.stat.game.activity.FishCaught.Pike':  'fishCaughtPike',
+  'statistics.stat.game.kills.total': 'lifetimeKills',
+  'statistics.stat.game.kills.headshot': 'lifetimeHeadshots',
+  'statistics.stat.game.kills.type.melee': 'lifetimeMeleeKills',
+  'statistics.stat.game.kills.type.ranged': 'lifetimeGunKills',
+  'statistics.stat.game.kills.type.blast': 'lifetimeBlastKills',
+  'statistics.stat.game.kills.type.unarmed': 'lifetimeFistKills',
+  'statistics.stat.game.kills.type.takedown': 'lifetimeTakedownKills',
+  'statistics.stat.game.kills.type.vehicle': 'lifetimeVehicleKills',
+  'statistics.stat.progress.survivefor3days': 'lifetimeDaysSurvived',
+  'statistics.stat.game.bitten': 'timesBitten',
+  'statistics.stat.game.activity.FishCaught': 'fishCaught',
+  'statistics.stat.game.activity.FishCaught.Pike': 'fishCaughtPike',
   // Challenge progress
-  'statistics.stat.challenge.KillSomeZombies':      'challengeKillZombies',
-  'statistics.stat.progress.kill50zombies':          'challengeKill50',
-  'statistics.stat.progress.catch20fish':            'challengeCatch20Fish',
-  'statistics.stat.challenge.RegularAngler':         'challengeRegularAngler',
-  'statistics.stat.challenge.KillZombieBear':        'challengeKillZombieBear',
-  'statistics.stat.challenge.9SquaresToChaos':       'challenge9Squares',
-  'statistics.stat.challenge.CraftFirearm':          'challengeCraftFirearm',
-  'statistics.stat.challenge.CraftFurnace':          'challengeCraftFurnace',
-  'statistics.stat.challenge.CraftMeleeBench':       'challengeCraftMeleeBench',
-  'statistics.stat.challenge.CraftMeleeWeapon':      'challengeCraftMeleeWeapon',
-  'statistics.stat.challenge.CraftRainCollector':    'challengeCraftRainCollector',
-  'statistics.stat.challenge.CraftTablesaw':         'challengeCraftTablesaw',
-  'statistics.stat.challenge.CraftTreatment':        'challengeCraftTreatment',
-  'statistics.stat.challenge.CraftWeaponsBench':     'challengeCraftWeaponsBench',
-  'statistics.stat.challenge.CraftWorkbench':        'challengeCraftWorkbench',
-  'statistics.stat.challenge.FindCanineCompanion':   'challengeFindDog',
+  'statistics.stat.challenge.KillSomeZombies': 'challengeKillZombies',
+  'statistics.stat.progress.kill50zombies': 'challengeKill50',
+  'statistics.stat.progress.catch20fish': 'challengeCatch20Fish',
+  'statistics.stat.challenge.RegularAngler': 'challengeRegularAngler',
+  'statistics.stat.challenge.KillZombieBear': 'challengeKillZombieBear',
+  'statistics.stat.challenge.9SquaresToChaos': 'challenge9Squares',
+  'statistics.stat.challenge.CraftFirearm': 'challengeCraftFirearm',
+  'statistics.stat.challenge.CraftFurnace': 'challengeCraftFurnace',
+  'statistics.stat.challenge.CraftMeleeBench': 'challengeCraftMeleeBench',
+  'statistics.stat.challenge.CraftMeleeWeapon': 'challengeCraftMeleeWeapon',
+  'statistics.stat.challenge.CraftRainCollector': 'challengeCraftRainCollector',
+  'statistics.stat.challenge.CraftTablesaw': 'challengeCraftTablesaw',
+  'statistics.stat.challenge.CraftTreatment': 'challengeCraftTreatment',
+  'statistics.stat.challenge.CraftWeaponsBench': 'challengeCraftWeaponsBench',
+  'statistics.stat.challenge.CraftWorkbench': 'challengeCraftWorkbench',
+  'statistics.stat.challenge.FindCanineCompanion': 'challengeFindDog',
   'statistics.stat.challenge.FindCrashedHelicopter': 'challengeFindHeli',
-  'statistics.stat.challenge.LockpickSurvivorSUV':  'challengeLockpickSUV',
-  'statistics.stat.challenge.RepairRadioTower':      'challengeRepairRadio',
+  'statistics.stat.challenge.LockpickSurvivorSUV': 'challengeLockpickSUV',
+  'statistics.stat.challenge.RepairRadioTower': 'challengeRepairRadio',
 };
 
 // ─── Simplify UE4 blueprint class names ────────────────────────────────────
@@ -712,11 +798,16 @@ function createPlayerData() {
     fishCaughtPike: 0,
 
     // Vitals
-    health: 0, maxHealth: 0,
-    hunger: 0, maxHunger: 0,
-    thirst: 0, maxThirst: 0,
-    stamina: 0, maxStamina: 0,
-    infection: 0, maxInfection: 0,
+    health: 0,
+    maxHealth: 0,
+    hunger: 0,
+    maxHunger: 0,
+    thirst: 0,
+    maxThirst: 0,
+    stamina: 0,
+    maxStamina: 0,
+    infection: 0,
+    maxInfection: 0,
     battery: 100,
 
     // Float data
@@ -735,9 +826,13 @@ function createPlayerData() {
     expRequired: 0,
 
     // Position & respawn
-    x: null, y: null, z: null,
+    x: null,
+    y: null,
+    z: null,
     rotationYaw: null,
-    respawnX: null, respawnY: null, respawnZ: null,
+    respawnX: null,
+    respawnY: null,
+    respawnZ: null,
 
     // CB Radio
     cbRadioCooldown: 0,
@@ -868,17 +963,17 @@ function parseSave(buf) {
   const horses = [];
 
   // ── Parallel arrays that get assembled after parsing ──
-  let buildActorClasses = [];      // ObjectProperty array
-  let buildActorHealths = [];      // FloatProperty array  
-  let buildActorMaxHealths = [];   // FloatProperty array
-  let buildActorUpgrades = [];     // IntProperty array
-  let buildActorTrailer = [];      // BoolProperty array
-  let buildActorStrings = [];      // StrProperty array (owner info)
-  let buildActorData = [];         // StrProperty array
-  let buildActorNoSpawn = [];      // struct array (parsed)
-  let buildActorInventories = [];  // struct array (parsed)
+  let buildActorClasses = []; // ObjectProperty array
+  let buildActorHealths = []; // FloatProperty array
+  let buildActorMaxHealths = []; // FloatProperty array
+  let buildActorUpgrades = []; // IntProperty array
+  let buildActorTrailer = []; // BoolProperty array
+  let buildActorStrings = []; // StrProperty array (owner info)
+  let buildActorData = []; // StrProperty array
+  let buildActorNoSpawn = []; // struct array (parsed)
+  let buildActorInventories = []; // struct array (parsed)
   let buildActorTransformCount = 0;
-  let buildActorTransforms = [];   // Transform array (parsed Translation per structure)
+  let buildActorTransforms = []; // Transform array (parsed Translation per structure)
 
   // ── Player state machine ──
   let currentSteamID = null;
@@ -892,7 +987,10 @@ function parseSave(buf) {
     for (const prop of props) {
       if (prop?.name === 'SteamID' && typeof prop.value === 'string') {
         const match = prop.value.match(/(7656\d+)/);
-        if (match) { currentSteamID = match[1]; return; }
+        if (match) {
+          currentSteamID = match[1];
+          return;
+        }
       }
     }
   }
@@ -933,24 +1031,25 @@ function parseSave(buf) {
       if (n === 'Tree' && currentSteamID) {
         const p = ensurePlayer(currentSteamID);
         const allSkills = [];
-        p.skillTree = prop.value.map(elemProps => {
-          if (!Array.isArray(elemProps)) return null;
-          const node = {};
-          for (const ep of elemProps) {
-            if (ep.name === 'Type') node.type = ep.value;
-            else if (ep.name === 'Index') node.index = ep.value;
-            else if (ep.name === 'Locked?') node.locked = ep.value;
-            else if (ep.name === 'NeedSpecialUnlock?') node.needSpecialUnlock = ep.value;
-            else if (ep.name === 'Exp') node.exp = ep.value;
-            else if (ep.name === 'ExpNeeded') node.expNeeded = ep.value;
-            else if (ep.name === 'UnlockedSkills' && Array.isArray(ep.value)) {
-              node.unlockedSkills = ep.value.filter(Boolean);
-              for (const s of node.unlockedSkills) allSkills.push(s);
+        p.skillTree = prop.value
+          .map((elemProps) => {
+            if (!Array.isArray(elemProps)) return null;
+            const node = {};
+            for (const ep of elemProps) {
+              if (ep.name === 'Type') node.type = ep.value;
+              else if (ep.name === 'Index') node.index = ep.value;
+              else if (ep.name === 'Locked?') node.locked = ep.value;
+              else if (ep.name === 'NeedSpecialUnlock?') node.needSpecialUnlock = ep.value;
+              else if (ep.name === 'Exp') node.exp = ep.value;
+              else if (ep.name === 'ExpNeeded') node.expNeeded = ep.value;
+              else if (ep.name === 'UnlockedSkills' && Array.isArray(ep.value)) {
+                node.unlockedSkills = ep.value.filter(Boolean);
+                for (const s of node.unlockedSkills) allSkills.push(s);
+              } else if (ep.name === 'UnlockProgress' && Array.isArray(ep.value)) node.unlockProgress = ep.value;
             }
-            else if (ep.name === 'UnlockProgress' && Array.isArray(ep.value)) node.unlockProgress = ep.value;
-          }
-          return node;
-        }).filter(Boolean);
+            return node;
+          })
+          .filter(Boolean);
         // Aggregate all unlocked skills across all tree slots
         if (allSkills.length) p.unlockedSkills = allSkills;
         return;
@@ -979,9 +1078,9 @@ function parseSave(buf) {
     if (n === 'BuildActorTransform') {
       if (Array.isArray(prop.value)) {
         // Each element is an array of children: [{name:'Translation', value:{x,y,z}}, ...]
-        buildActorTransforms = prop.value.map(elem => {
+        buildActorTransforms = prop.value.map((elem) => {
           if (Array.isArray(elem)) {
-            const t = elem.find(c => c.name === 'Translation');
+            const t = elem.find((c) => c.name === 'Translation');
             return t?.value || null;
           }
           return null;
@@ -1037,7 +1136,16 @@ function parseSave(buf) {
     if (n === 'Dogs' && Array.isArray(prop.value)) {
       for (const name of prop.value) {
         if (name && typeof name === 'string') {
-          companions.push({ type: 'dog', actorName: name, ownerSteamId: '', x: null, y: null, z: null, health: 0, extra: {} });
+          companions.push({
+            type: 'dog',
+            actorName: name,
+            ownerSteamId: '',
+            x: null,
+            y: null,
+            z: null,
+            health: 0,
+            extra: {},
+          });
         }
       }
       return;
@@ -1076,7 +1184,18 @@ function parseSave(buf) {
       worldState.lodPickups = [];
       for (const elemProps of prop.value) {
         if (!Array.isArray(elemProps)) continue;
-        const pickup = { valid: false, x: null, y: null, z: null, item: '', amount: 0, durability: 0, worldLoot: false, placed: false, spawned: false };
+        const pickup = {
+          valid: false,
+          x: null,
+          y: null,
+          z: null,
+          item: '',
+          amount: 0,
+          durability: 0,
+          worldLoot: false,
+          placed: false,
+          spawned: false,
+        };
         for (const ep of elemProps) {
           if (ep.name === 'Valid?' && ep.value) pickup.valid = true;
           if (ep.name === 'WorldLoot?' && ep.value) pickup.worldLoot = true;
@@ -1110,9 +1229,22 @@ function parseSave(buf) {
       worldState.savedActors = [];
       for (const elemProps of prop.value) {
         if (!Array.isArray(elemProps)) continue;
-        const actor = { class: '', displayName: '', x: null, y: null, z: null, health: 0, ownerSteamId: '', locked: false, dtName: '' };
+        const actor = {
+          class: '',
+          displayName: '',
+          x: null,
+          y: null,
+          z: null,
+          health: 0,
+          ownerSteamId: '',
+          locked: false,
+          dtName: '',
+        };
         for (const ap of elemProps) {
-          if (ap.name === 'Class') { actor.class = ap.value || ''; actor.displayName = simplifyBlueprint(ap.value || ''); }
+          if (ap.name === 'Class') {
+            actor.class = ap.value || '';
+            actor.displayName = simplifyBlueprint(ap.value || '');
+          }
           if (ap.name === 'Transform' && ap.value?.translation) {
             actor.x = _round2(ap.value.translation.x);
             actor.y = _round2(ap.value.translation.y);
@@ -1138,14 +1270,14 @@ function parseSave(buf) {
       worldState.aiSpawns = [];
       for (const entry of prop.value) {
         if (!Array.isArray(entry)) continue;
-        const nodeUid = entry.find(c => c.name === 'NodeUID');
-        const data = entry.find(c => c.name === 'Data');
+        const nodeUid = entry.find((c) => c.name === 'NodeUID');
+        const data = entry.find((c) => c.name === 'Data');
         if (!data?.value || !Array.isArray(data.value)) continue;
         for (const aiInfo of data.value) {
           if (!Array.isArray(aiInfo)) continue;
-          const aiType = aiInfo.find(c => c.name === 'AIType')?.value;
-          const aiLoc = aiInfo.find(c => c.name === 'AILocation')?.value;
-          const graveTime = aiInfo.find(c => c.name === 'GraveTimeMinutes')?.value;
+          const aiType = aiInfo.find((c) => c.name === 'AIType')?.value;
+          const aiLoc = aiInfo.find((c) => c.name === 'AILocation')?.value;
+          const graveTime = aiInfo.find((c) => c.name === 'GraveTimeMinutes')?.value;
           if (!aiType || aiType === 'EAItype::E_None') continue;
           // Classify AI type
           const typeName = aiType.replace('EAItype::E_', '');
@@ -1185,12 +1317,14 @@ function parseSave(buf) {
       if (Array.isArray(prop.value)) {
         worldState.destroyedRandCars = prop.value.length;
         // Format is arrayStructType=Vector — each element is {x, y, z} directly
-        worldState.destroyedRandCarPositions = prop.value.map(elem => {
-          if (elem && typeof elem.x === 'number') {
-            return { x: _round2(elem.x), y: _round2(elem.y), z: _round2(elem.z) };
-          }
-          return null;
-        }).filter(Boolean);
+        worldState.destroyedRandCarPositions = prop.value
+          .map((elem) => {
+            if (elem && typeof elem.x === 'number') {
+              return { x: _round2(elem.x), y: _round2(elem.y), z: _round2(elem.z) };
+            }
+            return null;
+          })
+          .filter(Boolean);
       } else if (typeof prop.value === 'string' && prop.value.startsWith('<skipped')) {
         worldState.destroyedRandCars = parseInt(prop.value.match(/\d+/)?.[0] || '0', 10);
       } else {
@@ -1221,16 +1355,18 @@ function parseSave(buf) {
     if (n === 'StoneCutting') {
       worldState.stoneCuttingStations = Array.isArray(prop.value) ? prop.value.length : 0;
       if (Array.isArray(prop.value)) {
-        worldState.stoneCuttingData = prop.value.map(elemProps => {
-          if (!Array.isArray(elemProps)) return null;
-          const station = { name: '', stage: 0, time: 0 };
-          for (const ep of elemProps) {
-            if (ep.name === 'Name') station.name = ep.value || '';
-            if (ep.name === 'Stage' && typeof ep.value === 'number') station.stage = ep.value;
-            if (ep.name === 'Time' && typeof ep.value === 'number') station.time = _round(ep.value);
-          }
-          return station;
-        }).filter(Boolean);
+        worldState.stoneCuttingData = prop.value
+          .map((elemProps) => {
+            if (!Array.isArray(elemProps)) return null;
+            const station = { name: '', stage: 0, time: 0 };
+            for (const ep of elemProps) {
+              if (ep.name === 'Name') station.name = ep.value || '';
+              if (ep.name === 'Stage' && typeof ep.value === 'number') station.stage = ep.value;
+              if (ep.name === 'Time' && typeof ep.value === 'number') station.time = _round(ep.value);
+            }
+            return station;
+          })
+          .filter(Boolean);
       }
       return;
     }
@@ -1243,7 +1379,10 @@ function parseSave(buf) {
           if (!Array.isArray(elemProps)) continue;
           const actor = { class: '', displayName: '', x: null, y: null, z: null, resources: {} };
           for (const ep of elemProps) {
-            if (ep.name === 'Class') { actor.class = ep.value || ''; actor.displayName = simplifyBlueprint(ep.value || ''); }
+            if (ep.name === 'Class') {
+              actor.class = ep.value || '';
+              actor.displayName = simplifyBlueprint(ep.value || '');
+            }
             if (ep.name === 'Transform' && ep.value?.translation) {
               actor.x = _round2(ep.value.translation.x);
               actor.y = _round2(ep.value.translation.y);
@@ -1339,13 +1478,15 @@ function parseSave(buf) {
 
     // ExplodableBarrelsTransform — barrel positions (Transform struct children)
     if (n === 'ExplodableBarrelsTransform' && Array.isArray(prop.value)) {
-      worldState.explodableBarrelPositions = prop.value.map(elem => {
-        if (Array.isArray(elem)) {
-          const t = elem.find(c => c.name === 'Translation');
-          if (t?.value) return { x: _round2(t.value.x), y: _round2(t.value.y), z: _round2(t.value.z) };
-        }
-        return null;
-      }).filter(Boolean);
+      worldState.explodableBarrelPositions = prop.value
+        .map((elem) => {
+          if (Array.isArray(elem)) {
+            const t = elem.find((c) => c.name === 'Translation');
+            if (t?.value) return { x: _round2(t.value.x), y: _round2(t.value.y), z: _round2(t.value.z) };
+          }
+          return null;
+        })
+        .filter(Boolean);
       return;
     }
 
@@ -1371,9 +1512,13 @@ function parseSave(buf) {
         const props = [...(entry.key || []), ...(entry.value || [])];
         if (props.length === 0) continue;
         const house = {
-          uid: '', name: '',
-          windowsOpen: 0, windowsTotal: 0,
-          doorsOpen: 0, doorsLocked: 0, doorsTotal: 0,
+          uid: '',
+          name: '',
+          windowsOpen: 0,
+          windowsTotal: 0,
+          doorsOpen: 0,
+          doorsLocked: 0,
+          doorsTotal: 0,
           destroyedFurniture: 0,
           hasGenerator: false,
           randomSeed: 0,
@@ -1577,7 +1722,8 @@ function parseSave(buf) {
       if (Array.isArray(ws)) {
         for (const c of ws) {
           if (c.name === 'TotalDaysElapsed' && typeof c.value === 'number') worldState.totalDaysElapsed = c.value;
-          if (c.name === 'TimeofDay' && typeof c.value === 'number') worldState.timeOfDay = Math.round(c.value * 100) / 100;
+          if (c.name === 'TimeofDay' && typeof c.value === 'number')
+            worldState.timeOfDay = Math.round(c.value * 100) / 100;
         }
       }
       return;
@@ -1730,7 +1876,12 @@ function parseSave(buf) {
     }
     // Fallback: only if we haven't already got a valid position AND
     // the property isn't a known non-position transform (respawn, backpack, etc.)
-    else if (p.x === null && prop.type === 'StructProperty' && prop.structType === 'Transform' && prop.value?.translation) {
+    else if (
+      p.x === null &&
+      prop.type === 'StructProperty' &&
+      prop.structType === 'Transform' &&
+      prop.value?.translation
+    ) {
       const SKIP_TRANSFORMS = ['PlayerRespawnPoint', 'BackpackTransform', 'Transform', 'CompanionTransform'];
       if (!SKIP_TRANSFORMS.includes(n)) {
         _extractTransform(prop, p);
@@ -1779,7 +1930,8 @@ function parseSave(buf) {
     if (n === 'PlayerInventory' && Array.isArray(prop.value)) p.inventory = prop.value;
     if (n === 'PlayerEquipment' && Array.isArray(prop.value)) p.equipment = prop.value;
     if (n === 'PlayerQuickSlots' && Array.isArray(prop.value)) p.quickSlots = prop.value;
-    if ((n === 'BackpackInventory' || n.startsWith('BackpackInventory_')) && Array.isArray(prop.value)) p.backpackItems = prop.value;
+    if ((n === 'BackpackInventory' || n.startsWith('BackpackInventory_')) && Array.isArray(prop.value))
+      p.backpackItems = prop.value;
 
     // ── Backpack data ──
     if (n === 'BackpackData' && (prop.children || Array.isArray(prop.value))) {
@@ -1799,9 +1951,23 @@ function parseSave(buf) {
       p.companionData = [];
       for (const cd of prop.value) {
         if (!Array.isArray(cd)) continue;
-        const comp = { class: '', displayName: '', x: null, y: null, z: null, health: 0, energy: 0, vest: 0, command: '', inventory: [] };
+        const comp = {
+          class: '',
+          displayName: '',
+          x: null,
+          y: null,
+          z: null,
+          health: 0,
+          energy: 0,
+          vest: 0,
+          command: '',
+          inventory: [],
+        };
         for (const cp of cd) {
-          if (cp.name === 'Class') { comp.class = cp.value || ''; comp.displayName = simplifyBlueprint(cp.value || ''); }
+          if (cp.name === 'Class') {
+            comp.class = cp.value || '';
+            comp.displayName = simplifyBlueprint(cp.value || '');
+          }
           if (cp.name === 'Transform' && cp.value?.translation) {
             comp.x = _round2(cp.value.translation.x);
             comp.y = _round2(cp.value.translation.y);
@@ -1819,7 +1985,16 @@ function parseSave(buf) {
         }
         p.companionData.push(comp);
         // Also add to global companions list with owner info
-        companions.push({ type: 'dog', actorName: comp.displayName || comp.class, ownerSteamId: currentSteamID || '', x: comp.x, y: comp.y, z: comp.z, health: comp.health, extra: { energy: comp.energy, command: comp.command, vest: comp.vest } });
+        companions.push({
+          type: 'dog',
+          actorName: comp.displayName || comp.class,
+          ownerSteamId: currentSteamID || '',
+          x: comp.x,
+          y: comp.y,
+          z: comp.z,
+          health: comp.health,
+          extra: { energy: comp.energy, command: comp.command, vest: comp.vest },
+        });
       }
     }
     if (n === 'Horses' && Array.isArray(prop.value)) p.horses = prop.value;
@@ -1840,7 +2015,7 @@ function parseSave(buf) {
         continue;
       }
       handleProp(prop);
-    } catch (err) {
+    } catch (_err) {
       const pos = r.getOffset();
       if (!recoverForward(r, pos)) break;
     }
@@ -1878,7 +2053,7 @@ function parseSave(buf) {
     for (const nsp of nsProps) {
       if (nsp.name === 'BuildActor' && typeof nsp.value === 'string') {
         // Find matching structure
-        const idx = structures.findIndex(s => s.extraData === nsp.value || s.actorClass === nsp.value);
+        const idx = structures.findIndex((s) => s.extraData === nsp.value || s.actorClass === nsp.value);
         if (idx >= 0) structures[idx].noSpawn = true;
       }
     }
@@ -1908,7 +2083,7 @@ function parseSave(buf) {
     if (items.length === 0 && quickSlots.length === 0 && craftingContent.length === 0) continue;
 
     if (actorName) {
-      const existingContainer = containers.find(c => c.actorName === actorName);
+      const existingContainer = containers.find((c) => c.actorName === actorName);
       if (existingContainer) {
         existingContainer.items = items;
         existingContainer.quickSlots = quickSlots;
@@ -1917,22 +2092,31 @@ function parseSave(buf) {
         // Get position from BuildActorTransform parallel array via build index
         const transform = buildActorTransforms[idx];
         containers.push({
-          actorName, items, quickSlots,
+          actorName,
+          items,
+          quickSlots,
           x: transform ? _round2(transform.x) : null,
           y: transform ? _round2(transform.y) : null,
           z: transform ? _round2(transform.z) : null,
-          locked, doesSpawnLoot, buildIndex: idx,
+          locked,
+          doesSpawnLoot,
+          buildIndex: idx,
         });
       }
     } else {
       // No actor name — building-attached container (positional)
       const transform = buildActorTransforms[idx];
       containers.push({
-        actorName: `BuildContainer_${idx}`, items, quickSlots,
+        actorName: `BuildContainer_${idx}`,
+        items,
+        quickSlots,
         x: transform ? _round2(transform.x) : null,
         y: transform ? _round2(transform.y) : null,
         z: transform ? _round2(transform.z) : null,
-        locked, doesSpawnLoot, craftingContent, buildIndex: idx,
+        locked,
+        doesSpawnLoot,
+        craftingContent,
+        buildIndex: idx,
       });
     }
   }
@@ -2025,10 +2209,17 @@ function _extractVehicles(carArray, vehicles) {
   for (const carProps of carArray) {
     if (!Array.isArray(carProps)) continue;
     const vehicle = {
-      class: '', displayName: '',
-      x: null, y: null, z: null,
-      health: 0, maxHealth: 0, fuel: 0,
-      inventory: [], upgrades: [], extra: {},
+      class: '',
+      displayName: '',
+      x: null,
+      y: null,
+      z: null,
+      health: 0,
+      maxHealth: 0,
+      fuel: 0,
+      inventory: [],
+      upgrades: [],
+      extra: {},
     };
 
     for (const cp of carProps) {
@@ -2058,7 +2249,17 @@ function _extractContainers(prop, containers) {
   if (!Array.isArray(prop.value)) return;
   for (const elemProps of prop.value) {
     if (!Array.isArray(elemProps)) continue;
-    const container = { actorName: '', items: [], quickSlots: [], x: null, y: null, z: null, locked: false, doesSpawnLoot: false, alarmOff: false };
+    const container = {
+      actorName: '',
+      items: [],
+      quickSlots: [],
+      x: null,
+      y: null,
+      z: null,
+      locked: false,
+      doesSpawnLoot: false,
+      alarmOff: false,
+    };
     for (const cp of elemProps) {
       if (cp.name === 'ContainerActor') container.actorName = cp.value || '';
       if (cp.name === 'ContainerInventoryArray' && Array.isArray(cp.value)) container.items = cp.value;
@@ -2080,12 +2281,19 @@ function _extractHorses(horseArray, horses) {
   for (const horseProps of horseArray) {
     if (!Array.isArray(horseProps)) continue;
     const horse = {
-      class: '', displayName: '',
-      x: null, y: null, z: null,
-      health: 0, maxHealth: 0,
-      energy: 0, stamina: 0,
-      ownerSteamId: '', name: '',
-      saddleInventory: [], inventory: [],
+      class: '',
+      displayName: '',
+      x: null,
+      y: null,
+      z: null,
+      health: 0,
+      maxHealth: 0,
+      energy: 0,
+      stamina: 0,
+      ownerSteamId: '',
+      name: '',
+      saddleInventory: [],
+      inventory: [],
       extra: {},
     };
 
@@ -2111,7 +2319,20 @@ function _extractHorses(horseArray, horses) {
       if (hp.name === 'SaddleInventory' && Array.isArray(hp.value)) horse.saddleInventory = hp.value;
       if (hp.name === 'Inventory' && Array.isArray(hp.value)) horse.inventory = hp.value;
       // Capture any unlisted props
-      if (!['Class', 'HorseName', 'Health', 'MaxHealth', 'Energy', 'Stamina', 'Transform', 'Owner', 'SaddleInventory', 'Inventory'].includes(hp.name)) {
+      if (
+        ![
+          'Class',
+          'HorseName',
+          'Health',
+          'MaxHealth',
+          'Energy',
+          'Stamina',
+          'Transform',
+          'Owner',
+          'SaddleInventory',
+          'Inventory',
+        ].includes(hp.name)
+      ) {
         horse.extra[hp.name] = hp.value;
       }
     }
@@ -2181,8 +2402,12 @@ function _childrenToObject(children) {
 // ─── Rounding helpers ──────────────────────────────────────────────────────
 
 // Preserve full float precision from save data — round only at display time
-function _round(v) { return v; }
-function _round2(v) { return v; }
+function _round(v) {
+  return v;
+}
+function _round2(v) {
+  return v;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Clan data parser (separate Save_ClanData.sav file)
@@ -2243,7 +2468,6 @@ function parseClanData(buf) {
   return clans;
 }
 
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  Agent CLI
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2267,7 +2491,7 @@ function parseArgs() {
     else if ((arg === '--save' || arg === '-s') && args[i + 1]) opts.save = args[++i];
     else if ((arg === '--output' || arg === '-o') && args[i + 1]) opts.output = args[++i];
     else if ((arg === '--interval' || arg === '-i') && args[i + 1]) opts.interval = parseInt(args[++i], 10) || 30;
-    else if (!arg.startsWith('-')) opts.save = arg;  // positional = save path
+    else if (!arg.startsWith('-')) opts.save = arg; // positional = save path
   }
 
   return opts;
@@ -2310,7 +2534,11 @@ function discoverSave(startDir) {
   ];
 
   for (const p of searchPaths) {
-    try { if (_fs.existsSync(p)) return p; } catch { /* skip */ }
+    try {
+      if (_fs.existsSync(p)) return p;
+    } catch {
+      /* skip */
+    }
   }
 
   // Recursive search (max 3 levels deep)
@@ -2330,7 +2558,9 @@ function _deepSearch(dir, target, depth, maxDepth) {
         if (found) return found;
       }
     }
-  } catch { /* permission denied, etc */ }
+  } catch {
+    /* permission denied, etc */
+  }
   return null;
 }
 
@@ -2389,11 +2619,21 @@ function parseAndWrite(savePath, outputPath, pretty) {
   const sizeMB = (json.length / 1024 / 1024).toFixed(2);
   const playerCount = Object.keys(playersObj).length;
   const clanInfo = clans.length ? ', ' + clans.length + ' clans' : '';
-  console.log('[Agent] Parsed ' + playerCount + ' players, '
-    + result.structures.length + ' structures, '
-    + result.vehicles.length + ' vehicles'
-    + clanInfo + ' → '
-    + sizeMB + 'MB cache (' + elapsed + 'ms)');
+  console.log(
+    '[Agent] Parsed ' +
+      playerCount +
+      ' players, ' +
+      result.structures.length +
+      ' structures, ' +
+      result.vehicles.length +
+      ' vehicles' +
+      clanInfo +
+      ' → ' +
+      sizeMB +
+      'MB cache (' +
+      elapsed +
+      'ms)',
+  );
 
   return cache;
 }
@@ -2428,7 +2668,10 @@ function watchMode(savePath, outputPath, intervalSec, pretty) {
 function main() {
   const opts = parseArgs();
 
-  if (opts.help) { showHelp(); process.exit(0); }
+  if (opts.help) {
+    showHelp();
+    process.exit(0);
+  }
 
   // Resolve save path
   let savePath = opts.save;
