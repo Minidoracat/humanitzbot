@@ -115,7 +115,7 @@ module.exports = defineConfig([
       'prefer-const': 'off',
       // var re-declarations are expected in non-modular 6000+ line file
       'no-redeclare': 'off',
-      // Object.hasOwn() preferred but hasOwnProperty is widespread — warn only
+      // Object.hasOwn() preferred but hasOwnProperty is widespread in legacy frontend — disabled
       'no-prototype-builtins': 'off',
     },
   },
