@@ -25,7 +25,7 @@ const config = require('../config');
 const { cleanName, cleanItemName } = require('../parsers/ue4-names');
 const { t, getLocale, fmtNumber } = require('../i18n');
 
-const ACTIVITY_LOCALE = getLocale({ serverConfig: config });
+function _activityLocale(cfg) { return getLocale({ serverConfig: cfg || config }); }
 
 // ─── Category colours ───────────────────────────────────────────────────────
 
@@ -324,7 +324,7 @@ class ActivityLog {
     const maxLines = 25;
     let description = lines.slice(0, maxLines).join('\n');
     if (lines.length > maxLines) {
-      description += `\n${t('discord:activity_log.and_more_events', ACTIVITY_LOCALE, { count: lines.length - maxLines })}`;
+      description += `\n${t('discord:activity_log.and_more_events', _activityLocale(), { count: lines.length - maxLines })}`;
     }
 
     return new EmbedBuilder()
@@ -333,7 +333,7 @@ class ActivityLog {
       .setColor(clr)
       .setTimestamp()
       .setFooter({
-        text: t('discord:activity_log.events_footer', ACTIVITY_LOCALE, {
+        text: t('discord:activity_log.events_footer', _activityLocale(), {
           count: events.length,
           plural_suffix: events.length === 1 ? '' : 's',
         }),
@@ -360,7 +360,7 @@ function _formatTime(dateOrIso) {
   const d = dateOrIso instanceof Date ? dateOrIso : new Date(dateOrIso);
   if (isNaN(d.getTime())) return '';
   try {
-    return new Intl.DateTimeFormat(ACTIVITY_LOCALE, {
+    return new Intl.DateTimeFormat(_activityLocale(), {
       hour: '2-digit',
       minute: '2-digit',
       timeZone: config.botTimezone || 'UTC',
@@ -372,13 +372,13 @@ function _formatTime(dateOrIso) {
 
 function _categoryTitle(category) {
   switch (category) {
-    case 'container': return t('discord:activity_log.container_activity', ACTIVITY_LOCALE);
-    case 'inventory': return t('discord:activity_log.inventory_changes', ACTIVITY_LOCALE);
-    case 'horse':     return t('discord:activity_log.horse_activity', ACTIVITY_LOCALE);
-    case 'vehicle':   return t('discord:activity_log.vehicle_activity', ACTIVITY_LOCALE);
-    case 'world':     return t('discord:activity_log.world_events', ACTIVITY_LOCALE);
-    case 'structure': return t('discord:activity_log.structure_activity', ACTIVITY_LOCALE);
-    default:          return t('discord:activity_log.activity', ACTIVITY_LOCALE);
+    case 'container': return t('discord:activity_log.container_activity', _activityLocale());
+    case 'inventory': return t('discord:activity_log.inventory_changes', _activityLocale());
+    case 'horse':     return t('discord:activity_log.horse_activity', _activityLocale());
+    case 'vehicle':   return t('discord:activity_log.vehicle_activity', _activityLocale());
+    case 'world':     return t('discord:activity_log.world_events', _activityLocale());
+    case 'structure': return t('discord:activity_log.structure_activity', _activityLocale());
+    default:          return t('discord:activity_log.activity', _activityLocale());
   }
 }
 
@@ -403,7 +403,7 @@ function _formatEvent(event, timeStr) {
         if (items.length > 5) lostList += ` +${items.length - 5} more`;
       }
       const amountLabel = event.amount === 1 ? 'item' : 'items';
-      return `${ts}${emoji} **${name}** destroyed (${fmtNumber(event.amount, ACTIVITY_LOCALE)} ${amountLabel} lost${lostList})${loc}`;
+      return `${ts}${emoji} **${name}** destroyed (${fmtNumber(event.amount, _activityLocale())} ${amountLabel} lost${lostList})${loc}`;
     }
     case 'horse_appeared':
       return `${ts}${emoji} **${name}** appeared${loc}`;

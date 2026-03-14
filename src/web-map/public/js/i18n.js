@@ -48,7 +48,7 @@
     root.querySelectorAll('[data-i18n]').forEach(function(el) {
       var key = el.getAttribute('data-i18n');
       var varsAttr = el.getAttribute('data-i18n-vars');
-      var vars = varsAttr ? JSON.parse(varsAttr) : {};
+      var vars; try { vars = varsAttr ? JSON.parse(varsAttr) : {}; } catch (e) { vars = {}; }
       el.textContent = i18next.t(key, vars);
     });
 
@@ -59,7 +59,7 @@
 
     // Attributes: <input data-i18n-attr='{"placeholder":"web:search.placeholder"}'>
     root.querySelectorAll('[data-i18n-attr]').forEach(function(el) {
-      var attrs = JSON.parse(el.getAttribute('data-i18n-attr'));
+      var attrs; try { attrs = JSON.parse(el.getAttribute('data-i18n-attr')); } catch (e) { return; }
       Object.keys(attrs).forEach(function(attr) {
         el.setAttribute(attr, i18next.t(attrs[attr]));
       });
@@ -105,14 +105,18 @@
 
   // ── Intl Formatters ──────────────────────────────────────
 
-  function fmtDate(date) {
+  function fmtDate(date, timeZone) {
     var lang = i18next.resolvedLanguage || 'en';
-    return new Intl.DateTimeFormat(lang, { dateStyle: 'medium' }).format(date instanceof Date ? date : new Date(date));
+    var opts = { dateStyle: 'medium' };
+    if (timeZone) opts.timeZone = timeZone;
+    return new Intl.DateTimeFormat(lang, opts).format(date instanceof Date ? date : new Date(date));
   }
 
-  function fmtTime(date) {
+  function fmtTime(date, timeZone) {
     var lang = i18next.resolvedLanguage || 'en';
-    return new Intl.DateTimeFormat(lang, { timeStyle: 'short' }).format(date instanceof Date ? date : new Date(date));
+    var opts = { timeStyle: 'short' };
+    if (timeZone) opts.timeZone = timeZone;
+    return new Intl.DateTimeFormat(lang, opts).format(date instanceof Date ? date : new Date(date));
   }
 
   function fmtNumber(num) {

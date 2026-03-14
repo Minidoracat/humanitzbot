@@ -56,7 +56,7 @@ function _weatherLabel(locale, weather) {
 
 function _footer(playtimeTracker, cfg) {
   const locale = getLocale({ serverConfig: cfg });
-  const since = fmtDate(playtimeTracker.getTrackingSince(), locale);
+  const since = fmtDate(playtimeTracker.getTrackingSince(), locale, cfg.botTimezone);
   return _ts(locale, 'tracking_footer', { since });
 }
 
@@ -112,7 +112,7 @@ function _statsBlock(playtimeTracker, playerStats, cfg, locale) {
   }
 
   const peaks = playtimeTracker.getPeaks();
-  const allTimePeakDate = peaks.allTimePeakDate ? fmtDate(peaks.allTimePeakDate, locale) : '';
+  const allTimePeakDate = peaks.allTimePeakDate ? fmtDate(peaks.allTimePeakDate, locale, cfg.botTimezone) : '';
   fields.push(
     {
       name: _ts(locale, 'todays_peak'),

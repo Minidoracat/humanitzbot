@@ -108,7 +108,7 @@ class PvpScheduler {
 
   _getCurrentTime() {
     const now = new Date();
-    const timeParts = new Intl.DateTimeFormat(undefined, {
+    const timeParts = new Intl.DateTimeFormat('en-US', {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
@@ -118,7 +118,7 @@ class PvpScheduler {
     const m = parseInt(timeParts.find((p) => p.type === 'minute')?.value || '0', 10);
 
     // Day of week (0=Sun … 6=Sat) in bot timezone
-    const dateParts = new Intl.DateTimeFormat(undefined, {
+    const dateParts = new Intl.DateTimeFormat('en-US', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',

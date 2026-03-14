@@ -119,10 +119,20 @@ const EN_MESSAGES = {
 };
 
 function sendError(res, code, status = 400, details) {
+  let msg = EN_MESSAGES[code] || code;
+  // Interpolate {key} placeholders in error message
+  if (details && typeof details === 'object') {
+    for (const [k, v] of Object.entries(details)) {
+      msg = msg.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));
+    }
+  } else if (typeof details === 'string') {
+    // Single-value shorthand: replace first placeholder
+    msg = msg.replace(/\{\w+\}/, details);
+  }
   res.status(status).json({
     ok: false,
     code,
-    error: EN_MESSAGES[code] || code,
+    error: msg,
     ...(details ? { details } : {})
   });
 }

@@ -46,7 +46,7 @@ function buildPlayerEmbed(stats, { isAdmin = false, playtime, config } = {}) {
   }
   if (stats.lastEvent) {
     const d = new Date(stats.lastEvent);
-    desc.push(_pe(locale, 'last_seen', { date: fmtDate(d, locale), time: fmtTime(d, locale) }));
+    desc.push(_pe(locale, 'last_seen', { date: fmtDate(d, locale, cfg.botTimezone), time: fmtTime(d, locale, cfg.botTimezone) }));
   }
   if (stats.nameHistory?.length > 0) {
     desc.push(_pe(locale, 'aka_names', { names: stats.nameHistory.map(h => h.name).join(', ') }));
@@ -125,7 +125,7 @@ function buildPlayerEmbed(stats, { isAdmin = false, playtime, config } = {}) {
     const flags = stats.cheatFlags.slice(-3);
     const lines = flags.map(f => {
       const d = new Date(f.timestamp);
-      return `${fmtDate(d, locale)} \u2014 \`${f.type}\``;
+      return `${fmtDate(d, locale, cfg.botTimezone)} \u2014 \`${f.type}\``;
     });
     if (stats.cheatFlags.length > 3) {
       lines.unshift(_pe(locale, 'ac_flags_total', { count: fmtNumber(stats.cheatFlags.length, locale) }));
