@@ -161,6 +161,38 @@ describe('i18n module', () => {
     }
   });
 
+  it('zh-CN values should not be identical to English when zh-TW has translated them', () => {
+    const path = require('path');
+    const fs = require('fs');
+    function flatLeaves(o, p = '') {
+      const result = {};
+      for (const [k, v] of Object.entries(o)) {
+        if (typeof v === 'object' && v !== null) Object.assign(result, flatLeaves(v, p + k + '.'));
+        else result[p + k] = v;
+      }
+      return result;
+    }
+    const ns = ['common', 'web', 'discord', 'api', 'commands'];
+    const localesDir = path.join(__dirname, '..', 'locales');
+    for (const n of ns) {
+      const enData = flatLeaves(JSON.parse(fs.readFileSync(path.join(localesDir, 'en', n + '.json'), 'utf8')));
+      const twData = flatLeaves(JSON.parse(fs.readFileSync(path.join(localesDir, 'zh-TW', n + '.json'), 'utf8')));
+      const cnData = flatLeaves(JSON.parse(fs.readFileSync(path.join(localesDir, 'zh-CN', n + '.json'), 'utf8')));
+      const untranslated = [];
+      for (const [key, enVal] of Object.entries(enData)) {
+        const twVal = twData[key];
+        const cnVal = cnData[key];
+        // If zh-TW bothered to translate it (differs from en) but zh-CN is still identical to en
+        if (twVal !== undefined && cnVal !== undefined && twVal !== enVal && cnVal === enVal) {
+          untranslated.push(key);
+        }
+      }
+      assert.equal(untranslated.length, 0,
+        `zh-CN/${n}.json has ${untranslated.length} untranslated values (identical to English but zh-TW differs): ${untranslated.slice(0, 10).join(', ')}`
+      );
+    }
+  });
+
   it('translations do not introduce unknown interpolation variables', () => {
     const path = require('path');
     const fs = require('fs');
