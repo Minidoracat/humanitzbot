@@ -5,8 +5,8 @@
 //
 //  Reads the full 22 MB extraction once at module load, cleans UE4 hashed
 //  field names, resolves enum values to human-readable names, and exports
-//  structured data for every useful table.  All other modules import from
-//  here instead of maintaining static copies.
+//  structured data for every useful table. Profession and clan-rank enums
+//  delegate to save-parser.js as the single source of truth.
 // ═══════════════════════════════════════════════════════════════════════════
 
 const fs = require('fs');
@@ -61,11 +61,45 @@ function cleanRow(row) {
   return out;
 }
 
+// ── Adapter: shared enums from save-parser (single source of truth) ────────
+
+/**
+ * Project a prefixed enum map (e.g. 'Enum_Professions::NewEnumerator0' → 'Unemployed')
+ * into the unprefixed format used by ENUM_MAPS ('NewEnumerator0' → 'Unemployed').
+ * Optionally fills Reserved placeholder slots for unused enum indices.
+ */
+function _projectEnum(prefixedMap, reservedSlots) {
+  const map = {};
+  for (const [key, value] of Object.entries(prefixedMap)) {
+    const idx = key.indexOf('::');
+    if (idx !== -1) map[key.substring(idx + 2)] = value;
+  }
+  for (const slot of reservedSlots) {
+    const k = `NewEnumerator${slot}`;
+    if (!map[k]) map[k] = 'Reserved';
+  }
+  return map;
+}
+
+// Load save-parser enum maps; fall back to empty objects if unavailable
+let _saveParserEnums;
+try {
+  const sp = require('./save-parser');
+  _saveParserEnums = { PERK_MAP: sp.PERK_MAP, CLAN_RANK_MAP: sp.CLAN_RANK_MAP };
+} catch (err) {
+  if (err.code !== 'MODULE_NOT_FOUND') {
+    console.warn('[game-data-extract] save-parser load error:', err.message);
+  }
+  _saveParserEnums = { PERK_MAP: {}, CLAN_RANK_MAP: {} };
+}
+
 // ── Enum resolution ────────────────────────────────────────────────────────
 
-/** All enum maps — authoritative display names for every UE4 enum value.
+/** All enum maps — display names for every UE4 enum value.
  *  Cross-referenced against actual DT_ItemDatabase, DT_Buildings, DT_CraftingData,
- *  DT_Professions, DT_Skills, DT_CarUpgrades usage — not guessed. */
+ *  DT_Professions, DT_Skills, DT_CarUpgrades usage — not guessed.
+ *  Note: Enum_Professions and E_ClanRank are derived from save-parser
+ *  (PERK_MAP / CLAN_RANK_MAP) and are not independently maintained here. */
 const ENUM_MAPS = {
   // Item types (25 values — verified against DT_ItemDatabase Type field)
   E_ItemTypes: {
@@ -224,26 +258,8 @@ const ENUM_MAPS = {
     NewEnumerator5: 'Pig',
   },
 
-  // Professions (17 enum values, 12 active — verified against DT_Professions Perk field)
-  Enum_Professions: {
-    NewEnumerator0: 'Unemployed', // Unemployed
-    NewEnumerator1: 'Amateur Boxer', // Boxer
-    NewEnumerator2: 'Farmer', // Farmer
-    NewEnumerator3: 'Mechanic', // Mechanic
-    NewEnumerator4: 'Reserved', // (unused slot)
-    NewEnumerator5: 'Reserved', // (unused slot)
-    NewEnumerator6: 'Reserved', // (unused slot)
-    NewEnumerator7: 'Reserved', // (unused slot)
-    NewEnumerator8: 'Reserved', // (unused slot)
-    NewEnumerator9: 'Car Salesman', // CarSalesman
-    NewEnumerator10: 'Outdoorsman', // OutDoorsMan
-    NewEnumerator12: 'Chemist', // Chemist
-    NewEnumerator13: 'EMT', // EMT
-    NewEnumerator14: 'Military Veteran', // MilitaryVet
-    NewEnumerator15: 'Thief', // Thief
-    NewEnumerator16: 'Fire Fighter', // FireFighter
-    NewEnumerator17: 'Electrical Engineer', // ElectricalEngineer
-  },
+  // Professions — derived from save-parser PERK_MAP (12 active + 5 Reserved slots)
+  Enum_Professions: _projectEnum(_saveParserEnums.PERK_MAP, [4, 5, 6, 7, 8]),
 
   // Skill categories (3 values — verified against DT_Skills Category field cross-ref)
   Enum_SkillCategories: {
@@ -272,14 +288,8 @@ const ENUM_MAPS = {
     NewEnumerator1: 'Kill',
   },
 
-  // Clan ranks (5 values)
-  E_ClanRank: {
-    NewEnumerator0: 'Member',
-    NewEnumerator1: 'Officer',
-    NewEnumerator2: 'Leader',
-    NewEnumerator3: 'Elder',
-    NewEnumerator4: 'Recruit',
-  },
+  // Clan ranks — derived from save-parser CLAN_RANK_MAP
+  E_ClanRank: _projectEnum(_saveParserEnums.CLAN_RANK_MAP, []),
 
   // Dog commands (6 values)
   E_DogCommand: {
@@ -1352,3 +1362,5 @@ module.exports = {
     });
   },
 };
+
+module.exports._test = { _projectEnum };
