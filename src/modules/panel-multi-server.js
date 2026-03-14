@@ -26,7 +26,9 @@ const { _detectSshKey } = require('./panel-setup-wizard');
 /** Safely build a modal title within Discord's 45-char limit. */
 function _modalTitle(prefix, name, suffix) {
   const maxName = 45 - prefix.length - suffix.length;
-  const truncated = name.length > maxName ? name.slice(0, maxName - 1) + '…' : name;
+  if (maxName <= 0) return `${prefix}${suffix}`.slice(0, 45);
+  const chars = Array.from(name);
+  const truncated = chars.length > maxName ? chars.slice(0, maxName - 1).join('') + '…' : name;
   return `${prefix}${truncated}${suffix}`;
 }
 

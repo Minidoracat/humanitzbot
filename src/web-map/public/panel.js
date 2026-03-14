@@ -3025,11 +3025,11 @@
         var m2 = members2[mi2];
         var displayName = m2.name || m2.steam_id || 'Unknown';
         html += '<div class="flex items-center gap-2 py-1 px-2 rounded hover:bg-surface-300/50 transition-colors group">';
-        html += '<span class="status-dot ' + (m2.is_online ? 'online' : 'offline') + ' flex-shrink-0"></span>';
+        html += '<span class="status-dot ' + (m2.is_online ? 'online' : 'offline') + ' shrink-0"></span>';
         html += '<span class="player-link text-sm truncate flex-1" data-steam-id="' + esc(m2.steam_id || '') + '">' + esc(displayName) + '</span>';
-        if (m2.rank) html += '<span class="text-[10px] font-medium text-accent bg-accent/10 px-1.5 py-0.5 rounded flex-shrink-0">' + esc(m2.rank) + '</span>';
-        if (m2.profession) html += '<span class="text-[10px] text-muted hidden group-hover:inline flex-shrink-0">' + esc(m2.profession) + '</span>';
-        html += '<span class="text-[11px] text-muted ml-auto flex-shrink-0 tabular-nums">' + (m2.kills || 0) + 'K/' + (m2.deaths || 0) + 'D</span>';
+        if (m2.rank) html += '<span class="text-[10px] font-medium text-accent bg-accent/10 px-1.5 py-0.5 rounded shrink-0">' + esc(m2.rank) + '</span>';
+        if (m2.profession) html += '<span class="text-[10px] text-muted hidden group-hover:inline shrink-0">' + esc(m2.profession) + '</span>';
+        html += '<span class="text-[11px] text-muted ml-auto shrink-0 tabular-nums">' + (m2.kills || 0) + 'K/' + (m2.deaths || 0) + 'D</span>';
         html += '</div>';
       }
       html += '</div>';
@@ -5795,7 +5795,7 @@
 
   /** Show a brief toast notification at the bottom of the screen */
   function showToast(message, duration) {
-    var t = el('div', 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-surface-200 border border-border text-text text-xs px-4 py-2 rounded-lg shadow-lg z-[10001] fade-in');
+    var t = el('div', 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-surface-200 border border-border text-text text-xs px-4 py-2 rounded-lg shadow-lg z-10001 fade-in');
     t.textContent = message;
     document.body.appendChild(t);
     setTimeout(function() { t.remove(); }, duration || 3000);
