@@ -40,6 +40,7 @@ const { writeAgent } = require('./parsers/agent-builder');
 const WebMapServer = require('./web-map/server');
 const SnapshotService = require('./tracking/snapshot-service');
 const StdinConsole = require('./stdin-console');
+const { createBotStatusManager } = require('./utils/status');
 let hzmodWebPlugin;
 try { hzmodWebPlugin = require('./modules/howyagarn/web-plugin'); } catch { /* optional module */ }
 
@@ -182,13 +183,17 @@ let activityLog;   // ActivityLog instance
 let milestoneTracker; // MilestoneTracker instance
 let recapService;     // RecapService instance
 let anticheatIntegration; // AnticheatIntegration instance
+let botStatusManager; // Discord profile presence/status rotation
 // Bot lifecycle embeds (online/offline) go to panel channel — game server status goes to activity thread
 let stdinConsole;  // interactive stdin console for headless hosts
 const startedAt = new Date();
 
 const moduleStatus = {};
 
-function setStatus(name, status) { moduleStatus[name] = status; }
+function setStatus(name, status) {
+  moduleStatus[name] = status;
+  if (botStatusManager) botStatusManager.refreshNow().catch(() => {});
+}
 
 function hasFtp() {
   return !!(config.ftpHost && config.ftpUser && (config.ftpPassword || config.ftpPrivateKeyPath));
@@ -273,6 +278,7 @@ client.once(Events.ClientReady, async (readyClient) => {
   // ── RCON lifecycle events — log game server restarts ──
   rcon.on('disconnect', ({ reason }) => {
     console.log(`[BOT] Game server disconnected: ${reason}`);
+    if (botStatusManager) botStatusManager.refreshNow().catch(() => {});
     if (logWatcher) {
       const embed = new EmbedBuilder()
         .setDescription('🟡 Game server disconnected — RCON connection lost')
@@ -284,6 +290,7 @@ client.once(Events.ClientReady, async (readyClient) => {
   rcon.on('reconnect', ({ downtime }) => {
     const downtimeStr = downtime ? _formatUptime(downtime) : 'unknown';
     console.log(`[BOT] Game server reconnected (downtime: ${downtimeStr})`);
+    if (botStatusManager) botStatusManager.refreshNow().catch(() => {});
     if (logWatcher) {
       const embed = new EmbedBuilder()
         .setDescription(`🟢 Game server reconnected (downtime: ${downtimeStr})`)
@@ -292,6 +299,17 @@ client.once(Events.ClientReady, async (readyClient) => {
       logWatcher.sendToThread(embed).catch(() => {});
     }
   });
+
+  // Bot profile status (presence/activity) — rotates live players + feature highlights
+  botStatusManager = createBotStatusManager(readyClient, {
+    refreshMs: parseInt(process.env.BOT_PROFILE_STATUS_INTERVAL, 10) || 30000,
+    isSetupMode: () => config.needsSetup,
+    getHasFtp: () => hasFtp(),
+    getPanelAvailable: () => panelApi.available,
+    getWebMapEnabled: () => !!parseInt(process.env.WEB_MAP_PORT, 10),
+    getModuleStatus: () => moduleStatus,
+  });
+  botStatusManager.start();
 
   // Initialize playtime tracker (must be before AutoMessages)
   if (config.enablePlaytime) {
@@ -586,7 +604,35 @@ client.once(Events.ClientReady, async (readyClient) => {
     });
     saveService.on('sync', (result) => {
       console.log(`[BOT] Save sync: ${result.playerCount} players, ${result.structureCount} structures (${result.mode}, ${result.elapsed}ms)`);
-      // save-cache.json is now written inside SaveService._syncParsedData()
+
+      // Write save-cache.json for web map consumption
+      if (result.parsed) {
+        try {
+          const cacheData = {
+            updatedAt: new Date().toISOString(),
+            playerCount: result.playerCount,
+            worldState: result.worldState || {},
+            players: {},
+            structures: Array.isArray(result.parsed.structures) ? result.parsed.structures : [],
+            vehicles: Array.isArray(result.parsed.vehicles) ? result.parsed.vehicles : [],
+            horses: Array.isArray(result.parsed.horses) ? result.parsed.horses : [],
+            containers: Array.isArray(result.parsed.containers) ? result.parsed.containers : [],
+            companions: Array.isArray(result.parsed.companions) ? result.parsed.companions : [],
+          };
+          // Convert players Map to plain object
+          if (result.parsed.players instanceof Map) {
+            for (const [steamId, pData] of result.parsed.players) {
+              cacheData.players[steamId] = pData;
+            }
+          } else if (result.parsed.players && typeof result.parsed.players === 'object') {
+            cacheData.players = result.parsed.players;
+          }
+          const cachePath = path.join(__dirname, '..', 'data', 'save-cache.json');
+          fs.writeFileSync(cachePath, JSON.stringify(cacheData), 'utf8');
+        } catch (err) {
+          console.error('[BOT] Failed to write save-cache.json:', err.message);
+        }
+      }
     });
     saveService.on('error', (err) => {
       console.error('[BOT] Save service error:', err.message);
@@ -1032,6 +1078,7 @@ async function shutdown(reason = 'Manual shutdown') {
   if (saveService) saveService.stop();
   if (multiServerManager) await multiServerManager.stopAll();
   if (stdinConsole) stdinConsole.stop();
+  if (botStatusManager) botStatusManager.stop();
   playerStats.stop();
   if (playtimeFlushTimer) clearInterval(playtimeFlushTimer);
   playtime.stop();
