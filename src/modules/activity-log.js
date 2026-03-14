@@ -25,17 +25,19 @@ const config = require('../config');
 const { cleanName, cleanItemName } = require('../parsers/ue4-names');
 const { t, getLocale, fmtNumber } = require('../i18n');
 
-function _activityLocale(cfg) { return getLocale({ serverConfig: cfg || config }); }
+function _activityLocale(cfg) {
+  return getLocale({ serverConfig: cfg || config });
+}
 
 // ─── Category colours ───────────────────────────────────────────────────────
 
 const CATEGORY_COLORS = {
-  container: 0xE67E22,   // Orange
-  inventory: 0x3498DB,   // Blue
-  horse: 0x2ECC71,       // Green
-  vehicle: 0x9B59B6,     // Purple
-  world: 0xF1C40F,       // Gold
-  structure: 0xE74C3C,   // Red
+  container: 0xe67e22, // Orange
+  inventory: 0x3498db, // Blue
+  horse: 0x2ecc71, // Green
+  vehicle: 0x9b59b6, // Purple
+  world: 0xf1c40f, // Gold
+  structure: 0xe74c3c, // Red
 };
 
 // ─── Category emoji ─────────────────────────────────────────────────────────
@@ -85,7 +87,7 @@ class ActivityLog {
     this._saveService = options.saveService;
     this._logWatcher = options.logWatcher || null;
     this._label = options.label || 'ActivityLog';
-    this._channel = null;  // fallback channel when no logWatcher
+    this._channel = null; // fallback channel when no logWatcher
     this._started = false;
   }
 
@@ -143,9 +145,7 @@ class ActivityLog {
 
       // Cap events to prevent OOM/rate-limit on first-sync diff storms
       const maxEvents = 200;
-      const events = result.diffEvents.length > maxEvents
-        ? result.diffEvents.slice(0, maxEvents)
-        : result.diffEvents;
+      const events = result.diffEvents.length > maxEvents ? result.diffEvents.slice(0, maxEvents) : result.diffEvents;
 
       const embeds = this._buildEmbeds(events, syncTime);
 
@@ -163,7 +163,7 @@ class ActivityLog {
         }
         // Small delay to respect Discord rate limits (1 embed per 500ms)
         if (embeds.length > 3) {
-          await new Promise(r => setTimeout(r, 500));
+          await new Promise((r) => setTimeout(r, 500));
         }
       }
 
@@ -212,12 +212,12 @@ class ActivityLog {
    * Filter events based on config toggles.
    */
   _filterEvents(events) {
-    return events.filter(e => {
+    return events.filter((e) => {
       if (e.category === 'inventory') return config.showInventoryLog;
       if (e.category === 'container') return config.enableContainerLog !== false;
-      if (e.category === 'horse')     return config.enableHorseLog !== false;
-      if (e.category === 'vehicle')   return config.enableVehicleLog !== false;
-      if (e.category === 'world')     return config.enableWorldEventFeed !== false;
+      if (e.category === 'horse') return config.enableHorseLog !== false;
+      if (e.category === 'vehicle') return config.enableVehicleLog !== false;
+      if (e.category === 'world') return config.enableWorldEventFeed !== false;
       if (e.category === 'structure') return config.enableStructureLog !== false;
       return true;
     });
@@ -228,7 +228,7 @@ class ActivityLog {
    * Events are batched by actor and formatted with clean names.
    */
   _buildCategoryEmbed(category, events, timeStr) {
-    const clr = CATEGORY_COLORS[category] || 0x95A5A6;
+    const clr = CATEGORY_COLORS[category] || 0x95a5a6;
     const title = _categoryTitle(category);
 
     const lines = [];
@@ -276,7 +276,7 @@ class ActivityLog {
       const e = batch.event;
       const emoji = EVENT_EMOJI[e.type] || '•';
       const itemList = batch.items
-        .map(i => {
+        .map((i) => {
           const cleaned = cleanItemName(i.item);
           let label = i.amount > 1 ? `${cleaned} x${i.amount}` : cleaned;
           if (i.durability != null && i.durability < 100) label += ` (${Math.round(i.durability)}%)`;
@@ -290,7 +290,7 @@ class ActivityLog {
       // Player attribution: prefer cross-referenced data from diff-engine,
       // fall back to log-based container access tracking
       let playerTag = '';
-      const crossRefPlayer = e.attributedPlayer || batch.items.find(i => i.attributedPlayer)?.attributedPlayer;
+      const crossRefPlayer = e.attributedPlayer || batch.items.find((i) => i.attributedPlayer)?.attributedPlayer;
       if (crossRefPlayer) {
         playerTag = ` — **${crossRefPlayer}**`;
       } else if (category === 'container' && this._logWatcher) {
@@ -372,13 +372,20 @@ function _formatTime(dateOrIso) {
 
 function _categoryTitle(category) {
   switch (category) {
-    case 'container': return t('discord:activity_log.container_activity', _activityLocale());
-    case 'inventory': return t('discord:activity_log.inventory_changes', _activityLocale());
-    case 'horse':     return t('discord:activity_log.horse_activity', _activityLocale());
-    case 'vehicle':   return t('discord:activity_log.vehicle_activity', _activityLocale());
-    case 'world':     return t('discord:activity_log.world_events', _activityLocale());
-    case 'structure': return t('discord:activity_log.structure_activity', _activityLocale());
-    default:          return t('discord:activity_log.activity', _activityLocale());
+    case 'container':
+      return t('discord:activity_log.container_activity', _activityLocale());
+    case 'inventory':
+      return t('discord:activity_log.inventory_changes', _activityLocale());
+    case 'horse':
+      return t('discord:activity_log.horse_activity', _activityLocale());
+    case 'vehicle':
+      return t('discord:activity_log.vehicle_activity', _activityLocale());
+    case 'world':
+      return t('discord:activity_log.world_events', _activityLocale());
+    case 'structure':
+      return t('discord:activity_log.structure_activity', _activityLocale());
+    default:
+      return t('discord:activity_log.activity', _activityLocale());
   }
 }
 
@@ -398,7 +405,9 @@ function _formatEvent(event, timeStr) {
       const items = event.details?.items;
       let lostList = '';
       if (Array.isArray(items) && items.length > 0) {
-        const cleaned = items.slice(0, 5).map(i => cleanItemName(typeof i === 'string' ? i.replace(/ x\d+$/, '') : i));
+        const cleaned = items
+          .slice(0, 5)
+          .map((i) => cleanItemName(typeof i === 'string' ? i.replace(/ x\d+$/, '') : i));
         lostList = `: ${cleaned.join(', ')}`;
         if (items.length > 5) lostList += ` +${items.length - 5} more`;
       }
@@ -465,15 +474,17 @@ function _formatLocation(event) {
   if (x == null || y == null) return '';
 
   // UE4 coordinate ranges for HumanitZ map (developer-provided)
-  const minX = 3250, maxX = 399150;
-  const minY = -398550, maxY = -2650;
+  const minX = 3250,
+    maxX = 399150;
+  const minY = -398550,
+    maxY = -2650;
 
   // Clamp to map bounds
   const nx = Math.max(0, Math.min(7, Math.floor(((x - minX) / (maxX - minX)) * 8)));
   const ny = Math.max(0, Math.min(7, Math.floor(((y - minY) / (maxY - minY)) * 8)));
 
-  const col = String.fromCharCode(65 + ny);  // A-H
-  const row = nx + 1;                         // 1-8
+  const col = String.fromCharCode(65 + ny); // A-H
+  const row = nx + 1; // 1-8
   return ` \`[${col}${row}]\``;
 }
 

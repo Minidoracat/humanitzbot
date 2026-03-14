@@ -22,110 +22,110 @@ const { t, getLocale, fmtNumber } = require('../i18n');
 function _dbRowToSave(row) {
   if (!row) return null;
   return {
-    name:               row.name,
-    male:               row.male,
-    startingPerk:       row.starting_perk,
-    affliction:         row.affliction,
-    charProfile:        row.char_profile,
-    zeeksKilled:        row.zeeks_killed,
-    headshots:          row.headshots,
-    meleeKills:         row.melee_kills,
-    gunKills:           row.gun_kills,
-    blastKills:         row.blast_kills,
-    fistKills:          row.fist_kills,
-    takedownKills:      row.takedown_kills,
-    vehicleKills:       row.vehicle_kills,
-    lifetimeKills:      row.lifetime_kills,
-    lifetimeHeadshots:  row.lifetime_headshots,
+    name: row.name,
+    male: row.male,
+    startingPerk: row.starting_perk,
+    affliction: row.affliction,
+    charProfile: row.char_profile,
+    zeeksKilled: row.zeeks_killed,
+    headshots: row.headshots,
+    meleeKills: row.melee_kills,
+    gunKills: row.gun_kills,
+    blastKills: row.blast_kills,
+    fistKills: row.fist_kills,
+    takedownKills: row.takedown_kills,
+    vehicleKills: row.vehicle_kills,
+    lifetimeKills: row.lifetime_kills,
+    lifetimeHeadshots: row.lifetime_headshots,
     lifetimeMeleeKills: row.lifetime_melee_kills,
-    lifetimeGunKills:   row.lifetime_gun_kills,
+    lifetimeGunKills: row.lifetime_gun_kills,
     lifetimeBlastKills: row.lifetime_blast_kills,
-    lifetimeFistKills:  row.lifetime_fist_kills,
+    lifetimeFistKills: row.lifetime_fist_kills,
     lifetimeTakedownKills: row.lifetime_takedown_kills,
     lifetimeVehicleKills: row.lifetime_vehicle_kills,
     lifetimeDaysSurvived: row.lifetime_days_survived,
-    hasExtendedStats:   row.has_extended_stats,
-    daysSurvived:       row.days_survived,
-    timesBitten:        row.times_bitten,
-    bites:              row.bites,
-    fishCaught:         row.fish_caught,
-    fishCaughtPike:     row.fish_caught_pike,
-    health:             row.health,
-    maxHealth:          row.max_health,
-    hunger:             row.hunger,
-    maxHunger:          row.max_hunger,
-    thirst:             row.thirst,
-    maxThirst:          row.max_thirst,
-    stamina:            row.stamina,
-    maxStamina:         row.max_stamina,
-    infection:          row.infection,
-    maxInfection:       row.max_infection,
-    battery:            row.battery,
-    fatigue:            row.fatigue,
-    infectionBuildup:   row.infection_buildup,
-    wellRested:         row.well_rested,
-    energy:             row.energy,
-    hood:               row.hood,
-    hypoHandle:         row.hypo_handle,
-    exp:                row.exp,
-    level:              row.level,
-    expCurrent:         row.exp_current,
-    expRequired:        row.exp_required,
-    skillPoints:        row.skills_point,
-    x:                  row.pos_x,
-    y:                  row.pos_y,
-    z:                  row.pos_z,
-    rotationYaw:        row.rotation_yaw,
-    respawnX:           row.respawn_x,
-    respawnY:           row.respawn_y,
-    respawnZ:           row.respawn_z,
-    cbRadioCooldown:    row.cb_radio_cooldown,
-    dayIncremented:     row.day_incremented,
-    infectionTimer:     row.infection_timer,
-    playerStates:       row.player_states || [],
-    bodyConditions:     row.body_conditions || [],
-    craftingRecipes:    row.crafting_recipes || [],
-    buildingRecipes:    row.building_recipes || [],
+    hasExtendedStats: row.has_extended_stats,
+    daysSurvived: row.days_survived,
+    timesBitten: row.times_bitten,
+    bites: row.bites,
+    fishCaught: row.fish_caught,
+    fishCaughtPike: row.fish_caught_pike,
+    health: row.health,
+    maxHealth: row.max_health,
+    hunger: row.hunger,
+    maxHunger: row.max_hunger,
+    thirst: row.thirst,
+    maxThirst: row.max_thirst,
+    stamina: row.stamina,
+    maxStamina: row.max_stamina,
+    infection: row.infection,
+    maxInfection: row.max_infection,
+    battery: row.battery,
+    fatigue: row.fatigue,
+    infectionBuildup: row.infection_buildup,
+    wellRested: row.well_rested,
+    energy: row.energy,
+    hood: row.hood,
+    hypoHandle: row.hypo_handle,
+    exp: row.exp,
+    level: row.level,
+    expCurrent: row.exp_current,
+    expRequired: row.exp_required,
+    skillPoints: row.skills_point,
+    x: row.pos_x,
+    y: row.pos_y,
+    z: row.pos_z,
+    rotationYaw: row.rotation_yaw,
+    respawnX: row.respawn_x,
+    respawnY: row.respawn_y,
+    respawnZ: row.respawn_z,
+    cbRadioCooldown: row.cb_radio_cooldown,
+    dayIncremented: row.day_incremented,
+    infectionTimer: row.infection_timer,
+    playerStates: row.player_states || [],
+    bodyConditions: row.body_conditions || [],
+    craftingRecipes: row.crafting_recipes || [],
+    buildingRecipes: row.building_recipes || [],
     unlockedProfessions: row.unlocked_professions || [],
-    unlockedSkills:     row.unlocked_skills || [],
-    skillTree:          row.skills_data,
-    skillsData:         row.skills_data,
-    inventory:          row.inventory || [],
-    equipment:          row.equipment || [],
-    quickSlots:         row.quick_slots || [],
-    backpackItems:      row.backpack_items || [],
-    backpackData:       row.backpack_data,
-    lore:               row.lore || [],
-    uniqueLoots:        row.unique_loots || [],
-    craftedUniques:     row.crafted_uniques || [],
-    lootItemUnique:     row.loot_item_unique || [],
-    questData:          row.quest_data,
-    miniQuest:          row.mini_quest,
-    challenges:         row.challenges,
-    questSpawnerDone:   row.quest_spawner_done,
-    companionData:      row.companion_data || [],
-    horses:             row.horses || [],
-    extendedStats:      row.extended_stats,
-    challengeKillZombies:     row.challenge_kill_zombies,
-    challengeKill50:          row.challenge_kill_50,
-    challengeCatch20Fish:     row.challenge_catch_20_fish,
-    challengeRegularAngler:   row.challenge_regular_angler,
-    challengeKillZombieBear:  row.challenge_kill_zombie_bear,
-    challenge9Squares:        row.challenge_9_squares,
-    challengeCraftFirearm:    row.challenge_craft_firearm,
-    challengeCraftFurnace:    row.challenge_craft_furnace,
+    unlockedSkills: row.unlocked_skills || [],
+    skillTree: row.skills_data,
+    skillsData: row.skills_data,
+    inventory: row.inventory || [],
+    equipment: row.equipment || [],
+    quickSlots: row.quick_slots || [],
+    backpackItems: row.backpack_items || [],
+    backpackData: row.backpack_data,
+    lore: row.lore || [],
+    uniqueLoots: row.unique_loots || [],
+    craftedUniques: row.crafted_uniques || [],
+    lootItemUnique: row.loot_item_unique || [],
+    questData: row.quest_data,
+    miniQuest: row.mini_quest,
+    challenges: row.challenges,
+    questSpawnerDone: row.quest_spawner_done,
+    companionData: row.companion_data || [],
+    horses: row.horses || [],
+    extendedStats: row.extended_stats,
+    challengeKillZombies: row.challenge_kill_zombies,
+    challengeKill50: row.challenge_kill_50,
+    challengeCatch20Fish: row.challenge_catch_20_fish,
+    challengeRegularAngler: row.challenge_regular_angler,
+    challengeKillZombieBear: row.challenge_kill_zombie_bear,
+    challenge9Squares: row.challenge_9_squares,
+    challengeCraftFirearm: row.challenge_craft_firearm,
+    challengeCraftFurnace: row.challenge_craft_furnace,
     challengeCraftMeleeBench: row.challenge_craft_melee_bench,
     challengeCraftMeleeWeapon: row.challenge_craft_melee_weapon,
     challengeCraftRainCollector: row.challenge_craft_rain_collector,
-    challengeCraftTablesaw:   row.challenge_craft_tablesaw,
-    challengeCraftTreatment:  row.challenge_craft_treatment,
+    challengeCraftTablesaw: row.challenge_craft_tablesaw,
+    challengeCraftTreatment: row.challenge_craft_treatment,
     challengeCraftWeaponsBench: row.challenge_craft_weapons_bench,
-    challengeCraftWorkbench:  row.challenge_craft_workbench,
-    challengeFindDog:         row.challenge_find_dog,
-    challengeFindHeli:        row.challenge_find_heli,
-    challengeLockpickSUV:     row.challenge_lockpick_suv,
-    challengeRepairRadio:     row.challenge_repair_radio,
-    customData:         row.custom_data,
+    challengeCraftWorkbench: row.challenge_craft_workbench,
+    challengeFindDog: row.challenge_find_dog,
+    challengeFindHeli: row.challenge_find_heli,
+    challengeLockpickSUV: row.challenge_lockpick_suv,
+    challengeRepairRadio: row.challenge_repair_radio,
+    customData: row.custom_data,
   };
 }
 
@@ -138,7 +138,9 @@ function _tstatus(locale, key, vars = {}) {
 }
 
 function _seasonLabel(locale, season) {
-  const normalized = String(season || '').trim().toLowerCase();
+  const normalized = String(season || '')
+    .trim()
+    .toLowerCase();
   const keyMap = {
     spring: 'season_spring',
     summer: 'season_summer',
@@ -156,8 +158,8 @@ class PlayerStatsChannel {
     this._playerStats = deps.playerStats || _defaultPlayerStats;
     this._db = deps.db || null;
     this._label = deps.label || 'PLAYER STATS CH';
-    this._serverId = deps.serverId || '';  // unique suffix for select menu IDs
-    this._dataDir = deps.dataDir || null;  // for writing save-cache.json (multi-server)
+    this._serverId = deps.serverId || ''; // unique suffix for select menu IDs
+    this._dataDir = deps.dataDir || null; // for writing save-cache.json (multi-server)
 
     this.client = client;
     this._logWatcher = logWatcher || null; // for posting kill feed to activity thread
@@ -165,32 +167,32 @@ class PlayerStatsChannel {
     this.statusMessage = null; // the single embed we keep editing
     this.saveInterval = null;
     this._saveData = new Map(); // steamId -> save data
-    this._clanData = [];           // array of { name, members: [{ name, steamId, rank }] }
+    this._clanData = []; // array of { name, members: [{ name, steamId, rank }] }
     this._lastSaveUpdate = null;
     this._embedInterval = null;
     // Kill/stat tracker (shared data layer)
     this._killTracker = new KillTracker(deps);
-    this._serverSettings = {};  // parsed GameServerSettings.ini
-    this._weeklyStats = null;   // cached weekly delta leaderboards
-    this._headless = false;     // true when running without Discord channel (data-only mode)
+    this._serverSettings = {}; // parsed GameServerSettings.ini
+    this._weeklyStats = null; // cached weekly delta leaderboards
+    this._headless = false; // true when running without Discord channel (data-only mode)
   }
 
   // ── Cross-validated player resolver ─────────────────────────
 
   _resolvePlayer(steamId) {
-    const pt  = this._playtime.getPlaytime(steamId);
+    const pt = this._playtime.getPlaytime(steamId);
     const log = this._playerStats.getStats(steamId);
     const save = this._saveData.get(steamId);
 
     // ── Name resolution: most-recent-event wins ──
-    let name = steamId;
-    const ptName  = pt?.name;
+    let name;
+    const ptName = pt?.name;
     const logName = log?.name;
 
     if (ptName && logName) {
       if (ptName !== logName) {
         // Compare timestamps — whichever source was updated more recently wins
-        const ptTime  = pt.lastSeen  ? new Date(pt.lastSeen).getTime()  : 0;
+        const ptTime = pt.lastSeen ? new Date(pt.lastSeen).getTime() : 0;
         const logTime = log.lastEvent ? new Date(log.lastEvent).getTime() : 0;
         name = ptTime >= logTime ? ptName : logName;
       } else {
@@ -201,7 +203,7 @@ class PlayerStatsChannel {
     }
 
     // ── Last active: max of both timestamps ──
-    const ptLastSeen  = pt?.lastSeen  ? new Date(pt.lastSeen).getTime()  : 0;
+    const ptLastSeen = pt?.lastSeen ? new Date(pt.lastSeen).getTime() : 0;
     const logLastEvent = log?.lastEvent ? new Date(log.lastEvent).getTime() : 0;
     const lastActiveMs = Math.max(ptLastSeen, logLastEvent);
     const lastActive = lastActiveMs > 0 ? new Date(lastActiveMs).toISOString() : null;
@@ -262,13 +264,16 @@ class PlayerStatsChannel {
     }
 
     // Start save poll loop — use faster agent interval if agent mode is active
-    const pollMs = typeof this._config.getEffectiveSavePollInterval === 'function'
-      ? this._config.getEffectiveSavePollInterval()
-      : Math.max(this._config.savePollInterval || 300000, 60000);
+    const pollMs =
+      typeof this._config.getEffectiveSavePollInterval === 'function'
+        ? this._config.getEffectiveSavePollInterval()
+        : Math.max(this._config.savePollInterval || 300000, 60000);
     this.saveInterval = setInterval(() => {
       this._pollSave()
-        .then(() => { if (!this._headless) this._updateEmbed(); })
-        .catch(err => console.error(`[${this._label}] Save poll error:`, err.message));
+        .then(() => {
+          if (!this._headless) this._updateEmbed();
+        })
+        .catch((err) => console.error(`[${this._label}] Save poll error:`, err.message));
     }, pollMs);
     console.log(`[${this._label}] Save poll every ${pollMs / 1000}s${this._headless ? ' (headless)' : ''}`);
 
@@ -279,8 +284,14 @@ class PlayerStatsChannel {
   }
 
   stop() {
-    if (this.saveInterval) { clearInterval(this.saveInterval); this.saveInterval = null; }
-    if (this._embedInterval) { clearInterval(this._embedInterval); this._embedInterval = null; }
+    if (this.saveInterval) {
+      clearInterval(this.saveInterval);
+      this.saveInterval = null;
+    }
+    if (this._embedInterval) {
+      clearInterval(this._embedInterval);
+      this._embedInterval = null;
+    }
     this._killTracker.save();
   }
 
@@ -385,7 +396,9 @@ class PlayerStatsChannel {
         // Structures: read directly from DB (no getAllStructures method — use raw query)
         try {
           this._structures = this._db.db?.prepare('SELECT * FROM structures').all() || [];
-        } catch { this._structures = []; }
+        } catch {
+          this._structures = [];
+        }
       } catch (err) {
         console.warn(`[${this._label}] Entity load from DB:`, err.message);
       }
@@ -477,7 +490,7 @@ class PlayerStatsChannel {
     if (ws.totalPlayers != null) this._serverSettings._totalPlayers = ws.totalPlayers;
     // Extract weather from UDS weather state stored in save
     if (Array.isArray(ws.weatherState)) {
-      const weatherProp = ws.weatherState.find(p => p.name === 'CurrentWeather');
+      const weatherProp = ws.weatherState.find((p) => p.name === 'CurrentWeather');
       if (weatherProp && typeof weatherProp.value === 'string') {
         const locale = getLocale({ serverConfig: this._config });
         this._serverSettings._currentWeather = _resolveUdsWeather(weatherProp.value, locale);
@@ -526,7 +539,9 @@ class PlayerStatsChannel {
 
       const prevWorldState = this._worldState || null;
       this._worldState = worldState || {};
-      console.log(`[${this._label}] Legacy parse: ${players.size} players (${(buf.length / 1024 / 1024).toFixed(1)}MB)`);
+      console.log(
+        `[${this._label}] Legacy parse: ${players.size} players (${(buf.length / 1024 / 1024).toFixed(1)}MB)`,
+      );
 
       this._runAccumulate();
 
@@ -593,19 +608,27 @@ class PlayerStatsChannel {
       const localStat = fs.statSync(tmpFile);
 
       if (remoteStat.size && localStat.size !== remoteStat.size) {
-        console.warn(`[${this._label}] Save download size mismatch: remote=${remoteStat.size} local=${localStat.size}, retrying with buffered get`);
+        console.warn(
+          `[${this._label}] Save download size mismatch: remote=${remoteStat.size} local=${localStat.size}, retrying with buffered get`,
+        );
         const buf = await sftp.get(remotePath);
-        try { fs.unlinkSync(tmpFile); } catch (_) {}
+        try {
+          fs.unlinkSync(tmpFile);
+        } catch (_) {}
         return buf;
       }
 
       const buf = fs.readFileSync(tmpFile);
-      try { fs.unlinkSync(tmpFile); } catch (_) {}
+      try {
+        fs.unlinkSync(tmpFile);
+      } catch (_) {}
       return buf;
     } catch (err) {
       // fastGet can fail on some SFTP servers — fall back to buffered get
       console.warn(`[${this._label}] fastGet failed (${err.message}), using buffered get`);
-      try { fs.unlinkSync(tmpFile); } catch (_) {}
+      try {
+        fs.unlinkSync(tmpFile);
+      } catch (_) {}
       return sftp.get(remotePath);
     }
   }
@@ -632,8 +655,8 @@ class PlayerStatsChannel {
 
       // ── Top PvP Killers (from logs) ──
       const topPvpKillers = allLog
-        .filter(p => (p.pvpKills || 0) > 0)
-        .map(p => {
+        .filter((p) => (p.pvpKills || 0) > 0)
+        .map((p) => {
           const resolved = this._resolvePlayer(p.id);
           return { name: resolved.name, kills: p.pvpKills };
         })
@@ -747,7 +770,8 @@ class PlayerStatsChannel {
   _loadMessageId() {
     try {
       if (this._db) return this._db.getState('msg_id_player_stats') || null;
-    } catch {} return null;
+    } catch {}
+    return null;
   }
 
   _saveMessageId() {
@@ -831,20 +855,25 @@ class PlayerStatsChannel {
         const total = delta.zeeksKilled || 0;
         const parts = [];
         if (delta.headshots) {
-          parts.push(_tsc(locale, 'kills_detail_headshots', {
-            count: fmtNumber(delta.headshots, locale),
-            plural_suffix: delta.headshots > 1 ? 's' : '',
-          }));
+          parts.push(
+            _tsc(locale, 'kills_detail_headshots', {
+              count: fmtNumber(delta.headshots, locale),
+              plural_suffix: delta.headshots > 1 ? 's' : '',
+            }),
+          );
         }
-        if (delta.meleeKills) parts.push(_tsc(locale, 'kills_detail_melee', { count: fmtNumber(delta.meleeKills, locale) }));
+        if (delta.meleeKills)
+          parts.push(_tsc(locale, 'kills_detail_melee', { count: fmtNumber(delta.meleeKills, locale) }));
         if (delta.gunKills) parts.push(_tsc(locale, 'kills_detail_gun', { count: fmtNumber(delta.gunKills, locale) }));
-        if (delta.blastKills) parts.push(_tsc(locale, 'kills_detail_blast', { count: fmtNumber(delta.blastKills, locale) }));
-        if (delta.fistKills) parts.push(_tsc(locale, 'kills_detail_fist', { count: fmtNumber(delta.fistKills, locale) }));
-        if (delta.takedownKills) parts.push(_tsc(locale, 'kills_detail_takedown', { count: fmtNumber(delta.takedownKills, locale) }));
-        if (delta.vehicleKills) parts.push(_tsc(locale, 'kills_detail_vehicle', { count: fmtNumber(delta.vehicleKills, locale) }));
-        const detail = parts.length > 0
-          ? _tsc(locale, 'kills_detail_suffix', { details: parts.join(', ') })
-          : '';
+        if (delta.blastKills)
+          parts.push(_tsc(locale, 'kills_detail_blast', { count: fmtNumber(delta.blastKills, locale) }));
+        if (delta.fistKills)
+          parts.push(_tsc(locale, 'kills_detail_fist', { count: fmtNumber(delta.fistKills, locale) }));
+        if (delta.takedownKills)
+          parts.push(_tsc(locale, 'kills_detail_takedown', { count: fmtNumber(delta.takedownKills, locale) }));
+        if (delta.vehicleKills)
+          parts.push(_tsc(locale, 'kills_detail_vehicle', { count: fmtNumber(delta.vehicleKills, locale) }));
+        const detail = parts.length > 0 ? _tsc(locale, 'kills_detail_suffix', { details: parts.join(', ') }) : '';
         return _tsc(locale, 'kills_line', {
           name,
           total: fmtNumber(total, locale),
@@ -860,10 +889,12 @@ class PlayerStatsChannel {
       const lines = deltas.survivalDeltas.map(({ name, delta }) => {
         const parts = [];
         if (delta.daysSurvived) {
-          parts.push(_tsc(locale, 'survival_days', {
-            days: fmtNumber(delta.daysSurvived, locale),
-            plural_suffix: delta.daysSurvived > 1 ? 's' : '',
-          }));
+          parts.push(
+            _tsc(locale, 'survival_days', {
+              days: fmtNumber(delta.daysSurvived, locale),
+              plural_suffix: delta.daysSurvived > 1 ? 's' : '',
+            }),
+          );
         }
         return _tsc(locale, 'survival_line', { name, details: parts.join(', ') });
       });
@@ -878,19 +909,21 @@ class PlayerStatsChannel {
         const bitten = delta.timesBitten || 0;
         const parts = [];
         if (total > 0) {
-          const pikeNote = pike > 0
-            ? _tsc(locale, 'fishing_pike_note', { count: fmtNumber(pike, locale) })
-            : '';
-          parts.push(_tsc(locale, 'fishing_caught', {
-            count: fmtNumber(total, locale),
-            pike_note: pikeNote,
-          }));
+          const pikeNote = pike > 0 ? _tsc(locale, 'fishing_pike_note', { count: fmtNumber(pike, locale) }) : '';
+          parts.push(
+            _tsc(locale, 'fishing_caught', {
+              count: fmtNumber(total, locale),
+              pike_note: pikeNote,
+            }),
+          );
         }
         if (bitten > 0) {
-          parts.push(_tsc(locale, 'fishing_bitten', {
-            count: fmtNumber(bitten, locale),
-            plural_suffix: bitten > 1 ? 's' : '',
-          }));
+          parts.push(
+            _tsc(locale, 'fishing_bitten', {
+              count: fmtNumber(bitten, locale),
+              plural_suffix: bitten > 1 ? 's' : '',
+            }),
+          );
         }
         return _tsc(locale, 'fishing_line', { name, details: parts.join(', ') });
       });
@@ -900,16 +933,20 @@ class PlayerStatsChannel {
     // ── Recipes ──
     if (deltas.recipeDeltas.length > 0 && this._config.enableRecipeFeed) {
       const lines = deltas.recipeDeltas.map(({ name, type, items }) => {
-        const names = items.map(r => _cleanItemName(r)).filter(Boolean);
-        const typeLabel = type === 'crafting'
-          ? _tsc(locale, 'recipe_type_crafting')
-          : (type === 'building' ? _tsc(locale, 'recipe_type_building') : type);
-        const display = names.length <= 5
-          ? names.join(', ')
-          : _tsc(locale, 'list_with_more', {
-            items: names.slice(0, 5).join(', '),
-            count: fmtNumber(names.length - 5, locale),
-          });
+        const names = items.map((r) => _cleanItemName(r)).filter(Boolean);
+        const typeLabel =
+          type === 'crafting'
+            ? _tsc(locale, 'recipe_type_crafting')
+            : type === 'building'
+              ? _tsc(locale, 'recipe_type_building')
+              : type;
+        const display =
+          names.length <= 5
+            ? names.join(', ')
+            : _tsc(locale, 'list_with_more', {
+                items: names.slice(0, 5).join(', '),
+                count: fmtNumber(names.length - 5, locale),
+              });
         return _tsc(locale, 'recipes_line', { name, type: typeLabel, display });
       });
       sections.push({ header: _tsc(locale, 'header_recipes'), lines });
@@ -918,7 +955,7 @@ class PlayerStatsChannel {
     // ── Skills ──
     if (deltas.skillDeltas.length > 0 && this._config.enableSkillFeed) {
       const lines = deltas.skillDeltas.map(({ name, items }) => {
-        const names = items.map(s => _cleanItemName(s).toUpperCase());
+        const names = items.map((s) => _cleanItemName(s).toUpperCase());
         return _tsc(locale, 'skills_line', {
           name,
           plural_suffix: names.length > 1 ? 's' : '',
@@ -931,7 +968,7 @@ class PlayerStatsChannel {
     // ── Professions ──
     if (deltas.professionDeltas.length > 0 && this._config.enableProfessionFeed) {
       const lines = deltas.professionDeltas.map(({ name, items }) => {
-        const names = items.map(p => {
+        const names = items.map((p) => {
           if (typeof p === 'number') {
             return PERK_INDEX_MAP[p] || _tsc(locale, 'profession_fallback', { id: fmtNumber(p, locale) });
           }
@@ -951,10 +988,11 @@ class PlayerStatsChannel {
     if (deltas.loreDeltas.length > 0 && this._config.enableLoreFeed) {
       const lines = deltas.loreDeltas.map(({ name, items }) => {
         const count = items.length;
-        const names = items.map(l => _cleanItemName(typeof l === 'object' ? (l.name || l.id || JSON.stringify(l)) : l)).filter(Boolean);
-        const display = names.length > 0 && names.length <= 3
-          ? _tsc(locale, 'lore_display_suffix', { names: names.join(', ') })
-          : '';
+        const names = items
+          .map((l) => _cleanItemName(typeof l === 'object' ? l.name || l.id || JSON.stringify(l) : l))
+          .filter(Boolean);
+        const display =
+          names.length > 0 && names.length <= 3 ? _tsc(locale, 'lore_display_suffix', { names: names.join(', ') }) : '';
         return _tsc(locale, 'lore_line', {
           name,
           count: fmtNumber(count, locale),
@@ -968,16 +1006,22 @@ class PlayerStatsChannel {
     // ── Unique Items ──
     if (deltas.uniqueDeltas.length > 0 && this._config.enableUniqueFeed) {
       const lines = deltas.uniqueDeltas.map(({ name, type, items }) => {
-        const names = items.map(u => _cleanItemName(typeof u === 'object' ? (u.name || u.id || JSON.stringify(u)) : u)).filter(Boolean);
-        const typeLabel = type === 'found'
-          ? _tsc(locale, 'unique_type_found')
-          : (type === 'crafted' ? _tsc(locale, 'unique_type_crafted') : type);
-        const display = names.length <= 5
-          ? names.join(', ')
-          : _tsc(locale, 'list_with_more', {
-            items: names.slice(0, 5).join(', '),
-            count: fmtNumber(names.length - 5, locale),
-          });
+        const names = items
+          .map((u) => _cleanItemName(typeof u === 'object' ? u.name || u.id || JSON.stringify(u) : u))
+          .filter(Boolean);
+        const typeLabel =
+          type === 'found'
+            ? _tsc(locale, 'unique_type_found')
+            : type === 'crafted'
+              ? _tsc(locale, 'unique_type_crafted')
+              : type;
+        const display =
+          names.length <= 5
+            ? names.join(', ')
+            : _tsc(locale, 'list_with_more', {
+                items: names.slice(0, 5).join(', '),
+                count: fmtNumber(names.length - 5, locale),
+              });
         return _tsc(locale, 'unique_line', {
           name,
           type: typeLabel,
@@ -993,15 +1037,16 @@ class PlayerStatsChannel {
       const lines = deltas.companionDeltas.map(({ name, type, items }) => {
         const count = items.length;
         const emoji = type === 'horse' ? '🐴' : '🐕';
-        const label = type === 'horse'
-          ? _tsc(locale, 'companion_horse_label', {
-            count: fmtNumber(count, locale),
-            plural_suffix: count > 1 ? 's' : '',
-          })
-          : _tsc(locale, 'companion_companion_label', {
-            count: fmtNumber(count, locale),
-            plural_suffix: count > 1 ? 's' : '',
-          });
+        const label =
+          type === 'horse'
+            ? _tsc(locale, 'companion_horse_label', {
+                count: fmtNumber(count, locale),
+                plural_suffix: count > 1 ? 's' : '',
+              })
+            : _tsc(locale, 'companion_companion_label', {
+                count: fmtNumber(count, locale),
+                plural_suffix: count > 1 ? 's' : '',
+              });
         return _tsc(locale, 'companion_line', { emoji, name, label });
       });
       sections.push({ header: _tsc(locale, 'header_companions'), lines });
@@ -1010,11 +1055,13 @@ class PlayerStatsChannel {
     // ── Challenges ──
     if (deltas.challengeDeltas.length > 0 && this._config.enableChallengeFeed) {
       const lines = deltas.challengeDeltas.flatMap(({ name, completed }) =>
-        completed.map(c => _tsc(locale, 'challenge_line', {
-          name,
-          challenge: c.name,
-          description: c.desc,
-        }))
+        completed.map((c) =>
+          _tsc(locale, 'challenge_line', {
+            name,
+            challenge: c.name,
+            description: c.desc,
+          }),
+        ),
       );
       sections.push({ header: _tsc(locale, 'header_challenges'), lines });
     }
@@ -1024,15 +1071,13 @@ class PlayerStatsChannel {
     // Build consolidated description with section headers, splitting across
     // multiple embeds when the 4096-char description limit would be exceeded.
     const LIMIT = 4000; // margin below Discord's 4096
-    const descParts = sections.map(s =>
-      `**${s.header}**\n${s.lines.join('\n')}`
-    );
+    const descParts = sections.map((s) => `**${s.header}**\n${s.lines.join('\n')}`);
 
     const chunks = [];
     let current = '';
     for (const part of descParts) {
       const addition = current ? `\n\n${part}` : part;
-      if (current && (current.length + addition.length) > LIMIT) {
+      if (current && current.length + addition.length > LIMIT) {
         chunks.push(current);
         current = part;
       } else {
@@ -1043,9 +1088,7 @@ class PlayerStatsChannel {
 
     try {
       for (let i = 0; i < chunks.length; i++) {
-        const embed = new EmbedBuilder()
-          .setDescription(chunks[i])
-          .setColor(0x5865F2);
+        const embed = new EmbedBuilder().setDescription(chunks[i]).setColor(0x5865f2);
         if (i === 0) embed.setAuthor({ name: _tsc(locale, 'activity_summary') });
         if (i === chunks.length - 1) embed.setTimestamp();
         await this._sendFeedEmbed(embed, targetDate);
@@ -1063,10 +1106,12 @@ class PlayerStatsChannel {
     if (prev.currentSeason && current.currentSeason && prev.currentSeason !== current.currentSeason) {
       const seasonEmoji = { Spring: '🌱', Summer: '☀️', Autumn: '🍂', Winter: '❄️' };
       const emoji = seasonEmoji[current.currentSeason] || '🔄';
-      lines.push(_tsc(locale, 'world_season_changed', {
-        emoji,
-        season: _seasonLabel(locale, current.currentSeason),
-      }));
+      lines.push(
+        _tsc(locale, 'world_season_changed', {
+          emoji,
+          season: _seasonLabel(locale, current.currentSeason),
+        }),
+      );
     }
 
     // Day milestone (every 10 days)
@@ -1113,11 +1158,17 @@ class PlayerStatsChannel {
     return this._killTracker.getAllTimeSurvival(steamId, this._saveData);
   }
 
-  getSaveData() { return this._saveData; }
+  getSaveData() {
+    return this._saveData;
+  }
 
-  getClanData() { return this._clanData; }
+  getClanData() {
+    return this._clanData;
+  }
 
-  getServerSettings() { return this._serverSettings; }
+  getServerSettings() {
+    return this._serverSettings;
+  }
 }
 
 function _parseIni(text) {
@@ -1169,7 +1220,10 @@ function _resolveUdsWeather(enumValue, locale = 'en') {
   if (!enumValue) return null;
   const key = UDS_WEATHER_MAP[enumValue];
   if (key) return _tstatus(locale, key);
-  const fallback = enumValue.replace(/^UDS_WeatherTypes::/, '').replace(/NewEnumerator/, '').trim();
+  const fallback = enumValue
+    .replace(/^UDS_WeatherTypes::/, '')
+    .replace(/NewEnumerator/, '')
+    .trim();
   return _tstatus(locale, 'weather_fallback', { value: fallback || enumValue });
 }
 

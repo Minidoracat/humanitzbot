@@ -36,7 +36,11 @@ const PvpScheduler = require('../modules/pvp-scheduler');
 const ServerScheduler = require('../modules/server-scheduler');
 const ActivityLog = require('../modules/activity-log');
 let AnticheatIntegration;
-try { AnticheatIntegration = require('../modules/anticheat-integration'); } catch { /* optional module */ }
+try {
+  AnticheatIntegration = require('../modules/anticheat-integration');
+} catch {
+  /* optional module */
+}
 
 const SERVERS_FILE = path.join(__dirname, '..', '..', 'data', 'servers.json');
 const SERVERS_DIR = path.join(__dirname, '..', '..', 'data', 'servers');
@@ -117,7 +121,11 @@ const MAX_DISCOVERIES = DISCOVERY_TARGETS.length + 1 + DISCOVERY_DIR_TARGETS.len
 async function _discoverFiles(sftp, dir, depth, maxDepth, found) {
   if (depth >= maxDepth) return;
   let items;
-  try { items = await sftp.list(dir); } catch { return; }
+  try {
+    items = await sftp.list(dir);
+  } catch {
+    return;
+  }
   for (const item of items) {
     const fullPath = dir === '/' ? `/${item.name}` : `${dir}/${item.name}`;
     if (item.type === 'd') {
@@ -125,7 +133,12 @@ async function _discoverFiles(sftp, dir, depth, maxDepth, found) {
       if (DISCOVERY_DIR_TARGETS.includes(item.name) && !found.has(item.name)) {
         found.set(item.name, fullPath);
       }
-      if (/^(\.|node_modules|__pycache__|Engine|Content|Binaries|linux64|steamapps|proc|sys|run|tmp|lost\+found|snap|boot|usr)$/i.test(item.name)) continue;
+      if (
+        /^(\.|node_modules|__pycache__|Engine|Content|Binaries|linux64|steamapps|proc|sys|run|tmp|lost\+found|snap|boot|usr)$/i.test(
+          item.name,
+        )
+      )
+        continue;
       await _discoverFiles(sftp, fullPath, depth + 1, maxDepth, found);
     } else if (DISCOVERY_TARGETS.includes(item.name) && !found.has(item.name)) {
       found.set(item.name, fullPath);
@@ -147,7 +160,12 @@ async function _discoverFiles(sftp, dir, depth, maxDepth, found) {
  * @returns {Promise<object|null>} paths object or null if discovery fails
  */
 async function discoverPaths(sftpConfig, label = 'DISCOVER') {
-  if (!sftpConfig?.host || !sftpConfig?.user || (!sftpConfig?.password && !sftpConfig?.privateKey && !sftpConfig?.privateKeyPath)) return null;
+  if (
+    !sftpConfig?.host ||
+    !sftpConfig?.user ||
+    (!sftpConfig?.password && !sftpConfig?.privateKey && !sftpConfig?.privateKeyPath)
+  )
+    return null;
 
   const sftp = new SftpClient();
   try {
@@ -189,26 +207,30 @@ async function discoverPaths(sftpConfig, label = 'DISCOVER') {
           const saveDir = iniDir + '/Saved/SaveGames/SaveList/Default';
           try {
             const items = await sftp.list(saveDir);
-            const saveFile = items.find(f => f.name === `Save_${saveName}.sav`);
+            const saveFile = items.find((f) => f.name === `Save_${saveName}.sav`);
             if (saveFile) {
               found.set('__save_file__', `${saveDir}/${saveFile.name}`);
               console.log(`[${label}] Found custom save: Save_${saveName}.sav (from GameServerSettings.ini SaveName)`);
             }
-          } catch { /* SaveList dir not at expected location — will use whatever was discovered */ }
+          } catch {
+            /* SaveList dir not at expected location — will use whatever was discovered */
+          }
         }
-      } catch { /* couldn't read settings — non-critical */ }
+      } catch {
+        /* couldn't read settings — non-critical */
+      }
     }
 
     await sftp.end().catch(() => {});
 
     // Build paths object
     const paths = {};
-    if (found.has('HMZLog.log'))              paths.logPath = found.get('HMZLog.log');
-    if (found.has('PlayerConnectedLog.txt'))   paths.connectLogPath = found.get('PlayerConnectedLog.txt');
-    if (found.has('PlayerIDMapped.txt'))        paths.idMapPath = found.get('PlayerIDMapped.txt');
-    if (found.has('__save_file__'))            paths.savePath = found.get('__save_file__');
-    if (found.has('GameServerSettings.ini'))   paths.settingsPath = found.get('GameServerSettings.ini');
-    if (found.has('WelcomeMessage.txt'))       paths.welcomePath = found.get('WelcomeMessage.txt');
+    if (found.has('HMZLog.log')) paths.logPath = found.get('HMZLog.log');
+    if (found.has('PlayerConnectedLog.txt')) paths.connectLogPath = found.get('PlayerConnectedLog.txt');
+    if (found.has('PlayerIDMapped.txt')) paths.idMapPath = found.get('PlayerIDMapped.txt');
+    if (found.has('__save_file__')) paths.savePath = found.get('__save_file__');
+    if (found.has('GameServerSettings.ini')) paths.settingsPath = found.get('GameServerSettings.ini');
+    if (found.has('WelcomeMessage.txt')) paths.welcomePath = found.get('WelcomeMessage.txt');
 
     // If HZLogs found but no HMZLog.log (new server, only has per-restart logs),
     // derive ftpLogPath from HZLogs parent so LogWatcher can find the directory.
@@ -220,12 +242,14 @@ async function discoverPaths(sftpConfig, label = 'DISCOVER') {
     }
 
     const foundCount = Object.keys(paths).length;
-    const fileNames = Object.values(paths).map(p => path.basename(p));
+    const fileNames = Object.values(paths).map((p) => path.basename(p));
     console.log(`[${label}] Discovered ${foundCount} file(s): ${fileNames.join(', ')}`);
     return paths;
   } catch (err) {
     console.log(`[${label}] SFTP auto-discovery failed: ${err.message}`);
-    try { await sftp.end(); } catch {}
+    try {
+      await sftp.end();
+    } catch {}
     return null;
   }
 }
@@ -293,7 +317,10 @@ function createServerConfig(serverDef) {
   if (serverDef.logTimezone) merged.logTimezone = serverDef.logTimezone;
 
   // Locale override (falls back to primary's BOT_LOCALE)
-  if (serverDef.locale) { merged.locale = serverDef.locale; merged.botLocale = serverDef.locale; }
+  if (serverDef.locale) {
+    merged.locale = serverDef.locale;
+    merged.botLocale = serverDef.locale;
+  }
 
   // Docker container name (for restart commands) — explicit to prevent
   // inheriting primary's container name and accidentally restarting it
@@ -318,7 +345,7 @@ function createServerConfig(serverDef) {
   // Auto-message overrides (per-server welcome + broadcast config)
   const am = serverDef.autoMessages;
   if (am) {
-    if (am.enableWelcomeMsg !== undefined)  merged.enableWelcomeMsg  = am.enableWelcomeMsg;
+    if (am.enableWelcomeMsg !== undefined) merged.enableWelcomeMsg = am.enableWelcomeMsg;
     if (am.enableWelcomeFile !== undefined) merged.enableWelcomeFile = am.enableWelcomeFile;
     if (am.enableAutoMsgLink !== undefined) merged.enableAutoMsgLink = am.enableAutoMsgLink;
     if (am.enableAutoMsgPromo !== undefined) merged.enableAutoMsgPromo = am.enableAutoMsgPromo;
@@ -339,9 +366,9 @@ function createServerConfig(serverDef) {
 
   // Agent/cache mode overrides — don't inherit primary's agent config
   // (each server may have different Node.js availability / trigger strategies)
-  if (serverDef.agentMode)      merged.agentMode      = serverDef.agentMode;
-  if (serverDef.agentTrigger)   merged.agentTrigger   = serverDef.agentTrigger;
-  if (serverDef.agentNodePath)  merged.agentNodePath  = serverDef.agentNodePath;
+  if (serverDef.agentMode) merged.agentMode = serverDef.agentMode;
+  if (serverDef.agentTrigger) merged.agentTrigger = serverDef.agentTrigger;
+  if (serverDef.agentNodePath) merged.agentNodePath = serverDef.agentNodePath;
   if (serverDef.agentCachePath) merged.agentCachePath = serverDef.agentCachePath;
   // If no agent config specified, default to direct (don't inherit primary's
   // agent settings — a VPS server with SSH doesn't match Bisect's RCON trigger)
@@ -378,7 +405,9 @@ class ServerInstance {
       label: `DB:${label}`,
     });
     this.db.init();
-    try { gameReference.seed(this.db); } catch (err) {
+    try {
+      gameReference.seed(this.db);
+    } catch (err) {
       console.warn(`[MULTI:${label}] Game reference seed failed:`, err.message);
     }
 
@@ -461,9 +490,7 @@ class ServerInstance {
       panelApi: this.panelApi,
       // Per-server panel API gets its own resource monitoring if available;
       // otherwise disable to prevent inheriting primary's Pterodactyl stats
-      serverResources: this.panelApi
-        ? { backend: 'pterodactyl', panelApi: this.panelApi }
-        : { backend: null },
+      serverResources: this.panelApi ? { backend: 'pterodactyl', panelApi: this.panelApi } : { backend: null },
     };
   }
 
@@ -491,7 +518,7 @@ class ServerInstance {
         // Persist to servers.json so discovery only runs once
         try {
           const servers = loadServers();
-          const idx = servers.findIndex(s => s.id === this.id);
+          const idx = servers.findIndex((s) => s.id === this.id);
           if (idx !== -1) {
             servers[idx].paths = discovered;
             saveServers(servers);
@@ -516,9 +543,10 @@ class ServerInstance {
           clanSavePath: this.config.ftpSavePath
             ? this.config.ftpSavePath.replace(/SaveList\/.*$/, 'Save_ClanData.sav')
             : null,
-          pollInterval: typeof this.config.getEffectiveSavePollInterval === 'function'
-            ? this.config.getEffectiveSavePollInterval()
-            : (this.config.savePollInterval || 300000),
+          pollInterval:
+            typeof this.config.getEffectiveSavePollInterval === 'function'
+              ? this.config.getEffectiveSavePollInterval()
+              : this.config.savePollInterval || 300000,
           agentMode: this.config.agentMode || 'direct',
           agentTrigger: this.config.agentTrigger,
           agentNodePath: this.config.agentNodePath,
@@ -528,7 +556,9 @@ class ServerInstance {
           label: `SAVE:${label}`,
         });
         this.saveService.on('sync', (result) => {
-          console.log(`[MULTI:${label}] Save sync: ${result.playerCount} players, ${result.structureCount} structures (${result.mode}, ${result.elapsed}ms)`);
+          console.log(
+            `[MULTI:${label}] Save sync: ${result.playerCount} players, ${result.structureCount} structures (${result.mode}, ${result.elapsed}ms)`,
+          );
         });
         this.saveService.on('error', (err) => {
           console.error(`[MULTI:${label}] Save error:`, err.message);
@@ -581,7 +611,9 @@ class ServerInstance {
         if (this._modules.logWatcher) {
           mod._awaitActivityThread = true;
           this._modules.logWatcher._dayRolloverCb = async () => {
-            try { await mod.createDailyThread(); } catch (_) {}
+            try {
+              await mod.createDailyThread();
+            } catch (_) {}
           };
         }
         await mod.start();
@@ -654,7 +686,7 @@ class ServerInstance {
     }
 
     // Activity Log — save-file change tracking feed to daily thread or dedicated channel
-    if (this.saveService && (this.config.enableActivityLog !== false)) {
+    if (this.saveService && this.config.enableActivityLog !== false) {
       try {
         const mod = new ActivityLog(this.client, {
           db: this.db,
@@ -673,11 +705,15 @@ class ServerInstance {
     // Anticheat — observation-only anomaly detection (optional private package)
     if (this.config.enableAnticheat && AnticheatIntegration && this.db) {
       try {
-        const mod = new AnticheatIntegration({ db: this.db, config: this.config, logWatcher: this._modules.logWatcher || null });
+        const mod = new AnticheatIntegration({
+          db: this.db,
+          config: this.config,
+          logWatcher: this._modules.logWatcher || null,
+        });
         await mod.start();
         if (mod.available && this.saveService) {
           this.saveService.on('sync', (result) => {
-            mod.onSaveSync(result).catch(err => {
+            mod.onSaveSync(result).catch((err) => {
               console.error(`[MULTI:${label}] Anticheat save sync error:`, err.message);
             });
           });
@@ -693,7 +729,9 @@ class ServerInstance {
 
     // Periodic flush of active playtime sessions to DB (crash protection)
     this._playtimeFlushTimer = setInterval(() => {
-      try { this.playtime.flushActiveSessions(); } catch (_) {}
+      try {
+        this.playtime.flushActiveSessions();
+      } catch (_) {}
     }, 60000);
 
     console.log(`[MULTI] Server "${label}" started with ${Object.keys(this._modules).length} module(s)`);
@@ -719,12 +757,20 @@ class ServerInstance {
 
     // Save data
     if (this._playtimeFlushTimer) clearInterval(this._playtimeFlushTimer);
-    try { if (this.saveService) this.saveService.stop(); } catch {}
-    try { this.playerStats.stop(); } catch {}
-    try { this.playtime.stop(); } catch {}
+    try {
+      if (this.saveService) this.saveService.stop();
+    } catch {}
+    try {
+      this.playerStats.stop();
+    } catch {}
+    try {
+      this.playtime.stop();
+    } catch {}
 
     // Close per-server DB
-    try { if (this.db) this.db.close(); } catch {}
+    try {
+      if (this.db) this.db.close();
+    } catch {}
 
     this.running = false;
   }
@@ -755,7 +801,7 @@ class MultiServerManager {
   /** Load configs and start all enabled servers. */
   async startAll() {
     const servers = loadServers();
-    const enabled = servers.filter(s => s.enabled !== false);
+    const enabled = servers.filter((s) => s.enabled !== false);
 
     if (enabled.length === 0) {
       console.log('[MULTI] No additional servers configured');
@@ -810,7 +856,7 @@ class MultiServerManager {
   /** Update an existing server definition. Restarts if running. */
   async updateServer(id, updates) {
     const servers = loadServers();
-    const idx = servers.findIndex(s => s.id === id);
+    const idx = servers.findIndex((s) => s.id === id);
     if (idx === -1) throw new Error(`Server "${id}" not found`);
 
     // Deep merge updates
@@ -822,9 +868,7 @@ class MultiServerManager {
     if (updates.sftp) existing.sftp = { ...existing.sftp, ...updates.sftp };
     if (updates.paths !== undefined) {
       // Empty object = clear all paths (triggers auto-discovery on restart)
-      existing.paths = Object.keys(updates.paths).length > 0
-        ? { ...existing.paths, ...updates.paths }
-        : {};
+      existing.paths = Object.keys(updates.paths).length > 0 ? { ...existing.paths, ...updates.paths } : {};
     }
     if (updates.channels) existing.channels = { ...existing.channels, ...updates.channels };
     if (updates.botTimezone !== undefined) existing.botTimezone = updates.botTimezone || undefined;
@@ -855,7 +899,7 @@ class MultiServerManager {
 
     // Remove from config
     const servers = loadServers();
-    const filtered = servers.filter(s => s.id !== id);
+    const filtered = servers.filter((s) => s.id !== id);
     saveServers(filtered);
 
     // Delete server data directory
@@ -875,7 +919,7 @@ class MultiServerManager {
   /** Start a specific server by ID. */
   async startServer(id) {
     const servers = loadServers();
-    const serverDef = servers.find(s => s.id === id);
+    const serverDef = servers.find((s) => s.id === id);
     if (!serverDef) throw new Error(`Server "${id}" not found`);
 
     // Stop existing if running
@@ -907,7 +951,7 @@ class MultiServerManager {
   /** Get status of all instances. */
   getStatuses() {
     const servers = loadServers();
-    return servers.map(s => {
+    return servers.map((s) => {
       const instance = this._instances.get(s.id);
       return {
         ...s,

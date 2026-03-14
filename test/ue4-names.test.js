@@ -4,24 +4,15 @@ const { cleanName, cleanItemName, cleanItemArray, isHexGuid } = require('../src/
 
 describe('cleanName', () => {
   it('handles Door_GEN_VARIABLE_BP_ pattern', () => {
-    assert.equal(
-      cleanName('Door_GEN_VARIABLE_BP_LockedMetalShutter_C_CAT_2147206852'),
-      'Locked Metal Shutter'
-    );
+    assert.equal(cleanName('Door_GEN_VARIABLE_BP_LockedMetalShutter_C_CAT_2147206852'), 'Locked Metal Shutter');
   });
 
   it('handles ChildActor_GEN_VARIABLE_BP_ pattern', () => {
-    assert.equal(
-      cleanName('ChildActor_GEN_VARIABLE_BP_VehicleStorage_C_CAT_2147253396'),
-      'Vehicle Storage'
-    );
+    assert.equal(cleanName('ChildActor_GEN_VARIABLE_BP_VehicleStorage_C_CAT_2147253396'), 'Vehicle Storage');
   });
 
   it('handles Storage_GEN_VARIABLE_BP_ pattern', () => {
-    assert.equal(
-      cleanName('Storage_GEN_VARIABLE_BP_WoodCrate_C_2147261242'),
-      'Wood Crate'
-    );
+    assert.equal(cleanName('Storage_GEN_VARIABLE_BP_WoodCrate_C_2147261242'), 'Wood Crate');
   });
 
   it('handles BuildContainer_NNN', () => {
@@ -38,24 +29,15 @@ describe('cleanName', () => {
   });
 
   it('handles CupboardContainer', () => {
-    assert.equal(
-      cleanName('ChildActor_GEN_VARIABLE_BP_CupboardContainer_C_CAT_12345'),
-      'Cupboard'
-    );
+    assert.equal(cleanName('ChildActor_GEN_VARIABLE_BP_CupboardContainer_C_CAT_12345'), 'Cupboard');
   });
 
   it('handles VehicleStorage in actor name', () => {
-    assert.equal(
-      cleanName('Storage_GEN_VARIABLE_BP_VehicleStorage_C_2147261242'),
-      'Vehicle Storage'
-    );
+    assert.equal(cleanName('Storage_GEN_VARIABLE_BP_VehicleStorage_C_2147261242'), 'Vehicle Storage');
   });
 
   it('handles Fridge', () => {
-    assert.equal(
-      cleanName('ChildActor_GEN_VARIABLE_BP_Fridge_C_CAT_999'),
-      'Fridge'
-    );
+    assert.equal(cleanName('ChildActor_GEN_VARIABLE_BP_Fridge_C_CAT_999'), 'Fridge');
   });
 
   it('handles already clean names', () => {
@@ -74,31 +56,19 @@ describe('cleanName', () => {
   });
 
   it('handles full blueprint path', () => {
-    assert.equal(
-      cleanName('/Game/BuildingSystem/Blueprints/Buildings/BP_WoodWall.BP_WoodWall_C'),
-      'Wood Wall'
-    );
+    assert.equal(cleanName('/Game/BuildingSystem/Blueprints/Buildings/BP_WoodWall.BP_WoodWall_C'), 'Wood Wall');
   });
 
   it('handles Window_GEN_VARIABLE_BP_ pattern', () => {
-    assert.equal(
-      cleanName('Window_GEN_VARIABLE_BP_GlassWindow_C_CAT_999'),
-      'Glass Window'
-    );
+    assert.equal(cleanName('Window_GEN_VARIABLE_BP_GlassWindow_C_CAT_999'), 'Glass Window');
   });
 
   it('handles Lamp_GEN_VARIABLE_BP_ pattern', () => {
-    assert.equal(
-      cleanName('Lamp_GEN_VARIABLE_BP_FloorLamp_C_CAT_123'),
-      'Floor Lamp'
-    );
+    assert.equal(cleanName('Lamp_GEN_VARIABLE_BP_FloorLamp_C_CAT_123'), 'Floor Lamp');
   });
 
   it('handles StorageContainer', () => {
-    assert.equal(
-      cleanName('ChildActor_GEN_VARIABLE_BP_StorageContainer_C_2147000000'),
-      'Storage Container'
-    );
+    assert.equal(cleanName('ChildActor_GEN_VARIABLE_BP_StorageContainer_C_2147000000'), 'Storage Container');
   });
 
   it('strips trailing numeric IDs', () => {
@@ -106,24 +76,15 @@ describe('cleanName', () => {
   });
 
   it('handles ContainerEnemyAI (zombie loot drop)', () => {
-    assert.equal(
-      cleanName('BP_ContainerEnemyAI_C_2147478519'),
-      'Zombie Drop'
-    );
+    assert.equal(cleanName('BP_ContainerEnemyAI_C_2147478519'), 'Zombie Drop');
   });
 
   it('handles ContainerEnemyAI_Pistol (zombie pistol drop)', () => {
-    assert.equal(
-      cleanName('BP_ContainerEnemyAI_Pistol_C_2147478598'),
-      'Zombie Drop (Pistol)'
-    );
+    assert.equal(cleanName('BP_ContainerEnemyAI_Pistol_C_2147478598'), 'Zombie Drop (Pistol)');
   });
 
   it('handles WeaponStash', () => {
-    assert.equal(
-      cleanName('BP_WeaponStash_C_2147000000'),
-      'Weapon Stash'
-    );
+    assert.equal(cleanName('BP_WeaponStash_C_2147000000'), 'Weapon Stash');
   });
 });
 
@@ -139,10 +100,7 @@ describe('cleanItemName', () => {
 
   it('handles full paths', () => {
     // ITEM_NAMES: Bandage → Rag (actual game name)
-    assert.equal(
-      cleanItemName('/Game/Items/BP_Bandage.BP_Bandage_C'),
-      'Rag'
-    );
+    assert.equal(cleanItemName('/Game/Items/BP_Bandage.BP_Bandage_C'), 'Rag');
   });
 
   it('handles null/undefined', () => {
@@ -182,9 +140,9 @@ describe('cleanItemName', () => {
 
   it('preserves already clean names', () => {
     assert.equal(cleanItemName('Revolver'), 'Revolver');
-    assert.equal(cleanItemName('Bandage'), 'Rag');  // ITEM_NAMES: Bandage → Rag
-    assert.equal(cleanItemName('Water'), 'Water Bottle');  // ITEM_NAMES: Water → Water Bottle
-    assert.equal(cleanItemName('Fiber'), 'Fibers');  // ITEM_NAMES: Fiber → Fibers
+    assert.equal(cleanItemName('Bandage'), 'Rag'); // ITEM_NAMES: Bandage → Rag
+    assert.equal(cleanItemName('Water'), 'Water Bottle'); // ITEM_NAMES: Water → Water Bottle
+    assert.equal(cleanItemName('Fiber'), 'Fibers'); // ITEM_NAMES: Fiber → Fibers
     assert.equal(cleanItemName('Rope'), 'Rope');
   });
 
@@ -253,8 +211,8 @@ describe('cleanItemArray', () => {
     ];
     const result = cleanItemArray(input);
     assert.deepEqual(result, [
-      'Rag',  // ITEM_NAMES: Bandage → Rag
-      'Water Bottle',  // ITEM_NAMES: Water → Water Bottle
+      'Rag', // ITEM_NAMES: Bandage → Rag
+      'Water Bottle', // ITEM_NAMES: Water → Water Bottle
       'Stone Knife',
       'Improvised Axe',
     ]);
@@ -267,7 +225,7 @@ describe('cleanItemArray', () => {
     ];
     const result = cleanItemArray(input);
     assert.equal(result.length, 1);
-    assert.equal(result[0].item, 'Rag');  // ITEM_NAMES: Bandage → Rag
+    assert.equal(result[0].item, 'Rag'); // ITEM_NAMES: Bandage → Rag
     assert.equal(result[0].amount, 3);
   });
 });

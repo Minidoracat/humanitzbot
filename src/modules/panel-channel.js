@@ -7,8 +7,13 @@
  */
 
 const {
-  ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   PermissionFlagsBits,
   MessageFlags,
 } = require('discord.js');
@@ -22,12 +27,12 @@ const { BTN, SELECT, ENV_CATEGORIES, GAME_SETTINGS_CATEGORIES } = require('./pan
 const { buildDiagnostics } = require('./panel-diagnostics');
 const { cleanOwnMessages } = require('./discord-utils');
 
-//  State colour map 
+//  State colour map
 const STATE_DISPLAY = {
-  running:  { emoji: '🟢', key: 'running',  color: 0x2ecc71 },
+  running: { emoji: '🟢', key: 'running', color: 0x2ecc71 },
   starting: { emoji: '🟡', key: 'starting', color: 0xf1c40f },
   stopping: { emoji: '🟠', key: 'stopping', color: 0xe67e22 },
-  offline:  { emoji: '🔴', key: 'offline',  color: 0xe74c3c },
+  offline: { emoji: '🔴', key: 'offline', color: 0xe74c3c },
 };
 
 function _stateInfo(state, locale = 'en') {
@@ -39,7 +44,7 @@ function _stateInfo(state, locale = 'en') {
   };
 }
 
-//  .env file helpers (shared via panel-env.js) 
+//  .env file helpers (shared via panel-env.js)
 const {
   getEnvValue: _getEnvValue,
   writeEnvValues: _writeEnvValues,
@@ -72,12 +77,12 @@ function _modalTitle(title, max = 45) {
   let base = text.slice(0, keep);
   // Avoid leaving a dangling high surrogate at the end.
   const last = base.charCodeAt(base.length - 1);
-  if (last >= 0xD800 && last <= 0xDBFF) base = base.slice(0, -1);
+  if (last >= 0xd800 && last <= 0xdbff) base = base.slice(0, -1);
   return `${base}${suffix}`;
 }
 
 // Components v2 helpers
-const COMPONENTS_V2_FLAG = MessageFlags.IsComponentsV2 ?? (1 << 15);
+const COMPONENTS_V2_FLAG = MessageFlags.IsComponentsV2 ?? 1 << 15;
 const MAX_V2_COMPONENTS = 40;
 const V2 = {
   ACTION_ROW: 1,
@@ -109,7 +114,7 @@ function _container(textBlocks = [], rows = [], accentColor = null) {
 }
 
 function _componentsKey(components = []) {
-  return JSON.stringify(components.map(c => _toComponentJSON(c)));
+  return JSON.stringify(components.map((c) => _toComponentJSON(c)));
 }
 
 function _countComponents(components = []) {
@@ -136,15 +141,18 @@ function _errorSummary(err) {
   const rawMessage = err?.rawError?.message;
   if (rawMessage) parts.push(`api=${rawMessage}`);
   if (err?.rawError?.errors) {
-    try { parts.push(JSON.stringify(err.rawError.errors)); } catch {}
+    try {
+      parts.push(JSON.stringify(err.rawError.errors));
+    } catch {}
   }
   return parts.join(' | ');
 }
 
 function _diagnosticToMarkdown(diagnosticLike, emptyText = '', sectionLabel = '—') {
-  const raw = typeof diagnosticLike?.toJSON === 'function'
-    ? diagnosticLike.toJSON()
-    : (diagnosticLike?.data || diagnosticLike || {});
+  const raw =
+    typeof diagnosticLike?.toJSON === 'function'
+      ? diagnosticLike.toJSON()
+      : diagnosticLike?.data || diagnosticLike || {};
 
   const parts = [];
   if (raw.title) parts.push(`## ${raw.title}`);
@@ -163,23 +171,32 @@ function _diagnosticToMarkdown(diagnosticLike, emptyText = '', sectionLabel = '�
   return text.length > 3900 ? `${text.slice(0, 3897)}...` : text;
 }
 
-// 
+//
 // PanelChannel class
-// 
+//
 
 class PanelChannel {
-
   /**
    * @param {import('discord.js').Client} client
    * @param {object} opts
    * @param {object} opts.moduleStatus - reference to the moduleStatus object from index.js
    * @param {Date}   opts.startedAt    - bot startup timestamp
    */
-  constructor(client, { moduleStatus = {}, startedAt = new Date(), multiServerManager = null, db = null, saveService = null, logWatcher = null } = {}) {
+  constructor(
+    client,
+    {
+      moduleStatus = {},
+      startedAt = new Date(),
+      multiServerManager = null,
+      db = null,
+      saveService = null,
+      logWatcher = null,
+    } = {},
+  ) {
     this.client = client;
     this.channel = null;
-    this.panelMessage = null;  // single unified panel message
-    this.botMessage = null;    // alias kept for interaction handler compat (points to panelMessage)
+    this.panelMessage = null; // single unified panel message
+    this.botMessage = null; // alias kept for interaction handler compat (points to panelMessage)
     this._serverMessages = new Map(); // serverId  Discord message (kept for compat, unused in unified mode)
     this._lastServerKeys = new Map(); // serverId  content hash
     this.interval = null;
@@ -199,12 +216,15 @@ class PanelChannel {
     // Setup wizard state (when config.needsSetup is true)
     this._setupWizard = null; // { profile, rcon: {host,port,password}, sftp: {host,port,user,password}, channels: {...}, step }
     // Clean up stale pending entries every 5 minutes
-    this._pendingCleanupTimer = setInterval(() => {
-      const cutoff = Date.now() - 10 * 60 * 1000; // 10-min TTL
-      for (const [uid, data] of this._pendingServers) {
-        if ((data._createdAt || 0) < cutoff) this._pendingServers.delete(uid);
-      }
-    }, 5 * 60 * 1000);
+    this._pendingCleanupTimer = setInterval(
+      () => {
+        const cutoff = Date.now() - 10 * 60 * 1000; // 10-min TTL
+        for (const [uid, data] of this._pendingServers) {
+          if ((data._createdAt || 0) < cutoff) this._pendingServers.delete(uid);
+        }
+      },
+      5 * 60 * 1000,
+    );
   }
 
   /** Whether SFTP credentials are configured (needed for game settings editor). */
@@ -271,7 +291,7 @@ class PanelChannel {
         return;
       }
 
-      //  Setup wizard mode 
+      //  Setup wizard mode
       if (config.needsSetup) {
         console.log('[PANEL CH] RCON not configured - launching setup wizard');
         await this._cleanOwnMessages();
@@ -288,11 +308,13 @@ class PanelChannel {
         const count = this.multiServerManager.getAllServers().length;
         if (count > 0) features.push(`${count} managed server(s)`);
       }
-      console.log(`[PANEL CH] Posting unified panel in #${this.channel.name} - ${features.join(', ')} (every ${this.updateIntervalMs / 1000}s)`);
+      console.log(
+        `[PANEL CH] Posting unified panel in #${this.channel.name} - ${features.join(', ')} (every ${this.updateIntervalMs / 1000}s)`,
+      );
       await this._cleanOwnMessages();
       await this._cleanStalePanelMessages();
 
-      //  Single unified message with Components v2 containers 
+      //  Single unified message with Components v2 containers
       const { components } = await this._buildUnifiedPanel();
       const locale = this._sharedLocale();
       try {
@@ -331,17 +353,17 @@ class PanelChannel {
       this._pendingCleanupTimer = null;
     }
   }
-  // 
+  //
   // Interaction router
-  // 
+  //
 
   async handleInteraction(interaction) {
-    //  Setup wizard interactions 
+    //  Setup wizard interactions
     if (this._setupWizard !== null) {
       return this._handleSetupInteraction(interaction);
     }
 
-    //  Buttons 
+    //  Buttons
     if (interaction.isButton()) {
       const id = interaction.customId;
       if ([BTN.START, BTN.STOP, BTN.RESTART, BTN.BACKUP, BTN.KILL].includes(id)) {
@@ -389,7 +411,7 @@ class PanelChannel {
       return false;
     }
 
-    //  Select menus 
+    //  Select menus
     if (interaction.isStringSelectMenu()) {
       if (interaction.customId === SELECT.VIEW) {
         return this._handleViewSelect(interaction);
@@ -415,7 +437,7 @@ class PanelChannel {
       return false;
     }
 
-    //  Modals 
+    //  Modals
     if (interaction.isModalSubmit()) {
       if (interaction.customId.startsWith('panel_env_modal:')) {
         return this._handleEnvModal(interaction);
@@ -538,9 +560,9 @@ class PanelChannel {
     return this._handleServerAction(interaction, `panel_srv_${action}:${serverId}`);
   }
 
-  // 
+  //
   // Button handlers
-  // 
+  //
 
   async _handlePowerButton(interaction, id) {
     // Defer immediately to prevent token expiry
@@ -588,7 +610,7 @@ class PanelChannel {
   }
 
   async _handleBotRestart(interaction) {
-    if (!await this._requireAdmin(interaction, this._ti(interaction, 'action_restart_bot'))) return true;
+    if (!(await this._requireAdmin(interaction, this._ti(interaction, 'action_restart_bot')))) return true;
 
     await interaction.reply({
       content: this._ti(interaction, 'restart_notice'),
@@ -601,7 +623,7 @@ class PanelChannel {
   }
 
   async _handleNukeButton(interaction) {
-    if (!await this._requireAdmin(interaction, this._ti(interaction, 'action_factory_reset_bot'))) return true;
+    if (!(await this._requireAdmin(interaction, this._ti(interaction, 'action_factory_reset_bot')))) return true;
 
     // Confirmation modal  user must type "NUKE" to proceed
     const modal = new ModalBuilder()
@@ -617,8 +639,8 @@ class PanelChannel {
           .setPlaceholder(this._ti(interaction, 'factory_reset_confirm_placeholder'))
           .setRequired(true)
           .setMinLength(4)
-          .setMaxLength(4)
-      )
+          .setMaxLength(4),
+      ),
     );
 
     await interaction.showModal(modal);
@@ -626,7 +648,7 @@ class PanelChannel {
   }
 
   async _handleNukeConfirmModal(interaction) {
-    if (!await this._requireAdmin(interaction, this._ti(interaction, 'action_factory_reset_bot'))) return true;
+    if (!(await this._requireAdmin(interaction, this._ti(interaction, 'action_factory_reset_bot')))) return true;
 
     const confirm = interaction.fields.getTextInputValue('confirm').trim().toUpperCase();
     if (confirm !== 'NUKE') {
@@ -649,7 +671,7 @@ class PanelChannel {
   }
 
   async _handleReimportButton(interaction) {
-    if (!await this._requireAdmin(interaction, this._ti(interaction, 'action_reimport_data'))) return true;
+    if (!(await this._requireAdmin(interaction, this._ti(interaction, 'action_reimport_data')))) return true;
 
     // Set FIRST_RUN=true and restart  re-downloads logs and rebuilds stats
     _writeEnvValues({ FIRST_RUN: 'true' });
@@ -662,9 +684,9 @@ class PanelChannel {
     return true;
   }
 
-  // 
+  //
   // Diagnostics  delegates to panel-diagnostics.js
-  // 
+  //
 
   async _handleDiagnosticsButton(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -691,7 +713,9 @@ class PanelChannel {
 
     const noDetails = this._ti(interaction, 'no_diagnostic_details');
     const sectionLabel = this._ti(interaction, 'diagnostic_section_fallback');
-    const components = (diagnosticData || []).map(e => _container([_diagnosticToMarkdown(e, noDetails, sectionLabel)], [], 0x5865f2));
+    const components = (diagnosticData || []).map((e) =>
+      _container([_diagnosticToMarkdown(e, noDetails, sectionLabel)], [], 0x5865f2),
+    );
     if (components.length === 0) {
       components.push(_container([noDetails], [], 0x5865f2));
     }
@@ -705,10 +729,9 @@ class PanelChannel {
     return true;
   }
 
-
-  // 
+  //
   // View selector handler
-  // 
+  //
 
   async _handleViewSelect(interaction) {
     const selected = interaction.values[0];
@@ -724,15 +747,15 @@ class PanelChannel {
     return true;
   }
 
-  // 
+  //
   // Select menu  modal handlers
-  // 
+  //
 
   async _handleEnvSelect(interaction) {
-    if (!await this._requireAdmin(interaction, this._ti(interaction, 'action_edit_bot_config'))) return true;
+    if (!(await this._requireAdmin(interaction, this._ti(interaction, 'action_edit_bot_config')))) return true;
 
     const categoryId = interaction.values[0];
-    const category = ENV_CATEGORIES.find(c => c.id === categoryId);
+    const category = ENV_CATEGORIES.find((c) => c.id === categoryId);
     if (!category) {
       await interaction.reply({
         content: this._ti(interaction, 'err_unknown_category'),
@@ -746,7 +769,9 @@ class PanelChannel {
       : this._ti(interaction, 'modal_restart_tag_live');
     const modal = new ModalBuilder()
       .setCustomId(`panel_env_modal:${categoryId}`)
-      .setTitle(_modalTitle(this._ti(interaction, 'modal_edit_category_title', { category: category.label, mode: restartTag })));
+      .setTitle(
+        _modalTitle(this._ti(interaction, 'modal_edit_category_title', { category: category.label, mode: restartTag })),
+      );
 
     for (const field of category.fields) {
       const style = field.style === 'paragraph' ? TextInputStyle.Paragraph : TextInputStyle.Short;
@@ -758,9 +783,11 @@ class PanelChannel {
 
       if (field.sensitive) {
         const current = _getEnvValue(field);
-        input.setPlaceholder(current
-          ? this._ti(interaction, 'modal_sensitive_placeholder_keep_current')
-          : this._ti(interaction, 'modal_sensitive_placeholder_enter_value'));
+        input.setPlaceholder(
+          current
+            ? this._ti(interaction, 'modal_sensitive_placeholder_keep_current')
+            : this._ti(interaction, 'modal_sensitive_placeholder_enter_value'),
+        );
         input.setValue('');
       } else {
         input.setValue(_getEnvValue(field));
@@ -774,7 +801,7 @@ class PanelChannel {
   }
 
   async _handleGameSettingsSelect(interaction) {
-    if (!await this._requireAdmin(interaction, this._ti(interaction, 'action_edit_server_settings'))) return true;
+    if (!(await this._requireAdmin(interaction, this._ti(interaction, 'action_edit_server_settings')))) return true;
 
     if (!this._hasSftp) {
       await interaction.reply({
@@ -785,7 +812,7 @@ class PanelChannel {
     }
 
     const categoryId = interaction.values[0];
-    const category = GAME_SETTINGS_CATEGORIES.find(c => c.id === categoryId);
+    const category = GAME_SETTINGS_CATEGORIES.find((c) => c.id === categoryId);
     if (!category) {
       await interaction.reply({
         content: this._ti(interaction, 'err_unknown_category'),
@@ -796,9 +823,14 @@ class PanelChannel {
 
     const cached = _getCachedSettings(this._db);
 
-    const modal = new ModalBuilder()
-      .setCustomId(`panel_game_modal:${categoryId}`)
-      .setTitle(_modalTitle(this._ti(interaction, 'modal_server_settings_title', { category: category.label, mode: this._ti(interaction, 'modal_restart_tag_server') })));
+    const modal = new ModalBuilder().setCustomId(`panel_game_modal:${categoryId}`).setTitle(
+      _modalTitle(
+        this._ti(interaction, 'modal_server_settings_title', {
+          category: category.label,
+          mode: this._ti(interaction, 'modal_restart_tag_server'),
+        }),
+      ),
+    );
 
     for (const setting of category.settings) {
       const currentValue = cached[setting.ini] != null ? String(cached[setting.ini]) : '';
@@ -815,20 +847,20 @@ class PanelChannel {
     return true;
   }
 
-  // 
+  //
   // Modal submit handlers
-  // 
+  //
 
   async _handleEnvModal(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    
+
     if (!this._isAdmin(interaction)) {
       await interaction.editReply(this._ti(interaction, 'err_only_admin_edit_bot_config'));
       return true;
     }
 
     const categoryId = interaction.customId.replace('panel_env_modal:', '');
-    const category = ENV_CATEGORIES.find(c => c.id === categoryId);
+    const category = ENV_CATEGORIES.find((c) => c.id === categoryId);
     if (!category) {
       await interaction.editReply(this._ti(interaction, 'err_unknown_category'));
       return true;
@@ -849,8 +881,8 @@ class PanelChannel {
 
         if (newValue !== oldValue) {
           const emptyMarker = this._ti(interaction, 'value_empty_marker');
-          const displayOld = field.sensitive ? '' : (oldValue || emptyMarker);
-          const displayNew = field.sensitive ? '' : (newValue || emptyMarker);
+          const displayOld = field.sensitive ? '' : oldValue || emptyMarker;
+          const displayNew = field.sensitive ? '' : newValue || emptyMarker;
           changes.push(`**${field.label}:** \`${displayOld}\`  \`${displayNew}\``);
 
           if (!category.restart) {
@@ -902,7 +934,7 @@ class PanelChannel {
   }
 
   async _handleGameSettingsModal(interaction) {
-    if (!await this._requireAdmin(interaction, this._ti(interaction, 'action_edit_server_settings'))) return true;
+    if (!(await this._requireAdmin(interaction, this._ti(interaction, 'action_edit_server_settings')))) return true;
 
     if (!this._hasSftp) {
       await interaction.reply({
@@ -913,7 +945,7 @@ class PanelChannel {
     }
 
     const categoryId = interaction.customId.replace('panel_game_modal:', '');
-    const category = GAME_SETTINGS_CATEGORIES.find(c => c.id === categoryId);
+    const category = GAME_SETTINGS_CATEGORIES.find((c) => c.id === categoryId);
     if (!category) {
       await interaction.reply({
         content: this._ti(interaction, 'err_unknown_category'),
@@ -940,7 +972,9 @@ class PanelChannel {
         content = (await sftp.get(settingsPath)).toString('utf8');
       } catch (readErr) {
         await sftp.end().catch(() => {});
-        throw new Error(this._ti(interaction, 'err_could_not_read_settings_file', { message: readErr.message }));
+        throw new Error(this._ti(interaction, 'err_could_not_read_settings_file', { message: readErr.message }), {
+          cause: readErr,
+        });
       }
 
       const changes = [];
@@ -956,7 +990,9 @@ class PanelChannel {
           if (regex.test(content)) {
             content = content.replace(regex, `$1${newValue}`);
           }
-          changes.push(`**${setting.label}:** \`${oldValue || this._ti(interaction, 'value_unknown_marker')}\`  \`${newValue}\``);
+          changes.push(
+            `**${setting.label}:** \`${oldValue || this._ti(interaction, 'value_unknown_marker')}\`  \`${newValue}\``,
+          );
           cached[setting.ini] = newValue;
         }
       }
@@ -972,7 +1008,10 @@ class PanelChannel {
       await sftp.end().catch(() => {});
 
       // Update local cache so subsequent reads are fresh
-      if (this._db) try { this._db.setStateJSON('server_settings', cached); } catch (_) {}
+      if (this._db)
+        try {
+          this._db.setStateJSON('server_settings', cached);
+        } catch (_) {}
 
       let msg = this._ti(interaction, 'ok_category_updated', {
         category: category.label,
@@ -988,13 +1027,13 @@ class PanelChannel {
     return true;
   }
 
-  // 
+  //
   // .env synchronization
-  // 
+  //
 
   async _handleEnvSyncButton(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    
+
     if (!this._isAdmin(interaction)) {
       await interaction.editReply(this._ti(interaction, 'err_only_admin_sync_env'));
       return true;
@@ -1022,10 +1061,10 @@ class PanelChannel {
 
       await interaction.editReply(
         `${this._ti(interaction, 'ok_env_synchronized')}\n\n` +
-        `${this._ti(interaction, 'env_sync_schema_line', { currentVer, targetVer })}\n` +
-        `${this._ti(interaction, 'env_sync_changes_line', { changes: changes.join(', ') || this._ti(interaction, 'env_sync_no_changes') })}\n\n` +
-        `${this._ti(interaction, 'env_sync_backup_line')}\n\n` +
-        `${this._ti(interaction, 'warn_restart_bot_apply_env')}`
+          `${this._ti(interaction, 'env_sync_schema_line', { currentVer, targetVer })}\n` +
+          `${this._ti(interaction, 'env_sync_changes_line', { changes: changes.join(', ') || this._ti(interaction, 'env_sync_no_changes') })}\n\n` +
+          `${this._ti(interaction, 'env_sync_backup_line')}\n\n` +
+          `${this._ti(interaction, 'warn_restart_bot_apply_env')}`,
       );
 
       // Refresh panel to update action menu state
@@ -1037,13 +1076,13 @@ class PanelChannel {
     return true;
   }
 
-  // 
+  //
   // Welcome message editor
-  // 
+  //
 
   async _handleWelcomeEditButton(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    
+
     if (!this._isAdmin(interaction)) {
       await interaction.editReply(this._ti(interaction, 'err_only_admin_edit_welcome'));
       return true;
@@ -1055,7 +1094,7 @@ class PanelChannel {
     }
 
     // Read current WelcomeMessage.txt from server
-    let currentContent = '';
+    let currentContent;
     try {
       const sftp = new SftpClient();
       await sftp.connect({
@@ -1114,7 +1153,7 @@ class PanelChannel {
   }
 
   async _handleWelcomeOpenModal(interaction) {
-    if (!await this._requireAdmin(interaction, this._ti(interaction, 'action_edit_welcome_message'))) return true;
+    if (!(await this._requireAdmin(interaction, this._ti(interaction, 'action_edit_welcome_message')))) return true;
 
     const pending = this._pendingWelcome;
     // Truncate to Discord's 4000-char modal value limit
@@ -1132,7 +1171,7 @@ class PanelChannel {
           .setStyle(TextInputStyle.Paragraph)
           .setValue(currentValue)
           .setRequired(false)
-          .setMaxLength(4000)
+          .setMaxLength(4000),
       ),
     );
 
@@ -1142,7 +1181,7 @@ class PanelChannel {
 
   async _handleWelcomeModal(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    
+
     if (!this._isAdmin(interaction)) {
       await interaction.editReply(this._ti(interaction, 'err_only_admin_edit_welcome'));
       return true;
@@ -1171,7 +1210,7 @@ class PanelChannel {
             length: newContent.length,
             details: this._ti(interaction, 'welcome_updated_details'),
             next: this._ti(interaction, 'welcome_updated_next_join'),
-          })
+          }),
         );
       } else {
         // Clear custom  revert to auto-generated
@@ -1192,9 +1231,7 @@ class PanelChannel {
         await sftp.put(Buffer.from(autoContent, 'utf8'), config.ftpWelcomePath);
         await sftp.end().catch(() => {});
 
-        await interaction.editReply(
-          this._ti(interaction, 'ok_welcome_reset')
-        );
+        await interaction.editReply(this._ti(interaction, 'ok_welcome_reset'));
       }
     } catch (err) {
       await interaction.editReply(this._ti(interaction, 'err_failed_to_save', { message: err.message }));
@@ -1203,12 +1240,12 @@ class PanelChannel {
     return true;
   }
 
-  // 
+  //
   // Broadcast messages editor
-  // 
+  //
 
   async _handleBroadcastsButton(interaction) {
-    if (!await this._requireAdmin(interaction, this._ti(interaction, 'action_edit_broadcasts'))) return true;
+    if (!(await this._requireAdmin(interaction, this._ti(interaction, 'action_edit_broadcasts')))) return true;
 
     const linkText = config.autoMsgLinkText || '';
     const promoText = config.autoMsgPromoText || '';
@@ -1260,7 +1297,7 @@ class PanelChannel {
   }
 
   async _handleBroadcastsOpenModal(interaction) {
-    if (!await this._requireAdmin(interaction, this._ti(interaction, 'action_edit_broadcasts'))) return true;
+    if (!(await this._requireAdmin(interaction, this._ti(interaction, 'action_edit_broadcasts')))) return true;
 
     const pending = this._pendingBroadcasts;
     const linkVal = (pending?.linkText || '').slice(0, 4000);
@@ -1279,7 +1316,7 @@ class PanelChannel {
           .setValue(linkVal)
           .setRequired(false)
           .setMaxLength(4000)
-          .setPlaceholder(this._ti(interaction, 'broadcast_modal_link_placeholder'))
+          .setPlaceholder(this._ti(interaction, 'broadcast_modal_link_placeholder')),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -1289,7 +1326,7 @@ class PanelChannel {
           .setValue(promoVal)
           .setRequired(false)
           .setMaxLength(4000)
-          .setPlaceholder(this._ti(interaction, 'broadcast_modal_promo_placeholder'))
+          .setPlaceholder(this._ti(interaction, 'broadcast_modal_promo_placeholder')),
       ),
     );
 
@@ -1299,7 +1336,7 @@ class PanelChannel {
 
   async _handleBroadcastsModal(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    
+
     if (!this._isAdmin(interaction)) {
       await interaction.editReply(this._ti(interaction, 'err_only_admin_edit_broadcasts'));
       return true;
@@ -1323,20 +1360,24 @@ class PanelChannel {
         _writeEnvValues(updates);
         const parts = [];
         if ('AUTO_MSG_LINK_TEXT' in updates) {
-          parts.push(this._ti(interaction, 'broadcast_value_link', {
-            value: linkText || this._ti(interaction, 'broadcast_default_marker'),
-          }));
+          parts.push(
+            this._ti(interaction, 'broadcast_value_link', {
+              value: linkText || this._ti(interaction, 'broadcast_default_marker'),
+            }),
+          );
         }
         if ('AUTO_MSG_PROMO_TEXT' in updates) {
-          parts.push(this._ti(interaction, 'broadcast_value_promo', {
-            value: promoText || this._ti(interaction, 'broadcast_default_marker'),
-          }));
+          parts.push(
+            this._ti(interaction, 'broadcast_value_promo', {
+              value: promoText || this._ti(interaction, 'broadcast_default_marker'),
+            }),
+          );
         }
         await interaction.editReply(
           this._ti(interaction, 'ok_broadcasts_updated', {
             changes: parts.join('\n'),
             restart: this._ti(interaction, 'warn_restart_bot_apply_broadcasts'),
-          })
+          }),
         );
       } else {
         await interaction.editReply(this._ti(interaction, 'info_no_changes_detected'));
@@ -1348,9 +1389,9 @@ class PanelChannel {
     return true;
   }
 
-  // 
+  //
   // Update loop
-  // 
+  //
 
   async _cleanOwnMessages() {
     const ids = this._loadMessageIds();
@@ -1374,16 +1415,16 @@ class PanelChannel {
       this._tp('marker_primary_server_panel', {}, locale),
       this._tp('marker_managed_server', {}, locale),
       this._tp('marker_panel_api', {}, locale),
-    ].map(v => String(v || '').toLowerCase());
+    ].map((v) => String(v || '').toLowerCase());
 
     // Legacy embeds/content (non-components-v2) can still be old panel messages.
     const messageContent = String(message.content || '').toLowerCase();
-    if (markers.some(m => messageContent.includes(m))) return true;
+    if (markers.some((m) => messageContent.includes(m))) return true;
     if (Array.isArray(message.embeds) && message.embeds.length > 0) {
       for (const e of message.embeds) {
         const title = String(e?.title || '').toLowerCase();
         const desc = String(e?.description || '').toLowerCase();
-        if (markers.some(m => title.includes(m) || desc.includes(m))) return true;
+        if (markers.some((m) => title.includes(m) || desc.includes(m))) return true;
       }
     }
 
@@ -1397,7 +1438,7 @@ class PanelChannel {
         return true;
       }
       const content = String(c.content || c.data?.content || '').toLowerCase();
-      if (markers.some(m => content.includes(m))) {
+      if (markers.some((m) => content.includes(m))) {
         return true;
       }
       const children = c.components || c.data?.components;
@@ -1412,13 +1453,13 @@ class PanelChannel {
     try {
       if (!this.channel || !this.client?.user) return;
       const messages = await this.channel.messages.fetch({ limit: 100 });
-      const stale = messages.filter(m =>
-        m.author?.id === this.client.user.id &&
-        m.id !== keepId &&
-        this._isPanelMessage(m)
+      const stale = messages.filter(
+        (m) => m.author?.id === this.client.user.id && m.id !== keepId && this._isPanelMessage(m),
       );
       for (const [, msg] of stale) {
-        try { await msg.delete(); } catch {}
+        try {
+          await msg.delete();
+        } catch {}
       }
       if (stale.size > 0) {
         console.log(`[PANEL CH] Removed ${stale.size} stale panel message(s)`);
@@ -1500,11 +1541,11 @@ class PanelChannel {
     // Build controls first and inject them directly into Bot Controls container.
     const controlRows = this._buildViewComponents(view, managedServers);
 
-    //  Container 1: Bot overview (always) 
+    //  Container 1: Bot overview (always)
     components.push(this._buildBotContainer(controlRows, view));
 
-    //  Container 2: Primary server 
-    let resources = null, details = null, backups = null, schedules = null;
+    //  Container 2: Primary server
+    let resources, details, backups, schedules;
     if (panelApi.available) {
       try {
         [resources, details, backups, schedules] = await Promise.all([
@@ -1522,7 +1563,7 @@ class PanelChannel {
       }
     }
 
-    //  Containers 3+: Managed servers 
+    //  Containers 3+: Managed servers
     let omittedManaged = 0;
     for (const serverDef of managedServers) {
       const instance = this.multiServerManager.getInstance(serverDef.id);
@@ -1539,7 +1580,7 @@ class PanelChannel {
       const omittedNotice = _container(
         [this._tp('managed_servers_omitted_notice', { count: omittedManaged, limit: MAX_V2_COMPONENTS }, locale)],
         [],
-        0xe67e22
+        0xe67e22,
       );
       if (_countComponents([...components, omittedNotice]) <= MAX_V2_COMPONENTS) {
         components.push(omittedNotice);
@@ -1557,14 +1598,22 @@ class PanelChannel {
     const locale = this._sharedLocale();
     const rows = [];
 
-    //  Row 1: View selector 
+    //  Row 1: View selector
     const viewOptions = [
       { label: this._tp('view_option_bot_controls', {}, locale), value: 'bot', default: view === 'bot' },
     ];
     if (panelApi.available) {
-      viewOptions.push({ label: this._tp('view_option_primary_server', {}, locale), value: 'server', default: view === 'server' });
+      viewOptions.push({
+        label: this._tp('view_option_primary_server', {}, locale),
+        value: 'server',
+        default: view === 'server',
+      });
     } else if (this._hasSftp) {
-      viewOptions.push({ label: this._tp('view_option_server_tools', {}, locale), value: 'server', default: view === 'server' });
+      viewOptions.push({
+        label: this._tp('view_option_server_tools', {}, locale),
+        value: 'server',
+        default: view === 'server',
+      });
     }
     for (const s of managedServers) {
       viewOptions.push({
@@ -1582,7 +1631,7 @@ class PanelChannel {
       rows.push(new ActionRowBuilder().addComponents(viewSelect));
     }
 
-    //  Rows 2-5: View-specific controls 
+    //  Rows 2-5: View-specific controls
     const maxRemaining = 5 - rows.length;
     let viewRows = [];
 
@@ -1596,7 +1645,7 @@ class PanelChannel {
       }
     } else {
       // Managed server view
-      const serverDef = managedServers.find(s => s.id === view);
+      const serverDef = managedServers.find((s) => s.id === view);
       if (serverDef) {
         const instance = this.multiServerManager?.getInstance(serverDef.id);
         viewRows = this._buildManagedServerComponents(serverDef.id, instance?.running || false);
@@ -1644,19 +1693,19 @@ class PanelChannel {
         .setCustomId(SELECT.SETTINGS)
         .setPlaceholder(this._tp('placeholder_edit_game_settings', {}, locale))
         .addOptions(
-          GAME_SETTINGS_CATEGORIES.map(c => ({
+          GAME_SETTINGS_CATEGORIES.map((c) => ({
             label: c.label,
             value: c.id,
-          }))
+          })),
         );
       rows.push(new ActionRowBuilder().addComponents(settingsSelect));
     }
     return rows;
   }
 
-  // 
+  //
   // Container builders
-  // 
+  //
 
   /**
    * Build control container for the currently selected view.
@@ -1676,7 +1725,7 @@ class PanelChannel {
         this._tp('control_center_active_view_help', { viewLabel }, locale),
       ],
       rows,
-      0x5865f2
+      0x5865f2,
     );
   }
 
@@ -1691,27 +1740,31 @@ class PanelChannel {
     const statusIcon = running
       ? this._tp('managed_status_run_tag', {}, locale)
       : this._tp('managed_status_off_tag', {}, locale);
-    const statusText = running
-      ? this._tp('state.running', {}, locale)
-      : this._tp('managed_status_stopped', {}, locale);
-    const onOff = (enabled) => enabled
-      ? this._tp('toggle_on', {}, locale)
-      : this._tp('toggle_off', {}, locale);
+    const statusText = running ? this._tp('state.running', {}, locale) : this._tp('managed_status_stopped', {}, locale);
+    const onOff = (enabled) => (enabled ? this._tp('toggle_on', {}, locale) : this._tp('toggle_off', {}, locale));
 
     const blocks = [
       this._tp('managed_server_heading', { name: serverDef.name || serverDef.id }, locale),
       [
         this._tp('managed_server_status_line', { icon: statusIcon, status: statusText }, locale),
-        this._tp('managed_server_rcon_line', {
-          host: serverDef.rcon?.host || '?',
-          port: serverDef.rcon?.port || 14541,
-        }, locale),
+        this._tp(
+          'managed_server_rcon_line',
+          {
+            host: serverDef.rcon?.host || '?',
+            port: serverDef.rcon?.port || 14541,
+          },
+          locale,
+        ),
         this._tp('managed_server_game_port_line', { port: serverDef.gamePort || 14242 }, locale),
         serverDef.sftp?.host
-          ? this._tp('managed_server_sftp_line', {
-            host: serverDef.sftp.host,
-            port: serverDef.sftp.port || 22,
-          }, locale)
+          ? this._tp(
+              'managed_server_sftp_line',
+              {
+                host: serverDef.sftp.host,
+                port: serverDef.sftp.port || 22,
+              },
+              locale,
+            )
           : this._tp('managed_server_sftp_inherited', {}, locale),
         this._tp('managed_server_id_line', { id: serverDef.id }, locale),
       ].join('\n'),
@@ -1719,46 +1772,71 @@ class PanelChannel {
 
     const ch = serverDef.channels || {};
     const channelLines = [];
-    if (ch.serverStatus) channelLines.push(this._tp('managed_server_channel_status', { channelId: ch.serverStatus }, locale));
-    if (ch.playerStats) channelLines.push(this._tp('managed_server_channel_stats', { channelId: ch.playerStats }, locale));
+    if (ch.serverStatus)
+      channelLines.push(this._tp('managed_server_channel_status', { channelId: ch.serverStatus }, locale));
+    if (ch.playerStats)
+      channelLines.push(this._tp('managed_server_channel_stats', { channelId: ch.playerStats }, locale));
     if (ch.log) channelLines.push(this._tp('managed_server_channel_log', { channelId: ch.log }, locale));
     if (ch.chat) channelLines.push(this._tp('managed_server_channel_chat', { channelId: ch.chat }, locale));
     if (ch.admin) channelLines.push(this._tp('managed_server_channel_admin', { channelId: ch.admin }, locale));
-    blocks.push(`${this._tp('managed_server_channels_heading', {}, locale)}\n${channelLines.length > 0 ? channelLines.join('\n') : this._tp('managed_server_none_configured', {}, locale)}`);
+    blocks.push(
+      `${this._tp('managed_server_channels_heading', {}, locale)}\n${channelLines.length > 0 ? channelLines.join('\n') : this._tp('managed_server_none_configured', {}, locale)}`,
+    );
 
     if (instance) {
       const status = instance.getStatus();
-      const modLines = status.modules?.length > 0 ? status.modules.join('\n') : this._tp('managed_server_modules_none', {}, locale);
+      const modLines =
+        status.modules?.length > 0 ? status.modules.join('\n') : this._tp('managed_server_modules_none', {}, locale);
       blocks.push(`${this._tp('managed_server_modules_heading', {}, locale)}\n${modLines}`);
     } else {
-      blocks.push(`${this._tp('managed_server_modules_heading', {}, locale)}\n${this._tp('managed_server_not_running', {}, locale)}`);
+      blocks.push(
+        `${this._tp('managed_server_modules_heading', {}, locale)}\n${this._tp('managed_server_not_running', {}, locale)}`,
+      );
     }
 
     const am = serverDef.autoMessages || {};
     const cfg = instance?.config || {};
     const amLines = [];
-    const welcomeMsg  = am.enableWelcomeMsg  ?? cfg.enableWelcomeMsg  ?? true;
+    const welcomeMsg = am.enableWelcomeMsg ?? cfg.enableWelcomeMsg ?? true;
     const welcomeFile = am.enableWelcomeFile ?? cfg.enableWelcomeFile ?? true;
-    const linkBcast   = am.enableAutoMsgLink ?? cfg.enableAutoMsgLink ?? true;
-    const promoBcast  = am.enableAutoMsgPromo ?? cfg.enableAutoMsgPromo ?? true;
+    const linkBcast = am.enableAutoMsgLink ?? cfg.enableAutoMsgLink ?? true;
+    const promoBcast = am.enableAutoMsgPromo ?? cfg.enableAutoMsgPromo ?? true;
     amLines.push(this._tp('managed_server_auto_rcon_welcome', { state: onOff(welcomeMsg) }, locale));
     amLines.push(this._tp('managed_server_auto_welcome_file', { state: onOff(welcomeFile) }, locale));
     amLines.push(this._tp('managed_server_auto_link_broadcast', { state: onOff(linkBcast) }, locale));
     amLines.push(this._tp('managed_server_auto_promo_broadcast', { state: onOff(promoBcast) }, locale));
     if (am.linkText) {
-      amLines.push(this._tp('managed_server_auto_link_line', {
-        value: `\`${am.linkText.slice(0, 40)}${am.linkText.length > 40 ? '...' : ''}\``,
-      }, locale));
+      amLines.push(
+        this._tp(
+          'managed_server_auto_link_line',
+          {
+            value: `\`${am.linkText.slice(0, 40)}${am.linkText.length > 40 ? '...' : ''}\``,
+          },
+          locale,
+        ),
+      );
     }
     if (am.promoText) {
-      amLines.push(this._tp('managed_server_auto_promo_line', {
-        value: `\`${am.promoText.slice(0, 40)}${am.promoText.length > 40 ? '...' : ''}\``,
-      }, locale));
+      amLines.push(
+        this._tp(
+          'managed_server_auto_promo_line',
+          {
+            value: `\`${am.promoText.slice(0, 40)}${am.promoText.length > 40 ? '...' : ''}\``,
+          },
+          locale,
+        ),
+      );
     }
     if (am.discordLink) {
-      amLines.push(this._tp('managed_server_auto_discord_line', {
-        value: `\`${am.discordLink.slice(0, 40)}\``,
-      }, locale));
+      amLines.push(
+        this._tp(
+          'managed_server_auto_discord_line',
+          {
+            value: `\`${am.discordLink.slice(0, 40)}\``,
+          },
+          locale,
+        ),
+      );
     }
     blocks.push(`${this._tp('managed_server_auto_messages_heading', {}, locale)}\n${amLines.join('\n')}`);
 
@@ -1775,19 +1853,55 @@ class PanelChannel {
     const actionOptions = [];
     if (running) {
       actionOptions.push(
-        { label: this._tp('option_stop', {}, locale), description: this._tp('option_desc_stop_managed_server', {}, locale), value: `stop:${serverId}` },
-        { label: this._tp('option_restart', {}, locale), description: this._tp('option_desc_restart_managed_server', {}, locale), value: `restart:${serverId}` },
+        {
+          label: this._tp('option_stop', {}, locale),
+          description: this._tp('option_desc_stop_managed_server', {}, locale),
+          value: `stop:${serverId}`,
+        },
+        {
+          label: this._tp('option_restart', {}, locale),
+          description: this._tp('option_desc_restart_managed_server', {}, locale),
+          value: `restart:${serverId}`,
+        },
       );
     } else {
-      actionOptions.push({ label: this._tp('option_start', {}, locale), description: this._tp('option_desc_start_managed_server', {}, locale), value: `start:${serverId}` });
+      actionOptions.push({
+        label: this._tp('option_start', {}, locale),
+        description: this._tp('option_desc_start_managed_server', {}, locale),
+        value: `start:${serverId}`,
+      });
     }
     actionOptions.push(
-      { label: this._tp('option_edit_connection', {}, locale), description: this._tp('option_desc_edit_connection', {}, locale), value: `edit:${serverId}` },
-      { label: this._tp('option_edit_channels', {}, locale), description: this._tp('option_desc_edit_channels', {}, locale), value: `channels:${serverId}` },
-      { label: this._tp('option_edit_sftp', {}, locale), description: this._tp('option_desc_edit_sftp', {}, locale), value: `sftp:${serverId}` },
-      { label: this._tp('option_welcome_message', {}, locale), description: this._tp('option_desc_edit_server_welcome_popup', {}, locale), value: `welcome:${serverId}` },
-      { label: this._tp('option_auto_messages', {}, locale), description: this._tp('option_desc_edit_server_auto_messages', {}, locale), value: `automsg:${serverId}` },
-      { label: this._tp('option_remove_server', {}, locale), description: this._tp('option_desc_remove_managed_server', {}, locale), value: `remove:${serverId}` },
+      {
+        label: this._tp('option_edit_connection', {}, locale),
+        description: this._tp('option_desc_edit_connection', {}, locale),
+        value: `edit:${serverId}`,
+      },
+      {
+        label: this._tp('option_edit_channels', {}, locale),
+        description: this._tp('option_desc_edit_channels', {}, locale),
+        value: `channels:${serverId}`,
+      },
+      {
+        label: this._tp('option_edit_sftp', {}, locale),
+        description: this._tp('option_desc_edit_sftp', {}, locale),
+        value: `sftp:${serverId}`,
+      },
+      {
+        label: this._tp('option_welcome_message', {}, locale),
+        description: this._tp('option_desc_edit_server_welcome_popup', {}, locale),
+        value: `welcome:${serverId}`,
+      },
+      {
+        label: this._tp('option_auto_messages', {}, locale),
+        description: this._tp('option_desc_edit_server_auto_messages', {}, locale),
+        value: `automsg:${serverId}`,
+      },
+      {
+        label: this._tp('option_remove_server', {}, locale),
+        description: this._tp('option_desc_remove_managed_server', {}, locale),
+        value: `remove:${serverId}`,
+      },
     );
 
     const actionSelect = new StringSelectMenuBuilder()
@@ -1796,7 +1910,7 @@ class PanelChannel {
       .addOptions(actionOptions);
 
     // Game settings dropdown (row 3)  uses server's SFTP
-    const serverDef = this.multiServerManager?.getAllServers().find(s => s.id === serverId);
+    const serverDef = this.multiServerManager?.getAllServers().find((s) => s.id === serverId);
     const hasSftp = !!(serverDef?.sftp?.host || config.ftpHost);
     const rows = [new ActionRowBuilder().addComponents(actionSelect)];
     if (hasSftp) {
@@ -1804,10 +1918,10 @@ class PanelChannel {
         .setCustomId(`panel_srv_settings:${serverId}`)
         .setPlaceholder(this._tp('placeholder_edit_game_settings', {}, locale))
         .addOptions(
-          GAME_SETTINGS_CATEGORIES.map(c => ({
+          GAME_SETTINGS_CATEGORIES.map((c) => ({
             label: c.label,
             value: c.id,
-          }))
+          })),
         );
       rows.push(new ActionRowBuilder().addComponents(settingsSelect));
     }
@@ -1839,13 +1953,15 @@ class PanelChannel {
     for (const [name, status] of Object.entries(this.moduleStatus)) {
       const raw = String(status || '').trim();
       const text = raw.toLowerCase();
-      const ok = raw.startsWith('🟢') ||
+      const ok =
+        raw.startsWith('🟢') ||
         text.includes('ok') ||
         text.includes('active') ||
         text.includes('enabled') ||
         text.includes('running') ||
         text.includes('online');
-      const off = raw.startsWith('⚫') ||
+      const off =
+        raw.startsWith('⚫') ||
         raw.startsWith('🔴') ||
         text.includes('off') ||
         text.includes('disabled') ||
@@ -1863,13 +1979,15 @@ class PanelChannel {
       infoLines.push(`${this._tp('modules_heading', {}, locale)}\n${value}`);
     }
 
-    infoLines.push([
-      this._tp('quick_actions_heading', {}, locale),
-      this._tp('quick_action_restart_bot_line', {}, locale),
-      this._tp('quick_action_factory_reset_line', {}, locale),
-      this._tp('quick_action_reimport_line', {}, locale),
-      this._tp('quick_action_diagnostics_line', {}, locale),
-    ].join('\n'));
+    infoLines.push(
+      [
+        this._tp('quick_actions_heading', {}, locale),
+        this._tp('quick_action_restart_bot_line', {}, locale),
+        this._tp('quick_action_factory_reset_line', {}, locale),
+        this._tp('quick_action_reimport_line', {}, locale),
+        this._tp('quick_action_diagnostics_line', {}, locale),
+      ].join('\n'),
+    );
 
     const viewLabels = {
       bot: this._tp('view_option_bot_controls', {}, locale),
@@ -1885,39 +2003,41 @@ class PanelChannel {
 
   _buildBotComponents() {
     const locale = this._sharedLocale();
-    //  Select 1: Core & module settings 
-    const coreCategories = ENV_CATEGORIES.filter(c => c.group === 1);
+    //  Select 1: Core & module settings
+    const coreCategories = ENV_CATEGORIES.filter((c) => c.group === 1);
     const coreSelect = new StringSelectMenuBuilder()
       .setCustomId(SELECT.ENV)
       .setPlaceholder(this._tp('placeholder_core_module_settings', {}, locale))
       .addOptions(
-        coreCategories.map(c => ({
+        coreCategories.map((c) => ({
           label: c.label,
           description: c.description,
           value: c.id,
-        }))
+        })),
       );
 
-    //  Select 2: Display & schedule settings 
-    const displayCategories = ENV_CATEGORIES.filter(c => c.group === 2);
+    //  Select 2: Display & schedule settings
+    const displayCategories = ENV_CATEGORIES.filter((c) => c.group === 2);
     const displaySelect = new StringSelectMenuBuilder()
       .setCustomId(SELECT.ENV2)
       .setPlaceholder(this._tp('placeholder_display_schedule_settings', {}, locale))
       .addOptions(
-        displayCategories.map(c => ({
+        displayCategories.map((c) => ({
           label: c.label,
           description: c.description,
           value: c.id,
-        }))
+        })),
       );
 
     const { needsSync } = require('../env-sync');
     const actionOptions = [
-      { label: this._tp('option_system_diagnostics', {}, locale), description: this._tp('option_desc_run_live_health_checks', {}, locale), value: 'diagnostics' },
       {
-        label: needsSync()
-          ? this._tp('option_sync_env', {}, locale)
-          : this._tp('option_env_synced', {}, locale),
+        label: this._tp('option_system_diagnostics', {}, locale),
+        description: this._tp('option_desc_run_live_health_checks', {}, locale),
+        value: 'diagnostics',
+      },
+      {
+        label: needsSync() ? this._tp('option_sync_env', {}, locale) : this._tp('option_env_synced', {}, locale),
         description: needsSync()
           ? this._tp('option_desc_apply_pending_env_schema_changes', {}, locale)
           : this._tp('option_desc_no_pending_env_changes', {}, locale),
@@ -1932,9 +2052,21 @@ class PanelChannel {
       });
     }
     actionOptions.push(
-      { label: this._tp('option_restart_bot', {}, locale), description: this._tp('option_desc_restart_bot_process', {}, locale), value: 'restart_bot' },
-      { label: this._tp('option_reimport_data', {}, locale), description: this._tp('option_desc_rebuild_local_data', {}, locale), value: 'reimport' },
-      { label: this._tp('option_factory_reset', {}, locale), description: this._tp('option_desc_factory_reset', {}, locale), value: 'factory_reset' },
+      {
+        label: this._tp('option_restart_bot', {}, locale),
+        description: this._tp('option_desc_restart_bot_process', {}, locale),
+        value: 'restart_bot',
+      },
+      {
+        label: this._tp('option_reimport_data', {}, locale),
+        description: this._tp('option_desc_rebuild_local_data', {}, locale),
+        value: 'reimport',
+      },
+      {
+        label: this._tp('option_factory_reset', {}, locale),
+        description: this._tp('option_desc_factory_reset', {}, locale),
+        value: 'factory_reset',
+      },
     );
 
     const actionsSelect = new StringSelectMenuBuilder()
@@ -1959,25 +2091,53 @@ class PanelChannel {
 
     const actionOptions = [];
     if (!isRunning && !isTransitioning) {
-      actionOptions.push({ label: this._tp('option_start', {}, locale), description: this._tp('option_desc_start_game_server', {}, locale), value: 'start' });
+      actionOptions.push({
+        label: this._tp('option_start', {}, locale),
+        description: this._tp('option_desc_start_game_server', {}, locale),
+        value: 'start',
+      });
     }
     if (!isOff && !isTransitioning) {
       actionOptions.push(
-        { label: this._tp('option_stop', {}, locale), description: this._tp('option_desc_stop_game_server_gracefully', {}, locale), value: 'stop' },
-        { label: this._tp('option_restart', {}, locale), description: this._tp('option_desc_restart_game_server', {}, locale), value: 'restart' },
+        {
+          label: this._tp('option_stop', {}, locale),
+          description: this._tp('option_desc_stop_game_server_gracefully', {}, locale),
+          value: 'stop',
+        },
+        {
+          label: this._tp('option_restart', {}, locale),
+          description: this._tp('option_desc_restart_game_server', {}, locale),
+          value: 'restart',
+        },
       );
     }
     if (this._backupLimit !== 0) {
-      actionOptions.push({ label: this._tp('option_backup', {}, locale), description: this._tp('option_desc_create_backup', {}, locale), value: 'backup' });
+      actionOptions.push({
+        label: this._tp('option_backup', {}, locale),
+        description: this._tp('option_desc_create_backup', {}, locale),
+        value: 'backup',
+      });
     }
     if (!isOff) {
-      actionOptions.push({ label: this._tp('option_kill', {}, locale), description: this._tp('option_desc_force_kill_server', {}, locale), value: 'kill' });
+      actionOptions.push({
+        label: this._tp('option_kill', {}, locale),
+        description: this._tp('option_desc_force_kill_server', {}, locale),
+        value: 'kill',
+      });
     }
     if (this._hasSftp && config.enableWelcomeFile) {
-      actionOptions.push({ label: this._tp('option_welcome_message', {}, locale), description: this._tp('option_desc_edit_welcome_message', {}, locale), value: 'welcome' });
+      actionOptions.push({
+        label: this._tp('option_welcome_message', {}, locale),
+        description: this._tp('option_desc_edit_welcome_message', {}, locale),
+        value: 'welcome',
+      });
     }
     if (config.enableAutoMessages) {
-      actionOptions.push({ label: this._tp('option_broadcasts', {}, locale), description: this._tp('option_desc_edit_auto_broadcast_messages', {}, locale), value: 'broadcasts' });
+      actionOptions.push({
+        label: this._tp('option_broadcasts', {}, locale),
+        description: this._tp('option_desc_edit_auto_broadcast_messages', {}, locale),
+        value: 'broadcasts',
+      });
     }
 
     const rows = [];
@@ -1995,10 +2155,10 @@ class PanelChannel {
         .setCustomId(SELECT.SETTINGS)
         .setPlaceholder(this._tp('placeholder_edit_game_settings', {}, locale))
         .addOptions(
-          GAME_SETTINGS_CATEGORIES.map(c => ({
+          GAME_SETTINGS_CATEGORIES.map((c) => ({
             label: c.label,
             value: c.id,
-          }))
+          })),
         );
       rows.push(new ActionRowBuilder().addComponents(settingsSelect));
     }
@@ -2024,29 +2184,47 @@ class PanelChannel {
       if (resources.cpu != null) {
         const cpuLimit = details?.limits?.cpu || 100;
         const cpuRatio = Math.min(resources.cpu / cpuLimit, 1);
-        lines.push(this._tp('server_resource_cpu', {
-          bar: _progressBar(cpuRatio),
-          value: resources.cpu,
-          limit: cpuLimit,
-        }, locale));
+        lines.push(
+          this._tp(
+            'server_resource_cpu',
+            {
+              bar: _progressBar(cpuRatio),
+              value: resources.cpu,
+              limit: cpuLimit,
+            },
+            locale,
+          ),
+        );
       }
 
       if (resources.memUsed != null && resources.memTotal != null) {
         const memRatio = resources.memTotal > 0 ? resources.memUsed / resources.memTotal : 0;
-        lines.push(this._tp('server_resource_ram', {
-          bar: _progressBar(memRatio),
-          used: formatBytes(resources.memUsed),
-          total: formatBytes(resources.memTotal),
-        }, locale));
+        lines.push(
+          this._tp(
+            'server_resource_ram',
+            {
+              bar: _progressBar(memRatio),
+              used: formatBytes(resources.memUsed),
+              total: formatBytes(resources.memTotal),
+            },
+            locale,
+          ),
+        );
       }
 
       if (resources.diskUsed != null && resources.diskTotal != null) {
         const diskRatio = resources.diskTotal > 0 ? resources.diskUsed / resources.diskTotal : 0;
-        lines.push(this._tp('server_resource_disk', {
-          bar: _progressBar(diskRatio),
-          used: formatBytes(resources.diskUsed),
-          total: formatBytes(resources.diskTotal),
-        }, locale));
+        lines.push(
+          this._tp(
+            'server_resource_disk',
+            {
+              bar: _progressBar(diskRatio),
+              used: formatBytes(resources.diskUsed),
+              total: formatBytes(resources.diskTotal),
+            },
+            locale,
+          ),
+        );
       }
 
       if (resources.uptime != null) {
@@ -2054,14 +2232,17 @@ class PanelChannel {
         if (up) lines.push(this._tp('server_resource_uptime', { uptime: up }, locale));
       }
 
-      if (lines.length > 0) blocks.push(`${this._tp('server_live_resources_heading', {}, locale)}\n${lines.join('\n')}`);
+      if (lines.length > 0)
+        blocks.push(`${this._tp('server_live_resources_heading', {}, locale)}\n${lines.join('\n')}`);
     } else if (state !== 'running') {
-      blocks.push(`${this._tp('server_resources_heading', {}, locale)}\n${this._tp('server_not_running_line', {}, locale)}`);
+      blocks.push(
+        `${this._tp('server_resources_heading', {}, locale)}\n${this._tp('server_not_running_line', {}, locale)}`,
+      );
     }
 
     const allocs = details?.relationships?.allocations?.data || [];
     if (allocs.length > 0) {
-      const allocLines = allocs.map(a => {
+      const allocLines = allocs.map((a) => {
         const attr = a.attributes || a;
         const primary = attr.is_default ? this._tp('server_allocation_default_suffix', {}, locale) : '';
         const alias = attr.alias ? this._tp('server_allocation_alias_suffix', { alias: attr.alias }, locale) : '';
@@ -2080,9 +2261,7 @@ class PanelChannel {
     const planParts = [];
     if (limits.memory) planParts.push(this._tp('server_plan_ram', { memory: limits.memory }, locale));
     if (limits.disk != null) {
-      const diskValue = limits.disk === 0
-        ? this._tp('server_plan_disk_unlimited', {}, locale)
-        : `${limits.disk} MB`;
+      const diskValue = limits.disk === 0 ? this._tp('server_plan_disk_unlimited', {}, locale) : `${limits.disk} MB`;
       planParts.push(this._tp('server_plan_disk', { disk: diskValue }, locale));
     }
     if (limits.cpu) planParts.push(this._tp('server_plan_cpu', { cpu: limits.cpu }, locale));
@@ -2095,9 +2274,9 @@ class PanelChannel {
 
     if (backups && backups.length > 0) {
       const sorted = [...backups]
-        .filter(b => b.completed_at)
+        .filter((b) => b.completed_at)
         .sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at));
-      const successCount = backups.filter(b => b.is_successful).length;
+      const successCount = backups.filter((b) => b.is_successful).length;
       const totalSize = backups.reduce((sum, b) => sum + (b.bytes || 0), 0);
       const maxBackups = fl.backups || '?';
 
@@ -2110,19 +2289,25 @@ class PanelChannel {
         return `${icon} **${backupName}**${locked}\n ${formatBytes(b.bytes || 0)} - ${date}`;
       });
 
-      const headerMeta = this._tp('backups_header_line', {
-        success: successCount,
-        max: maxBackups,
-        total: formatBytes(totalSize),
-      }, locale);
-      blocks.push(`${this._tp('backups_heading_with_meta', { meta: headerMeta }, locale)}\n${backupLines.join('\n') || this._tp('backups_none', {}, locale)}`);
+      const headerMeta = this._tp(
+        'backups_header_line',
+        {
+          success: successCount,
+          max: maxBackups,
+          total: formatBytes(totalSize),
+        },
+        locale,
+      );
+      blocks.push(
+        `${this._tp('backups_heading_with_meta', { meta: headerMeta }, locale)}\n${backupLines.join('\n') || this._tp('backups_none', {}, locale)}`,
+      );
     } else {
       blocks.push(`${this._tp('backups_heading', {}, locale)}\n${this._tp('backups_empty_help', {}, locale)}`);
     }
 
     if (schedules && schedules.length > 0) {
-      const activeCount = schedules.filter(s => s.is_active).length;
-      const scheduleLines = schedules.slice(0, 8).map(s => {
+      const activeCount = schedules.filter((s) => s.is_active).length;
+      const scheduleLines = schedules.slice(0, 8).map((s) => {
         const active = s.is_active
           ? this._tp('schedule_active_tag', {}, locale)
           : this._tp('schedule_off_tag', {}, locale);
@@ -2136,33 +2321,38 @@ class PanelChannel {
             const diffMins = Math.floor(diffMs / 60000);
             const diffHrs = Math.floor(diffMins / 60);
             const remMins = diffMins % 60;
-            next = diffHrs > 0
-              ? this._tp('schedule_next_in_hours_minutes', { hours: diffHrs, minutes: remMins }, locale)
-              : this._tp('schedule_next_in_minutes', { minutes: diffMins }, locale);
+            next =
+              diffHrs > 0
+                ? this._tp('schedule_next_in_hours_minutes', { hours: diffHrs, minutes: remMins }, locale)
+                : this._tp('schedule_next_in_minutes', { minutes: diffMins }, locale);
           } else {
             next = `${fmtDate(nextDate, locale)} ${fmtTime(nextDate, locale)}`;
           }
         }
         return `${active} **${s.name}**${onlyOnline} - ${next}`;
       });
-      blocks.push(`${this._tp('schedules_heading_with_meta', { active: activeCount, total: schedules.length }, locale)}\n${scheduleLines.join('\n')}`);
+      blocks.push(
+        `${this._tp('schedules_heading_with_meta', { active: activeCount, total: schedules.length }, locale)}\n${scheduleLines.join('\n')}`,
+      );
     }
 
-    blocks.push([
-      this._tp('commands_heading', {}, locale),
-      this._tp('command_console', {}, locale),
-      this._tp('command_schedules', {}, locale),
-      this._tp('command_backup_delete', {}, locale),
-    ].join('\n'));
+    blocks.push(
+      [
+        this._tp('commands_heading', {}, locale),
+        this._tp('command_console', {}, locale),
+        this._tp('command_schedules', {}, locale),
+        this._tp('command_backup_delete', {}, locale),
+      ].join('\n'),
+    );
 
     return _container(blocks, [], si.color);
   }
 }
 
-//  Setup wizard (extracted to panel-setup-wizard.js) 
+//  Setup wizard (extracted to panel-setup-wizard.js)
 Object.assign(PanelChannel.prototype, require('./panel-setup-wizard'));
 
-//  Multi-server handlers (extracted to panel-multi-server.js) 
+//  Multi-server handlers (extracted to panel-multi-server.js)
 Object.assign(PanelChannel.prototype, require('./panel-multi-server'));
 
 // Export custom IDs for the interaction handler
@@ -2172,5 +2362,3 @@ PanelChannel.ENV_CATEGORIES = ENV_CATEGORIES;
 PanelChannel.GAME_SETTINGS_CATEGORIES = GAME_SETTINGS_CATEGORIES;
 
 module.exports = PanelChannel;
-
-

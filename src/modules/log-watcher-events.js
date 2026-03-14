@@ -7,7 +7,7 @@
  */
 
 const { EmbedBuilder } = require('discord.js');
-const { t, getLocale, fmtDate, fmtTime, fmtNumber } = require('../i18n');
+const { t, getLocale, fmtNumber } = require('../i18n');
 
 function _te(locale, key, vars = {}) {
   return t(`discord:events.${key}`, locale, vars);
@@ -25,7 +25,14 @@ function _onBuild(playerName, steamId, itemName, timestamp) {
   this._incDayCount('builds');
 
   // DB: log build event
-  this._logEvent({ type: 'player_build', category: 'build', actorName: playerName, steamId, item: cleanItem, timestamp });
+  this._logEvent({
+    type: 'player_build',
+    category: 'build',
+    actorName: playerName,
+    steamId,
+    item: cleanItem,
+    timestamp,
+  });
 
   // Batch builds to reduce spam
   if (!this._buildBatch[steamId]) {
@@ -88,7 +95,9 @@ function _onDeath(playerName, timestamp) {
         causeRaw: '',
         damageTotal: pvpKill ? pvpKill.totalDamage : 0,
       });
-    } catch { /* swallow */ }
+    } catch {
+      /* swallow */
+    }
   }
 
   if (pvpKill) {
@@ -96,7 +105,14 @@ function _onDeath(playerName, timestamp) {
     this._incDayCount('pvpKills');
 
     // DB: log PvP death event
-    this._logEvent({ type: 'player_death_pvp', category: 'death', actorName: playerName, targetName: pvpKill.attacker, details: { damage: pvpKill.totalDamage }, timestamp });
+    this._logEvent({
+      type: 'player_death_pvp',
+      category: 'death',
+      actorName: playerName,
+      targetName: pvpKill.attacker,
+      details: { damage: pvpKill.totalDamage },
+      timestamp,
+    });
 
     const killEntry = {
       killer: pvpKill.attacker,
@@ -113,10 +129,12 @@ function _onDeath(playerName, timestamp) {
     // PvP kills always post individually (they're rare and important)
     const killEmbed = new EmbedBuilder()
       .setAuthor({ name: _te(locale, 'pvp_kill') })
-      .setDescription(_te(locale, 'pvp_kill_description', {
-        attacker: pvpKill.attacker,
-        victim: playerName,
-      }))
+      .setDescription(
+        _te(locale, 'pvp_kill_description', {
+          attacker: pvpKill.attacker,
+          victim: playerName,
+        }),
+      )
       .setColor(0xe74c3c)
       .setFooter({
         text: _te(locale, 'pvp_kill_footer', {
@@ -128,10 +146,12 @@ function _onDeath(playerName, timestamp) {
 
     const deathEmbed = new EmbedBuilder()
       .setAuthor({ name: _te(locale, 'player_death') })
-      .setDescription(_te(locale, 'pvp_death_description', {
-        victim: playerName,
-        attacker: pvpKill.attacker,
-      }))
+      .setDescription(
+        _te(locale, 'pvp_death_description', {
+          victim: playerName,
+          attacker: pvpKill.attacker,
+        }),
+      )
       .setColor(0x992d22)
       .setFooter({ text: timestamp ? this._formatTime(timestamp) : _te(locale, 'just_now') });
     this._sendToThread(deathEmbed);
@@ -146,7 +166,7 @@ function _onDeath(playerName, timestamp) {
     const threshold = this._config.deathLoopThreshold;
     const existing = this._deathLoopTracker.get(key);
 
-    if (existing && (timestamp - existing.firstTimestamp) < windowMs) {
+    if (existing && timestamp - existing.firstTimestamp < windowMs) {
       existing.count++;
       existing.lastTimestamp = timestamp;
 
@@ -177,9 +197,18 @@ function _onDeath(playerName, timestamp) {
 
   // DB: log PvE death event with cause details
   this._logEvent({
-    type: 'player_death', category: 'death', actorName: playerName,
+    type: 'player_death',
+    category: 'death',
+    actorName: playerName,
     item: deathCause ? deathCause.name : '',
-    details: deathCause ? { causeType: deathCause.type, causeName: deathCause.name, causeRaw: deathCause.raw, damage: deathCause.totalDamage } : {},
+    details: deathCause
+      ? {
+          causeType: deathCause.type,
+          causeName: deathCause.name,
+          causeRaw: deathCause.raw,
+          damage: deathCause.totalDamage,
+        }
+      : {},
     timestamp,
   });
 
@@ -197,17 +226,22 @@ function _flushDeathLoop(key, playerName) {
   const locale = getLocale({ serverConfig: this._config });
   const entry = this._deathLoopTracker.get(key);
   if (!entry || entry.count < this._config.deathLoopThreshold) return;
-  if (entry.timer) { clearTimeout(entry.timer); entry.timer = null; }
+  if (entry.timer) {
+    clearTimeout(entry.timer);
+    entry.timer = null;
+  }
 
   const elapsed = Math.round((entry.lastTimestamp - entry.firstTimestamp) / 1000);
   const embed = new EmbedBuilder()
     .setAuthor({ name: _te(locale, 'death_loop') })
-    .setDescription(_te(locale, 'death_loop_description', {
-      victim: playerName,
-      count: fmtNumber(entry.count, locale),
-      seconds: fmtNumber(elapsed, locale),
-      hint: _te(locale, 'respawn_bug_hint'),
-    }))
+    .setDescription(
+      _te(locale, 'death_loop_description', {
+        victim: playerName,
+        count: fmtNumber(entry.count, locale),
+        seconds: fmtNumber(elapsed, locale),
+        hint: _te(locale, 'respawn_bug_hint'),
+      }),
+    )
     .setColor(0xf39c12)
     .setFooter({ text: this._formatTime(entry.lastTimestamp) });
   this._sendToThread(embed);
@@ -228,7 +262,17 @@ function _onRaid(attackerName, attackerSteamId, ownerSteamId, buildingType, dest
   this._incDayCount('raidHits');
 
   // DB: log raid event
-  this._logEvent({ type: 'raid_damage', category: 'raid', actorName: attacker, steamId: attackerSteamId, targetSteamId: ownerSteamId, item: cleanBuilding, amount: destroyed ? 1 : 0, details: { destroyed }, timestamp });
+  this._logEvent({
+    type: 'raid_damage',
+    category: 'raid',
+    actorName: attacker,
+    steamId: attackerSteamId,
+    targetSteamId: ownerSteamId,
+    item: cleanBuilding,
+    amount: destroyed ? 1 : 0,
+    details: { destroyed },
+    timestamp,
+  });
 
   // Batch raid events to reduce spam — group by attacker|owner pair
   const key = `${attackerSteamId}|${ownerSteamId}`;
@@ -293,7 +337,7 @@ function _flushLootBatch() {
   if (entries.length === 0) return;
   this._lootBatch = {};
 
-  const lines = entries.map(entry => {
+  const lines = entries.map((entry) => {
     const ownerData = this._playtime.getPlaytime(entry.ownerSteamId);
     const ownerName = ownerData
       ? ownerData.name
@@ -322,9 +366,9 @@ function _flushBuildBatch() {
   if (entries.length === 0) return;
   this._buildBatch = {};
 
-  const lines = entries.map(entry => {
+  const lines = entries.map((entry) => {
     const itemList = Object.entries(entry.items)
-      .map(([item, count]) => count > 1 ? `${item} ×${count}` : item)
+      .map(([item, count]) => (count > 1 ? `${item} ×${count}` : item))
       .join(', ');
     return _te(locale, 'build_activity_line', {
       player: entry.playerName,
@@ -347,13 +391,13 @@ function _flushRaidBatch() {
   if (entries.length === 0) return;
   this._raidBatch = {};
 
-  const lines = entries.map(entry => {
+  const lines = entries.map((entry) => {
     const ownerData = this._playtime.getPlaytime(entry.ownerSteamId);
     const ownerName = ownerData
       ? ownerData.name
       : _te(locale, 'unknown_owner', { owner_id: entry.ownerSteamId.slice(0, 8) });
     const buildingList = Object.entries(entry.buildings)
-      .map(([b, count]) => count > 1 ? `${b} ×${count}` : b)
+      .map(([b, count]) => (count > 1 ? `${b} ×${count}` : b))
       .join(', ');
     const summary = [];
     if (entry.destroyedCount > 0) {
@@ -370,7 +414,7 @@ function _flushRaidBatch() {
     });
   });
 
-  const hasDestruction = entries.some(e => e.destroyedCount > 0);
+  const hasDestruction = entries.some((e) => e.destroyedCount > 0);
   const embed = new EmbedBuilder()
     .setAuthor({ name: hasDestruction ? _te(locale, 'raid_alert') : _te(locale, 'raid_activity') })
     .setDescription(lines.join('\n\n'))

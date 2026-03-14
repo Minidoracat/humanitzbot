@@ -40,7 +40,19 @@ async function _getOrCreateDailyThread() {
   // Day rollover — post summary and reset counters (even in no-thread mode)
   if (this._dailyDate && this._dailyDate !== today) {
     await this._postDailySummary();
-    this._dayCounts = { connects: 0, disconnects: 0, deaths: 0, builds: 0, damage: 0, loots: 0, raidHits: 0, destroyed: 0, admin: 0, cheat: 0, pvpKills: 0 };
+    this._dayCounts = {
+      connects: 0,
+      disconnects: 0,
+      deaths: 0,
+      builds: 0,
+      damage: 0,
+      loots: 0,
+      raidHits: 0,
+      destroyed: 0,
+      admin: 0,
+      cheat: 0,
+      pvpKills: 0,
+    };
     this._dayCountsDirty = true;
     this._saveDayCounts();
     this._dailyThread = null; // clear stale thread so a new one is created below
@@ -61,7 +73,19 @@ async function _getOrCreateDailyThread() {
           this._dailyDate = raw.date;
           this._dayCounts = { ...this._dayCounts, ...raw.counts };
           await this._postDailySummary();
-          this._dayCounts = { connects: 0, disconnects: 0, deaths: 0, builds: 0, damage: 0, loots: 0, raidHits: 0, destroyed: 0, admin: 0, cheat: 0, pvpKills: 0 };
+          this._dayCounts = {
+            connects: 0,
+            disconnects: 0,
+            deaths: 0,
+            builds: 0,
+            damage: 0,
+            loots: 0,
+            raidHits: 0,
+            destroyed: 0,
+            admin: 0,
+            cheat: 0,
+            pvpKills: 0,
+          };
           this._dayCountsDirty = true;
           this._saveDayCounts();
           this._dailyDate = null; // reset so normal flow continues
@@ -95,8 +119,8 @@ async function _getOrCreateDailyThread() {
   try {
     // Check active threads (search new name first, then legacy)
     const active = await this.logChannel.threads.fetchActive();
-    const existing = active.threads.find(t => t.name === threadName)
-      || active.threads.find(t => t.name === legacyThreadName);
+    const existing =
+      active.threads.find((t) => t.name === threadName) || active.threads.find((t) => t.name === legacyThreadName);
     if (existing) {
       this._dailyThread = existing;
       this._dailyDate = today;
@@ -108,8 +132,8 @@ async function _getOrCreateDailyThread() {
 
     // Check archived threads (in case bot restarted mid-day)
     const archived = await this.logChannel.threads.fetchArchived({ limit: 5 });
-    const archivedMatch = archived.threads.find(t => t.name === threadName)
-      || archived.threads.find(t => t.name === legacyThreadName);
+    const archivedMatch =
+      archived.threads.find((t) => t.name === threadName) || archived.threads.find((t) => t.name === legacyThreadName);
     if (archivedMatch) {
       // Unarchive it
       await archivedMatch.setArchived(false);
@@ -153,7 +177,9 @@ async function _getOrCreateDailyThread() {
 
   // Notify listeners (e.g. ChatRelay) that the daily thread was created
   if (typeof this._dayRolloverCb === 'function') {
-    try { await this._dayRolloverCb(); } catch (e) {
+    try {
+      await this._dayRolloverCb();
+    } catch (e) {
       console.warn(`[${this._label}] Day rollover callback error:`, e.message);
     }
   }
@@ -167,25 +193,34 @@ async function _getOrCreateDailyThread() {
 async function _postDailySummary() {
   if (this._headless) return; // headless mode — no Discord posting
   const c = this._dayCounts;
-  const logTotal = c.connects + c.disconnects + c.deaths + c.builds + c.damage + c.loots + c.raidHits + c.destroyed + c.cheat + c.admin + c.pvpKills;
+  const logTotal =
+    c.connects +
+    c.disconnects +
+    c.deaths +
+    c.builds +
+    c.damage +
+    c.loots +
+    c.raidHits +
+    c.destroyed +
+    c.cheat +
+    c.admin +
+    c.pvpKills;
 
-  const dateLabel = this._dailyDate
-    ? this._config.getDateLabel(new Date(this._dailyDate + 'T12:00:00Z'))
-    : 'Unknown';
+  const dateLabel = this._dailyDate ? this._config.getDateLabel(new Date(this._dailyDate + 'T12:00:00Z')) : 'Unknown';
 
   // ── Log-based stats ──────────────────────────────
   const lines = [];
-  if (c.connects > 0)    lines.push(`**Connections:** ${c.connects}`);
+  if (c.connects > 0) lines.push(`**Connections:** ${c.connects}`);
   if (c.disconnects > 0) lines.push(`**Disconnections:** ${c.disconnects}`);
-  if (c.deaths > 0)      lines.push(`**Deaths:** ${c.deaths}`);
-  if (c.builds > 0)      lines.push(`**Items Built:** ${c.builds}`);
-  if (c.damage > 0)      lines.push(`**Damage Hits:** ${c.damage}`);
-  if (c.loots > 0)       lines.push(`**Containers Looted:** ${c.loots}`);
-  if (c.raidHits > 0)    lines.push(`**Raid Hits:** ${c.raidHits}`);
-  if (c.destroyed > 0)   lines.push(`**Structures Destroyed:** ${c.destroyed}`);
-  if (c.admin > 0)       lines.push(`**Admin Access:** ${c.admin}`);
-  if (c.cheat > 0)       lines.push(`**Anti-Cheat Flags:** ${c.cheat}`);
-  if (c.pvpKills > 0)    lines.push(`**PvP Kills:** ${c.pvpKills}`);
+  if (c.deaths > 0) lines.push(`**Deaths:** ${c.deaths}`);
+  if (c.builds > 0) lines.push(`**Items Built:** ${c.builds}`);
+  if (c.damage > 0) lines.push(`**Damage Hits:** ${c.damage}`);
+  if (c.loots > 0) lines.push(`**Containers Looted:** ${c.loots}`);
+  if (c.raidHits > 0) lines.push(`**Raid Hits:** ${c.raidHits}`);
+  if (c.destroyed > 0) lines.push(`**Structures Destroyed:** ${c.destroyed}`);
+  if (c.admin > 0) lines.push(`**Admin Access:** ${c.admin}`);
+  if (c.cheat > 0) lines.push(`**Anti-Cheat Flags:** ${c.cheat}`);
+  if (c.pvpKills > 0) lines.push(`**PvP Kills:** ${c.pvpKills}`);
 
   // ── Save-derived stats (from activity_log DB) ────
   let dbTotal = 0;
@@ -205,8 +240,8 @@ async function _postDailySummary() {
         const containerRemoved = counts.container_item_removed || 0;
         const containerMoves = containerAdded + containerRemoved;
         if (containerMoves > 0) lines.push(`**Container Items Moved:** ${containerMoves}`);
-        if (counts.container_locked)    lines.push(`**Containers Locked:** ${counts.container_locked}`);
-        if (counts.container_unlocked)  lines.push(`**Containers Unlocked:** ${counts.container_unlocked}`);
+        if (counts.container_locked) lines.push(`**Containers Locked:** ${counts.container_locked}`);
+        if (counts.container_unlocked) lines.push(`**Containers Unlocked:** ${counts.container_unlocked}`);
         if (counts.container_destroyed) lines.push(`**Containers Destroyed:** ${counts.container_destroyed}`);
 
         // Inventory activity
@@ -222,12 +257,15 @@ async function _postDailySummary() {
         if (vehMoves > 0) lines.push(`**Vehicle Items Moved:** ${vehMoves}`);
 
         // Horse activity
-        const horseEvents = (counts.horse_appeared || 0) + (counts.horse_disappeared || 0) +
-          (counts.horse_health_changed || 0) + (counts.horse_owner_changed || 0);
+        const horseEvents =
+          (counts.horse_appeared || 0) +
+          (counts.horse_disappeared || 0) +
+          (counts.horse_health_changed || 0) +
+          (counts.horse_owner_changed || 0);
         if (horseEvents > 0) lines.push(`**Horse Events:** ${horseEvents}`);
 
         // World events
-        if (counts.world_day_advanced)  lines.push(`**Day Advanced:** ${counts.world_day_advanced}`);
+        if (counts.world_day_advanced) lines.push(`**Day Advanced:** ${counts.world_day_advanced}`);
         if (counts.world_season_changed) lines.push(`**Season Changes:** ${counts.world_season_changed}`);
         const airdrops = (counts.airdrop_spawned || 0) + (counts.airdrop_despawned || 0);
         if (airdrops > 0) lines.push(`**Airdrop Events:** ${airdrops}`);
@@ -321,16 +359,16 @@ async function sendToDateThread(embed, dateStr) {
   try {
     // Check active threads (search new name first, then legacy)
     const active = await this.logChannel.threads.fetchActive();
-    const match = active.threads.find(t => t.name === threadName)
-      || active.threads.find(t => t.name === legacyThreadName);
+    const match =
+      active.threads.find((t) => t.name === threadName) || active.threads.find((t) => t.name === legacyThreadName);
     if (match) {
       return await match.send({ embeds: [embed] });
     }
 
     // Check recently archived threads
     const archived = await this.logChannel.threads.fetchArchived({ limit: 10 });
-    const archiveMatch = archived.threads.find(t => t.name === threadName)
-      || archived.threads.find(t => t.name === legacyThreadName);
+    const archiveMatch =
+      archived.threads.find((t) => t.name === threadName) || archived.threads.find((t) => t.name === legacyThreadName);
     if (archiveMatch) {
       await archiveMatch.setArchived(false);
       const result = await archiveMatch.send({ embeds: [embed] });
@@ -365,7 +403,7 @@ async function _sendToThread(embed) {
       console.warn(`[${this._label}] Thread gone — clearing cache and retrying...`);
       this.resetThreadCache();
       const fresh = await this._getOrCreateDailyThread();
-      return fresh.send({ embeds: [embed] }).catch(retryErr => {
+      return fresh.send({ embeds: [embed] }).catch((retryErr) => {
         console.error(`[${this._label}] Failed to send to thread (retry):`, retryErr.message);
       });
     }

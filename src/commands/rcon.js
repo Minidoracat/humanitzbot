@@ -5,8 +5,16 @@ const { t, getLocalizations } = require('../i18n');
 // Commands that could disrupt the server — blocked from Discord execution
 // Keep in sync with web panel blocklist in src/web-map/server.js
 const BLOCKED_COMMANDS = new Set([
-  'shutdown', 'quit', 'exit', 'restartnow', 'quickrestart',
-  'cancelrestart', 'destroyall', 'destroy_all', 'wipe', 'reset',
+  'shutdown',
+  'quit',
+  'exit',
+  'restartnow',
+  'quickrestart',
+  'cancelrestart',
+  'destroyall',
+  'destroy_all',
+  'wipe',
+  'reset',
 ]);
 
 module.exports = {
@@ -41,9 +49,10 @@ module.exports = {
     try {
       const response = await rcon.send(command);
 
-      const output = response && response.trim()
-        ? `\`\`\`\n${response.substring(0, 1900)}\n\`\`\``
-        : t('commands:rcon.reply.no_response', locale);
+      const output =
+        response && response.trim()
+          ? `\`\`\`\n${response.substring(0, 1900)}\n\`\`\``
+          : t('commands:rcon.reply.no_response', locale);
 
       await interaction.editReply({
         content: t('commands:rcon.reply.response_template', locale, {

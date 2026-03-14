@@ -93,8 +93,11 @@ class PanelRcon extends EventEmitter {
     this._cleanup();
 
     if (!this._panelApi) {
-      try { this._panelApi = require('../server/panel-api'); }
-      catch { throw new Error('Panel API module not available'); }
+      try {
+        this._panelApi = require('../server/panel-api');
+      } catch {
+        throw new Error('Panel API module not available');
+      }
     }
 
     if (!this._panelApi.available) {
@@ -123,10 +126,12 @@ class PanelRcon extends EventEmitter {
       this._ws.on('open', () => {
         // Authenticate with the JWT
         try {
-          this._ws.send(JSON.stringify({
-            event: 'auth',
-            args: [this._token],
-          }));
+          this._ws.send(
+            JSON.stringify({
+              event: 'auth',
+              args: [this._token],
+            }),
+          );
         } catch (err) {
           console.error(`[${this._label}] Auth send failed:`, err.message);
           clearTimeout(timeout);
@@ -137,8 +142,11 @@ class PanelRcon extends EventEmitter {
 
       this._ws.on('message', (raw) => {
         let msg;
-        try { msg = JSON.parse(raw.toString()); }
-        catch { return; }
+        try {
+          msg = JSON.parse(raw.toString());
+        } catch {
+          return;
+        }
 
         this._handleMessage(msg, resolve, reject, timeout);
       });
@@ -229,7 +237,9 @@ class PanelRcon extends EventEmitter {
         if (args && args[0]) {
           try {
             this.emit('stats', JSON.parse(args[0]));
-          } catch { /* ignore parse errors */ }
+          } catch {
+            /* ignore parse errors */
+          }
         }
         break;
 
@@ -260,10 +270,12 @@ class PanelRcon extends EventEmitter {
       const auth = await this._panelApi.getWebsocketAuth();
       if (auth.token && this._ws && this._ws.readyState === WebSocket.OPEN) {
         this._token = auth.token;
-        this._ws.send(JSON.stringify({
-          event: 'auth',
-          args: [this._token],
-        }));
+        this._ws.send(
+          JSON.stringify({
+            event: 'auth',
+            args: [this._token],
+          }),
+        );
         console.log(`[${this._label}] Token refreshed`);
       }
     } catch (err) {
@@ -281,18 +293,20 @@ class PanelRcon extends EventEmitter {
    */
   async send(command) {
     return new Promise((resolve, reject) => {
-      this._commandQueue = this._commandQueue.then(async () => {
-        try {
-          if (!this.connected || !this.authenticated) {
-            await this.connect();
-          }
+      this._commandQueue = this._commandQueue
+        .then(async () => {
+          try {
+            if (!this.connected || !this.authenticated) {
+              await this.connect();
+            }
 
-          const result = await this._sendCommand(command);
-          resolve(result);
-        } catch (err) {
-          reject(err);
-        }
-      }).catch(() => {}); // Prevent unhandled rejection on queue chain — caller gets the error via reject()
+            const result = await this._sendCommand(command);
+            resolve(result);
+          } catch (err) {
+            reject(err);
+          }
+        })
+        .catch(() => {}); // Prevent unhandled rejection on queue chain — caller gets the error via reject()
     });
   }
 
@@ -314,7 +328,7 @@ class PanelRcon extends EventEmitter {
         return reject(new Error('WebSocket not connected'));
       }
 
-      let responseLines = [];
+      const responseLines = [];
       let resolved = false;
       let dataTimer = null;
       let seenEcho = false;
@@ -361,15 +375,17 @@ class PanelRcon extends EventEmitter {
             resolve(responseLines.join('\n'));
           }
         }, 1500); // 1.5s quiet period (slightly longer than TCP RCON's 1s
-                   // because WebSocket has more latency + daemon buffering)
+        // because WebSocket has more latency + daemon buffering)
       };
 
       // Send the command
       try {
-        this._ws.send(JSON.stringify({
-          event: 'send command',
-          args: [command],
-        }));
+        this._ws.send(
+          JSON.stringify({
+            event: 'send command',
+            args: [command],
+          }),
+        );
       } catch (err) {
         clearTimeout(hardTimeout);
         if (dataTimer) clearTimeout(dataTimer);
@@ -430,7 +446,9 @@ class PanelRcon extends EventEmitter {
     }
 
     if (this._ws) {
-      try { this._ws.terminate(); } catch (_) {}
+      try {
+        this._ws.terminate();
+      } catch (_) {}
       this._ws = null;
     }
   }

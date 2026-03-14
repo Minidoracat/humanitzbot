@@ -17,49 +17,49 @@ const { cleanName } = require('../parsers/ue4-names');
 
 const AI_DISPLAY_NAMES = {
   // Zombies
-  ZombieDefault:        'Zombie',
-  ZombieDefault2:       'Zombie',
-  ZombieFemale:         'Female Zombie',
-  ZombieFemale2:        'Female Zombie',
-  ZombieUrban:          'Urban Zombie',
-  ZombieRunner:         'Runner',
-  ZombieBrute:          'Brute',
-  ZombieFatty:          'Bloater',
-  ZombieBellyToxic:     'Bloater',
-  ZombieMutant:         'Mutant',
-  ZombieCop:            'Police Zombie',
-  ZombiePolice1:        'Police Zombie',
-  ZombiePolice2:        'Police Zombie',
-  ZombiePoliceArmor:    'Police Armoured',
-  ZombieMilitaryArmor:  'Military Armoured',
+  ZombieDefault: 'Zombie',
+  ZombieDefault2: 'Zombie',
+  ZombieFemale: 'Female Zombie',
+  ZombieFemale2: 'Female Zombie',
+  ZombieUrban: 'Urban Zombie',
+  ZombieRunner: 'Runner',
+  ZombieBrute: 'Brute',
+  ZombieFatty: 'Bloater',
+  ZombieBellyToxic: 'Bloater',
+  ZombieMutant: 'Mutant',
+  ZombieCop: 'Police Zombie',
+  ZombiePolice1: 'Police Zombie',
+  ZombiePolice2: 'Police Zombie',
+  ZombiePoliceArmor: 'Police Armoured',
+  ZombieMilitaryArmor: 'Military Armoured',
   ZombieMilitaryArmorV2: 'Military Armoured V2',
-  ZombieCamo:           'Camo Zombie',
-  ZombieHazmat:         'Hazmat Zombie',
-  ZombieMedic:          'Medic Zombie',
-  ZombieBruteRunner:    'Runner Brute',
-  ZombieBruteComp:      'Brute',
-  ZombieBruteCop:       'Riot Brute',
+  ZombieCamo: 'Camo Zombie',
+  ZombieHazmat: 'Hazmat Zombie',
+  ZombieMedic: 'Medic Zombie',
+  ZombieBruteRunner: 'Runner Brute',
+  ZombieBruteComp: 'Brute',
+  ZombieBruteCop: 'Riot Brute',
 
   // Zombie animals
-  AnimalZDog:           'Dog Zombie',
-  AnimalZBear:          'Zombie Bear',
-  AnimalZStag:          'Zombie Stag',
+  AnimalZDog: 'Dog Zombie',
+  AnimalZBear: 'Zombie Bear',
+  AnimalZStag: 'Zombie Stag',
 
   // Animals
-  AnimalWold:           'Wolf',   // typo in game data
-  AnimalBear:           'Bear',
-  AnimalRabbit:         'Rabbit',
-  AnimalPig:            'Pig',
-  AnimalStag:           'Stag',
-  AnimalDoe:            'Doe',
-  AnimalChicken:        'Chicken',
+  AnimalWold: 'Wolf', // typo in game data
+  AnimalBear: 'Bear',
+  AnimalRabbit: 'Rabbit',
+  AnimalPig: 'Pig',
+  AnimalStag: 'Stag',
+  AnimalDoe: 'Doe',
+  AnimalChicken: 'Chicken',
 
   // Bandits
-  BanditPistol:         'Bandit (Pistol)',
-  BanditMelee:          'Bandit (Melee)',
-  BanditShotgun:        'Bandit (Shotgun)',
-  BanditRifle:          'Bandit (Rifle)',
-  BanditSniper:         'Bandit (Sniper)',
+  BanditPistol: 'Bandit (Pistol)',
+  BanditMelee: 'Bandit (Melee)',
+  BanditShotgun: 'Bandit (Shotgun)',
+  BanditRifle: 'Bandit (Rifle)',
+  BanditSniper: 'Bandit (Sniper)',
 };
 
 class SnapshotService {
@@ -121,7 +121,7 @@ class SnapshotService {
         gameDay: ws.totalDaysElapsed || ws.timeOfDay?.day || 0,
         gameTime: ws.timeOfDay?.time || ws.timeOfDay || 0,
         playerCount: players.length,
-        onlineCount: onlineSet.size || players.filter(p => onlineSet.has((p.name || '').toLowerCase())).length,
+        onlineCount: onlineSet.size || players.filter((p) => onlineSet.has((p.name || '').toLowerCase())).length,
         aiCount: aiSpawns.length,
         structureCount: structures.length,
         vehicleCount: vehicles.length,
@@ -144,7 +144,7 @@ class SnapshotService {
       };
 
       // Build entity arrays
-      const timelinePlayers = players.map(p => ({
+      const timelinePlayers = players.map((p) => ({
         steamId: p.steamId || p.steam_id || '',
         name: p.name || '',
         online: onlineSet.has((p.name || '').toLowerCase()) ? 1 : 0,
@@ -164,8 +164,8 @@ class SnapshotService {
       }));
 
       // Filter out dead AI (graveTimeMinutes > 0 means killed, waiting to respawn)
-      const aliveAI = aiSpawns.filter(a => !a.graveTimeMinutes || a.graveTimeMinutes <= 0);
-      const timelineAI = aliveAI.map(a => ({
+      const aliveAI = aiSpawns.filter((a) => !a.graveTimeMinutes || a.graveTimeMinutes <= 0);
+      const timelineAI = aliveAI.map((a) => ({
         aiType: a.type || 'Unknown',
         category: a.category || this._classifyAICategory(a.type),
         displayName: AI_DISPLAY_NAMES[a.type] || cleanName(a.type) || a.type,
@@ -175,7 +175,7 @@ class SnapshotService {
         z: a.z ?? null,
       }));
 
-      const timelineVehicles = vehicles.map(v => ({
+      const timelineVehicles = vehicles.map((v) => ({
         class: v.class || '',
         displayName: v.displayName || cleanName(v.class) || '',
         x: v.x ?? v.pos_x ?? null,
@@ -187,37 +187,41 @@ class SnapshotService {
         itemCount: (v.inventory || []).length,
       }));
 
-      const timelineStructures = this._trackStructures ? structures.map(s => ({
-        actorClass: s.actorClass || s.actor_class || '',
-        displayName: s.displayName || s.display_name || cleanName(s.actorClass || s.actor_class) || '',
-        ownerSteamId: s.ownerSteamId || s.owner_steam_id || '',
-        x: s.x ?? s.pos_x ?? null,
-        y: s.y ?? s.pos_y ?? null,
-        z: s.z ?? s.pos_z ?? null,
-        currentHealth: s.currentHealth || s.current_health || 0,
-        maxHealth: s.maxHealth || s.max_health || 0,
-        upgradeLevel: s.upgradeLevel || s.upgrade_level || 0,
-      })) : [];
+      const timelineStructures = this._trackStructures
+        ? structures.map((s) => ({
+            actorClass: s.actorClass || s.actor_class || '',
+            displayName: s.displayName || s.display_name || cleanName(s.actorClass || s.actor_class) || '',
+            ownerSteamId: s.ownerSteamId || s.owner_steam_id || '',
+            x: s.x ?? s.pos_x ?? null,
+            y: s.y ?? s.pos_y ?? null,
+            z: s.z ?? s.pos_z ?? null,
+            currentHealth: s.currentHealth || s.current_health || 0,
+            maxHealth: s.maxHealth || s.max_health || 0,
+            upgradeLevel: s.upgradeLevel || s.upgrade_level || 0,
+          }))
+        : [];
 
-      const timelineHouses = this._trackHouses ? houses.map(h => ({
-        uid: h.uid || '',
-        name: h.name || '',
-        windowsOpen: h.windowsOpen || 0,
-        windowsTotal: h.windowsTotal || 0,
-        doorsOpen: h.doorsOpen || 0,
-        doorsLocked: h.doorsLocked || 0,
-        doorsTotal: h.doorsTotal || 0,
-        destroyedFurniture: h.destroyedFurniture || 0,
-        hasGenerator: !!h.hasGenerator,
-        sleepers: h.floatData?.Sleepers || h.sleepers || 0,
-        clean: h.floatData?.Clean || h.clean || 0,
-        x: null,  // houses don't have positions in save data
-        y: null,
-      })) : [];
+      const timelineHouses = this._trackHouses
+        ? houses.map((h) => ({
+            uid: h.uid || '',
+            name: h.name || '',
+            windowsOpen: h.windowsOpen || 0,
+            windowsTotal: h.windowsTotal || 0,
+            doorsOpen: h.doorsOpen || 0,
+            doorsLocked: h.doorsLocked || 0,
+            doorsTotal: h.doorsTotal || 0,
+            destroyedFurniture: h.destroyedFurniture || 0,
+            hasGenerator: !!h.hasGenerator,
+            sleepers: h.floatData?.Sleepers || h.sleepers || 0,
+            clean: h.floatData?.Clean || h.clean || 0,
+            x: null, // houses don't have positions in save data
+            y: null,
+          }))
+        : [];
 
       // Merge companions + horses into one timeline array
       const timelineCompanions = [
-        ...companions.map(c => ({
+        ...companions.map((c) => ({
           entityType: c.type || 'dog',
           actorName: c.actorName || c.actor_name || '',
           displayName: cleanName(c.actorName || c.actor_name) || c.type || 'Companion',
@@ -228,7 +232,7 @@ class SnapshotService {
           health: c.health || 0,
           extra: c.extra || {},
         })),
-        ...horses.map(h => ({
+        ...horses.map((h) => ({
           entityType: 'horse',
           actorName: h.actorName || h.actor_name || '',
           displayName: h.horseName || h.horse_name || h.displayName || h.display_name || 'Horse',
@@ -245,16 +249,19 @@ class SnapshotService {
         })),
       ];
 
-      const timelineBackpacks = this._trackBackpacks ? backpacks.map(b => ({
-        class: b.class || '',
-        x: b.x ?? null,
-        y: b.y ?? null,
-        z: b.z ?? null,
-        itemCount: (b.items || []).length,
-        items: (b.items || []).slice(0, 10).map(i => ({
-          item: i.item || '', amount: i.amount || 1,
-        })),
-      })) : [];
+      const timelineBackpacks = this._trackBackpacks
+        ? backpacks.map((b) => ({
+            class: b.class || '',
+            x: b.x ?? null,
+            y: b.y ?? null,
+            z: b.z ?? null,
+            itemCount: (b.items || []).length,
+            items: (b.items || []).slice(0, 10).map((i) => ({
+              item: i.item || '',
+              amount: i.amount || 1,
+            })),
+          }))
+        : [];
 
       // Write to DB
       const snapId = this._db.insertTimelineSnapshot({
@@ -278,8 +285,14 @@ class SnapshotService {
         this._pruneOldData();
       }
 
-      const entityCount = timelinePlayers.length + timelineAI.length + timelineVehicles.length +
-        timelineStructures.length + timelineHouses.length + timelineCompanions.length + timelineBackpacks.length;
+      const entityCount =
+        timelinePlayers.length +
+        timelineAI.length +
+        timelineVehicles.length +
+        timelineStructures.length +
+        timelineHouses.length +
+        timelineCompanions.length +
+        timelineBackpacks.length;
       console.log(`[${this._label}] Snapshot #${this._snapshotCount} recorded (${entityCount} entities, id=${snapId})`);
 
       return snapId;
@@ -290,10 +303,14 @@ class SnapshotService {
   }
 
   /** Get the most recent snapshot ID. */
-  get lastSnapshotId() { return this._lastSnapshotId; }
+  get lastSnapshotId() {
+    return this._lastSnapshotId;
+  }
 
   /** Get total snapshots recorded this session. */
-  get snapshotCount() { return this._snapshotCount; }
+  get snapshotCount() {
+    return this._snapshotCount;
+  }
 
   // ── Internal helpers ───────────────────────────────────────
 
@@ -316,9 +333,9 @@ class SnapshotService {
   /** Resolve weather type from UDS weather state. */
   _resolveWeather(weatherState) {
     if (!weatherState || !Array.isArray(weatherState)) return '';
-    const udw = weatherState.find(w => w.name === 'UDWRandomWeatherState');
+    const udw = weatherState.find((w) => w.name === 'UDWRandomWeatherState');
     if (!udw || !udw.children) return '';
-    const current = udw.children.find(c => c.name === 'CurrentRandomWeatherType');
+    const current = udw.children.find((c) => c.name === 'CurrentRandomWeatherType');
     if (!current) return '';
     // Map UDS enumerator to human name
     const weatherMap = {
@@ -341,7 +358,7 @@ class SnapshotService {
   _resolveSeason(ws) {
     // Check for season in weather state
     if (ws.weatherState && Array.isArray(ws.weatherState)) {
-      const sim = ws.weatherState.find(w => w.name === 'SimulationDate');
+      const _sim = ws.weatherState.find((w) => w.name === 'SimulationDate');
       // Could derive season from SimulationDate, but for now return
       // the dedicated season field if present
     }

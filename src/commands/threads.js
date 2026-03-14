@@ -16,18 +16,21 @@ const { t, getLocalizations } = require('../i18n');
 // ── Log-line parsers (mirror the regexes in log-watcher.js) ──
 
 const HMZ_LINE_RE = /^\((\d{1,2})[/\-.](\d{1,2})[/\-.](\d{1,2},?\d{3})\s+(\d{1,2}):(\d{1,2})(?::\d{1,2})?\)\s+(.+)$/;
-const CONNECT_LINE_RE = /^Player (Connected|Disconnected)\s+(.+?)\s+NetID\((\d{17})[^)]*\)\s*\((\d{1,2})[/\-.](\d{1,2})[/\-.](\d{1,2},?\d{3})\s+(\d{1,2}):(\d{1,2})(?::\d{1,2})?\)/;
+const CONNECT_LINE_RE =
+  /^Player (Connected|Disconnected)\s+(.+?)\s+NetID\((\d{17})[^)]*\)\s*\((\d{1,2})[/\-.](\d{1,2})[/\-.](\d{1,2},?\d{3})\s+(\d{1,2}):(\d{1,2})(?::\d{1,2})?\)/;
 
 function _dateKey(ts) {
   // Return 'YYYY-MM-DD' in BOT_TIMEZONE
   try {
     const parts = new Intl.DateTimeFormat('en-CA', {
       timeZone: config.botTimezone,
-      year: 'numeric', month: '2-digit', day: '2-digit',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
     }).formatToParts(ts);
-    const y = parts.find(p => p.type === 'year').value;
-    const m = parts.find(p => p.type === 'month').value;
-    const d = parts.find(p => p.type === 'day').value;
+    const y = parts.find((p) => p.type === 'year').value;
+    const m = parts.find((p) => p.type === 'month').value;
+    const d = parts.find((p) => p.type === 'day').value;
     return `${y}-${m}-${d}`;
   } catch {
     return ts.toISOString().slice(0, 10);
@@ -47,7 +50,17 @@ function _parseHmzLog(text) {
 
   const ensure = (key) => {
     if (!days[key]) {
-      days[key] = { deaths: 0, builds: 0, damage: 0, loots: 0, raidHits: 0, destroyed: 0, admin: 0, cheat: 0, players: new Set() };
+      days[key] = {
+        deaths: 0,
+        builds: 0,
+        damage: 0,
+        loots: 0,
+        raidHits: 0,
+        destroyed: 0,
+        admin: 0,
+        cheat: 0,
+        players: new Set(),
+      };
     }
     return days[key];
   };
@@ -62,25 +75,45 @@ function _parseHmzLog(text) {
     const [, day, month, rawYear, hour, min, body] = m;
     const year = rawYear.replace(',', '');
     let ts;
-    try { ts = config.parseLogTimestamp(year, month, day, hour, min); } catch { continue; }
+    try {
+      ts = config.parseLogTimestamp(year, month, day, hour, min);
+    } catch {
+      continue;
+    }
     const key = _dateKey(ts);
     const d = ensure(key);
 
     // Player death
     const deathMatch = body.match(/^Player died \((.+)\)$/);
-    if (deathMatch) { d.deaths++; d.players.add(deathMatch[1].trim()); continue; }
+    if (deathMatch) {
+      d.deaths++;
+      d.players.add(deathMatch[1].trim());
+      continue;
+    }
 
     // Building completed
     const buildMatch = body.match(/^(.+?)\((\d{17})[^)]*\)\s*finished building\s+/);
-    if (buildMatch) { d.builds++; d.players.add(buildMatch[1].trim()); continue; }
+    if (buildMatch) {
+      d.builds++;
+      d.players.add(buildMatch[1].trim());
+      continue;
+    }
 
     // Damage taken
     const dmgMatch = body.match(/^(.+?)\s+took\s+[\d.]+\s+damage from\s+/);
-    if (dmgMatch) { d.damage++; d.players.add(dmgMatch[1].trim()); continue; }
+    if (dmgMatch) {
+      d.damage++;
+      d.players.add(dmgMatch[1].trim());
+      continue;
+    }
 
     // Container looted
     const lootMatch = body.match(/^(.+?)\s*\(\d{17}[^)]*\)\s*looted a container/);
-    if (lootMatch) { d.loots++; d.players.add(lootMatch[1].trim()); continue; }
+    if (lootMatch) {
+      d.loots++;
+      d.players.add(lootMatch[1].trim());
+      continue;
+    }
 
     // Building damaged by player (raid)
     const raidMatch = body.match(/^Building \([^)]+\) owned by \((\d{17}[^)]*)\) damaged/);
@@ -92,10 +125,16 @@ function _parseHmzLog(text) {
     }
 
     // Admin access
-    if (/gained admin access!$/.test(body)) { d.admin++; continue; }
+    if (/gained admin access!$/.test(body)) {
+      d.admin++;
+      continue;
+    }
 
     // Anti-cheat
-    if (/^(Stack limit detected|Odd behavior.*?Cheat)/.test(body)) { d.cheat++; continue; }
+    if (/^(Stack limit detected|Odd behavior.*?Cheat)/.test(body)) {
+      d.cheat++;
+      continue;
+    }
   }
 
   return days;
@@ -124,7 +163,11 @@ function _parseConnectLog(text) {
     const [, action, name, , day, month, rawYear, hour, min] = m;
     const year = rawYear.replace(',', '');
     let ts;
-    try { ts = config.parseLogTimestamp(year, month, day, hour, min); } catch { continue; }
+    try {
+      ts = config.parseLogTimestamp(year, month, day, hour, min);
+    } catch {
+      continue;
+    }
     const key = _dateKey(ts);
     const d = ensure(key);
 
@@ -149,16 +192,16 @@ function _mergeDays(hmzDays, connectDays) {
     const players = new Set([...(h.players || []), ...(c.players || [])]);
 
     merged[date] = {
-      connects:    c.connects || 0,
+      connects: c.connects || 0,
       disconnects: c.disconnects || 0,
-      deaths:      h.deaths || 0,
-      builds:      h.builds || 0,
-      damage:      h.damage || 0,
-      loots:       h.loots || 0,
-      raidHits:    h.raidHits || 0,
-      destroyed:   h.destroyed || 0,
-      admin:       h.admin || 0,
-      cheat:       h.cheat || 0,
+      deaths: h.deaths || 0,
+      builds: h.builds || 0,
+      damage: h.damage || 0,
+      loots: h.loots || 0,
+      raidHits: h.raidHits || 0,
+      destroyed: h.destroyed || 0,
+      admin: h.admin || 0,
+      cheat: h.cheat || 0,
       uniquePlayers: players.size,
     };
   }
@@ -173,16 +216,16 @@ function _buildSummaryEmbed(dateStr, counts) {
   const label = _dateLabel(dateStr);
 
   const lines = [];
-  if (counts.connects > 0)    lines.push(['Connections',          counts.connects]);
-  if (counts.disconnects > 0) lines.push(['Disconnections',       counts.disconnects]);
-  if (counts.deaths > 0)      lines.push(['Deaths',               counts.deaths]);
-  if (counts.builds > 0)      lines.push(['Items Built',          counts.builds]);
-  if (counts.damage > 0)      lines.push(['Damage Hits',          counts.damage]);
-  if (counts.loots > 0)       lines.push(['Containers Looted',    counts.loots]);
-  if (counts.raidHits > 0)    lines.push(['Raid Hits',            counts.raidHits]);
-  if (counts.destroyed > 0)   lines.push(['Structures Destroyed', counts.destroyed]);
-  if (counts.admin > 0)       lines.push(['Admin Access',         counts.admin]);
-  if (counts.cheat > 0)       lines.push(['Anti-Cheat Flags',     counts.cheat]);
+  if (counts.connects > 0) lines.push(['Connections', counts.connects]);
+  if (counts.disconnects > 0) lines.push(['Disconnections', counts.disconnects]);
+  if (counts.deaths > 0) lines.push(['Deaths', counts.deaths]);
+  if (counts.builds > 0) lines.push(['Items Built', counts.builds]);
+  if (counts.damage > 0) lines.push(['Damage Hits', counts.damage]);
+  if (counts.loots > 0) lines.push(['Containers Looted', counts.loots]);
+  if (counts.raidHits > 0) lines.push(['Raid Hits', counts.raidHits]);
+  if (counts.destroyed > 0) lines.push(['Structures Destroyed', counts.destroyed]);
+  if (counts.admin > 0) lines.push(['Admin Access', counts.admin]);
+  if (counts.cheat > 0) lines.push(['Anti-Cheat Flags', counts.cheat]);
 
   const total = lines.reduce((sum, [, v]) => sum + v, 0);
 
@@ -206,7 +249,6 @@ async function _fetchThreadMessages(thread) {
   const messages = [];
   let lastId;
 
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const opts = { limit: 100 };
     if (lastId) opts.before = lastId;
@@ -228,14 +270,14 @@ async function _fetchThreadMessages(thread) {
   const isStarter = (m) => {
     if (m.embeds.length !== 1 || m.content) return false;
     const title = m.embeds[0].data?.title || '';
-    const desc  = m.embeds[0].data?.description || '';
+    const desc = m.embeds[0].data?.description || '';
     if (title.startsWith('Daily Summary')) return true;
     if (title.startsWith('📋 Activity Log')) return true;
     if (desc.includes('Log watcher connected')) return true;
     return false;
   };
 
-  return messages.filter(m => !isStarter(m));
+  return messages.filter((m) => !isStarter(m));
 }
 
 /**
@@ -267,14 +309,18 @@ async function _findMatchingThreads(channel, threadName, { dateLabel, serverSuff
     for (const [, t] of active.threads) {
       if (names.has(t.name)) found.push(t);
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   try {
     const archived = await channel.threads.fetchArchived({ limit: 100 });
     for (const [, t] of archived.threads) {
       if (names.has(t.name)) found.push(t);
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   return found;
 }
@@ -289,7 +335,8 @@ async function rebuildThreads(discordClient, daysBack = null, configOverride = n
   const cfg = configOverride || config;
   const channelId = cfg.logChannelId;
   if (!channelId) return { created: 0, deleted: 0, preserved: 0, cleaned: 0, error: 'LOG_CHANNEL_ID is not set' };
-  if (!cfg.ftpHost || !cfg.ftpUser || (!cfg.ftpPassword && !cfg.ftpPrivateKeyPath)) return { created: 0, deleted: 0, preserved: 0, cleaned: 0, error: 'SFTP credentials not configured' };
+  if (!cfg.ftpHost || !cfg.ftpUser || (!cfg.ftpPassword && !cfg.ftpPrivateKeyPath))
+    return { created: 0, deleted: 0, preserved: 0, cleaned: 0, error: 'SFTP credentials not configured' };
 
   const channel = await discordClient.channels.fetch(channelId).catch(() => null);
   if (!channel) return { created: 0, deleted: 0, preserved: 0, cleaned: 0, error: 'Could not access log channel' };
@@ -321,7 +368,8 @@ async function rebuildThreads(discordClient, daysBack = null, configOverride = n
     await sftp.end().catch(() => {});
   }
 
-  if (!hmzText && !connectText) return { created: 0, deleted: 0, preserved: 0, cleaned: 0, error: 'No log data found on the server' };
+  if (!hmzText && !connectText)
+    return { created: 0, deleted: 0, preserved: 0, cleaned: 0, error: 'No log data found on the server' };
 
   // ── Parse & merge ──────────────────────────────────────
   const hmzDays = _parseHmzLog(hmzText);
@@ -329,7 +377,8 @@ async function rebuildThreads(discordClient, daysBack = null, configOverride = n
   const merged = _mergeDays(hmzDays, connectDays);
 
   let dates = Object.keys(merged).sort();
-  if (dates.length === 0) return { created: 0, deleted: 0, preserved: 0, cleaned: 0, error: 'No events found in the logs' };
+  if (dates.length === 0)
+    return { created: 0, deleted: 0, preserved: 0, cleaned: 0, error: 'No events found in the logs' };
 
   if (daysBack) dates = dates.slice(-daysBack);
 
@@ -357,9 +406,7 @@ async function rebuildThreads(discordClient, daysBack = null, configOverride = n
 
         const title = msg.embeds[0].data?.title || '';
         // Match: "Daily Summary — 19 Feb 2026", "📋 Activity Log — ...", old format starters
-        if (/^Daily Summary/i.test(title) ||
-            /^📋 Activity Log/i.test(title) ||
-            /^Activity Log/i.test(title)) {
+        if (/^Daily Summary/i.test(title) || /^📋 Activity Log/i.test(title) || /^Activity Log/i.test(title)) {
           // If this rebuild is for a specific server, only clean matching starters
           // (skip starters that belong to a different server or the primary)
           if (serverSuffix) {
@@ -430,7 +477,7 @@ async function rebuildThreads(discordClient, daysBack = null, configOverride = n
 
           // Preserve embeds
           if (msg.embeds.length > 0) {
-            payload.embeds = msg.embeds.map(e => EmbedBuilder.from(e));
+            payload.embeds = msg.embeds.map((e) => EmbedBuilder.from(e));
           }
 
           // Preserve text content
@@ -450,7 +497,7 @@ async function rebuildThreads(discordClient, daysBack = null, configOverride = n
 
       // Small delay to avoid Discord rate limits
       if (created % 3 === 0) {
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 2000));
       }
     } catch (err) {
       console.error(`[THREADS] Failed to create thread for ${dateStr}:`, err.message);
@@ -466,13 +513,13 @@ module.exports = {
     .setNameLocalizations(getLocalizations('commands:threads.name'))
     .setDescription(t('commands:threads.description', 'en'))
     .setDescriptionLocalizations(getLocalizations('commands:threads.description'))
-    .addIntegerOption(opt =>
+    .addIntegerOption((opt) =>
       opt
         .setName('days')
         .setDescription(t('commands:threads.options.days', 'en'))
         .setDescriptionLocalizations(getLocalizations('commands:threads.options.days'))
         .setMinValue(1)
-        .setRequired(false)
+        .setRequired(false),
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 

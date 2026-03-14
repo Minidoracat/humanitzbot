@@ -35,20 +35,20 @@
 
 Connects to your HumanitZ game server via RCON and SFTP, tracks everything that happens, and presents it through Discord and an authenticated web panel.
 
-| Capability | How |
-|---|---|
-| **Server Status** | Auto-updating embed with player count, world state, settings, performance |
-| **Chat Relay** | Bidirectional bridge between Discord and in-game chat |
-| **Activity Feed** | Kills, deaths, PvP, building, looting, raids — logged to DB and posted to Discord |
-| **Player Stats** | Per-player profiles with kills, inventory, skills, vitals, recipes, challenges |
-| **Save File Parsing** | Custom UE4 GVAS binary parser reads the save file for deep game state |
-| **Live Web Map** | Interactive Leaflet map with player positions, structures, vehicles, containers |
-| **Web Panel** | 13-tab admin dashboard with Discord OAuth, RBAC, and rate limiting |
-| **PvP Scheduler** | Automated PvP windows with per-day overrides and server restarts |
-| **Server Scheduler** | Timed restarts with difficulty profiles |
-| **Multi-Server** | Manage multiple game servers from one bot instance |
-| **Milestones** | Automatic kill, survival, and playtime milestone announcements |
-| **Game Data** | 718 items, 122 buildings, 154 recipes, 68 loot tables — all queryable |
+| Capability            | How                                                                               |
+| --------------------- | --------------------------------------------------------------------------------- |
+| **Server Status**     | Auto-updating embed with player count, world state, settings, performance         |
+| **Chat Relay**        | Bidirectional bridge between Discord and in-game chat                             |
+| **Activity Feed**     | Kills, deaths, PvP, building, looting, raids — logged to DB and posted to Discord |
+| **Player Stats**      | Per-player profiles with kills, inventory, skills, vitals, recipes, challenges    |
+| **Save File Parsing** | Custom UE4 GVAS binary parser reads the save file for deep game state             |
+| **Live Web Map**      | Interactive Leaflet map with player positions, structures, vehicles, containers   |
+| **Web Panel**         | 13-tab admin dashboard with Discord OAuth, RBAC, and rate limiting                |
+| **PvP Scheduler**     | Automated PvP windows with per-day overrides and server restarts                  |
+| **Server Scheduler**  | Timed restarts with difficulty profiles                                           |
+| **Multi-Server**      | Manage multiple game servers from one bot instance                                |
+| **Milestones**        | Automatic kill, survival, and playtime milestone announcements                    |
+| **Game Data**         | 718 items, 122 buildings, 154 recipes, 68 loot tables — all queryable             |
 
 ## Requirements
 
@@ -57,7 +57,6 @@ Connects to your HumanitZ game server via RCON and SFTP, tracks everything that 
 - A HumanitZ dedicated server with RCON enabled
 
 SFTP access is optional but required for save file parsing, player stats, activity logging, and the PvP scheduler.
-
 
 ## Quick Start
 
@@ -81,14 +80,14 @@ For full setup instructions, see the **[Wiki](https://github.com/QS-Zuq/humanitz
 
 All settings live in `.env`. The bot creates this file from `.env.example` on first run. Key sections:
 
-| Section | What |
-|---|---|
-| **Discord** | Bot token, client ID, guild ID |
-| **RCON** | Server host, port, password |
-| **SFTP** | Host, port, user, password or SSH key |
-| **Channels** | Channel IDs for panel, chat, activity, status, stats |
-| **Module Toggles** | Enable/disable any feature independently |
-| **Web Panel** | Port, Discord OAuth credentials, role-based access |
+| Section            | What                                                 |
+| ------------------ | ---------------------------------------------------- |
+| **Discord**        | Bot token, client ID, guild ID                       |
+| **RCON**           | Server host, port, password                          |
+| **SFTP**           | Host, port, user, password or SSH key                |
+| **Channels**       | Channel IDs for panel, chat, activity, status, stats |
+| **Module Toggles** | Enable/disable any feature independently             |
+| **Web Panel**      | Port, Discord OAuth credentials, role-based access   |
 
 Display settings (what shows on embeds) are configurable at runtime through the panel channel in Discord — no restart needed.
 
@@ -106,38 +105,38 @@ Game Server ──RCON──► Bot ──► SQLite DB ──► Discord Embeds
 
 Five dependencies. No bloat.
 
-| Package | Purpose |
-|---|---|
-| `discord.js` | Discord API |
-| `better-sqlite3` | SQLite database |
-| `express` | Web panel server |
-| `ssh2-sftp-client` | SFTP file access |
-| `dotenv` | Environment config |
+| Package            | Purpose            |
+| ------------------ | ------------------ |
+| `discord.js`       | Discord API        |
+| `better-sqlite3`   | SQLite database    |
+| `express`          | Web panel server   |
+| `ssh2-sftp-client` | SFTP file access   |
+| `dotenv`           | Environment config |
 
 ## Web Panel
 
 Browser-based admin dashboard at `http://your-server:port`. Discord OAuth with four access tiers:
 
-| Tier | Access |
-|---|---|
-| **Public** | Landing page with server status |
-| **Survivor** | Dashboard, players, clans, activity, chat |
-| **Mod** | Live map, timeline, kick, chat send |
-| **Admin** | Console, settings editor, controls, database, items |
+| Tier         | Access                                              |
+| ------------ | --------------------------------------------------- |
+| **Public**   | Landing page with server status                     |
+| **Survivor** | Dashboard, players, clans, activity, chat           |
+| **Mod**      | Live map, timeline, kick, chat send                 |
+| **Admin**    | Console, settings editor, controls, database, items |
 
 Requires `DISCORD_OAUTH_SECRET` and `WEB_MAP_PORT` in `.env`.
 
 ## Commands
 
-| Command | Description |
-|---|---|
-| `/server` | Server info, world state, difficulty schedule |
-| `/players` | Online player list with playtime |
-| `/playerstats` | Player activity stats with detailed profiles |
-| `/playtime` | Playtime leaderboard or player lookup |
-| `/rcon` | Raw RCON command (admin only) |
-| `/qspanel` | Server power controls, backups, console (admin only) |
-| `/threads` | Rebuild activity summary threads (admin only) |
+| Command        | Description                                          |
+| -------------- | ---------------------------------------------------- |
+| `/server`      | Server info, world state, difficulty schedule        |
+| `/players`     | Online player list with playtime                     |
+| `/playerstats` | Player activity stats with detailed profiles         |
+| `/playtime`    | Playtime leaderboard or player lookup                |
+| `/rcon`        | Raw RCON command (admin only)                        |
+| `/qspanel`     | Server power controls, backups, console (admin only) |
+| `/threads`     | Rebuild activity summary threads (admin only)        |
 
 ## Development
 

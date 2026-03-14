@@ -1,6 +1,5 @@
 const { Events, EmbedBuilder } = require('discord.js');
 const _defaultConfig = require('../config');
-const { addAdminMembers } = require('../config');
 const _defaultRcon = require('../rcon/rcon');
 const { t, getLocale } = require('../i18n');
 
@@ -16,21 +15,23 @@ class ChatRelay {
     this._db = deps.db || null;
     this._label = deps.label || 'CHAT RELAY';
     this.adminChannel = null;
-    this._lastLines = [];      // snapshot for diff
+    this._lastLines = []; // snapshot for diff
     this._pollTimer = null;
-    this._chatThread = null;   // daily chat thread
+    this._chatThread = null; // daily chat thread
     this._chatThreadDate = null;
     this._boundOnMessage = null; // stored listener ref for cleanup
     this._rolloverPending = false; // true = waiting for activity thread before creating chat thread
     this._rolloverFallback = null; // safety timer if LogWatcher callback never fires
-    this._nukeActive = false;      // true during NUKE_BOT — suppresses thread creation
-    this._healthy = true;           // false if start() failed — module appears active but isn't
-    this._headless = false;          // true when running without a Discord channel (DB-only data collection)
+    this._nukeActive = false; // true during NUKE_BOT — suppresses thread creation
+    this._healthy = true; // false if start() failed — module appears active but isn't
+    this._headless = false; // true when running without a Discord channel (DB-only data collection)
     this._locale = getLocale({ serverConfig: this._config });
   }
 
   /** Whether the chat relay started successfully. */
-  get healthy() { return this._healthy; }
+  get healthy() {
+    return this._healthy;
+  }
 
   async start() {
     try {
@@ -52,7 +53,9 @@ class ChatRelay {
         }
 
         console.log(`[${this._label}] Admin bridge: #${this.adminChannel.name} → server`);
-        console.log(`[${this._label}] Chat relay:   server → ${this._config.useChatThreads ? 'daily thread in' : ''} #${this.adminChannel.name}`);
+        console.log(
+          `[${this._label}] Chat relay:   server → ${this._config.useChatThreads ? 'daily thread in' : ''} #${this.adminChannel.name}`,
+        );
 
         // Clean old bot starter messages (keep the channel tidy across restarts)
         await this._cleanOldMessages();
@@ -82,7 +85,10 @@ class ChatRelay {
   }
 
   stop() {
-    if (this._pollTimer) { clearInterval(this._pollTimer); this._pollTimer = null; }
+    if (this._pollTimer) {
+      clearInterval(this._pollTimer);
+      this._pollTimer = null;
+    }
     if (this._boundOnMessage) {
       this.client.removeListener(Events.MessageCreate, this._boundOnMessage);
       this._boundOnMessage = null;
@@ -102,13 +108,15 @@ class ChatRelay {
     try {
       const messages = await this.adminChannel.messages.fetch({ limit: 20 });
       const botId = this.client.user.id;
-      const botMessages = messages.filter(m =>
-        m.author.id === botId && !m.hasThread && m.createdTimestamp < bootTime
+      const botMessages = messages.filter(
+        (m) => m.author.id === botId && !m.hasThread && m.createdTimestamp < bootTime,
       );
       if (botMessages.size > 0) {
         console.log(`[${this._label}] Cleaning ${botMessages.size} orphaned bot message(s)`);
         for (const [, msg] of botMessages) {
-          try { await msg.delete(); } catch (_) {}
+          try {
+            await msg.delete();
+          } catch (_) {}
         }
       }
     } catch (err) {
@@ -202,7 +210,7 @@ class ChatRelay {
     try {
       // Check active threads
       const active = await this.adminChannel.threads.fetchActive();
-      const existing = active.threads.find(t => t.name === threadName);
+      const existing = active.threads.find((t) => t.name === threadName);
       if (existing) {
         this._chatThread = existing;
         this._chatThreadDate = today;
@@ -214,7 +222,7 @@ class ChatRelay {
 
       // Check archived threads (in case bot restarted mid-day)
       const archived = await this.adminChannel.threads.fetchArchived({ limit: 5 });
-      const archivedMatch = archived.threads.find(t => t.name === threadName);
+      const archivedMatch = archived.threads.find((t) => t.name === threadName);
       if (archivedMatch) {
         await archivedMatch.setArchived(false);
         this._chatThread = archivedMatch;
@@ -232,10 +240,12 @@ class ChatRelay {
       const starterMsg = await this.adminChannel.send({
         embeds: [
           new EmbedBuilder()
-            .setTitle(t('discord:chat_relay.chat_log_title', this._locale, {
-              date_label: dateLabel,
-              server_suffix: serverSuffix,
-            }))
+            .setTitle(
+              t('discord:chat_relay.chat_log_title', this._locale, {
+                date_label: dateLabel,
+                server_suffix: serverSuffix,
+              }),
+            )
             .setDescription(t('discord:chat_relay.chat_log_description', this._locale))
             .setColor(0x3498db)
             .setTimestamp(),
@@ -268,7 +278,10 @@ class ChatRelay {
       const raw = await this._rcon.send('fetchchat');
       if (!raw || !raw.trim()) return;
 
-      const currentLines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+      const currentLines = raw
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
       const newLines = this._diff(currentLines);
       this._lastLines = currentLines;
 
@@ -365,7 +378,9 @@ class ChatRelay {
         const m = link.match(/^(.*?discord\.gg)(\/.*)$/i);
         linkPart = m ? ` </><CL>${m[1]}</><FO>${m[2] || ''}` : ` ${link}`;
       }
-      await this._rcon.send(`admin </>${name}<FO>, ${t('discord:chat_relay.request_sent_notice', this._locale)}${linkPart}`);
+      await this._rcon.send(
+        `admin </>${name}<FO>, ${t('discord:chat_relay.request_sent_notice', this._locale)}${linkPart}`,
+      );
     } catch (_) {}
   }
 
@@ -399,7 +414,10 @@ class ChatRelay {
         text = text.substring(0, 500);
       }
       let displayName = message.member?.displayName || message.author.displayName || message.author.username;
-      displayName = this._sanitizeRcon(displayName).replace(/[^a-zA-Z0-9 _\-.']/g, '').slice(0, 32) || 'User';
+      displayName =
+        this._sanitizeRcon(displayName)
+          .replace(/[^a-zA-Z0-9 _\-.']/g, '')
+          .slice(0, 32) || 'User';
       text = this._sanitizeRcon(text);
       await this._rcon.send(`admin </><CL>[Discord]</> ${displayName}<FO>: ${text}`);
 

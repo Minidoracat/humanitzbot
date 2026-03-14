@@ -80,8 +80,8 @@ function diffSaveState(oldState, newState, nameResolver) {
  */
 function diffContainers(oldContainers, newContainers) {
   const events = [];
-  const oldMap = _indexBy(oldContainers, c => c.actor_name || c.actorName);
-  const newMap = _indexBy(newContainers, c => c.actor_name || c.actorName);
+  const oldMap = _indexBy(oldContainers, (c) => c.actor_name || c.actorName);
+  const newMap = _indexBy(newContainers, (c) => c.actor_name || c.actorName);
 
   for (const [name, newC] of newMap) {
     const oldC = oldMap.get(name);
@@ -93,34 +93,49 @@ function diffContainers(oldContainers, newContainers) {
 
     for (const item of added) {
       events.push({
-        type: 'container_item_added', category: 'container',
-        actor: name, actorName: name,
-        item: item.item, amount: item.amount,
+        type: 'container_item_added',
+        category: 'container',
+        actor: name,
+        actorName: name,
+        item: item.item,
+        amount: item.amount,
         details: { durability: item.durability, ammo: item.ammo },
-        x: newC.x ?? newC.pos_x, y: newC.y ?? newC.pos_y, z: newC.z ?? newC.pos_z,
+        x: newC.x ?? newC.pos_x,
+        y: newC.y ?? newC.pos_y,
+        z: newC.z ?? newC.pos_z,
       });
     }
 
     for (const item of removed) {
       events.push({
-        type: 'container_item_removed', category: 'container',
-        actor: name, actorName: name,
-        item: item.item, amount: item.amount,
+        type: 'container_item_removed',
+        category: 'container',
+        actor: name,
+        actorName: name,
+        item: item.item,
+        amount: item.amount,
         details: { durability: item.durability, ammo: item.ammo },
-        x: newC.x ?? newC.pos_x, y: newC.y ?? newC.pos_y, z: newC.z ?? newC.pos_z,
+        x: newC.x ?? newC.pos_x,
+        y: newC.y ?? newC.pos_y,
+        z: newC.z ?? newC.pos_z,
       });
     }
 
     // Lock state change
-    const oldLocked = oldC ? !!(oldC.locked) : false;
-    const newLocked = !!(newC.locked);
+    const oldLocked = oldC ? !!oldC.locked : false;
+    const newLocked = !!newC.locked;
     if (oldC && oldLocked !== newLocked) {
       events.push({
         type: newLocked ? 'container_locked' : 'container_unlocked',
         category: 'container',
-        actor: name, actorName: name, item: '', amount: 0,
+        actor: name,
+        actorName: name,
+        item: '',
+        amount: 0,
         details: {},
-        x: newC.x ?? newC.pos_x, y: newC.y ?? newC.pos_y, z: newC.z ?? newC.pos_z,
+        x: newC.x ?? newC.pos_x,
+        y: newC.y ?? newC.pos_y,
+        z: newC.z ?? newC.pos_z,
       });
     }
   }
@@ -131,11 +146,16 @@ function diffContainers(oldContainers, newContainers) {
       const items = _normalizeItems(oldC.items);
       if (items.length > 0) {
         events.push({
-          type: 'container_destroyed', category: 'container',
-          actor: name, actorName: name,
-          item: '', amount: items.length,
-          details: { items: items.map(i => `${i.item} x${i.amount}`).slice(0, 10) },
-          x: oldC.x ?? oldC.pos_x, y: oldC.y ?? oldC.pos_y, z: oldC.z ?? oldC.pos_z,
+          type: 'container_destroyed',
+          category: 'container',
+          actor: name,
+          actorName: name,
+          item: '',
+          amount: items.length,
+          details: { items: items.map((i) => `${i.item} x${i.amount}`).slice(0, 10) },
+          x: oldC.x ?? oldC.pos_x,
+          y: oldC.y ?? oldC.pos_y,
+          z: oldC.z ?? oldC.pos_z,
         });
       }
     }
@@ -170,14 +190,20 @@ function diffHorses(oldHorses, newHorses) {
     if (!oldH) {
       // New horse appeared
       events.push({
-        type: 'horse_appeared', category: 'horse',
-        actor: key, actorName: hName,
-        item: '', amount: 0,
+        type: 'horse_appeared',
+        category: 'horse',
+        actor: key,
+        actorName: hName,
+        item: '',
+        amount: 0,
         details: {
-          class: newH.class, owner: newH.owner_steam_id || newH.ownerSteamId,
+          class: newH.class,
+          owner: newH.owner_steam_id || newH.ownerSteamId,
           health: newH.health,
         },
-        x: newH.x ?? newH.pos_x, y: newH.y ?? newH.pos_y, z: newH.z ?? newH.pos_z,
+        x: newH.x ?? newH.pos_x,
+        y: newH.y ?? newH.pos_y,
+        z: newH.z ?? newH.pos_z,
       });
     } else {
       // Check health change (significant)
@@ -185,11 +211,16 @@ function diffHorses(oldHorses, newHorses) {
       const newHealth = newH.health || 0;
       if (Math.abs(newHealth - oldHealth) >= 5) {
         events.push({
-          type: 'horse_health_changed', category: 'horse',
-          actor: key, actorName: hName,
-          item: '', amount: Math.round(newHealth - oldHealth),
+          type: 'horse_health_changed',
+          category: 'horse',
+          actor: key,
+          actorName: hName,
+          item: '',
+          amount: Math.round(newHealth - oldHealth),
           details: { oldHealth, newHealth },
-          x: newH.x ?? newH.pos_x, y: newH.y ?? newH.pos_y, z: newH.z ?? newH.pos_z,
+          x: newH.x ?? newH.pos_x,
+          y: newH.y ?? newH.pos_y,
+          z: newH.z ?? newH.pos_z,
         });
       }
 
@@ -198,11 +229,16 @@ function diffHorses(oldHorses, newHorses) {
       const newOwner = newH.owner_steam_id || newH.ownerSteamId || '';
       if (oldOwner !== newOwner && (oldOwner || newOwner)) {
         events.push({
-          type: 'horse_owner_changed', category: 'horse',
-          actor: key, actorName: hName,
-          item: '', amount: 0,
+          type: 'horse_owner_changed',
+          category: 'horse',
+          actor: key,
+          actorName: hName,
+          item: '',
+          amount: 0,
           details: { oldOwner, newOwner },
-          x: newH.x ?? newH.pos_x, y: newH.y ?? newH.pos_y, z: newH.z ?? newH.pos_z,
+          x: newH.x ?? newH.pos_x,
+          y: newH.y ?? newH.pos_y,
+          z: newH.z ?? newH.pos_z,
         });
       }
     }
@@ -213,15 +249,20 @@ function diffHorses(oldHorses, newHorses) {
     if (!newMap.has(key)) {
       const hName = oldH.display_name || oldH.displayName || oldH.horse_name || oldH.name || key;
       events.push({
-        type: 'horse_disappeared', category: 'horse',
-        actor: key, actorName: hName,
-        item: '', amount: 0,
+        type: 'horse_disappeared',
+        category: 'horse',
+        actor: key,
+        actorName: hName,
+        item: '',
+        amount: 0,
         details: {
           class: oldH.class,
           owner: oldH.owner_steam_id || oldH.ownerSteamId,
           lastHealth: oldH.health,
         },
-        x: oldH.x ?? oldH.pos_x, y: oldH.y ?? oldH.pos_y, z: oldH.z ?? oldH.pos_z,
+        x: oldH.x ?? oldH.pos_x,
+        y: oldH.y ?? oldH.pos_y,
+        z: oldH.z ?? oldH.pos_z,
       });
     }
   }
@@ -258,7 +299,7 @@ function diffPlayerInventories(oldPlayers, newPlayers, nameResolver) {
     const oldP = oldMap.get(steamId);
     if (!oldP) continue; // New players — don't log their initial inventory as "added"
 
-    const playerName = nameResolver ? nameResolver(steamId) : (newP.name || steamId);
+    const playerName = nameResolver ? nameResolver(steamId) : newP.name || steamId;
 
     for (const slot of slots) {
       const oldItems = _normalizeItems(_getField(oldP, slot));
@@ -268,21 +309,31 @@ function diffPlayerInventories(oldPlayers, newPlayers, nameResolver) {
 
       for (const item of added) {
         events.push({
-          type: 'inventory_item_added', category: 'inventory',
-          actor: steamId, actorName: playerName,
-          item: item.item, amount: item.amount,
+          type: 'inventory_item_added',
+          category: 'inventory',
+          actor: steamId,
+          actorName: playerName,
+          item: item.item,
+          amount: item.amount,
           details: { slot: slot.label, durability: item.durability },
-          x: newP.x ?? newP.pos_x, y: newP.y ?? newP.pos_y, z: newP.z ?? newP.pos_z,
+          x: newP.x ?? newP.pos_x,
+          y: newP.y ?? newP.pos_y,
+          z: newP.z ?? newP.pos_z,
         });
       }
 
       for (const item of removed) {
         events.push({
-          type: 'inventory_item_removed', category: 'inventory',
-          actor: steamId, actorName: playerName,
-          item: item.item, amount: item.amount,
+          type: 'inventory_item_removed',
+          category: 'inventory',
+          actor: steamId,
+          actorName: playerName,
+          item: item.item,
+          amount: item.amount,
           details: { slot: slot.label, durability: item.durability },
-          x: newP.x ?? newP.pos_x, y: newP.y ?? newP.pos_y, z: newP.z ?? newP.pos_z,
+          x: newP.x ?? newP.pos_x,
+          y: newP.y ?? newP.pos_y,
+          z: newP.z ?? newP.pos_z,
         });
       }
     }
@@ -311,9 +362,12 @@ function diffWorldState(oldState, newState) {
   const newDay = parseInt(newState.dedi_days_passed || '0', 10);
   if (newDay > oldDay) {
     events.push({
-      type: 'world_day_advanced', category: 'world',
-      actor: 'world', actorName: 'World',
-      item: '', amount: newDay - oldDay,
+      type: 'world_day_advanced',
+      category: 'world',
+      actor: 'world',
+      actorName: 'World',
+      item: '',
+      amount: newDay - oldDay,
       details: { oldDay, newDay },
     });
   }
@@ -323,9 +377,12 @@ function diffWorldState(oldState, newState) {
   const newSeason = newState.current_season || '';
   if (newSeason && oldSeason !== newSeason) {
     events.push({
-      type: 'world_season_changed', category: 'world',
-      actor: 'world', actorName: 'World',
-      item: newSeason, amount: 0,
+      type: 'world_season_changed',
+      category: 'world',
+      actor: 'world',
+      actorName: 'World',
+      item: newSeason,
+      amount: 0,
       details: { oldSeason, newSeason },
     });
   }
@@ -337,16 +394,22 @@ function diffWorldState(oldState, newState) {
   const newAirdrop = rawNewAirdrop === 'None' ? '' : rawNewAirdrop;
   if (!oldAirdrop && newAirdrop) {
     events.push({
-      type: 'airdrop_spawned', category: 'world',
-      actor: 'airdrop', actorName: 'Airdrop',
-      item: '', amount: 0,
+      type: 'airdrop_spawned',
+      category: 'world',
+      actor: 'airdrop',
+      actorName: 'Airdrop',
+      item: '',
+      amount: 0,
       details: { airdrop: newAirdrop },
     });
   } else if (oldAirdrop && !newAirdrop) {
     events.push({
-      type: 'airdrop_despawned', category: 'world',
-      actor: 'airdrop', actorName: 'Airdrop',
-      item: '', amount: 0,
+      type: 'airdrop_despawned',
+      category: 'world',
+      actor: 'airdrop',
+      actorName: 'Airdrop',
+      item: '',
+      amount: 0,
       details: { airdrop: oldAirdrop },
     });
   }
@@ -385,21 +448,31 @@ function diffVehicleInventories(oldVehicles, newVehicles) {
 
     for (const item of added) {
       events.push({
-        type: 'vehicle_item_added', category: 'vehicle',
-        actor: key, actorName: vName,
-        item: item.item, amount: item.amount,
+        type: 'vehicle_item_added',
+        category: 'vehicle',
+        actor: key,
+        actorName: vName,
+        item: item.item,
+        amount: item.amount,
         details: { durability: item.durability },
-        x: newV.x ?? newV.pos_x, y: newV.y ?? newV.pos_y, z: newV.z ?? newV.pos_z,
+        x: newV.x ?? newV.pos_x,
+        y: newV.y ?? newV.pos_y,
+        z: newV.z ?? newV.pos_z,
       });
     }
 
     for (const item of removed) {
       events.push({
-        type: 'vehicle_item_removed', category: 'vehicle',
-        actor: key, actorName: vName,
-        item: item.item, amount: item.amount,
+        type: 'vehicle_item_removed',
+        category: 'vehicle',
+        actor: key,
+        actorName: vName,
+        item: item.item,
+        amount: item.amount,
         details: { durability: item.durability },
-        x: newV.x ?? newV.pos_x, y: newV.y ?? newV.pos_y, z: newV.z ?? newV.pos_z,
+        x: newV.x ?? newV.pos_x,
+        y: newV.y ?? newV.pos_y,
+        z: newV.z ?? newV.pos_z,
       });
     }
   }
@@ -430,10 +503,16 @@ function diffVehicleState(oldVehicles, newVehicles) {
       // New vehicle appeared
       const vName = newV.display_name || newV.displayName || newV.class || key;
       events.push({
-        type: 'vehicle_appeared', category: 'vehicle',
-        actor: key, actorName: vName, item: '', amount: 0,
+        type: 'vehicle_appeared',
+        category: 'vehicle',
+        actor: key,
+        actorName: vName,
+        item: '',
+        amount: 0,
         details: { health: newV.health, maxHealth: newV.maxHealth, fuel: newV.fuel },
-        x: newV.x ?? newV.pos_x, y: newV.y ?? newV.pos_y, z: newV.z ?? newV.pos_z,
+        x: newV.x ?? newV.pos_x,
+        y: newV.y ?? newV.pos_y,
+        z: newV.z ?? newV.pos_z,
       });
       continue;
     }
@@ -446,10 +525,16 @@ function diffVehicleState(oldVehicles, newVehicles) {
     const maxHealth = parseFloat(newV.max_health || newV.maxHealth) || 100;
     if (Math.abs(newHealth - oldHealth) >= 5) {
       events.push({
-        type: 'vehicle_health_changed', category: 'vehicle',
-        actor: key, actorName: vName, item: '', amount: Math.round(newHealth - oldHealth),
+        type: 'vehicle_health_changed',
+        category: 'vehicle',
+        actor: key,
+        actorName: vName,
+        item: '',
+        amount: Math.round(newHealth - oldHealth),
         details: { oldHealth, newHealth, healthPercent: (newHealth / maxHealth) * 100 },
-        x: newV.x ?? newV.pos_x, y: newV.y ?? newV.pos_y, z: newV.z ?? newV.pos_z,
+        x: newV.x ?? newV.pos_x,
+        y: newV.y ?? newV.pos_y,
+        z: newV.z ?? newV.pos_z,
       });
     }
 
@@ -458,10 +543,16 @@ function diffVehicleState(oldVehicles, newVehicles) {
     const newFuel = parseFloat(newV.fuel) || 0;
     if (Math.abs(newFuel - oldFuel) >= 2) {
       events.push({
-        type: 'vehicle_fuel_changed', category: 'vehicle',
-        actor: key, actorName: vName, item: '', amount: Math.round((newFuel - oldFuel) * 10) / 10,
+        type: 'vehicle_fuel_changed',
+        category: 'vehicle',
+        actor: key,
+        actorName: vName,
+        item: '',
+        amount: Math.round((newFuel - oldFuel) * 10) / 10,
         details: { oldFuel, newFuel },
-        x: newV.x ?? newV.pos_x, y: newV.y ?? newV.pos_y, z: newV.z ?? newV.pos_z,
+        x: newV.x ?? newV.pos_x,
+        y: newV.y ?? newV.pos_y,
+        z: newV.z ?? newV.pos_z,
       });
     }
   }
@@ -471,10 +562,16 @@ function diffVehicleState(oldVehicles, newVehicles) {
     if (!newByKey.has(key)) {
       const vName = oldV.display_name || oldV.displayName || oldV.class || key;
       events.push({
-        type: 'vehicle_destroyed', category: 'vehicle',
-        actor: key, actorName: vName, item: '', amount: 0,
+        type: 'vehicle_destroyed',
+        category: 'vehicle',
+        actor: key,
+        actorName: vName,
+        item: '',
+        amount: 0,
         details: { lastHealth: oldV.health },
-        x: oldV.x ?? oldV.pos_x, y: oldV.y ?? oldV.pos_y, z: oldV.z ?? oldV.pos_z,
+        x: oldV.x ?? oldV.pos_x,
+        y: oldV.y ?? oldV.pos_y,
+        z: oldV.z ?? oldV.pos_z,
       });
     }
   }
@@ -515,21 +612,36 @@ function diffStructures(oldStructures, newStructures) {
       if (newHealth <= 0 && oldHealth > 0) {
         // Structure destroyed
         events.push({
-          type: 'structure_destroyed', category: 'structure',
-          actor: key, actorName: sName,
+          type: 'structure_destroyed',
+          category: 'structure',
+          actor: key,
+          actorName: sName,
           steam_id: newS.owner_steam_id || newS.ownerSteamId || '',
-          item: '', amount: 0,
+          item: '',
+          amount: 0,
           details: { owner: newS.owner_steam_id || newS.ownerSteamId, oldHealth },
-          x: newS.x ?? newS.pos_x, y: newS.y ?? newS.pos_y, z: newS.z ?? newS.pos_z,
+          x: newS.x ?? newS.pos_x,
+          y: newS.y ?? newS.pos_y,
+          z: newS.z ?? newS.pos_z,
         });
       } else {
         events.push({
-          type: 'structure_damaged', category: 'structure',
-          actor: key, actorName: sName,
+          type: 'structure_damaged',
+          category: 'structure',
+          actor: key,
+          actorName: sName,
           steam_id: newS.owner_steam_id || newS.ownerSteamId || '',
-          item: '', amount: Math.round(newHealth - oldHealth),
-          details: { oldHealth, newHealth, healthPercent: (newHealth / maxHealth) * 100, owner: newS.owner_steam_id || newS.ownerSteamId },
-          x: newS.x ?? newS.pos_x, y: newS.y ?? newS.pos_y, z: newS.z ?? newS.pos_z,
+          item: '',
+          amount: Math.round(newHealth - oldHealth),
+          details: {
+            oldHealth,
+            newHealth,
+            healthPercent: (newHealth / maxHealth) * 100,
+            owner: newS.owner_steam_id || newS.ownerSteamId,
+          },
+          x: newS.x ?? newS.pos_x,
+          y: newS.y ?? newS.pos_y,
+          z: newS.z ?? newS.pos_z,
         });
       }
     }
@@ -539,12 +651,17 @@ function diffStructures(oldStructures, newStructures) {
     const newLevel = parseInt(newS.upgrade_level || newS.upgradeLevel) || 0;
     if (newLevel > oldLevel) {
       events.push({
-        type: 'structure_upgraded', category: 'structure',
-        actor: key, actorName: sName,
+        type: 'structure_upgraded',
+        category: 'structure',
+        actor: key,
+        actorName: sName,
         steam_id: newS.owner_steam_id || newS.ownerSteamId || '',
-        item: '', amount: newLevel - oldLevel,
+        item: '',
+        amount: newLevel - oldLevel,
         details: { oldLevel, newLevel, owner: newS.owner_steam_id || newS.ownerSteamId },
-        x: newS.x ?? newS.pos_x, y: newS.y ?? newS.pos_y, z: newS.z ?? newS.pos_z,
+        x: newS.x ?? newS.pos_x,
+        y: newS.y ?? newS.pos_y,
+        z: newS.z ?? newS.pos_z,
       });
     }
   }
@@ -557,12 +674,17 @@ function diffStructures(oldStructures, newStructures) {
       if (!owner) continue; // Skip unowned structures (world props)
       const sName = oldS.display_name || oldS.displayName || oldS.actor_class || oldS.actorClass || key;
       events.push({
-        type: 'structure_destroyed', category: 'structure',
-        actor: key, actorName: sName,
+        type: 'structure_destroyed',
+        category: 'structure',
+        actor: key,
+        actorName: sName,
         steam_id: owner,
-        item: '', amount: 0,
+        item: '',
+        amount: 0,
         details: { owner, lastHealth: oldS.current_health || oldS.currentHealth },
-        x: oldS.x ?? oldS.pos_x, y: oldS.y ?? oldS.pos_y, z: oldS.z ?? oldS.pos_z,
+        x: oldS.x ?? oldS.pos_x,
+        y: oldS.y ?? oldS.pos_y,
+        z: oldS.z ?? oldS.pos_z,
       });
     }
   }
@@ -581,10 +703,14 @@ function diffStructures(oldStructures, newStructures) {
 function _normalizeItems(items) {
   if (!items) return [];
   if (typeof items === 'string') {
-    try { items = JSON.parse(items); } catch { return []; }
+    try {
+      items = JSON.parse(items);
+    } catch {
+      return [];
+    }
   }
   if (!Array.isArray(items)) return [];
-  return items.filter(i => i && i.item && i.item !== 'None' && i.item !== 'Empty');
+  return items.filter((i) => i && i.item && i.item !== 'None' && i.item !== 'Empty');
 }
 
 /**
@@ -750,8 +876,8 @@ function _getField(player, slot) {
  */
 function _crossReferenceContainerAccess(events) {
   // Separate container and inventory events
-  const containerEvents = events.filter(e => e.category === 'container' && e.item);
-  const inventoryEvents = events.filter(e => e.category === 'inventory' && e.item);
+  const containerEvents = events.filter((e) => e.category === 'container' && e.item);
+  const inventoryEvents = events.filter((e) => e.category === 'inventory' && e.item);
 
   if (containerEvents.length === 0 || inventoryEvents.length === 0) return;
 
@@ -761,8 +887,12 @@ function _crossReferenceContainerAccess(events) {
     const steamId = e.actor;
     if (!playerChanges.has(steamId)) {
       playerChanges.set(steamId, {
-        name: e.actorName, x: e.x, y: e.y, z: e.z,
-        gained: new Map(), lost: new Map(),
+        name: e.actorName,
+        x: e.x,
+        y: e.y,
+        z: e.z,
+        gained: new Map(),
+        lost: new Map(),
       });
     }
     const pc = playerChanges.get(steamId);
@@ -787,8 +917,8 @@ function _crossReferenceContainerAccess(events) {
     for (const [steamId, pc] of playerChanges) {
       // Check position proximity (if both have coordinates)
       if (ce.x != null && pc.x != null) {
-        const dx = (ce.x - pc.x);
-        const dy = (ce.y - pc.y);
+        const dx = ce.x - pc.x;
+        const dy = ce.y - pc.y;
         const distSq = dx * dx + dy * dy;
         if (distSq > MAX_DISTANCE_SQ) continue; // too far away
       }

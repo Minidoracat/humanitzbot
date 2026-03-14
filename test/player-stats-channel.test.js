@@ -130,7 +130,7 @@ describe('_cleanItemName', () => {
 // _isNewWeek (weekly baseline reset detection)
 // ══════════════════════════════════════════════════════════
 
-const PlayerStatsChannel = require('../src/modules/player-stats-channel');
+const _PlayerStatsChannel = require('../src/modules/player-stats-channel');
 
 describe('_isNewWeek (via KillTracker)', () => {
   const KillTracker = require('../src/tracking/kill-tracker');
@@ -181,16 +181,18 @@ describe('_isNewWeek (via KillTracker)', () => {
     const tracker = makeTracker(1, 'Europe/Tallinn');
     const baseline = '2025-06-11T12:00:00Z'; // Wed Jun 11 15:00 Tallinn
     const now = new Date('2025-06-12T21:30:00Z'); // Fri Jun 13 00:30 Tallinn
-    assert.equal(tracker._isNewWeek(baseline, now), false,
-      'should NOT reset mid-week even when bot TZ is ahead of system TZ');
+    assert.equal(
+      tracker._isNewWeek(baseline, now),
+      false,
+      'should NOT reset mid-week even when bot TZ is ahead of system TZ',
+    );
   });
 
   it('correctly resets when bot timezone crosses weekly boundary', () => {
     const tracker = makeTracker(1, 'Europe/Tallinn');
     const baseline = '2025-06-06T12:00:00Z'; // Fri Jun 6
     const now = new Date('2025-06-10T08:00:00Z'); // Tue Jun 10, 11:00 Tallinn
-    assert.equal(tracker._isNewWeek(baseline, now), true,
-      'should reset when Mon boundary has passed in bot TZ');
+    assert.equal(tracker._isNewWeek(baseline, now), true, 'should reset when Mon boundary has passed in bot TZ');
   });
 });
 
@@ -211,7 +213,9 @@ describe('_snapshotPlayerStats (via KillTracker)', () => {
   }
 
   it('creates a snapshot with all stat fields', () => {
-    const saveData = new Map([['12345', { fishCaught: 10, timesBitten: 3, lifetimeKills: 50, hasExtendedStats: true }]]);
+    const saveData = new Map([
+      ['12345', { fishCaught: 10, timesBitten: 3, lifetimeKills: 50, hasExtendedStats: true }],
+    ]);
     const tracker = makeTracker(saveData);
     const snap = tracker._snapshotPlayerStats('12345', saveData);
     assert.equal(snap.kills, 50);
@@ -335,14 +339,22 @@ describe('_dbRowToSave', () => {
 
   it('converts vitals and position', () => {
     const row = {
-      health: 85, max_health: 100,
-      hunger: 60, max_hunger: 100,
-      thirst: 40, max_thirst: 100,
-      stamina: 90, max_stamina: 100,
-      infection: 75, max_infection: 100,
-      battery: 50, fatigue: 0.3,
+      health: 85,
+      max_health: 100,
+      hunger: 60,
+      max_hunger: 100,
+      thirst: 40,
+      max_thirst: 100,
+      stamina: 90,
+      max_stamina: 100,
+      infection: 75,
+      max_infection: 100,
+      battery: 50,
+      fatigue: 0.3,
       infection_buildup: 10,
-      pos_x: 1000, pos_y: 2000, pos_z: 300,
+      pos_x: 1000,
+      pos_y: 2000,
+      pos_z: 300,
       rotation_yaw: 45,
     };
     const save = _dbRowToSave(row);

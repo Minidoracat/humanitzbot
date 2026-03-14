@@ -6,7 +6,7 @@ describe('Interaction handling', () => {
     it('should defer player select immediately before async work', async () => {
       const deferCalls = [];
       const editCalls = [];
-      
+
       const interaction = {
         isStringSelectMenu: () => true,
         customId: 'playerstats_player_select:',
@@ -17,28 +17,27 @@ describe('Interaction handling', () => {
         },
         editReply: async (opts) => {
           editCalls.push({ timestamp: Date.now(), opts });
-        }
+        },
       };
 
       // Simulate the handler logic
       await interaction.deferReply({ flags: 64 });
-      
+
       // Then do async work (module lookup, etc)
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
       // Then edit reply
       await interaction.editReply({ content: 'Test', flags: 64 });
 
       assert.strictEqual(deferCalls.length, 1, 'Should defer exactly once');
       assert.strictEqual(editCalls.length, 1, 'Should edit exactly once');
-      assert.ok(deferCalls[0].timestamp < editCalls[0].timestamp, 
-        'Defer must happen before edit');
+      assert.ok(deferCalls[0].timestamp < editCalls[0].timestamp, 'Defer must happen before edit');
     });
 
     it('should defer clan select immediately before async work', async () => {
       const deferCalls = [];
       const editCalls = [];
-      
+
       const interaction = {
         isStringSelectMenu: () => true,
         customId: 'playerstats_clan_select:',
@@ -49,22 +48,21 @@ describe('Interaction handling', () => {
         },
         editReply: async (opts) => {
           editCalls.push({ timestamp: Date.now(), opts });
-        }
+        },
       };
 
       // Simulate the handler logic
       await interaction.deferReply({ flags: 64 });
-      
+
       // Then do async work
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
       // Then edit reply
       await interaction.editReply({ content: 'Test', flags: 64 });
 
       assert.strictEqual(deferCalls.length, 1, 'Should defer exactly once');
       assert.strictEqual(editCalls.length, 1, 'Should edit exactly once');
-      assert.ok(deferCalls[0].timestamp < editCalls[0].timestamp, 
-        'Defer must happen before edit');
+      assert.ok(deferCalls[0].timestamp < editCalls[0].timestamp, 'Defer must happen before edit');
     });
 
     it('should use editReply for errors after deferring', async () => {
@@ -75,17 +73,15 @@ describe('Interaction handling', () => {
         member: { roles: { cache: new Map() } },
         deferReply: async () => {},
         editReply: mock.fn(async () => {}),
-        reply: mock.fn(async () => {})
+        reply: mock.fn(async () => {}),
       };
 
       // Simulate error case after defer
       await interaction.deferReply({ flags: 64 });
       await interaction.editReply({ content: 'Error message', flags: 64 });
 
-      assert.strictEqual(interaction.editReply.mock.calls.length, 1, 
-        'Should use editReply after defer');
-      assert.strictEqual(interaction.reply.mock.calls.length, 0, 
-        'Should not use reply after defer');
+      assert.strictEqual(interaction.editReply.mock.calls.length, 1, 'Should use editReply after defer');
+      assert.strictEqual(interaction.reply.mock.calls.length, 0, 'Should not use reply after defer');
     });
 
     it('should handle interaction token expiry gracefully', async () => {
@@ -96,30 +92,27 @@ describe('Interaction handling', () => {
         member: { roles: { cache: new Map() } },
         deferReply: async () => {
           // Simulate delay that would cause timeout
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, 100));
           throw new Error('Unknown interaction');
-        }
+        },
       };
 
       // This should throw if defer happens too late
-      await assert.rejects(
-        async () => {
-          await new Promise(resolve => setTimeout(resolve, 50)); // Work before defer
-          await interaction.deferReply({ flags: 64 });
-        },
-        /Unknown interaction/
-      );
+      await assert.rejects(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50)); // Work before defer
+        await interaction.deferReply({ flags: 64 });
+      }, /Unknown interaction/);
     });
   });
 
   describe('Interaction response patterns', () => {
     it('should never call both reply and deferReply', async () => {
       const calls = [];
-      
+
       const interaction = {
         reply: async (opts) => calls.push({ type: 'reply', opts }),
         deferReply: async (opts) => calls.push({ type: 'defer', opts }),
-        editReply: async (opts) => calls.push({ type: 'edit', opts })
+        editReply: async (opts) => calls.push({ type: 'edit', opts }),
       };
 
       // Valid pattern 1: reply only

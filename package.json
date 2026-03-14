@@ -12,6 +12,11 @@
     "deploy-commands": "node src/deploy-commands.js",
     "dev": "node --watch src/index.js",
     "test": "node --test test/*.test.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"src/**/*.{js,json}\" \"test/**/*.js\" \"locales/**/*.json\" \"*.{js,json,md}\"",
+    "format:check": "prettier --check \"src/**/*.{js,json}\" \"test/**/*.js\" \"locales/**/*.json\" \"*.{js,json,md}\"",
+    "prepare": "husky",
     "build:css": "tailwindcss -i src/web-map/public/tailwind-input.css -o src/web-map/public/tailwind.css --minify",
     "dev:css": "tailwindcss -i src/web-map/public/tailwind-input.css -o src/web-map/public/tailwind.css --watch",
     "build:template": "node src/db/build-template-db.js",
@@ -31,7 +36,23 @@
     "node": ">=18.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tailwindcss/cli": "^4.2.1",
+    "eslint": "^10.0.3",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.4.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.8.1",
     "tailwindcss": "^4.2.1"
+  },
+  "lint-staged": {
+    "*.js": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ]
   }
 }

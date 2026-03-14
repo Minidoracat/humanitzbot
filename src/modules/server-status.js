@@ -1,11 +1,8 @@
-const { EmbedBuilder } = require('discord.js');
 const _defaultConfig = require('../config');
 const { cleanOwnMessages, embedContentKey, safeEditMessage } = require('./discord-utils');
-const { getServerInfo, getPlayerList } = require('../rcon/server-info');
 const _defaultPlaytime = require('../tracking/playtime-tracker');
 const _defaultPlayerStats = require('../tracking/player-stats');
 const _defaultServerResources = require('../server/server-resources');
-const { formatBytes } = require('../server/server-resources');
 
 // Embed builders — presentation layer (mixed into prototype below)
 const statusEmbeds = require('./server-status-embeds');
@@ -29,12 +26,12 @@ class ServerStatus {
     this.updateIntervalMs = parseInt(this._config.serverStatusInterval, 10) || 30000; // 30s default
 
     // Track online/offline state for transitions
-    this._lastOnline = null;       // null = unknown, true = online, false = offline
-    this._offlineSince = null;     // Date when server went offline
-    this._onlineSince = null;      // Date when server came online (for uptime)
-    this._lastInfo = null;         // cache last successful RCON info
-    this._lastPlayerList = null;   // cache last successful player list
-    this._lastEmbedKey = null;     // content hash to skip redundant edits
+    this._lastOnline = null; // null = unknown, true = online, false = offline
+    this._offlineSince = null; // Date when server went offline
+    this._onlineSince = null; // Date when server came online (for uptime)
+    this._lastInfo = null; // cache last successful RCON info
+    this._lastPlayerList = null; // cache last successful player list
+    this._lastEmbedKey = null; // content hash to skip redundant edits
 
     // Load persisted state (uptime, cached info) so data survives bot restarts
     this._loadState();
@@ -56,7 +53,9 @@ class ServerStatus {
         return;
       }
 
-      console.log(`[${this._label}] Posting live status in #${this.channel.name} (every ${this.updateIntervalMs / 1000}s)`);
+      console.log(
+        `[${this._label}] Posting live status in #${this.channel.name} (every ${this.updateIntervalMs / 1000}s)`,
+      );
 
       // Delete previous own message (by saved ID), not all bot messages
       await this._cleanOwnMessage();
@@ -105,15 +104,14 @@ class ServerStatus {
 
   async _update() {
     try {
-      const [info, playerList] = await Promise.all([
-        this._getServerInfo(),
-        this._getPlayerList(),
-      ]);
+      const [info, playerList] = await Promise.all([this._getServerInfo(), this._getPlayerList()]);
 
       // Fetch host resources (non-blocking — failure returns null)
       let resources = null;
       if (this._config.showHostResources && this._serverResources.backend) {
-        try { resources = await this._serverResources.getResources(); } catch (_) {}
+        try {
+          resources = await this._serverResources.getResources();
+        } catch (_) {}
       }
 
       // Server is online — cache the data
@@ -139,10 +137,18 @@ class ServerStatus {
         if (contentKey === this._lastEmbedKey) return;
         this._lastEmbedKey = contentKey;
 
-        this.statusMessage = await safeEditMessage(this.statusMessage, this.channel, { embeds: [embed] }, {
-          label: this._label,
-          onRecreate: (msg) => { this.statusMessage = msg; this._saveMessageId(); },
-        });
+        this.statusMessage = await safeEditMessage(
+          this.statusMessage,
+          this.channel,
+          { embeds: [embed] },
+          {
+            label: this._label,
+            onRecreate: (msg) => {
+              this.statusMessage = msg;
+              this._saveMessageId();
+            },
+          },
+        );
       }
     } catch (err) {
       if (err.message.includes('RCON not connected')) {
@@ -160,11 +166,20 @@ class ServerStatus {
           if (contentKey !== this._lastEmbedKey) {
             this._lastEmbedKey = contentKey;
             try {
-              this.statusMessage = await safeEditMessage(this.statusMessage, this.channel, { embeds: [embed] }, {
-                label: this._label,
-                onRecreate: (msg) => { this.statusMessage = msg; },
-              });
-            } catch (_) { /* ignore */ }
+              this.statusMessage = await safeEditMessage(
+                this.statusMessage,
+                this.channel,
+                { embeds: [embed] },
+                {
+                  label: this._label,
+                  onRecreate: (msg) => {
+                    this.statusMessage = msg;
+                  },
+                },
+              );
+            } catch (_) {
+              /* ignore */
+            }
           }
         }
       } else {
