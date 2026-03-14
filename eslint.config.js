@@ -38,6 +38,7 @@ module.exports = defineConfig([
     '_*.js',
     '*.bak',
     'temp/',
+    'src/game-server/humanitz-agent.js',
   ]),
 
   // ── Backend: Node.js CommonJS ───────────────────────────────
