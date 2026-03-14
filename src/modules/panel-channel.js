@@ -1,13 +1,13 @@
-/**
- * Panel Channel — unified admin dashboard.
+﻿/**
+ * Panel Channel  unified admin dashboard.
  *
- * Single message with stacked embeds showing bot, primary server,
- * and any managed servers. A view selector switches which controls
- * are active. Admin-only channel. Requires PANEL_CHANNEL_ID.
+ * Single message with stacked Components v2 containers showing bot,
+ * primary server, and managed servers. A view selector switches which
+ * controls are active. Admin-only channel. Requires PANEL_CHANNEL_ID.
  */
 
 const {
-  EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
+  ActionRowBuilder, ButtonBuilder, ButtonStyle,
   StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
   PermissionFlagsBits,
   MessageFlags,
@@ -16,25 +16,24 @@ const config = require('../config');
 const panelApi = require('../server/panel-api');
 const SftpClient = require('ssh2-sftp-client');
 const { formatBytes, formatUptime } = require('../server/server-resources');
-const MultiServerManager = require('../server/multi-server');
 const { blockBar: _progressBar } = require('../server/server-display');
 const { BTN, SELECT, ENV_CATEGORIES, GAME_SETTINGS_CATEGORIES } = require('./panel-constants');
 const { buildDiagnostics } = require('./panel-diagnostics');
-const { cleanOwnMessages, embedContentKey, modalTitle } = require('./discord-utils');
+const { cleanOwnMessages } = require('./discord-utils');
 
-// ── State colour map ────────────────────────────────────────
+//  State colour map 
 const STATE_DISPLAY = {
-  running:  { emoji: '🟢', label: 'Running',  color: 0x2ecc71 },
-  starting: { emoji: '🟡', label: 'Starting', color: 0xf1c40f },
-  stopping: { emoji: '🟠', label: 'Stopping', color: 0xe67e22 },
-  offline:  { emoji: '🔴', label: 'Offline',  color: 0xe74c3c },
+  running:  { emoji: '[RUN]', label: 'Running',  color: 0x2ecc71 },
+  starting: { emoji: '[START]', label: 'Starting', color: 0xf1c40f },
+  stopping: { emoji: '[STOP]', label: 'Stopping', color: 0xe67e22 },
+  offline:  { emoji: '[OFF]', label: 'Offline',  color: 0xe74c3c },
 };
 
 function _stateInfo(state) {
-  return STATE_DISPLAY[state] || { emoji: '⚪', label: state || 'Unknown', color: 0x95a5a6 };
+  return STATE_DISPLAY[state] || { emoji: '[?]', label: state || 'Unknown', color: 0x95a5a6 };
 }
 
-// ── .env file helpers (shared via panel-env.js) ────────────
+//  .env file helpers (shared via panel-env.js) 
 const {
   getEnvValue: _getEnvValue,
   writeEnvValues: _writeEnvValues,
@@ -55,9 +54,112 @@ function _formatBotUptime(ms) {
   return parts.join(' ');
 }
 
-// ═════════════════════════════════════════════════════════════
+/**
+ * Discord modal titles are limited to 45 chars.
+ * Trim defensively so category labels can never crash interaction handlers.
+ */
+function _modalTitle(title, max = 45) {
+  const text = String(title ?? '');
+  if (text.length <= max) return text;
+  const suffix = '...';
+  const keep = Math.max(1, max - suffix.length);
+  let base = text.slice(0, keep);
+  // Avoid leaving a dangling high surrogate at the end.
+  const last = base.charCodeAt(base.length - 1);
+  if (last >= 0xD800 && last <= 0xDBFF) base = base.slice(0, -1);
+  return `${base}${suffix}`;
+}
+
+// Components v2 helpers
+const COMPONENTS_V2_FLAG = MessageFlags.IsComponentsV2 ?? (1 << 15);
+const MAX_V2_COMPONENTS = 40;
+const V2 = {
+  ACTION_ROW: 1,
+  TEXT_DISPLAY: 10,
+  CONTAINER: 17,
+};
+
+function _toComponentJSON(component) {
+  return typeof component?.toJSON === 'function' ? component.toJSON() : component;
+}
+
+function _textDisplay(content) {
+  return { type: V2.TEXT_DISPLAY, content: String(content ?? '') };
+}
+
+function _container(textBlocks = [], rows = [], accentColor = null) {
+  const components = [];
+  for (const block of textBlocks) {
+    if (!block) continue;
+    components.push(_textDisplay(block));
+  }
+  for (const row of rows) {
+    if (!row) continue;
+    components.push(_toComponentJSON(row));
+  }
+  const c = { type: V2.CONTAINER, components };
+  if (accentColor != null) c.accent_color = accentColor;
+  return c;
+}
+
+function _componentsKey(components = []) {
+  return JSON.stringify(components.map(c => _toComponentJSON(c)));
+}
+
+function _countComponents(components = []) {
+  let total = 0;
+  const stack = [...components];
+  while (stack.length > 0) {
+    const next = stack.pop();
+    if (!next || typeof next !== 'object') continue;
+    total += 1;
+    if (Array.isArray(next.components)) {
+      for (const child of next.components) stack.push(child);
+    }
+    if (next.accessory && typeof next.accessory === 'object') {
+      stack.push(next.accessory);
+    }
+  }
+  return total;
+}
+
+function _errorSummary(err) {
+  const parts = [];
+  if (err?.message) parts.push(err.message);
+  if (err?.code) parts.push(`code=${err.code}`);
+  const rawMessage = err?.rawError?.message;
+  if (rawMessage) parts.push(`api=${rawMessage}`);
+  if (err?.rawError?.errors) {
+    try { parts.push(JSON.stringify(err.rawError.errors)); } catch {}
+  }
+  return parts.join(' | ');
+}
+
+function _diagnosticToMarkdown(diagnosticLike) {
+  const raw = typeof diagnosticLike?.toJSON === 'function'
+    ? diagnosticLike.toJSON()
+    : (diagnosticLike?.data || diagnosticLike || {});
+
+  const parts = [];
+  if (raw.title) parts.push(`## ${raw.title}`);
+  if (raw.description) parts.push(raw.description);
+  if (Array.isArray(raw.fields)) {
+    for (const f of raw.fields) {
+      if (!f) continue;
+      const name = f.name || 'Section';
+      const value = f.value || '-';
+      parts.push(`### ${name}\n${value}`);
+    }
+  }
+  if (raw.footer?.text) parts.push(`-# ${raw.footer.text}`);
+  const text = parts.join('\n\n').trim();
+  if (!text) return 'No diagnostic details.';
+  return text.length > 3900 ? `${text.slice(0, 3897)}...` : text;
+}
+
+// 
 // PanelChannel class
-// ═════════════════════════════════════════════════════════════
+// 
 
 class PanelChannel {
 
@@ -72,8 +174,8 @@ class PanelChannel {
     this.channel = null;
     this.panelMessage = null;  // single unified panel message
     this.botMessage = null;    // alias kept for interaction handler compat (points to panelMessage)
-    this._serverMessages = new Map(); // serverId → Discord message (kept for compat, unused in unified mode)
-    this._lastServerKeys = new Map(); // serverId → content hash
+    this._serverMessages = new Map(); // serverId  Discord message (kept for compat, unused in unified mode)
+    this._lastServerKeys = new Map(); // serverId  content hash
     this.interval = null;
     this.updateIntervalMs = parseInt(config.serverStatusInterval, 10) || 30000;
     this._lastBotKey = null;
@@ -87,7 +189,7 @@ class PanelChannel {
     this._db = db;
     this._saveService = saveService;
     this._logWatcher = logWatcher;
-    this._pendingServers = new Map(); // userId → { ...partial server config, _createdAt }
+    this._pendingServers = new Map(); // userId  { ...partial server config, _createdAt }
     // Setup wizard state (when config.needsSetup is true)
     this._setupWizard = null; // { profile, rcon: {host,port,password}, sftp: {host,port,user,password}, channels: {...}, step }
     // Clean up stale pending entries every 5 minutes
@@ -107,7 +209,7 @@ class PanelChannel {
   /**
    * Check admin permission (synchronous). Returns true if admin, false if not.
    * Caller must handle defer/reply themselves.
-   * Usage: `if (!this._isAdmin(interaction)) { await interaction.editReply('❌ Admin only'); return; }`
+   * Usage: `if (!this._isAdmin(interaction)) { await interaction.editReply(' Admin only'); return; }`
    */
   _isAdmin(interaction) {
     return interaction.member?.permissions?.has(PermissionFlagsBits.Administrator) || false;
@@ -120,7 +222,7 @@ class PanelChannel {
    */
   async _requireAdmin(interaction, action) {
     if (!interaction.member?.permissions?.has(PermissionFlagsBits.Administrator)) {
-      await interaction.reply({ content: `❌ Only administrators can ${action}.`, flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: `[ERR] Only administrators can ${action}.`, flags: MessageFlags.Ephemeral });
       return false;
     }
     return true;
@@ -141,9 +243,9 @@ class PanelChannel {
         return;
       }
 
-      // ── Setup wizard mode ──
+      //  Setup wizard mode 
       if (config.needsSetup) {
-        console.log('[PANEL CH] RCON not configured — launching setup wizard');
+        console.log('[PANEL CH] RCON not configured - launching setup wizard');
         await this._cleanOwnMessages();
         await this._startSetupWizard();
         return;
@@ -158,13 +260,24 @@ class PanelChannel {
         const count = this.multiServerManager.getAllServers().length;
         if (count > 0) features.push(`${count} managed server(s)`);
       }
-      console.log(`[PANEL CH] Posting unified panel in #${this.channel.name} — ${features.join(', ')} (every ${this.updateIntervalMs / 1000}s)`);
+      console.log(`[PANEL CH] Posting unified panel in #${this.channel.name} - ${features.join(', ')} (every ${this.updateIntervalMs / 1000}s)`);
       await this._cleanOwnMessages();
+      await this._cleanStalePanelMessages();
 
-      // ── Single unified message with stacked embeds ──
-      const { embeds, components } = await this._buildUnifiedPanel();
-      this.panelMessage = await this.channel.send({ embeds, components });
+      //  Single unified message with Components v2 containers 
+      const { components } = await this._buildUnifiedPanel();
+      try {
+        this.panelMessage = await this.channel.send({ flags: COMPONENTS_V2_FLAG, components });
+      } catch (sendErr) {
+        console.error('[PANEL CH] Initial publish failed:', _errorSummary(sendErr));
+        // Minimal fallback so the panel is always visible after restart.
+        this.panelMessage = await this.channel.send({
+          flags: COMPONENTS_V2_FLAG,
+          components: [_container(['Panel started, but the full layout was rejected by Discord. Check logs.'], [], 0xe67e22)],
+        });
+      }
       this.botMessage = this.panelMessage; // alias for interaction handler compat
+      await this._cleanStalePanelMessages(this.panelMessage.id);
 
       // Persist message ID
       this._saveMessageIds();
@@ -175,7 +288,7 @@ class PanelChannel {
       // Refresh loop
       this.interval = setInterval(() => this._update(), this.updateIntervalMs);
     } catch (err) {
-      console.error('[PANEL CH] Failed to start:', err.message);
+      console.error('[PANEL CH] Failed to start:', _errorSummary(err));
     }
   }
 
@@ -189,17 +302,17 @@ class PanelChannel {
       this._pendingCleanupTimer = null;
     }
   }
-  // ═══════════════════════════════════════════════════════════
+  // 
   // Interaction router
-  // ═══════════════════════════════════════════════════════════
+  // 
 
   async handleInteraction(interaction) {
-    // ── Setup wizard interactions ──
+    //  Setup wizard interactions 
     if (this._setupWizard !== null) {
       return this._handleSetupInteraction(interaction);
     }
 
-    // ── Buttons ──
+    //  Buttons 
     if (interaction.isButton()) {
       const id = interaction.customId;
       if ([BTN.START, BTN.STOP, BTN.RESTART, BTN.BACKUP, BTN.KILL].includes(id)) {
@@ -247,10 +360,19 @@ class PanelChannel {
       return false;
     }
 
-    // ── Select menus ──
+    //  Select menus 
     if (interaction.isStringSelectMenu()) {
       if (interaction.customId === SELECT.VIEW) {
         return this._handleViewSelect(interaction);
+      }
+      if (interaction.customId === SELECT.ACTIONS_BOT) {
+        return this._handleBotActionsSelect(interaction);
+      }
+      if (interaction.customId === SELECT.ACTIONS_SERVER) {
+        return this._handleServerActionsSelect(interaction);
+      }
+      if (interaction.customId === SELECT.ACTIONS_MANAGED) {
+        return this._handleManagedActionsSelect(interaction);
       }
       if (interaction.customId === SELECT.ENV || interaction.customId === SELECT.ENV2) {
         return this._handleEnvSelect(interaction);
@@ -264,7 +386,7 @@ class PanelChannel {
       return false;
     }
 
-    // ── Modals ──
+    //  Modals 
     if (interaction.isModalSubmit()) {
       if (interaction.customId.startsWith('panel_env_modal:')) {
         return this._handleEnvModal(interaction);
@@ -314,21 +436,82 @@ class PanelChannel {
     return false;
   }
 
-  // ═══════════════════════════════════════════════════════════
+  async _handleBotActionsSelect(interaction) {
+    const action = interaction.values?.[0];
+    switch (action) {
+      case 'diagnostics':
+        return this._handleDiagnosticsButton(interaction);
+      case 'env_sync':
+        return this._handleEnvSyncButton(interaction);
+      case 'add_server':
+        return this._handleAddServerButton(interaction);
+      case 'restart_bot':
+        return this._handleBotRestart(interaction);
+      case 'reimport':
+        return this._handleReimportButton(interaction);
+      case 'factory_reset':
+        return this._handleNukeButton(interaction);
+      default:
+        await interaction.reply({ content: '[ERR] Unknown action.', flags: MessageFlags.Ephemeral });
+        return true;
+    }
+  }
+
+  async _handleServerActionsSelect(interaction) {
+    const action = interaction.values?.[0];
+    switch (action) {
+      case 'start':
+        return this._handlePowerButton(interaction, BTN.START);
+      case 'stop':
+        return this._handlePowerButton(interaction, BTN.STOP);
+      case 'restart':
+        return this._handlePowerButton(interaction, BTN.RESTART);
+      case 'backup':
+        return this._handlePowerButton(interaction, BTN.BACKUP);
+      case 'kill':
+        return this._handlePowerButton(interaction, BTN.KILL);
+      case 'welcome':
+        return this._handleWelcomeEditButton(interaction);
+      case 'broadcasts':
+        return this._handleBroadcastsButton(interaction);
+      default:
+        await interaction.reply({ content: '[ERR] Unknown action.', flags: MessageFlags.Ephemeral });
+        return true;
+    }
+  }
+
+  async _handleManagedActionsSelect(interaction) {
+    const raw = interaction.values?.[0] || '';
+    const sep = raw.indexOf(':');
+    if (sep <= 0 || sep === raw.length - 1) {
+      await interaction.reply({ content: '[ERR] Invalid action.', flags: MessageFlags.Ephemeral });
+      return true;
+    }
+    const action = raw.slice(0, sep);
+    const serverId = raw.slice(sep + 1);
+    const allowed = new Set(['start', 'stop', 'restart', 'edit', 'remove', 'channels', 'sftp', 'welcome', 'automsg']);
+    if (!allowed.has(action)) {
+      await interaction.reply({ content: '[ERR] Unknown action.', flags: MessageFlags.Ephemeral });
+      return true;
+    }
+    return this._handleServerAction(interaction, `panel_srv_${action}:${serverId}`);
+  }
+
+  // 
   // Button handlers
-  // ═══════════════════════════════════════════════════════════
+  // 
 
   async _handlePowerButton(interaction, id) {
     // Defer immediately to prevent token expiry
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     if (!this._isAdmin(interaction)) {
-      await interaction.editReply('❌ Only administrators can use panel controls.');
+      await interaction.editReply('[ERR] Only administrators can use panel controls.');
       return true;
     }
 
     if (!panelApi.available) {
-      await interaction.editReply('❌ Panel API is not configured. Power controls require PANEL_SERVER_URL and PANEL_API_KEY.');
+      await interaction.editReply('[ERR] Panel API is not configured. Power controls require PANEL_SERVER_URL and PANEL_API_KEY.');
       return true;
     }
 
@@ -336,28 +519,28 @@ class PanelChannel {
       switch (id) {
         case BTN.START:
           await panelApi.sendPowerAction('start');
-          await interaction.editReply('✅ **Start** signal sent. The server is booting up...');
+          await interaction.editReply('[OK] **Start** signal sent. The server is booting up...');
           break;
         case BTN.STOP:
           await panelApi.sendPowerAction('stop');
-          await interaction.editReply('✅ **Stop** signal sent. The server is shutting down gracefully...');
+          await interaction.editReply('[OK] **Stop** signal sent. The server is shutting down gracefully...');
           break;
         case BTN.RESTART:
           await panelApi.sendPowerAction('restart');
-          await interaction.editReply('✅ **Restart** signal sent. The server will restart shortly...');
+          await interaction.editReply('[OK] **Restart** signal sent. The server will restart shortly...');
           break;
         case BTN.KILL:
           await panelApi.sendPowerAction('kill');
-          await interaction.editReply('⚠️ **Kill** signal sent. The server process was forcefully terminated.');
+          await interaction.editReply('[WARN] **Kill** signal sent. The server process was forcefully terminated.');
           break;
         case BTN.BACKUP:
           await panelApi.createBackup();
-          await interaction.editReply('✅ **Backup** creation started. It will appear in the panel shortly.');
+          await interaction.editReply('[OK] **Backup** creation started. It will appear in the panel shortly.');
           break;
       }
       setTimeout(() => this._update(true), 3000);
     } catch (err) {
-      await interaction.editReply(`❌ Action failed: ${err.message}`);
+      await interaction.editReply(`[ERR] Action failed: ${err.message}`);
     }
 
     return true;
@@ -367,7 +550,7 @@ class PanelChannel {
     if (!await this._requireAdmin(interaction, 'restart the bot')) return true;
 
     await interaction.reply({
-      content: '🔄 Restarting bot... The process will exit and your process manager should restart it.',
+      content: '[RESTART] Restarting bot... The process will exit and your process manager should restart it.',
       flags: MessageFlags.Ephemeral,
     });
 
@@ -379,10 +562,10 @@ class PanelChannel {
   async _handleNukeButton(interaction) {
     if (!await this._requireAdmin(interaction, 'factory reset the bot')) return true;
 
-    // Confirmation modal — user must type "NUKE" to proceed
+    // Confirmation modal  user must type "NUKE" to proceed
     const modal = new ModalBuilder()
       .setCustomId('panel_nuke_confirm')
-      .setTitle('⚠️ Factory Reset — Confirm');
+      .setTitle('[WARN] Factory Reset - Confirm');
 
     modal.addComponents(
       new ActionRowBuilder().addComponents(
@@ -406,14 +589,14 @@ class PanelChannel {
 
     const confirm = interaction.fields.getTextInputValue('confirm').trim().toUpperCase();
     if (confirm !== 'NUKE') {
-      await interaction.reply({ content: '❌ Factory reset cancelled — you must type `NUKE` exactly.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: '[ERR] Factory reset cancelled - you must type `NUKE` exactly.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
     // Set NUKE_BOT=true in .env and restart
     _writeEnvValues({ NUKE_BOT: 'true' });
     await interaction.reply({
-      content: '💣 **Factory Reset initiated.** The bot will restart, wipe all Discord messages and local data, then rebuild from server logs.\n\nThis may take a minute...',
+      content: '[NUKE] **Factory Reset initiated.** The bot will restart, wipe all Discord messages and local data, then rebuild from server logs.\n\nThis may take a minute...',
       flags: MessageFlags.Ephemeral,
     });
 
@@ -424,10 +607,10 @@ class PanelChannel {
   async _handleReimportButton(interaction) {
     if (!await this._requireAdmin(interaction, 're-import data')) return true;
 
-    // Set FIRST_RUN=true and restart — re-downloads logs and rebuilds stats
+    // Set FIRST_RUN=true and restart  re-downloads logs and rebuilds stats
     _writeEnvValues({ FIRST_RUN: 'true' });
     await interaction.reply({
-      content: '📥 **Re-Import started.** The bot will restart and re-download server logs to rebuild player stats and playtime data.\n\nExisting Discord messages are preserved — only local data is refreshed.',
+      content: '[IMPORT] **Re-Import started.** The bot will restart and re-download server logs to rebuild player stats and playtime data.\n\nExisting Discord messages are preserved - only local data is refreshed.',
       flags: MessageFlags.Ephemeral,
     });
 
@@ -435,19 +618,24 @@ class PanelChannel {
     return true;
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // Diagnostics — delegates to panel-diagnostics.js
-  // ═══════════════════════════════════════════════════════════
+  // 
+  // Diagnostics  delegates to panel-diagnostics.js
+  // 
 
   async _handleDiagnosticsButton(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     if (!this._isAdmin(interaction)) {
-      await interaction.editReply('❌ Only administrators can view diagnostics.');
+      await interaction.editReply({
+        flags: COMPONENTS_V2_FLAG,
+        content: null,
+        embeds: [],
+        components: [_container(['[ERR] Only administrators can view diagnostics.'], [], 0xe74c3c)],
+      });
       return true;
     }
 
-    const embeds = await buildDiagnostics({
+    const diagnosticData = await buildDiagnostics({
       client: this.client,
       db: this._db,
       saveService: this._saveService,
@@ -457,18 +645,28 @@ class PanelChannel {
       hasSftp: this._hasSftp,
     });
 
-    await interaction.editReply({ embeds });
+    const components = (diagnosticData || []).map(e => _container([_diagnosticToMarkdown(e)], [], 0x5865f2));
+    if (components.length === 0) {
+      components.push(_container(['No diagnostic details.'], [], 0x5865f2));
+    }
+
+    await interaction.editReply({
+      flags: COMPONENTS_V2_FLAG,
+      content: null,
+      embeds: [],
+      components,
+    });
     return true;
   }
 
 
-  // ═══════════════════════════════════════════════════════════
+  // 
   // View selector handler
-  // ═══════════════════════════════════════════════════════════
+  // 
 
   async _handleViewSelect(interaction) {
     const selected = interaction.values[0];
-    // Map 'srv_xxx' → 'xxx' for managed server views
+    // Map 'srv_xxx'  'xxx' for managed server views
     this._activeView = selected.startsWith('srv_') ? selected.slice(4) : selected;
     // Rebuild panel with new view and update the message
     try {
@@ -480,9 +678,9 @@ class PanelChannel {
     return true;
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // Select menu → modal handlers
-  // ═══════════════════════════════════════════════════════════
+  // 
+  // Select menu  modal handlers
+  // 
 
   async _handleEnvSelect(interaction) {
     if (!await this._requireAdmin(interaction, 'edit bot config')) return true;
@@ -490,14 +688,14 @@ class PanelChannel {
     const categoryId = interaction.values[0];
     const category = ENV_CATEGORIES.find(c => c.id === categoryId);
     if (!category) {
-      await interaction.reply({ content: '❌ Unknown category.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: '[ERR] Unknown category.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
-    const restartTag = category.restart ? ' (🔄 Bot Restart)' : ' (✨ Live)';
+    const restartTag = category.restart ? ' ( Bot Restart)' : ' ( Live)';
     const modal = new ModalBuilder()
       .setCustomId(`panel_env_modal:${categoryId}`)
-      .setTitle(modalTitle('Edit: ', category.label, restartTag));
+      .setTitle(_modalTitle(`Edit: ${category.label}${restartTag}`));
 
     for (const field of category.fields) {
       const style = field.style === 'paragraph' ? TextInputStyle.Paragraph : TextInputStyle.Short;
@@ -526,14 +724,14 @@ class PanelChannel {
     if (!await this._requireAdmin(interaction, 'edit server settings')) return true;
 
     if (!this._hasSftp) {
-      await interaction.reply({ content: '❌ SFTP credentials not configured. Game settings require FTP_HOST, FTP_USER, and FTP_PASSWORD.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: '[ERR] SFTP credentials not configured. Game settings require FTP_HOST, FTP_USER, and FTP_PASSWORD.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
     const categoryId = interaction.values[0];
     const category = GAME_SETTINGS_CATEGORIES.find(c => c.id === categoryId);
     if (!category) {
-      await interaction.reply({ content: '❌ Unknown category.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: '[ERR] Unknown category.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
@@ -541,7 +739,7 @@ class PanelChannel {
 
     const modal = new ModalBuilder()
       .setCustomId(`panel_game_modal:${categoryId}`)
-      .setTitle(modalTitle('Server: ', category.label, ' (🔄 Server Restart)'));
+      .setTitle(_modalTitle(`Server: ${category.label} ( Server Restart)`));
 
     for (const setting of category.settings) {
       const currentValue = cached[setting.ini] != null ? String(cached[setting.ini]) : '';
@@ -558,22 +756,22 @@ class PanelChannel {
     return true;
   }
 
-  // ═══════════════════════════════════════════════════════════
+  // 
   // Modal submit handlers
-  // ═══════════════════════════════════════════════════════════
+  // 
 
   async _handleEnvModal(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     
     if (!this._isAdmin(interaction)) {
-      await interaction.editReply('❌ Only administrators can edit bot config.');
+      await interaction.editReply('[ERR] Only administrators can edit bot config.');
       return true;
     }
 
     const categoryId = interaction.customId.replace('panel_env_modal:', '');
     const category = ENV_CATEGORIES.find(c => c.id === categoryId);
     if (!category) {
-      await interaction.editReply('❌ Unknown category.');
+      await interaction.editReply('[ERR] Unknown category.');
       return true;
     }
 
@@ -585,29 +783,29 @@ class PanelChannel {
       for (const field of category.fields) {
         const newValue = interaction.fields.getTextInputValue(field.env);
 
-        // Skip empty sensitive fields — keep current value unchanged
+        // Skip empty sensitive fields  keep current value unchanged
         if (field.sensitive && newValue === '') continue;
 
         const oldValue = _getEnvValue(field);
 
         if (newValue !== oldValue) {
-          const displayOld = field.sensitive ? '••••••' : (oldValue || '(empty)');
-          const displayNew = field.sensitive ? '••••••' : (newValue || '(empty)');
-          changes.push(`**${field.label}:** \`${displayOld}\` → \`${displayNew}\``);
+          const displayOld = field.sensitive ? '' : (oldValue || '(empty)');
+          const displayNew = field.sensitive ? '' : (newValue || '(empty)');
+          changes.push(`**${field.label}:** \`${displayOld}\`  \`${displayNew}\``);
 
           if (!category.restart) {
-            // Live-apply display settings → save to DB, not .env
+            // Live-apply display settings  save to DB, not .env
             _applyLiveConfig(field, newValue);
             if (field.cfg) dbUpdates[field.cfg] = config[field.cfg];
           } else {
-            // Restart-required settings → write to .env
+            // Restart-required settings  write to .env
             updates[field.env] = newValue;
           }
         }
       }
 
       if (changes.length === 0) {
-        await interaction.editReply('No changes detected.');
+        await interaction.editReply('[INFO] No changes detected.');
         return true;
       }
 
@@ -620,21 +818,21 @@ class PanelChannel {
         config.saveDisplaySettings(this._db, dbUpdates);
       }
 
-      let msg = `✅ **${category.label}** updated:\n${changes.join('\n')}`;
+      let msg = `[OK] **${category.label}** updated:\n${changes.join('\n')}`;
       if (category.restart) {
-        msg += '\n\n⚠️ **Restart the bot** for these changes to take effect.';
+        msg += '\n\n[WARN] **Restart the bot** for these changes to take effect.';
       } else {
-        msg += '\n\n✨ Changes applied immediately.';
+        msg += '\n\n Changes applied immediately.';
       }
 
       await interaction.editReply(msg);
 
-      // Refresh embeds to show changes
+      // Refresh panel containers to show changes
       if (!category.restart) {
         setTimeout(() => this._update(true), 1000);
       }
     } catch (err) {
-      await interaction.editReply(`❌ Failed to save: ${err.message}`);
+      await interaction.editReply(`[ERR] Failed to save: ${err.message}`);
     }
 
     return true;
@@ -644,14 +842,14 @@ class PanelChannel {
     if (!await this._requireAdmin(interaction, 'edit server settings')) return true;
 
     if (!this._hasSftp) {
-      await interaction.reply({ content: '❌ SFTP credentials not configured.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: '[ERR] SFTP credentials not configured.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
     const categoryId = interaction.customId.replace('panel_game_modal:', '');
     const category = GAME_SETTINGS_CATEGORIES.find(c => c.id === categoryId);
     if (!category) {
-      await interaction.reply({ content: '❌ Unknown category.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: '[ERR] Unknown category.', flags: MessageFlags.Ephemeral });
       return true;
     }
 
@@ -689,14 +887,14 @@ class PanelChannel {
           if (regex.test(content)) {
             content = content.replace(regex, `$1${newValue}`);
           }
-          changes.push(`**${setting.label}:** \`${oldValue || '?'}\` → \`${newValue}\``);
+          changes.push(`**${setting.label}:** \`${oldValue || '?'}\`  \`${newValue}\``);
           cached[setting.ini] = newValue;
         }
       }
 
       if (changes.length === 0) {
         await sftp.end().catch(() => {});
-        await interaction.editReply('No changes detected.');
+        await interaction.editReply('[INFO] No changes detected.');
         return true;
       }
 
@@ -707,33 +905,33 @@ class PanelChannel {
       // Update local cache so subsequent reads are fresh
       if (this._db) try { this._db.setStateJSON('server_settings', cached); } catch (_) {}
 
-      let msg = `✅ **${category.label}** updated:\n${changes.join('\n')}`;
-      msg += '\n\n⚠️ **Restart the server** for these changes to take effect.';
+      let msg = `[OK] **${category.label}** updated:\n${changes.join('\n')}`;
+      msg += '\n\n[WARN] **Restart the server** for these changes to take effect.';
 
       await interaction.editReply(msg);
     } catch (err) {
-      await interaction.editReply(`❌ Failed to save: ${err.message}`);
+      await interaction.editReply(`[ERR] Failed to save: ${err.message}`);
     }
 
     return true;
   }
 
-  // ═══════════════════════════════════════════════════════════
+  // 
   // .env synchronization
-  // ═══════════════════════════════════════════════════════════
+  // 
 
   async _handleEnvSyncButton(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     
     if (!this._isAdmin(interaction)) {
-      await interaction.editReply('❌ Only administrators can sync .env configuration.');
+      await interaction.editReply('[ERR] Only administrators can sync .env configuration.');
       return true;
     }
 
     const { needsSync, syncEnv, getVersion, getExampleVersion } = require('../env-sync');
 
     if (!needsSync()) {
-      await interaction.editReply('✅ Your `.env` is already up to date with `.env.example`.');
+      await interaction.editReply('[OK] Your `.env` is already up to date with `.env.example`.');
       return true;
     }
 
@@ -747,36 +945,36 @@ class PanelChannel {
       if (result.deprecated > 0) changes.push(`${result.deprecated} deprecated key(s) commented out`);
 
       await interaction.editReply(
-        `✅ **.env synchronized!**\n\n` +
-        `**Schema:** v${currentVer} → v${targetVer}\n` +
+        `[OK] **.env synchronized!**\n\n` +
+        `**Schema:** v${currentVer} -> v${targetVer}\n` +
         `**Changes:** ${changes.join(', ')}\n\n` +
         `A backup was saved to \`data/backups/\`\n\n` +
-        `⚠️ **Restart the bot** to apply new configuration keys.`
+        `[WARN] **Restart the bot** to apply new configuration keys.`
       );
 
-      // Refresh panel to update button state
+      // Refresh panel to update action menu state
       setTimeout(() => this._update(true), 2000);
     } catch (err) {
-      await interaction.editReply(`❌ Failed to sync .env: ${err.message}`);
+      await interaction.editReply(`[ERR] Failed to sync .env: ${err.message}`);
     }
 
     return true;
   }
 
-  // ═══════════════════════════════════════════════════════════
+  // 
   // Welcome message editor
-  // ═══════════════════════════════════════════════════════════
+  // 
 
   async _handleWelcomeEditButton(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     
     if (!this._isAdmin(interaction)) {
-      await interaction.editReply('❌ Only administrators can edit the welcome message.');
+      await interaction.editReply('[ERR] Only administrators can edit the welcome message.');
       return true;
     }
 
     if (!this._hasSftp) {
-      await interaction.editReply('❌ SFTP credentials not configured.');
+      await interaction.editReply('[ERR] SFTP credentials not configured.');
       return true;
     }
 
@@ -793,31 +991,31 @@ class PanelChannel {
       currentContent = (await sftp.get(config.ftpWelcomePath)).toString('utf8');
       await sftp.end().catch(() => {});
     } catch (err) {
-      // File may not exist yet — that's fine, start with empty
+      // File may not exist yet  that's fine, start with empty
       currentContent = '';
     }
 
-    // Discord modals can't be shown after deferReply — use a message with a button instead
+    // Discord modals can't be shown after deferReply  use a message with a button instead
     const helpText = [
-      '**📝 Welcome Message Editor**',
+      '** Welcome Message Editor**',
       '',
       'Click **Open Editor** below to edit your `WelcomeMessage.txt`.',
       'This is the popup players see when they join your server.',
       '',
       '**Color Tags** (game rich text):',
-      '`<PN>text</>` — Red',
-      '`<PR>text</>` — Green',
-      '`<SP>text</>` — Ember/Orange',
-      '`<FO>text</>` — Gray',
-      '`<CL>text</>` — Blue',
+      '`<PN>text</>`  Red',
+      '`<PR>text</>`  Green',
+      '`<SP>text</>`  Ember/Orange',
+      '`<FO>text</>`  Gray',
+      '`<CL>text</>`  Blue',
       '',
       '**Placeholders** (auto-replaced):',
-      '`{server_name}` — Server name from settings',
-      '`{day}` — Current in-game day',
-      '`{season}` — Current season',
-      '`{weather}` — Current weather',
-      '`{pvp_schedule}` — PvP schedule times',
-      '`{discord_link}` — Your Discord invite link',
+      '`{server_name}`  Server name from settings',
+      '`{day}`  Current in-game day',
+      '`{season}`  Current season',
+      '`{weather}`  Current weather',
+      '`{pvp_schedule}`  PvP schedule times',
+      '`{discord_link}`  Your Discord invite link',
       '',
       '**Tip:** Leave the message blank and save to restore the default auto-generated welcome with leaderboards.',
       '',
@@ -848,7 +1046,7 @@ class PanelChannel {
 
     const modal = new ModalBuilder()
       .setCustomId('panel_welcome_modal')
-      .setTitle('Welcome Message (✨ Live)');
+      .setTitle('Welcome Message ( Live)');
 
     modal.addComponents(
       new ActionRowBuilder().addComponents(
@@ -870,7 +1068,7 @@ class PanelChannel {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     
     if (!this._isAdmin(interaction)) {
-      await interaction.editReply('❌ Only administrators can edit the welcome message.');
+      await interaction.editReply('[ERR] Only administrators can edit the welcome message.');
       return true;
     }
 
@@ -893,12 +1091,12 @@ class PanelChannel {
         _writeEnvValues({ WELCOME_FILE_LINES: newContent.split('\n').join('|') });
 
         await interaction.editReply(
-          `✅ **Welcome message updated!** (${newContent.length} chars)\n` +
+          `[OK] **Welcome message updated!** (${newContent.length} chars)\n` +
           `Written to server via SFTP and saved to .env.\n` +
           `Players will see this on their next join.`
         );
       } else {
-        // Clear custom — revert to auto-generated
+        // Clear custom  revert to auto-generated
         _writeEnvValues({ WELCOME_FILE_LINES: '' });
         config.welcomeFileLines = [];
 
@@ -917,21 +1115,21 @@ class PanelChannel {
         await sftp.end().catch(() => {});
 
         await interaction.editReply(
-          '✅ **Welcome message reset to auto-generated default!**\n' +
+          '[OK] **Welcome message reset to auto-generated default!**\n' +
           'The welcome popup will now show leaderboards, server info, and stats.\n' +
           'Cleared WELCOME_FILE_LINES in .env.'
         );
       }
     } catch (err) {
-      await interaction.editReply(`❌ Failed to save: ${err.message}`);
+      await interaction.editReply(`[ERR] Failed to save: ${err.message}`);
     }
 
     return true;
   }
 
-  // ═══════════════════════════════════════════════════════════
+  // 
   // Broadcast messages editor
-  // ═══════════════════════════════════════════════════════════
+  // 
 
   async _handleBroadcastsButton(interaction) {
     if (!await this._requireAdmin(interaction, 'edit broadcasts')) return true;
@@ -940,20 +1138,20 @@ class PanelChannel {
     const promoText = config.autoMsgPromoText || '';
 
     const helpText = [
-      '**📢 Broadcast Message Editor**',
+      '** Broadcast Message Editor**',
       '',
       'Edit the periodic RCON messages sent to in-game chat.',
       'Leave a field blank to use the built-in default message.',
       '',
       '**Current defaults:**',
-      '• **Link:** `Join our Discord! <your link>`',
-      '• **Promo:** `Have any issues...? Join our Discord: <your link>`',
+      '- **Link:** `Join our Discord! <your link>`',
+      '- **Promo:** `Have any issues...? Join our Discord: <your link>`',
       '',
       '**Placeholders** (auto-replaced):',
-      '`{server_name}` — Server name',
-      '`{day}` — In-game day  •  `{season}` — Season',
-      '`{weather}` — Weather  •  `{pvp_schedule}` — PvP times',
-      '`{discord_link}` — Your Discord invite link',
+      '`{server_name}`  Server name',
+      '`{day}`  In-game day    `{season}`  Season',
+      '`{weather}`  Weather    `{pvp_schedule}`  PvP times',
+      '`{discord_link}`  Your Discord invite link',
       '',
       '**Note:** These are plain-text RCON messages.',
       'Color tags (`<PN>`, `<PR>`, etc.) only work in WelcomeMessage.txt.',
@@ -986,7 +1184,7 @@ class PanelChannel {
 
     const modal = new ModalBuilder()
       .setCustomId('panel_broadcasts_modal')
-      .setTitle('Edit Broadcasts (🔄 Bot Restart)');
+      .setTitle('Edit Broadcasts ( Bot Restart)');
 
     modal.addComponents(
       new ActionRowBuilder().addComponents(
@@ -1019,7 +1217,7 @@ class PanelChannel {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     
     if (!this._isAdmin(interaction)) {
-      await interaction.editReply('❌ Only administrators can edit broadcasts.');
+      await interaction.editReply('[ERR] Only administrators can edit broadcasts.');
       return true;
     }
 
@@ -1043,22 +1241,22 @@ class PanelChannel {
         if ('AUTO_MSG_LINK_TEXT' in updates) parts.push(`Link: ${linkText || '*(default)*'}`);
         if ('AUTO_MSG_PROMO_TEXT' in updates) parts.push(`Promo: ${promoText || '*(default)*'}`);
         await interaction.editReply(
-          `✅ **Broadcast messages updated!**\n${parts.join('\n')}\n` +
+          `[OK] **Broadcast messages updated!**\n${parts.join('\n')}\n` +
           `Saved to .env. Restart bot to apply changes.`
         );
       } else {
-        await interaction.editReply('ℹ️ No changes detected.');
+        await interaction.editReply('[INFO] No changes detected.');
       }
     } catch (err) {
-      await interaction.editReply(`❌ Failed to save: ${err.message}`);
+      await interaction.editReply(`[ERR] Failed to save: ${err.message}`);
     }
 
     return true;
   }
 
-  // ═══════════════════════════════════════════════════════════
+  // 
   // Update loop
-  // ═══════════════════════════════════════════════════════════
+  // 
 
   async _cleanOwnMessages() {
     const ids = this._loadMessageIds();
@@ -1069,6 +1267,70 @@ class PanelChannel {
       }
     }
     await cleanOwnMessages(this.channel, this.client, { savedIds, label: 'PANEL CH' });
+  }
+
+  _isPanelMessage(message) {
+    if (!message) return false;
+    const controlIds = new Set([...Object.values(BTN), ...Object.values(SELECT)]);
+    const markers = [
+      'control center',
+      'bot controls',
+      'primary server',
+      'primary server panel',
+      'managed server',
+      'panel api',
+    ];
+
+    // Legacy embeds/content (non-components-v2) can still be old panel messages.
+    const messageContent = String(message.content || '').toLowerCase();
+    if (markers.some(m => messageContent.includes(m))) return true;
+    if (Array.isArray(message.embeds) && message.embeds.length > 0) {
+      for (const e of message.embeds) {
+        const title = String(e?.title || '').toLowerCase();
+        const desc = String(e?.description || '').toLowerCase();
+        if (markers.some(m => title.includes(m) || desc.includes(m))) return true;
+      }
+    }
+
+    if (!Array.isArray(message.components) || message.components.length === 0) return false;
+    const stack = [...message.components];
+    while (stack.length > 0) {
+      const c = stack.pop();
+      if (!c || typeof c !== 'object') continue;
+      const customId = c.customId || c.custom_id;
+      if (typeof customId === 'string' && (customId.startsWith('panel_') || controlIds.has(customId))) {
+        return true;
+      }
+      const content = String(c.content || c.data?.content || '').toLowerCase();
+      if (markers.some(m => content.includes(m))) {
+        return true;
+      }
+      const children = c.components || c.data?.components;
+      if (Array.isArray(children)) stack.push(...children);
+      const accessory = c.accessory || c.data?.accessory;
+      if (accessory && typeof accessory === 'object') stack.push(accessory);
+    }
+    return false;
+  }
+
+  async _cleanStalePanelMessages(keepId = null) {
+    try {
+      if (!this.channel || !this.client?.user) return;
+      const messages = await this.channel.messages.fetch({ limit: 100 });
+      const stale = messages.filter(m =>
+        m.author?.id === this.client.user.id &&
+        m.id !== keepId &&
+        this._isPanelMessage(m)
+      );
+      for (const [, msg] of stale) {
+        try { await msg.delete(); } catch {}
+      }
+      if (stale.size > 0) {
+        console.log(`[PANEL CH] Removed ${stale.size} stale panel message(s)`);
+      }
+    } catch (err) {
+      console.log('[PANEL CH] Stale cleanup skipped:', err.message);
+    }
   }
 
   _loadMessageIds() {
@@ -1088,6 +1350,9 @@ class PanelChannel {
     try {
       if (this._db && this.panelMessage) {
         this._db.setState('msg_id_panel_bot', this.panelMessage.id);
+        // Unified panel mode: clear deprecated split-panel IDs.
+        this._db.setState('msg_id_panel_server', '');
+        this._db.setStateJSON('msg_id_panel_servers', {});
       }
     } catch {}
   }
@@ -1096,39 +1361,52 @@ class PanelChannel {
     try {
       if (!this.panelMessage) return;
 
-      const { embeds, components } = await this._buildUnifiedPanel();
-      const contentKey = embedContentKey(embeds, components);
+      const { components } = await this._buildUnifiedPanel();
+      const contentKey = _componentsKey(components);
 
       if (force || contentKey !== this._lastBotKey) {
         this._lastBotKey = contentKey;
         try {
-          await this.panelMessage.edit({ embeds, components });
+          await this.panelMessage.edit({ components });
         } catch (editErr) {
           if (editErr.code === 10008 || editErr.message?.includes('Unknown Message')) {
             console.log('[PANEL CH] Panel message deleted, re-creating...');
-            this.panelMessage = await this.channel.send({ embeds, components });
+            try {
+              this.panelMessage = await this.channel.send({ flags: COMPONENTS_V2_FLAG, components });
+            } catch (sendErr) {
+              console.error('[PANEL CH] Re-create failed:', _errorSummary(sendErr));
+              this.panelMessage = await this.channel.send({
+                flags: COMPONENTS_V2_FLAG,
+                components: [_container(['Panel update failed - layout rejected by Discord.'], [], 0xe74c3c)],
+              });
+            }
             this.botMessage = this.panelMessage;
             this._saveMessageIds();
+            await this._cleanStalePanelMessages(this.panelMessage.id);
           } else throw editErr;
         }
       }
     } catch (err) {
-      console.error('[PANEL CH] Update error:', err.message);
+      console.error('[PANEL CH] Update error:', _errorSummary(err));
     }
   }
 
   /**
-   * Build the unified panel: all embeds + components for the active view.
-   * Returns { embeds: EmbedBuilder[], components: ActionRowBuilder[] }
+   * Build the unified panel as Components v2 containers.
+   * Returns { components: object[] }
    */
   async _buildUnifiedPanel() {
-    const embeds = [];
+    const components = [];
     const view = this._activeView || 'bot';
+    const managedServers = this.multiServerManager?.getAllServers() || [];
 
-    // ── Embed 1: Bot overview (always) ──
-    embeds.push(this._buildBotEmbed());
+    // Build controls first and inject them directly into Bot Controls container.
+    const controlRows = this._buildViewComponents(view, managedServers);
 
-    // ── Embed 2: Primary server ──
+    //  Container 1: Bot overview (always) 
+    components.push(this._buildBotContainer(controlRows, view));
+
+    //  Container 2: Primary server 
     let resources = null, details = null, backups = null, schedules = null;
     if (panelApi.available) {
       try {
@@ -1141,31 +1419,37 @@ class PanelChannel {
         const state = resources?.state || 'offline';
         this._lastState = state;
         this._backupLimit = details?.feature_limits?.backups ?? null;
-        embeds.push(this._buildServerEmbed(resources, details, backups, schedules));
+        components.push(this._buildServerContainer(resources, details, backups, schedules));
       } catch {
-        // Panel API failed — skip server embed
+        // Panel API failed  skip server container
       }
-    } else if (this._hasSftp) {
-      // No panel API but SFTP available — show minimal server info
-      const serverEmbed = new EmbedBuilder()
-        .setTitle('🖥️ Primary Server')
-        .setColor(0x3498db)
-        .setDescription('SFTP connected — use controls below for server tools')
-        .setTimestamp();
-      embeds.push(serverEmbed);
     }
 
-    // ── Embeds 3+: Managed servers ──
-    const managedServers = this.multiServerManager?.getAllServers() || [];
+    //  Containers 3+: Managed servers 
+    let omittedManaged = 0;
     for (const serverDef of managedServers) {
       const instance = this.multiServerManager.getInstance(serverDef.id);
-      embeds.push(this._buildManagedServerEmbed(serverDef, instance));
+      const serverContainer = this._buildManagedServerContainer(serverDef, instance);
+      const nextCount = _countComponents([...components, serverContainer]);
+      if (nextCount > MAX_V2_COMPONENTS) {
+        omittedManaged++;
+        continue;
+      }
+      components.push(serverContainer);
     }
 
-    // ── Build components based on active view ──
-    const components = this._buildViewComponents(view, managedServers);
+    if (omittedManaged > 0) {
+      const omittedNotice = _container(
+        [`Additional managed server containers omitted: **${omittedManaged}** (Discord limit: ${MAX_V2_COMPONENTS} components/message).`],
+        [],
+        0xe67e22
+      );
+      if (_countComponents([...components, omittedNotice]) <= MAX_V2_COMPONENTS) {
+        components.push(omittedNotice);
+      }
+    }
 
-    return { embeds, components };
+    return { components };
   }
 
   /**
@@ -1175,18 +1459,19 @@ class PanelChannel {
   _buildViewComponents(view, managedServers = []) {
     const rows = [];
 
-    // ── Row 1: View selector ──
+    //  Row 1: View selector 
     const viewOptions = [
-      { label: 'Bot Controls', value: 'bot', emoji: '🤖', default: view === 'bot' },
+      { label: 'Bot Controls', value: 'bot', default: view === 'bot' },
     ];
-    if (panelApi.available || this._hasSftp) {
-      viewOptions.push({ label: 'Primary Server', value: 'server', emoji: '🖥️', default: view === 'server' });
+    if (panelApi.available) {
+      viewOptions.push({ label: 'Primary Server', value: 'server', default: view === 'server' });
+    } else if (this._hasSftp) {
+      viewOptions.push({ label: 'Server Tools', value: 'server', default: view === 'server' });
     }
     for (const s of managedServers) {
       viewOptions.push({
         label: s.name || s.id,
         value: `srv_${s.id}`,
-        emoji: '🌐',
         default: view === s.id,
       });
     }
@@ -1199,7 +1484,7 @@ class PanelChannel {
       rows.push(new ActionRowBuilder().addComponents(viewSelect));
     }
 
-    // ── Rows 2-5: View-specific controls ──
+    //  Rows 2-5: View-specific controls 
     const maxRemaining = 5 - rows.length;
     let viewRows = [];
 
@@ -1233,24 +1518,28 @@ class PanelChannel {
    */
   _buildSftpOnlyServerComponents() {
     const rows = [];
-    const toolsRow = new ActionRowBuilder();
+    const actionOptions = [];
     if (config.enableWelcomeFile) {
-      toolsRow.addComponents(
-        new ButtonBuilder()
-          .setCustomId(BTN.WELCOME_EDIT)
-          .setLabel('Welcome Message')
-          .setStyle(ButtonStyle.Secondary)
-      );
+      actionOptions.push({
+        label: 'Welcome Message',
+        description: 'Edit WelcomeMessage.txt',
+        value: 'welcome',
+      });
     }
     if (config.enableAutoMessages) {
-      toolsRow.addComponents(
-        new ButtonBuilder()
-          .setCustomId(BTN.BROADCASTS)
-          .setLabel('Broadcasts')
-          .setStyle(ButtonStyle.Secondary)
-      );
+      actionOptions.push({
+        label: 'Broadcasts',
+        description: 'Edit automatic broadcast messages',
+        value: 'broadcasts',
+      });
     }
-    if (toolsRow.components.length > 0) rows.push(toolsRow);
+    if (actionOptions.length > 0) {
+      const actionSelect = new StringSelectMenuBuilder()
+        .setCustomId(SELECT.ACTIONS_SERVER)
+        .setPlaceholder('Server actions...')
+        .addOptions(actionOptions);
+      rows.push(new ActionRowBuilder().addComponents(actionSelect));
+    }
     if (config.enableGameSettingsEditor) {
       const settingsSelect = new StringSelectMenuBuilder()
         .setCustomId(SELECT.SETTINGS)
@@ -1259,7 +1548,6 @@ class PanelChannel {
           GAME_SETTINGS_CATEGORIES.map(c => ({
             label: c.label,
             value: c.id,
-            emoji: c.emoji,
           }))
         );
       rows.push(new ActionRowBuilder().addComponents(settingsSelect));
@@ -1267,44 +1555,52 @@ class PanelChannel {
     return rows;
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // Embed builders
-  // ═══════════════════════════════════════════════════════════
+  // 
+  // Container builders
+  // 
 
   /**
-   * Build embed for a managed (additional) server.
+   * Build control container for the currently selected view.
+   */
+  _buildControlsContainer(view, rows = []) {
+    const labels = {
+      bot: 'Bot Controls',
+      server: panelApi.available ? 'Primary Server' : 'Server Tools',
+    };
+    const viewLabel = labels[view] || `Managed Server: ${view}`;
+    return _container(
+      [
+        '## Control Center',
+        `Active view: **${viewLabel}**\nUse the menus below to manage the bot and servers.`,
+      ],
+      rows,
+      0x5865f2
+    );
+  }
+
+  /**
+   * Build container for a managed (additional) server.
    * @param {object} serverDef - Server definition from servers.json
    * @param {object|undefined} instance - Running ServerInstance (or undefined)
    */
-  _buildManagedServerEmbed(serverDef, instance) {
+  _buildManagedServerContainer(serverDef, instance) {
     const running = instance?.running || false;
-    const statusIcon = running ? '🟢' : '🔴';
+    const statusIcon = running ? '[RUN]' : '[OFF]';
     const statusText = running ? 'Running' : 'Stopped';
 
-    const embed = new EmbedBuilder()
-      .setTitle(`🌐 ${serverDef.name || serverDef.id}`)
-      .setColor(running ? 0x57f287 : 0xed4245)
-      .setTimestamp()
-      .setFooter({ text: `Server ID: ${serverDef.id}` });
-
-    // Connection info
-    const infoLines = [
-      `${statusIcon} **${statusText}**`,
-      '',
-      `📡 **RCON:** \`${serverDef.rcon?.host || '?'}:${serverDef.rcon?.port || 14541}\``,
-      `🎮 **Game Port:** \`${serverDef.gamePort || 14242}\``,
+    const blocks = [
+      `## Managed Server: ${serverDef.name || serverDef.id}`,
+      [
+        `${statusIcon} **${statusText}**`,
+        `RCON: \`${serverDef.rcon?.host || '?'}:${serverDef.rcon?.port || 14541}\``,
+        `Game Port: \`${serverDef.gamePort || 14242}\``,
+        serverDef.sftp?.host
+          ? `SFTP: \`${serverDef.sftp.host}:${serverDef.sftp.port || 22}\``
+          : 'SFTP: Inherited from primary',
+        `-# Server ID: ${serverDef.id}`,
+      ].join('\n'),
     ];
 
-    // SFTP info
-    if (serverDef.sftp?.host) {
-      infoLines.push(`📂 **SFTP:** \`${serverDef.sftp.host}:${serverDef.sftp.port || 22}\``);
-    } else {
-      infoLines.push('📂 **SFTP:** Inherited from primary');
-    }
-
-    embed.setDescription(infoLines.join('\n'));
-
-    // Channels field
     const ch = serverDef.channels || {};
     const channelLines = [];
     if (ch.serverStatus) channelLines.push(`Status: <#${ch.serverStatus}>`);
@@ -1312,22 +1608,16 @@ class PanelChannel {
     if (ch.log) channelLines.push(`Log: <#${ch.log}>`);
     if (ch.chat) channelLines.push(`Chat: <#${ch.chat}>`);
     if (ch.admin) channelLines.push(`Admin: <#${ch.admin}>`);
-    embed.addFields({
-      name: '📺 Channels',
-      value: channelLines.length > 0 ? channelLines.join('\n') : 'None configured',
-      inline: true,
-    });
+    blocks.push(`### Channels\n${channelLines.length > 0 ? channelLines.join('\n') : 'None configured'}`);
 
-    // Modules field
     if (instance) {
       const status = instance.getStatus();
       const modLines = status.modules?.length > 0 ? status.modules.join('\n') : 'None';
-      embed.addFields({ name: '📦 Modules', value: modLines, inline: true });
+      blocks.push(`### Modules\n${modLines}`);
     } else {
-      embed.addFields({ name: '📦 Modules', value: 'Not running', inline: true });
+      blocks.push('### Modules\nNot running');
     }
 
-    // Auto Messages / Welcome settings
     const am = serverDef.autoMessages || {};
     const cfg = instance?.config || {};
     const amLines = [];
@@ -1335,73 +1625,51 @@ class PanelChannel {
     const welcomeFile = am.enableWelcomeFile ?? cfg.enableWelcomeFile ?? true;
     const linkBcast   = am.enableAutoMsgLink ?? cfg.enableAutoMsgLink ?? true;
     const promoBcast  = am.enableAutoMsgPromo ?? cfg.enableAutoMsgPromo ?? true;
-    amLines.push(`RCON Welcome: ${welcomeMsg ? '✅' : '❌'}`);
-    amLines.push(`Welcome File: ${welcomeFile ? '✅' : '❌'}`);
-    amLines.push(`Link Broadcast: ${linkBcast ? '✅' : '❌'}`);
-    amLines.push(`Promo Broadcast: ${promoBcast ? '✅' : '❌'}`);
+    amLines.push(`RCON Welcome: ${welcomeMsg ? 'ON' : 'OFF'}`);
+    amLines.push(`Welcome File: ${welcomeFile ? 'ON' : 'OFF'}`);
+    amLines.push(`Link Broadcast: ${linkBcast ? 'ON' : 'OFF'}`);
+    amLines.push(`Promo Broadcast: ${promoBcast ? 'ON' : 'OFF'}`);
     if (am.linkText) amLines.push(`Link: \`${am.linkText.slice(0, 40)}${am.linkText.length > 40 ? '...' : ''}\``);
     if (am.promoText) amLines.push(`Promo: \`${am.promoText.slice(0, 40)}${am.promoText.length > 40 ? '...' : ''}\``);
     if (am.discordLink) amLines.push(`Discord: \`${am.discordLink.slice(0, 40)}\``);
-    embed.addFields({ name: '📢 Auto Messages', value: amLines.join('\n'), inline: false });
+    blocks.push(`### Auto Messages\n${amLines.join('\n')}`);
 
-    return embed;
+    return _container(blocks, [], running ? 0x57f287 : 0xed4245);
   }
 
   /**
-   * Build action-row buttons for a managed server embed.
+   * Build action-row controls for a managed server view.
    * @param {string} serverId
    * @param {boolean} running
    */
   _buildManagedServerComponents(serverId, running) {
-    const row1 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`panel_srv_start:${serverId}`)
-        .setLabel('Start')
-        .setStyle(ButtonStyle.Success)
-        .setDisabled(running),
-      new ButtonBuilder()
-        .setCustomId(`panel_srv_stop:${serverId}`)
-        .setLabel('Stop')
-        .setStyle(ButtonStyle.Danger)
-        .setDisabled(!running),
-      new ButtonBuilder()
-        .setCustomId(`panel_srv_restart:${serverId}`)
-        .setLabel('Restart')
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(!running),
-      new ButtonBuilder()
-        .setCustomId(`panel_srv_edit:${serverId}`)
-        .setLabel('Edit Connection')
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId(`panel_srv_remove:${serverId}`)
-        .setLabel('Remove')
-        .setStyle(ButtonStyle.Danger),
+    const actionOptions = [];
+    if (running) {
+      actionOptions.push(
+        { label: 'Stop', description: 'Stop this managed server', value: `stop:${serverId}` },
+        { label: 'Restart', description: 'Restart this managed server', value: `restart:${serverId}` },
+      );
+    } else {
+      actionOptions.push({ label: 'Start', description: 'Start this managed server', value: `start:${serverId}` });
+    }
+    actionOptions.push(
+      { label: 'Edit Connection', description: 'Edit RCON and game port settings', value: `edit:${serverId}` },
+      { label: 'Edit Channels', description: 'Update Discord channel IDs', value: `channels:${serverId}` },
+      { label: 'Edit SFTP', description: 'Update SFTP host and credentials', value: `sftp:${serverId}` },
+      { label: 'Welcome Message', description: 'Edit this server welcome popup', value: `welcome:${serverId}` },
+      { label: 'Auto Messages', description: 'Edit this server auto-messages', value: `automsg:${serverId}` },
+      { label: 'Remove Server', description: 'Remove this managed server', value: `remove:${serverId}` },
     );
 
-    const row2 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`panel_srv_channels:${serverId}`)
-        .setLabel('Edit Channels')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId(`panel_srv_sftp:${serverId}`)
-        .setLabel('Edit SFTP')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId(`panel_srv_welcome:${serverId}`)
-        .setLabel('Welcome Message')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId(`panel_srv_automsg:${serverId}`)
-        .setLabel('Auto Messages')
-        .setStyle(ButtonStyle.Secondary),
-    );
+    const actionSelect = new StringSelectMenuBuilder()
+      .setCustomId(SELECT.ACTIONS_MANAGED)
+      .setPlaceholder('Managed server actions...')
+      .addOptions(actionOptions);
 
-    // Game settings dropdown (row 3) — uses server's SFTP
+    // Game settings dropdown (row 3)  uses server's SFTP
     const serverDef = this.multiServerManager?.getAllServers().find(s => s.id === serverId);
     const hasSftp = !!(serverDef?.sftp?.host || config.ftpHost);
-    const rows = [row1, row2];
+    const rows = [new ActionRowBuilder().addComponents(actionSelect)];
     if (hasSftp) {
       const settingsSelect = new StringSelectMenuBuilder()
         .setCustomId(`panel_srv_settings:${serverId}`)
@@ -1410,7 +1678,6 @@ class PanelChannel {
           GAME_SETTINGS_CATEGORIES.map(c => ({
             label: c.label,
             value: c.id,
-            emoji: c.emoji,
           }))
         );
       rows.push(new ActionRowBuilder().addComponents(settingsSelect));
@@ -1419,65 +1686,73 @@ class PanelChannel {
     return rows;
   }
 
-  _buildBotEmbed() {
+  _buildBotContainer(rows = [], view = 'bot') {
     const upMs = Date.now() - this.startedAt.getTime();
-
-    const embed = new EmbedBuilder()
-      .setTitle('🤖 Bot Controls')
-      .setColor(0x5865f2)
-      .setTimestamp()
-      .setFooter({ text: 'Select a category below to edit bot config' });
-
-    // ── Bot info ──
     const username = this.client.user?.tag || 'Bot';
+
     const infoLines = [
+      '## Bot Controls',
       `**${username}**`,
-      `🟢 Online · ⏱️ ${_formatBotUptime(upMs)}`,
-      `🌐 \`${config.botTimezone}\``,
+      `Status: Online | Uptime: ${_formatBotUptime(upMs)}`,
+      `Timezone: \`${config.botTimezone}\``,
     ];
 
-    // Show capability indicators for non-obvious setups
     const caps = [];
     if (panelApi.available) caps.push('Panel API');
     if (this._hasSftp) caps.push('SFTP');
     if (caps.length > 0 && caps.length < 2) {
-      infoLines.push(`📡 ${caps.join(' · ')}`);
+      infoLines.push(`Capabilities: ${caps.join(' | ')}`);
     }
 
-    embed.setDescription(infoLines.join('\n'));
-
-    // ── Module status ──
     const statusLines = [];
     let skippedCount = 0;
     for (const [name, status] of Object.entries(this.moduleStatus)) {
-      const icon = status.startsWith('🟢') ? '🟢' : status.startsWith('⚫') ? '⚫' : '🟡';
+      const raw = String(status || '').trim();
+      const text = raw.toLowerCase();
+      const ok = raw.startsWith('🟢') ||
+        text.includes('ok') ||
+        text.includes('active') ||
+        text.includes('enabled') ||
+        text.includes('running') ||
+        text.includes('online');
+      const off = raw.startsWith('⚫') ||
+        raw.startsWith('🔴') ||
+        text.includes('off') ||
+        text.includes('disabled') ||
+        text.includes('stopped') ||
+        text.includes('offline');
+      const icon = ok ? '🟢' : off ? '⚫' : '🟡';
       statusLines.push(`${icon} ${name}`);
       if (icon === '🟡') skippedCount++;
     }
     if (statusLines.length > 0) {
       let value = statusLines.join('\n');
       if (skippedCount > 0) {
-        value += `\n-# ⚠️ ${skippedCount} module(s) need attention — tap **Diagnostics** below`;
+        value += `\n-# ${skippedCount} module(s) need attention - tap **Diagnostics** in Control Center`;
       }
-      embed.addFields({ name: '📦 Modules', value });
+      infoLines.push(`### Modules\n${value}`);
     }
 
-    // Button descriptions (Discord buttons don't support hover tooltips)
-    embed.addFields({
-      name: '\u200b',
-      value: [
-        '-# 🔄 **Restart Bot** — Restart the bot process (brief downtime)',
-        '-# 🗑️ **Factory Reset** — Wipe all data and re-build from scratch',
-        '-# 📥 **Re-Import** — Re-download server files and rebuild stats',
-        '-# 🔍 **System Diagnostics** — Live connectivity probes, module health, suggestions',
-      ].join('\n'),
-    });
+    infoLines.push([
+      '### Quick Actions',
+      '-# **Restart Bot** - Restart the bot process (brief downtime)',
+      '-# **Factory Reset** - Wipe all data and re-build from scratch',
+      '-# **Re-Import** - Re-download server files and rebuild stats',
+      '-# **System Diagnostics** - Live connectivity probes, module health, suggestions',
+    ].join('\n'));
 
-    return embed;
+    const viewLabels = {
+      bot: 'Bot Controls',
+      server: panelApi.available ? 'Primary Server' : 'Server Tools',
+    };
+    const viewLabel = viewLabels[view] || `Managed Server: ${view}`;
+    infoLines.push(`### Control Center\nActive view: **${viewLabel}**`);
+
+    return _container(infoLines, rows, 0x5865f2);
   }
 
   _buildBotComponents() {
-    // ── Select 1: Core & module settings ──
+    //  Select 1: Core & module settings 
     const coreCategories = ENV_CATEGORIES.filter(c => c.group === 1);
     const coreSelect = new StringSelectMenuBuilder()
       .setCustomId(SELECT.ENV)
@@ -1487,11 +1762,10 @@ class PanelChannel {
           label: c.label,
           description: c.description,
           value: c.id,
-          emoji: c.emoji,
         }))
       );
 
-    // ── Select 2: Display & schedule settings ──
+    //  Select 2: Display & schedule settings 
     const displayCategories = ENV_CATEGORIES.filter(c => c.group === 2);
     const displaySelect = new StringSelectMenuBuilder()
       .setCustomId(SELECT.ENV2)
@@ -1501,55 +1775,41 @@ class PanelChannel {
           label: c.label,
           description: c.description,
           value: c.id,
-          emoji: c.emoji,
         }))
       );
 
-    // ── Button row: Restart, Nuke, Re-Import, [Add Server] ──
-    const restartBtn = new ButtonBuilder()
-      .setCustomId(BTN.BOT_RESTART)
-      .setLabel('Restart Bot')
-      .setStyle(ButtonStyle.Primary);
-
-    const nukeBtn = new ButtonBuilder()
-      .setCustomId(BTN.NUKE)
-      .setLabel('Factory Reset')
-      .setStyle(ButtonStyle.Danger);
-
-    const reimportBtn = new ButtonBuilder()
-      .setCustomId(BTN.REIMPORT)
-      .setLabel('Re-Import Data')
-      .setStyle(ButtonStyle.Secondary);
-
-    const diagBtn = new ButtonBuilder()
-      .setCustomId(BTN.DIAGNOSTICS)
-      .setLabel('System Diagnostics')
-      .setStyle(ButtonStyle.Secondary);
-
     const { needsSync } = require('../env-sync');
-    const envSyncBtn = new ButtonBuilder()
-      .setCustomId(BTN.ENV_SYNC)
-      .setLabel(needsSync() ? '🔄 Sync .env' : '✓ .env Synced')
-      .setStyle(needsSync() ? ButtonStyle.Primary : ButtonStyle.Secondary)
-      .setDisabled(!needsSync());
+    const actionOptions = [
+      { label: 'System Diagnostics', description: 'Run live health checks', value: 'diagnostics' },
+      {
+        label: needsSync() ? 'Sync .env' : 'Env Synced',
+        description: needsSync() ? 'Apply pending env schema changes' : 'No pending env changes',
+        value: 'env_sync',
+      },
+    ];
+    if (this.multiServerManager) {
+      actionOptions.push({
+        label: 'Add Server',
+        description: 'Add a new managed game server',
+        value: 'add_server',
+      });
+    }
+    actionOptions.push(
+      { label: 'Restart Bot', description: 'Restart the bot process', value: 'restart_bot' },
+      { label: 'Re-Import Data', description: 'Rebuild local data from server files', value: 'reimport' },
+      { label: 'Factory Reset', description: 'Wipe local data and rebuild from scratch', value: 'factory_reset' },
+    );
 
-    const buttonRow = new ActionRowBuilder().addComponents(restartBtn, nukeBtn, reimportBtn, diagBtn, envSyncBtn);
+    const actionsSelect = new StringSelectMenuBuilder()
+      .setCustomId(SELECT.ACTIONS_BOT)
+      .setPlaceholder('Quick actions...')
+      .addOptions(actionOptions);
 
     const rows = [
       new ActionRowBuilder().addComponents(coreSelect),
       new ActionRowBuilder().addComponents(displaySelect),
-      buttonRow,
+      new ActionRowBuilder().addComponents(actionsSelect),
     ];
-
-    // Add server management button row if multi-server manager is available (separate row to avoid 5-button limit)
-    if (this.multiServerManager) {
-      const addServerBtn = new ButtonBuilder()
-        .setCustomId(BTN.ADD_SERVER)
-        .setLabel('Add Server')
-        .setStyle(ButtonStyle.Success);
-      const serverMgmtRow = new ActionRowBuilder().addComponents(addServerBtn);
-      rows.push(serverMgmtRow);
-    }
 
     return rows;
   }
@@ -1559,55 +1819,37 @@ class PanelChannel {
     const isOff = state === 'offline';
     const isTransitioning = state === 'starting' || state === 'stopping';
 
-    const powerRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(BTN.START)
-        .setLabel('Start')
-        .setStyle(ButtonStyle.Success)
-        .setDisabled(isRunning || isTransitioning),
-      new ButtonBuilder()
-        .setCustomId(BTN.STOP)
-        .setLabel('Stop')
-        .setStyle(ButtonStyle.Danger)
-        .setDisabled(isOff || isTransitioning),
-      new ButtonBuilder()
-        .setCustomId(BTN.RESTART)
-        .setLabel('Restart')
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(isOff || isTransitioning),
-      new ButtonBuilder()
-        .setCustomId(BTN.BACKUP)
-        .setLabel('Backup')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(this._backupLimit === 0),
-      new ButtonBuilder()
-        .setCustomId(BTN.KILL)
-        .setLabel('Kill')
-        .setStyle(ButtonStyle.Danger)
-        .setDisabled(isOff),
-    );
-
-    // Server-specific tools row (welcome, broadcasts)
-    const toolsRow = new ActionRowBuilder();
-    if (this._hasSftp && config.enableWelcomeFile) {
-      toolsRow.addComponents(
-        new ButtonBuilder()
-          .setCustomId(BTN.WELCOME_EDIT)
-          .setLabel('Welcome Message')
-          .setStyle(ButtonStyle.Secondary)
+    const actionOptions = [];
+    if (!isRunning && !isTransitioning) {
+      actionOptions.push({ label: 'Start', description: 'Start the game server', value: 'start' });
+    }
+    if (!isOff && !isTransitioning) {
+      actionOptions.push(
+        { label: 'Stop', description: 'Stop the game server gracefully', value: 'stop' },
+        { label: 'Restart', description: 'Restart the game server', value: 'restart' },
       );
+    }
+    if (this._backupLimit !== 0) {
+      actionOptions.push({ label: 'Backup', description: 'Create a new backup', value: 'backup' });
+    }
+    if (!isOff) {
+      actionOptions.push({ label: 'Kill', description: 'Force kill the server process', value: 'kill' });
+    }
+    if (this._hasSftp && config.enableWelcomeFile) {
+      actionOptions.push({ label: 'Welcome Message', description: 'Edit WelcomeMessage.txt', value: 'welcome' });
     }
     if (config.enableAutoMessages) {
-      toolsRow.addComponents(
-        new ButtonBuilder()
-          .setCustomId(BTN.BROADCASTS)
-          .setLabel('Broadcasts')
-          .setStyle(ButtonStyle.Secondary)
-      );
+      actionOptions.push({ label: 'Broadcasts', description: 'Edit auto broadcast messages', value: 'broadcasts' });
     }
 
-    const rows = [powerRow];
-    if (toolsRow.components.length > 0) rows.push(toolsRow);
+    const rows = [];
+    if (actionOptions.length > 0) {
+      const actionSelect = new StringSelectMenuBuilder()
+        .setCustomId(SELECT.ACTIONS_SERVER)
+        .setPlaceholder('Server actions...')
+        .addOptions(actionOptions);
+      rows.push(new ActionRowBuilder().addComponents(actionSelect));
+    }
 
     // Game settings dropdown if SFTP is configured and editor is enabled
     if (this._hasSftp && config.enableGameSettingsEditor) {
@@ -1618,7 +1860,6 @@ class PanelChannel {
           GAME_SETTINGS_CATEGORIES.map(c => ({
             label: c.label,
             value: c.id,
-            emoji: c.emoji,
           }))
         );
       rows.push(new ActionRowBuilder().addComponents(settingsSelect));
@@ -1627,88 +1868,75 @@ class PanelChannel {
     return rows;
   }
 
-  _buildServerEmbed(resources, details, backups, schedules) {
+  _buildServerContainer(resources, details, backups, schedules) {
     const state = resources?.state || 'offline';
     const si = _stateInfo(state);
 
-    const embed = new EmbedBuilder()
-      .setTitle('🖥️ Server Panel')
-      .setColor(si.color)
-      .setTimestamp()
-      .setFooter({ text: 'Panel API · Auto-updating · Buttons require Administrator' });
-
-    // ── State + name + description ──
     const name = details?.name || 'Game Server';
     const desc = details?.description || '';
-    let headerLines = `**${name}**\n${si.emoji} **${si.label}**`;
-    if (desc) headerLines += `\n*${desc}*`;
-    embed.setDescription(headerLines);
+    let header = `## Primary Server Panel\n**${name}**\n${si.emoji} **${si.label}**`;
+    if (desc) header += `\n*${desc}*`;
 
-    // ── Resource gauges ──
+    const blocks = [header, '-# Panel API - Auto-updating - Controls require Administrator'];
+
     if (resources && state === 'running') {
       const lines = [];
 
       if (resources.cpu != null) {
         const cpuLimit = details?.limits?.cpu || 100;
         const cpuRatio = Math.min(resources.cpu / cpuLimit, 1);
-        lines.push(`🖥️ **CPU** ${_progressBar(cpuRatio)} **${resources.cpu}%** / ${cpuLimit}%`);
+        lines.push(`CPU: ${_progressBar(cpuRatio)} **${resources.cpu}%** / ${cpuLimit}%`);
       }
 
       if (resources.memUsed != null && resources.memTotal != null) {
         const memRatio = resources.memTotal > 0 ? resources.memUsed / resources.memTotal : 0;
-        lines.push(`🧠 **RAM** ${_progressBar(memRatio)} **${formatBytes(resources.memUsed)}** / ${formatBytes(resources.memTotal)}`);
+        lines.push(`RAM: ${_progressBar(memRatio)} **${formatBytes(resources.memUsed)}** / ${formatBytes(resources.memTotal)}`);
       }
 
       if (resources.diskUsed != null && resources.diskTotal != null) {
         const diskRatio = resources.diskTotal > 0 ? resources.diskUsed / resources.diskTotal : 0;
-        lines.push(`💾 **Disk** ${_progressBar(diskRatio)} **${formatBytes(resources.diskUsed)}** / ${formatBytes(resources.diskTotal)}`);
+        lines.push(`Disk: ${_progressBar(diskRatio)} **${formatBytes(resources.diskUsed)}** / ${formatBytes(resources.diskTotal)}`);
       }
 
       if (resources.uptime != null) {
         const up = formatUptime(resources.uptime);
-        if (up) lines.push(`⏱️ **Uptime:** ${up}`);
+        if (up) lines.push(`Uptime: ${up}`);
       }
 
-      if (lines.length > 0) {
-        embed.addFields({ name: '📊 Live Resources', value: lines.join('\n') });
-      }
+      if (lines.length > 0) blocks.push(`### Live Resources\n${lines.join('\n')}`);
     } else if (state !== 'running') {
-      embed.addFields({ name: '📊 Resources', value: '*Server is not running*' });
+      blocks.push('### Resources\n*Server is not running*');
     }
 
-    // ── Allocations ──
     const allocs = details?.relationships?.allocations?.data || [];
     if (allocs.length > 0) {
       const allocLines = allocs.map(a => {
         const attr = a.attributes || a;
-        const primary = attr.is_default ? ' ⭐' : '';
+        const primary = attr.is_default ? ' (default)' : '';
         const alias = attr.alias ? ` (${attr.alias})` : '';
-        const notes = attr.notes ? ` — ${attr.notes}` : '';
+        const notes = attr.notes ? ` - ${attr.notes}` : '';
         return `\`${attr.ip}:${attr.port}\`${alias}${primary}${notes}`;
       });
-      embed.addFields({ name: '🌐 Allocations', value: allocLines.join('\n'), inline: true });
+      blocks.push(`### Allocations\n${allocLines.join('\n')}`);
     }
 
-    // ── Node ──
     if (details?.node) {
-      embed.addFields({ name: '📍 Node', value: details.node, inline: true });
+      blocks.push(`### Node\n${details.node}`);
     }
 
-    // ── Plan limits ──
     const limits = details?.limits || {};
     const fl = details?.feature_limits || {};
     const planParts = [];
     if (limits.memory) planParts.push(`RAM: ${limits.memory} MB`);
-    if (limits.disk != null) planParts.push(`Disk: ${limits.disk === 0 ? '∞' : `${limits.disk} MB`}`);
+    if (limits.disk != null) planParts.push(`Disk: ${limits.disk === 0 ? 'unlimited' : `${limits.disk} MB`}`);
     if (limits.cpu) planParts.push(`CPU: ${limits.cpu}%`);
     if (fl.backups != null) planParts.push(`Backups: ${fl.backups}`);
     if (fl.databases != null) planParts.push(`DBs: ${fl.databases}`);
     if (fl.allocations != null) planParts.push(`Ports: ${fl.allocations}`);
     if (planParts.length > 0) {
-      embed.addFields({ name: '📋 Plan', value: planParts.join('  ·  '), inline: true });
+      blocks.push(`### Plan\n${planParts.join('    ')}`);
     }
 
-    // ── Backups ──
     if (backups && backups.length > 0) {
       const sorted = [...backups]
         .filter(b => b.completed_at)
@@ -1718,27 +1946,26 @@ class PanelChannel {
       const maxBackups = fl.backups || '?';
 
       const backupLines = sorted.slice(0, 5).map((b, i) => {
-        const icon = b.is_successful ? '✅' : '❌';
-        const locked = b.is_locked ? ' 🔒' : '';
+        const icon = b.is_successful ? '[OK]' : '[ERR]';
+        const locked = b.is_locked ? ' [LOCKED]' : '';
         const date = new Date(b.completed_at).toLocaleDateString('en-GB', {
           day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
           timeZone: config.botTimezone,
         });
-        return `${icon} **${b.name || `Backup ${i + 1}`}**${locked}\n　${formatBytes(b.bytes || 0)} · ${date}`;
+        return `${icon} **${b.name || `Backup ${i + 1}`}**${locked}\n ${formatBytes(b.bytes || 0)} - ${date}`;
       });
 
-      const header = `${successCount}/${maxBackups} slots · ${formatBytes(totalSize)} total`;
-      embed.addFields({ name: `💾 Backups (${header})`, value: backupLines.join('\n') || 'None' });
+      const headerLine = `${successCount}/${maxBackups} slots - ${formatBytes(totalSize)} total`;
+      blocks.push(`### Backups (${headerLine})\n${backupLines.join('\n') || 'None'}`);
     } else {
-      embed.addFields({ name: '💾 Backups', value: 'No backups yet. Click **Backup** below to create one.' });
+      blocks.push('### Backups\nNo backups yet. Use **Server Actions -> Backup** to create one.');
     }
 
-    // ── Schedules ──
     if (schedules && schedules.length > 0) {
       const activeCount = schedules.filter(s => s.is_active).length;
       const scheduleLines = schedules.slice(0, 8).map(s => {
-        const active = s.is_active ? '🟢' : '⚫';
-        const onlyOnline = s.only_when_online ? ' 🌐' : '';
+        const active = s.is_active ? '[ACTIVE]' : '[OFF]';
+        const onlyOnline = s.only_when_online ? ' [ONLINE ONLY]' : '';
         let next = '--';
         if (s.next_run_at) {
           const nextDate = new Date(s.next_run_at);
@@ -1756,28 +1983,26 @@ class PanelChannel {
             });
           }
         }
-        return `${active} **${s.name}**${onlyOnline} — ${next}`;
+        return `${active} **${s.name}**${onlyOnline} - ${next}`;
       });
-      embed.addFields({
-        name: `📅 Schedules (${activeCount}/${schedules.length} active)`,
-        value: scheduleLines.join('\n'),
-      });
+      blocks.push(`### Schedules (${activeCount}/${schedules.length} active)\n${scheduleLines.join('\n')}`);
     }
 
-    // ── Quick reference ──
-    embed.addFields({
-      name: '⚡ Commands',
-      value: '`/qspanel console <cmd>` — Run a console command\n`/qspanel schedules` — View all schedules\n`/qspanel backup-delete` — Remove a backup',
-    });
+    blocks.push([
+      '### Commands',
+      '`/qspanel console <cmd>` - Run a console command',
+      '`/qspanel schedules` - View all schedules',
+      '`/qspanel backup-delete` - Remove a backup',
+    ].join('\n'));
 
-    return embed;
+    return _container(blocks, [], si.color);
   }
 }
 
-// ── Setup wizard (extracted to panel-setup-wizard.js) ──
+//  Setup wizard (extracted to panel-setup-wizard.js) 
 Object.assign(PanelChannel.prototype, require('./panel-setup-wizard'));
 
-// ── Multi-server handlers (extracted to panel-multi-server.js) ──
+//  Multi-server handlers (extracted to panel-multi-server.js) 
 Object.assign(PanelChannel.prototype, require('./panel-multi-server'));
 
 // Export custom IDs for the interaction handler
@@ -1787,3 +2012,5 @@ PanelChannel.ENV_CATEGORIES = ENV_CATEGORIES;
 PanelChannel.GAME_SETTINGS_CATEGORIES = GAME_SETTINGS_CATEGORIES;
 
 module.exports = PanelChannel;
+
+
