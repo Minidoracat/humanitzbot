@@ -169,7 +169,7 @@ function cleanName(raw) {
 // Keys are lowercase for case-insensitive matching.
 const ITEM_ALIASES = new Map([
   // Weapons & ammo
-  ['tacticalmachette', 'Tactical Machete'],
+  ['tacticalmachette', 'Tactical Machete'],   // game data: TacticalMachette (double-t)
   ['tacticalmachete', 'Tactical Machete'],
   ['22ammo', '.22 Ammo'],
   ['9mmammo', '9mm Ammo'],
