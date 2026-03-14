@@ -23,14 +23,14 @@ const { cleanOwnMessages } = require('./discord-utils');
 
 //  State colour map 
 const STATE_DISPLAY = {
-  running:  { emoji: '[RUN]', label: 'Running',  color: 0x2ecc71 },
-  starting: { emoji: '[START]', label: 'Starting', color: 0xf1c40f },
-  stopping: { emoji: '[STOP]', label: 'Stopping', color: 0xe67e22 },
-  offline:  { emoji: '[OFF]', label: 'Offline',  color: 0xe74c3c },
+  running:  { emoji: '🟢', label: 'Running',  color: 0x2ecc71 },
+  starting: { emoji: '🟡', label: 'Starting', color: 0xf1c40f },
+  stopping: { emoji: '🟠', label: 'Stopping', color: 0xe67e22 },
+  offline:  { emoji: '🔴', label: 'Offline',  color: 0xe74c3c },
 };
 
 function _stateInfo(state) {
-  return STATE_DISPLAY[state] || { emoji: '[?]', label: state || 'Unknown', color: 0x95a5a6 };
+  return STATE_DISPLAY[state] || { emoji: '⚪', label: state || 'Unknown', color: 0x95a5a6 };
 }
 
 //  .env file helpers (shared via panel-env.js) 
