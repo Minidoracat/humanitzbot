@@ -30,6 +30,9 @@ const SELECT = {
   SETTINGS: 'panel_settings_select',
   SERVER:   'panel_server_select',
   VIEW:     'panel_view_select',
+  ACTIONS_BOT: 'panel_actions_bot',
+  ACTIONS_SERVER: 'panel_actions_server',
+  ACTIONS_MANAGED: 'panel_actions_managed',
 };
 
 // ── Setup wizard custom IDs ─────────────────────────────────
@@ -479,10 +482,10 @@ const GAME_SETTINGS_CATEGORIES = [
   {
     id: 'general', label: 'General', emoji: '⚔️',
     settings: [
-      { ini: 'PVP', label: 'PvP (true/false)' },
+      { ini: 'PVP', label: 'PvP (0=Off, 1=On)' },
       { ini: 'MaxPlayers', label: 'Max Players' },
-      { ini: 'OnDeath', label: 'On Death (0=Nothing,1=BP,2=+Pock,3=All)' },
-      { ini: 'PermaDeath', label: 'Perma Death (true/false)' },
+      { ini: 'OnDeath', label: 'On Death (0=BP, 1=+Pock, 2=All)' },
+      { ini: 'PermaDeath', label: 'Perma Death (0=Off, 1=Ind, 2=All)' },
       { ini: 'VitalDrain', label: 'Vital Drain (0=Slow,1=Norm,2=Fast)' },
     ],
   },
@@ -493,7 +496,7 @@ const GAME_SETTINGS_CATEGORIES = [
       { ini: 'NightDur', label: 'Night Length (min)' },
       { ini: 'DaysPerSeason', label: 'Days Per Season' },
       { ini: 'StartingSeason', label: 'Season (0=Sum,1=Aut,2=Win,3=Spr)' },
-      { ini: 'FreezeTime', label: 'Freeze When Empty (true/false)' },
+      { ini: 'FreezeTime', label: 'Freeze When Empty (0/1)' },
     ],
   },
   {
@@ -502,17 +505,17 @@ const GAME_SETTINGS_CATEGORIES = [
       { ini: 'ZombieDiffHealth', label: 'Health (0=VEasy → 5=Nmre)' },
       { ini: 'ZombieDiffSpeed', label: 'Speed (0=VEasy → 5=Nmre)' },
       { ini: 'ZombieDiffDamage', label: 'Damage (0=VEasy → 5=Nmre)' },
-      { ini: 'ZombieAmountMulti', label: 'Spawn Multiplier (1=default)' },
+      { ini: 'ZombieAmountMulti', label: 'Spawn Multiplier (0-2)' },
       { ini: 'ZombieRespawnTimer', label: 'Respawn Timer (min)' },
     ],
   },
   {
     id: 'items', label: 'Items & Loot', emoji: '🎒',
     settings: [
-      { ini: 'WeaponBreak', label: 'Weapon Break (true/false)' },
-      { ini: 'FoodDecay', label: 'Food Decay (0=Off, 0.5=Half, 1=Def)' },
-      { ini: 'LootRespawn', label: 'Loot Respawn (true/false)' },
-      { ini: 'AirDrop', label: 'Air Drops (true/false)' },
+      { ini: 'WeaponBreak', label: 'Weapon Break (0=Off, 1=On)' },
+      { ini: 'FoodDecay', label: 'Food Decay (0=Off, 1=On)' },
+      { ini: 'LootRespawn', label: 'Loot Respawn (0=Off, 1=On)' },
+      { ini: 'AirDrop', label: 'Air Drops (0=Off, 1=On)' },
       { ini: 'LootRespawnTimer', label: 'Loot Respawn Timer (min)' },
     ],
   },
@@ -522,17 +525,17 @@ const GAME_SETTINGS_CATEGORIES = [
       { ini: 'HumanHealth', label: 'Health (0=VEasy → 5=Nmre)' },
       { ini: 'HumanSpeed', label: 'Speed (0=VEasy → 5=Nmre)' },
       { ini: 'HumanDamage', label: 'Damage (0=VEasy → 5=Nmre)' },
-      { ini: 'HumanAmountMulti', label: 'Spawn Multiplier (1=default)' },
-      { ini: 'AIEvent', label: 'AI Events (0=Off → 4=Insane)' },
+      { ini: 'HumanAmountMulti', label: 'Spawn Multiplier (0-2)' },
+      { ini: 'AIEvent', label: 'AI Events (0=Off, 1=Low, 2=Default)' },
     ],
   },
   {
     id: 'building', label: 'Building & Territory', emoji: '🏗️',
     settings: [
-      { ini: 'BuildingHealth', label: 'Building HP Multiplier (1=default)' },
-      { ini: 'BuildingDecay', label: 'Building Decay (0=Off, N=days)' },
-      { ini: 'GenFuel', label: 'Generator Fuel Rate (0.01-4)' },
-      { ini: 'Territory', label: 'Territory (true/false)' },
+      { ini: 'BuildingHealth', label: 'Building HP (0=Slow,1=Norm,2=Fast)' },
+      { ini: 'BuildingDecay', label: 'Building Decay (0=Off, 1=On)' },
+      { ini: 'GenFuel', label: 'Generator Fuel Rate' },
+      { ini: 'Territory', label: 'Territory (0=Off, 1=On)' },
       { ini: 'MaxOwnedCars', label: 'Max Cars (0=Disabled)' },
     ],
   },
@@ -557,7 +560,7 @@ const GAME_SETTINGS_CATEGORIES = [
   {
     id: 'companions', label: 'Companions & Animals', emoji: '🐕',
     settings: [
-      { ini: 'DogEnabled', label: 'Dog Companion (true/false)' },
+      { ini: 'DogEnabled', label: 'Dog Companion (0=Off, 1=On)' },
       { ini: 'CompanionHealth', label: 'Companion HP (0=Low,1=Def,2=Hi)' },
       { ini: 'CompanionDmg', label: 'Companion Dmg (0=Low,1=Def,2=Hi)' },
       { ini: 'AnimalMulti', label: 'Animal Spawn Multiplier' },
@@ -567,20 +570,20 @@ const GAME_SETTINGS_CATEGORIES = [
   {
     id: 'gameplay', label: 'Gameplay Toggles', emoji: '♻️',
     settings: [
-      { ini: 'ClearInfection', label: 'Clear Infection on Respawn (true/false)' },
-      { ini: 'EagleEye', label: 'Eagle Eye Skill (true/false)' },
-      { ini: 'Voip', label: 'Voice Chat (true/false)' },
-      { ini: 'MultiplayerSleep', label: 'Multiplayer Sleep (true/false)' },
-      { ini: 'Sleep', label: 'Sleep Deprivation (true/false)' },
+      { ini: 'ClearInfection', label: 'Clear Infection on Respawn (0/1)' },
+      { ini: 'EagleEye', label: 'Eagle Eye Skill (0/1)' },
+      { ini: 'Voip', label: 'Voice Chat (0/1)' },
+      { ini: 'MultiplayerSleep', label: 'Multiplayer Sleep (0/1)' },
+      { ini: 'Sleep', label: 'Sleep Deprivation (0/1)' },
     ],
   },
   {
     id: 'spawns', label: 'Spawns & Perms', emoji: '🌍',
     settings: [
       { ini: 'LimitedSpawns', label: 'Limited Spawns (true/false)' },
-      { ini: 'AllowDismantle', label: 'Allow Dismantle (true/false)' },
-      { ini: 'AllowHouseDismantle', label: 'Dismantle Houses (true/false)' },
-      { ini: 'RecruitDog', label: 'Recruit Dogs (true/false)' },
+      { ini: 'AllowDismantle', label: 'Allow Dismantle (0/1)' },
+      { ini: 'AllowHouseDismantle', label: 'Dismantle Houses (0/1)' },
+      { ini: 'RecruitDog', label: 'Recruit Dogs (0/1)' },
       { ini: 'XpMultiplier', label: 'XP Multiplier (e.g. 1, 2)' },
     ],
   },
@@ -601,7 +604,7 @@ const GAME_SETTINGS_CATEGORIES = [
       { ini: 'PickupCleanup', label: 'Pickup Cleanup (game days, 0=off)' },
       { ini: 'FakeBuildingCleanup', label: 'Blueprint Cleanup (min)' },
       { ini: 'ZombieDogMulti', label: 'Zombie Dog Multiplier' },
-      { ini: 'DogNum', label: 'Max Dogs in World' },
+      { ini: 'DogNum', label: 'Max Wild Dogs' },
     ],
   },
   {
@@ -627,10 +630,10 @@ const GAME_SETTINGS_CATEGORIES = [
     id: 'host', label: 'Host & Feedback', emoji: '📡',
     settings: [
       { ini: 'NoJoinFeedback', label: 'Hide Join/Leave (true/false)' },
-      { ini: 'NoDeathFeedback', label: 'Hide Death Notices (true/false)' },
-      { ini: 'Seg0', label: 'Spawn Seg0 (default 12)' },
-      { ini: 'Seg1', label: 'Spawn Seg1 (default 20)' },
-      { ini: 'Seg2', label: 'Spawn Seg2 (default 60)' },
+      { ini: 'NoDeathFeedback', label: 'Hide Death Notices (0/1)' },
+      { ini: 'Seg0', label: 'Spawn Seg0 (default 8)' },
+      { ini: 'Seg1', label: 'Spawn Seg1 (default 12)' },
+      { ini: 'Seg2', label: 'Spawn Seg2 (default 20)' },
     ],
   },
 ];
