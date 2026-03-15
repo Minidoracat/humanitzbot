@@ -106,6 +106,8 @@ module.exports = defineConfig([
         markersGroup: 'readonly', // app.js — Leaflet layer group
         map: 'readonly', // app.js — Leaflet map instance
         simplifyName: 'readonly', // app.js — UE4 name simplifier
+        Panel: 'writable', // panel-core.js — modular panel namespace
+        switchTab: 'writable', // panel-nav.js — global tab switcher
       },
     },
     rules: {
