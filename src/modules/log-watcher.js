@@ -15,6 +15,7 @@ class LogWatcher {
     this._db = deps.db || null;
     this._label = deps.label || 'LOGS';
     this._dataDir = deps.dataDir || null;
+    this._panelApi = deps.panelApi || null;
 
     this.client = client;
     this.logChannel = null;
@@ -1262,13 +1263,21 @@ class LogWatcher {
 
   async _refreshIdMap(sftp) {
     try {
-      // Stat first to skip full download if file hasn't changed
-      const stat = await sftp.stat(this._config.ftpIdMapPath);
-      if (stat.size === this._idMapLastSize) return;
-
-      const buf = await sftp.get(this._config.ftpIdMapPath);
-      this._idMapLastSize = stat.size;
-      const text = buf.toString('utf8');
+      let text;
+      // Prefer Panel API (Pterodactyl file download) when available
+      if (this._panelApi && this._panelApi.available) {
+        const buf = await this._panelApi.downloadFile(this._config.ftpIdMapPath);
+        if (buf.length === this._idMapLastSize) return;
+        this._idMapLastSize = buf.length;
+        text = buf.toString('utf8');
+      } else {
+        // Stat first to skip full download if file hasn't changed
+        const stat = await sftp.stat(this._config.ftpIdMapPath);
+        if (stat.size === this._idMapLastSize) return;
+        const buf = await sftp.get(this._config.ftpIdMapPath);
+        this._idMapLastSize = stat.size;
+        text = buf.toString('utf8');
+      }
       const entries = [];
       for (const line of text.split('\n')) {
         const trimmed = line.trim();

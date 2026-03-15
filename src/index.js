@@ -25,7 +25,6 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const { isAdminView } = require('./config');
-const { t } = require('./i18n');
 const rcon = require('./rcon/rcon');
 const ChatRelay = require('./modules/chat-relay');
 const StatusChannels = require('./modules/status-channels');
@@ -43,7 +42,6 @@ const MultiServerManager = require('./server/multi-server');
 const ActivityLog = require('./modules/activity-log');
 const MilestoneTracker = require('./modules/milestone-tracker');
 const RecapService = require('./modules/recap-service');
-const GitHubTracker = require('./modules/github-tracker');
 let AnticheatIntegration;
 try {
   AnticheatIntegration = require('./modules/anticheat-integration');
@@ -61,6 +59,18 @@ const { createBotStatusManager } = require('./utils/status');
 let hzmodWebPlugin;
 try {
   hzmodWebPlugin = require('./modules/howyagarn/web-plugin');
+} catch {
+  /* optional module */
+}
+let HowyagarnManager;
+try {
+  ({ HowyagarnManager } = require('./modules/howyagarn/howyagarn-manager'));
+} catch {
+  /* optional module */
+}
+let HzmodIpcClient;
+try {
+  HzmodIpcClient = require('./modules/howyagarn/ipc-client');
 } catch {
   /* optional module */
 }
@@ -86,6 +96,20 @@ for (const file of commandFiles) {
   if (command.data && command.execute) {
     client.commands.set(command.data.name, command);
     console.log(`[BOT] Loaded command: /${command.data.name}`);
+  }
+}
+
+// Also load commands from subdirectories (e.g. src/commands/howyagarn/)
+for (const entry of fs.readdirSync(commandsPath, { withFileTypes: true })) {
+  if (!entry.isDirectory()) continue;
+  const subDir = path.join(commandsPath, entry.name);
+  const subFiles = fs.readdirSync(subDir).filter((f) => f.endsWith('.js'));
+  for (const file of subFiles) {
+    const command = require(path.join(subDir, file));
+    if (command.data && command.execute) {
+      client.commands.set(command.data.name, command);
+      console.log(`[BOT] Loaded command: /${command.data.name} (${entry.name})`);
+    }
   }
 }
 
@@ -194,8 +218,9 @@ let activityLog; // ActivityLog instance
 let milestoneTracker; // MilestoneTracker instance
 let recapService; // RecapService instance
 let anticheatIntegration; // AnticheatIntegration instance
-let githubTracker; // GitHubTracker instance
 let botStatusManager; // Discord profile presence/status rotation
+let howyagarnManager; // HowyagarnManager instance (MMO system)
+let hzmodIpc; // Shared IPC client for hzmod plugin (used by manager + web plugin)
 // Bot lifecycle embeds (online/offline) go to panel channel — game server status goes to activity thread
 let stdinConsole; // interactive stdin console for headless hosts
 const startedAt = new Date();
@@ -293,9 +318,8 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.log(`[BOT] Game server disconnected: ${reason}`);
     if (botStatusManager) botStatusManager.refreshNow().catch(() => {});
     if (logWatcher) {
-      const locale = config.botLocale || 'en';
       const embed = new EmbedBuilder()
-        .setDescription(t('discord:index.rcon.disconnected', locale))
+        .setDescription('🟡 Game server disconnected — RCON connection lost')
         .setColor(0xf39c12)
         .setTimestamp();
       logWatcher.sendToThread(embed).catch(() => {});
@@ -306,9 +330,8 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.log(`[BOT] Game server reconnected (downtime: ${downtimeStr})`);
     if (botStatusManager) botStatusManager.refreshNow().catch(() => {});
     if (logWatcher) {
-      const locale = config.botLocale || 'en';
       const embed = new EmbedBuilder()
-        .setDescription(t('discord:index.rcon.reconnected', locale, { downtime: downtimeStr }))
+        .setDescription(`🟢 Game server reconnected (downtime: ${downtimeStr})`)
         .setColor(0x2ecc71)
         .setTimestamp();
       logWatcher.sendToThread(embed).catch(() => {});
@@ -560,7 +583,11 @@ client.once(Events.ClientReady, async (readyClient) => {
         setStatus('Log Watcher', '🟡 Skipped (LOG_CHANNEL_ID not set)');
         console.log('[BOT] Log watcher skipped — LOG_CHANNEL_ID not configured');
       } else {
-        logWatcher = new LogWatcher(readyClient, { db });
+        logWatcher = new LogWatcher(readyClient, {
+          db,
+          dataDir: path.resolve(__dirname, '..'),
+          panelApi: panelApi.available ? panelApi : null,
+        });
         await logWatcher.start();
         setStatus('Log Watcher', '🟢 Active');
       }
@@ -571,9 +598,9 @@ client.once(Events.ClientReady, async (readyClient) => {
 
     // Chat Relay — bidirectional chat bridge
     if (config.enableChatRelay) {
-      if (!config.adminChannelId && !config.chatChannelId) {
-        setStatus('Chat Relay', '🟡 Skipped (ADMIN_CHANNEL_ID / CHAT_CHANNEL_ID not set)');
-        console.log('[BOT] Chat relay skipped — neither ADMIN_CHANNEL_ID nor CHAT_CHANNEL_ID configured');
+      if (!config.adminChannelId) {
+        setStatus('Chat Relay', '🟡 Skipped (ADMIN_CHANNEL_ID not set)');
+        console.log('[BOT] Chat relay skipped — ADMIN_CHANNEL_ID not configured');
       } else {
         chatRelay = new ChatRelay(readyClient, { db });
         if (config.nukeBot) chatRelay._nukeActive = true;
@@ -649,35 +676,7 @@ client.once(Events.ClientReady, async (readyClient) => {
         console.log(
           `[BOT] Save sync: ${result.playerCount} players, ${result.structureCount} structures (${result.mode}, ${result.elapsed}ms)`,
         );
-
-        // Write save-cache.json for web map consumption
-        if (result.parsed) {
-          try {
-            const cacheData = {
-              updatedAt: new Date().toISOString(),
-              playerCount: result.playerCount,
-              worldState: result.worldState || {},
-              players: {},
-              structures: Array.isArray(result.parsed.structures) ? result.parsed.structures : [],
-              vehicles: Array.isArray(result.parsed.vehicles) ? result.parsed.vehicles : [],
-              horses: Array.isArray(result.parsed.horses) ? result.parsed.horses : [],
-              containers: Array.isArray(result.parsed.containers) ? result.parsed.containers : [],
-              companions: Array.isArray(result.parsed.companions) ? result.parsed.companions : [],
-            };
-            // Convert players Map to plain object
-            if (result.parsed.players instanceof Map) {
-              for (const [steamId, pData] of result.parsed.players) {
-                cacheData.players[steamId] = pData;
-              }
-            } else if (result.parsed.players && typeof result.parsed.players === 'object') {
-              cacheData.players = result.parsed.players;
-            }
-            const cachePath = path.join(__dirname, '..', 'data', 'save-cache.json');
-            fs.writeFileSync(cachePath, JSON.stringify(cacheData), 'utf8');
-          } catch (err) {
-            console.error('[BOT] Failed to write save-cache.json:', err.message);
-          }
-        }
+        // save-cache.json is now written inside SaveService._syncParsedData()
       });
       saveService.on('error', (err) => {
         console.error('[BOT] Save service error:', err.message);
@@ -827,33 +826,115 @@ client.once(Events.ClientReady, async (readyClient) => {
       setStatus('Anticheat', '⚫ Disabled');
     }
 
-    // GitHub Tracker — poll GitHub repos for PR/commit changes, post to per-repo threads
-    if (config.enableGithubTracker) {
-      if (!config.githubChannelId) {
-        setStatus('GitHub Tracker', '🟡 Skipped (GITHUB_CHANNEL_ID not set)');
-        console.log('[BOT] GitHub tracker skipped — GITHUB_CHANNEL_ID not configured');
-      } else if (config.githubRepos.length === 0) {
-        setStatus('GitHub Tracker', '🟡 Skipped (GITHUB_REPOS not set)');
-        console.log('[BOT] GitHub tracker skipped — GITHUB_REPOS not configured');
+    // HOWYAGARN MMO — faction PvP / territory control system
+    if (config.enableHowyagarn) {
+      if (!HowyagarnManager) {
+        setStatus('HOWYAGARN', '🟡 Skipped (module not installed)');
+      } else if (!db) {
+        setStatus('HOWYAGARN', '🟡 Skipped (no database)');
       } else {
-        githubTracker = new GitHubTracker(readyClient, { db, config });
-        await githubTracker.start();
-        setStatus('GitHub Tracker', `🟢 Active (${config.githubRepos.length} repo(s))`);
+        try {
+          // Create shared IPC client for engine communication
+          if (HzmodIpcClient && config.hzmodSocketPath) {
+            hzmodIpc = new HzmodIpcClient(config.hzmodSocketPath);
+            hzmodIpc.on('connect', () => console.log('[BOT] hzmod IPC connected'));
+            hzmodIpc.on('disconnect', () => console.log('[BOT] hzmod IPC disconnected — will reconnect'));
+            hzmodIpc.on('error', (err) => console.error('[BOT] hzmod IPC error:', err.message));
+            hzmodIpc.connect();
+            console.log(`[BOT] hzmod IPC client connecting to ${config.hzmodSocketPath}`);
+          }
+
+          howyagarnManager = new HowyagarnManager({
+            db,
+            client: readyClient,
+            rcon,
+            chatRelay,
+            config,
+            ipc: hzmodIpc || null,
+          });
+          howyagarnManager.init();
+
+          // Expose on client so slash commands can access it via interaction.client._howyagarnManager
+          readyClient._howyagarnManager = howyagarnManager;
+
+          // Wire save-sync events
+          if (saveService) {
+            saveService.on('sync', (result) => {
+              try {
+                if (!result.parsed) return;
+                const players = [];
+                const playerMap =
+                  result.parsed.players instanceof Map
+                    ? result.parsed.players
+                    : new Map(Object.entries(result.parsed.players || {}));
+                for (const [steamId, pData] of playerMap) {
+                  players.push({
+                    steamId,
+                    name: pData.name || pData.playerName || '',
+                    x: pData.posX || pData.x || 0,
+                    y: pData.posY || pData.y || 0,
+                    deltaZeeksKilled: pData.deltaZeeksKilled || 0,
+                    deltaNpcKills: pData.deltaNpcKills || 0,
+                    deltaAnimalKills: pData.deltaAnimalKills || 0,
+                    deltaFishCaught: pData.deltaFishCaught || 0,
+                    deltaDaysSurvived: pData.deltaDaysSurvived || 0,
+                  });
+                }
+                const structures = Array.isArray(result.parsed.structures) ? result.parsed.structures : [];
+                howyagarnManager.onSaveSync({ players, structures });
+              } catch (err) {
+                console.error('[BOT] HOWYAGARN save sync error:', err.message);
+              }
+            });
+          }
+
+          // Wire log events (PvP deaths, builds, looting)
+          if (logWatcher) {
+            const origLogEvent = logWatcher._logEvent?.bind(logWatcher);
+            if (origLogEvent) {
+              logWatcher._logEvent = function (type, data) {
+                origLogEvent(type, data);
+                try {
+                  howyagarnManager.onLogEvent(type, data);
+                } catch (_) {}
+              };
+            }
+            // Wire connect events
+            const origOnConnect = logWatcher._onPlayerConnect?.bind(logWatcher);
+            if (origOnConnect) {
+              logWatcher._onPlayerConnect = function (playerName, steamId) {
+                origOnConnect(playerName, steamId);
+                try {
+                  howyagarnManager.onPlayerConnect(steamId, playerName);
+                } catch (_) {}
+              };
+            }
+          }
+
+          setStatus('HOWYAGARN', '🟢 Active');
+          console.log('[BOT] HOWYAGARN MMO system active');
+        } catch (err) {
+          setStatus('HOWYAGARN', `⚠️ Failed: ${err.message}`);
+          console.error('[BOT] HOWYAGARN init failed:', err.message);
+        }
       }
     } else {
-      setStatus('GitHub Tracker', '⚫ Disabled');
+      setStatus('HOWYAGARN', '⚫ Disabled');
     }
 
     // Player Stats — DB-first reads (SaveService populates DB, PSC reads it)
     if (config.enablePlayerStats) {
-      if (!hasFtp() && !db) {
-        setStatus('Player Stats', '🟡 Skipped (no FTP credentials or database)');
-        console.log('[BOT] Player stats skipped — no FTP credentials or database available');
+      if (!hasFtp() && !panelApi.available && !db) {
+        setStatus('Player Stats', '🟡 Skipped (no FTP, Panel API, or database)');
+        console.log('[BOT] Player stats skipped — no FTP, Panel API, or database available');
       } else if (!config.playerStatsChannelId) {
         setStatus('Player Stats', '🟡 Skipped (PLAYER_STATS_CHANNEL_ID not set)');
         console.log('[BOT] Player stats skipped — PLAYER_STATS_CHANNEL_ID not configured');
       } else {
-        playerStatsChannel = new PlayerStatsChannel(readyClient, logWatcher, { db });
+        playerStatsChannel = new PlayerStatsChannel(readyClient, logWatcher, {
+          db,
+          panelApi: panelApi.available ? panelApi : null,
+        });
         await playerStatsChannel.start();
         const mode = db ? 'DB-first' : 'SFTP legacy';
         setStatus('Player Stats', `🟢 Active (${mode})`);
@@ -915,7 +996,9 @@ client.once(Events.ClientReady, async (readyClient) => {
         // Register hzmod web plugin now that multiServerManager is available
         if (hzmodWebPlugin) {
           try {
-            hzmodPlugin = hzmodWebPlugin.register(webMapServer, config);
+            hzmodPlugin = hzmodWebPlugin.register(webMapServer, config, { ipc: hzmodIpc || null });
+            // Pass HowyagarnManager to web plugin for MMO API endpoints
+            if (howyagarnManager) hzmodWebPlugin.setManager(howyagarnManager);
           } catch (err) {
             console.error('[BOT] hzmod plugin registration failed:', err.message);
           }
@@ -1149,11 +1232,12 @@ async function shutdown(reason = 'Manual shutdown') {
   if (panelChannel) panelChannel.stop();
   if (webMapServer) webMapServer.stop();
   if (hzmodPlugin?.ipcClient) hzmodPlugin.ipcClient.destroy();
+  if (hzmodIpc) hzmodIpc.destroy();
   if (logWatcher) logWatcher.stop();
   if (playerStatsChannel) playerStatsChannel.stop();
   if (activityLog) activityLog.stop();
   if (anticheatIntegration) await anticheatIntegration.stop();
-  if (githubTracker) githubTracker.stop();
+  if (howyagarnManager) howyagarnManager.shutdown();
   if (saveService) saveService.stop();
   if (multiServerManager) await multiServerManager.stopAll();
   if (stdinConsole) stdinConsole.stop();
@@ -1361,9 +1445,7 @@ async function _nukeChannel(client, channelId, botId) {
       console.error('  Go to: Your Application → Bot → Privileged Gateway Intents');
       if (requested.length > 0) {
         console.error('  Enable:');
-        requested.forEach((r) => {
-          console.error(`    ✦ ${r}`);
-        });
+        requested.forEach((r) => console.error('    ✦ ' + r));
       } else {
         console.error('  Enable: Message Content Intent');
       }
