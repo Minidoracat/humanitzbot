@@ -313,7 +313,7 @@ window.Panel = window.Panel || {};
     'item_instances',
     'item_groups',
     'item_movements',
-    'game_items',
+    // 'game_items',
     'game_buildings',
     'game_recipes',
     'game_vehicles_ref',
