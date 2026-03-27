@@ -275,7 +275,26 @@ function setupAuth(app, client, opts = {}) {
   // CSRF protection (tiny-csrf, session-backed synchronizer token)
   const csrfSecret = (authCfg.sessionSecret || 'default-csrf-secret-replace-me').padEnd(32, '0').slice(0, 32);
   app.use(cookieParser(authCfg.sessionSecret));
+  // Bridge X-CSRF-Token header → req.body._csrf for tiny-csrf compatibility.
+  // tiny-csrf only reads req.body._csrf, but our SPA sends the token via header.
+  app.use((req, _res, next) => {
+    const headerToken = req.headers['x-csrf-token'];
+    if (headerToken && !req.body?._csrf) {
+      req.body = req.body || {};
+      req.body._csrf = headerToken;
+    }
+    next();
+  });
   app.use(csrf(csrfSecret, ['POST', 'PUT', 'PATCH', 'DELETE'], ['/auth/callback']));
+  // Regenerate CSRF token after every request so the SPA always has a valid
+  // token for the next mutation. tiny-csrf is one-time-use (form-oriented),
+  // but our SPA needs persistent tokens across multiple POST requests.
+  app.use((req, res, next) => {
+    if (typeof req.csrfToken === 'function') {
+      res.setHeader('X-CSRF-Token', req.csrfToken());
+    }
+    next();
+  });
 
   // CSRF validation error handler
   app.use((err, req, res, next) => {
