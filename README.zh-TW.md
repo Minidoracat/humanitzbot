@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/Express-v5-000000?logo=express&logoColor=white" alt="Express v5" />
   <img src="https://img.shields.io/badge/i18n-EN_%7C_%E7%B9%81%E4%B8%AD_%7C_%E7%AE%80%E4%B8%AD-blue" alt="i18n: EN | 繁中 | 简中" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License" />
-  <img src="https://img.shields.io/badge/Tests-1426_passing-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-1622_passing-brightgreen" alt="Tests" />
 </p>
 
 <p align="center">
@@ -78,6 +78,8 @@
 | **資料庫瀏覽器**     | 可直接對 60 多個遊戲資料表執行 SQL 查詢                                                      |
 | **公會檢視器**       | 顯示公會成員、領地與成員詳細資訊                                                             |
 | **機器人設定編輯器** | 從瀏覽器直接編輯機器人設定，支援即時套用與重啟偵測                                           |
+| **模組狀態**         | 即時模組健康狀態儀表板，顯示所有機器人子系統的運作狀態                                       |
+| **個別伺服器設定**   | 可從伺服器分頁為每台伺服器獨立設定遊戲參數、歡迎訊息與自動訊息                               |
 | **伺服器排程器**     | 具備設定檔輪替功能的視覺化重啟排程                                                           |
 | **Discord OAuth2**   | 基於身分組的存取層級：public（公開）、survivor（生存者）、mod（管理員）、admin（最高管理員） |
 | **多國語言**         | 完整的 i18n 支援 — 英文、繁體中文、簡體中文，具備瀏覽器語言偵測與即時切換功能                |
@@ -205,15 +207,15 @@ your-domain.com {
 
 ## 斜線指令
 
-| 指令           | 說明                        |
-| -------------- | --------------------------- |
-| `/players`     | 列出線上玩家與其統計數據    |
-| `/playerstats` | 查看特定玩家的詳細統計數據  |
-| `/playtime`    | 玩家遊玩時間排行榜          |
-| `/server`      | 伺服器資訊、狀態與設定      |
-| `/rcon`        | 執行 RCON 指令 (管理員專用) |
-| `/panel`       | 取得機器人控制台連結        |
-| `/threads`     | 管理每日活動/聊天討論串     |
+| 指令           | 說明                                         |
+| -------------- | -------------------------------------------- |
+| `/players`     | 列出線上玩家與其統計數據                     |
+| `/playerstats` | 查看特定玩家的詳細統計數據                   |
+| `/playtime`    | 玩家遊玩時間排行榜                           |
+| `/server`      | 伺服器資訊、狀態與設定                       |
+| `/rcon`        | 執行 RCON 指令 (管理員專用)                  |
+| `/panel`       | Pterodactyl 伺服器控制（電源、控制台、備份） |
+| `/threads`     | 管理每日活動/聊天討論串                      |
 
 ---
 
@@ -267,15 +269,20 @@ src/
 │   └── server-info.js      # 玩家列表與伺服器資訊查詢
 ├── server/
 │   ├── multi-server.js     # 多伺服器實例管理
+│   ├── bot-control.js      # Bot 生命週期操作（重啟、重新匯入、重設）
 │   ├── panel-api.js        # Pterodactyl 面板 API 客戶端
 │   └── server-resources.js # 系統資源監控
+├── utils/
+│   ├── admin-alert.js      # 管理員警示頻道通知
+│   ├── env-writer.js       # 安全的 .env 檔案寫入器
+│   └── status.js           # Bot 狀態顯示與輪替
 ├── tracking/
 │   ├── player-stats.js     # 個別玩家統計數據彙整
 │   ├── playtime-tracker.js # 基於連線工作階段的遊玩時間追蹤
 │   ├── kill-tracker.js     # 擊殺統計累積與差異計算
 │   └── snapshot-service.js # 定期記錄世界狀態快照
 └── web-map/
-    ├── server.js           # Express API 伺服器 (超過 50 個端點)
+    ├── server.js           # Express API 伺服器 (超過 65 個端點)
     ├── auth.js             # Discord OAuth2 與基於身分組的權限控制
     └── public/             # 儀表板前端 (HTML/JS/CSS)
 ```
@@ -300,7 +307,7 @@ src/
 ### 測試
 
 ```bash
-npm test                 # 於 40 個測試檔案中執行 1426 項測試
+npm test                 # 於 47 個測試檔案中執行 1622 項測試
 ```
 
 ### 建置 CSS

@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/Express-v5-000000?logo=express&logoColor=white" alt="Express v5" />
   <img src="https://img.shields.io/badge/i18n-EN_%7C_%E7%B9%81%E4%B8%AD_%7C_%E7%AE%80%E4%B8%AD-blue" alt="i18n: EN | 繁中 | 简中" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License" />
-  <img src="https://img.shields.io/badge/Tests-1426_passing-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-1622_passing-brightgreen" alt="Tests" />
 </p>
 
 <p align="center">
@@ -78,6 +78,8 @@
 | **Database Browser**  | Direct SQL queries against 60+ game data tables                                                                            |
 | **Clan Viewer**       | Clan membership, territories, and member details                                                                           |
 | **Bot Config Editor** | Edit bot settings from the browser with live-apply and restart detection                                                   |
+| **Module Status**     | Real-time module health dashboard showing status of all bot subsystems                                                     |
+| **Per-Server Config** | Per-server game settings, welcome messages, and auto-message configuration from the Servers tab                            |
 | **Server Scheduler**  | Visual restart schedule with profile rotation                                                                              |
 | **Discord OAuth2**    | Role-based access tiers: public landing, survivor, mod, admin                                                              |
 | **Multi-Language**    | Full i18n support — English, 繁體中文, 简体中文 with browser language detection and instant switching                      |
@@ -205,15 +207,15 @@ your-domain.com {
 
 ## Slash Commands
 
-| Command        | Description                          |
-| -------------- | ------------------------------------ |
-| `/players`     | List online players with stats       |
-| `/playerstats` | Detailed stats for a specific player |
-| `/playtime`    | Player playtime leaderboard          |
-| `/server`      | Server info, status, and settings    |
-| `/rcon`        | Execute RCON commands (admin)        |
-| `/panel`       | Bot control panel link               |
-| `/threads`     | Manage daily activity/chat threads   |
+| Command        | Description                                           |
+| -------------- | ----------------------------------------------------- |
+| `/players`     | List online players with stats                        |
+| `/playerstats` | Detailed stats for a specific player                  |
+| `/playtime`    | Player playtime leaderboard                           |
+| `/server`      | Server info, status, and settings                     |
+| `/rcon`        | Execute RCON commands (admin)                         |
+| `/panel`       | Pterodactyl server controls (power, console, backups) |
+| `/threads`     | Manage daily activity/chat threads                    |
 
 ---
 
@@ -267,15 +269,20 @@ src/
 │   └── server-info.js      # Player list, server info queries
 ├── server/
 │   ├── multi-server.js     # Multi-server instance management
+│   ├── bot-control.js      # Bot lifecycle actions (restart, reimport, reset)
 │   ├── panel-api.js        # Pterodactyl Panel API client
 │   └── server-resources.js # System resource monitoring
+├── utils/
+│   ├── admin-alert.js      # Admin alert channel notifications
+│   ├── env-writer.js       # Safe .env file writer
+│   └── status.js           # Bot presence & status rotation
 ├── tracking/
 │   ├── player-stats.js     # Per-player stat aggregation
 │   ├── playtime-tracker.js # Session-based playtime tracking
 │   ├── kill-tracker.js     # Kill stat accumulation & deltas
 │   └── snapshot-service.js # Periodic world state snapshots
 └── web-map/
-    ├── server.js           # Express API server (50+ endpoints)
+    ├── server.js           # Express API server (65+ endpoints)
     ├── auth.js             # Discord OAuth2 + role-based access
     └── public/             # Dashboard frontend (HTML/JS/CSS)
 ```
@@ -300,7 +307,7 @@ SQLite with **60+ tables** covering:
 ### Tests
 
 ```bash
-npm test                 # 1426 tests across 40 test files
+npm test                 # 1622 tests across 47 test files
 ```
 
 ### Build CSS

@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/Express-v5-000000?logo=express&logoColor=white" alt="Express v5" />
   <img src="https://img.shields.io/badge/i18n-EN_%7C_%E7%B9%81%E4%B8%AD_%7C_%E7%AE%80%E4%B8%AD-blue" alt="i18n: EN | 繁中 | 简中" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License" />
-  <img src="https://img.shields.io/badge/Tests-1426_passing-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-1622_passing-brightgreen" alt="Tests" />
 </p>
 
 <p align="center">
@@ -78,6 +78,8 @@
 | **数据库浏览器**     | 直接对 60 多个游戏数据表执行 SQL 查询                                               |
 | **公会查看器**       | 查看公会成员、领地及成员详情                                                        |
 | **机器人配置编辑器** | 直接在浏览器中编辑机器人设置，支持即时应用与重启检测                                |
+| **模块状态**         | 实时模块健康状态仪表盘，显示所有机器人子系统的运行状态                              |
+| **独立服务器配置**   | 可从服务器选项卡为每台服务器独立配置游戏设置、欢迎消息与自动消息                    |
 | **服务器调度器**     | 可视化的重启时间表及配置文件轮换功能                                                |
 | **Discord OAuth2**   | 基于角色的访问层级：公开页面、幸存者、模组管理 (Mod)、管理员                        |
 | **多语言支持**       | 完整的 i18n 支持 — 英文、繁體中文、简体中文，具备浏览器语言检测与即时切换功能       |
@@ -205,15 +207,15 @@ your-domain.com {
 
 ## 斜杠指令
 
-| 指令           | 描述                         |
-| -------------- | ---------------------------- |
-| `/players`     | 列出在线玩家及其统计数据     |
-| `/playerstats` | 查看指定玩家的详细统计数据   |
-| `/playtime`    | 玩家游玩时间排行榜           |
-| `/server`      | 服务器信息、状态及设置       |
-| `/rcon`        | 执行 RCON 指令（管理员专用） |
-| `/panel`       | 获取机器人控制面板的链接     |
-| `/threads`     | 管理每日活动/聊天讨论串      |
+| 指令           | 描述                                         |
+| -------------- | -------------------------------------------- |
+| `/players`     | 列出在线玩家及其统计数据                     |
+| `/playerstats` | 查看指定玩家的详细统计数据                   |
+| `/playtime`    | 玩家游玩时间排行榜                           |
+| `/server`      | 服务器信息、状态及设置                       |
+| `/rcon`        | 执行 RCON 指令（管理员专用）                 |
+| `/panel`       | Pterodactyl 服务器控制（电源、控制台、备份） |
+| `/threads`     | 管理每日活动/聊天讨论串                      |
 
 ---
 
@@ -267,15 +269,20 @@ src/
 │   └── server-info.js      # 玩家列表、服务器信息查询
 ├── server/
 │   ├── multi-server.js     # 多服务器实例管理
+│   ├── bot-control.js      # Bot 生命周期操作（重启、重新导入、重置）
 │   ├── panel-api.js        # Pterodactyl 面板 API 客户端
 │   └── server-resources.js # 系统资源监控
+├── utils/
+│   ├── admin-alert.js      # 管理员警报频道通知
+│   ├── env-writer.js       # 安全的 .env 文件写入器
+│   └── status.js           # Bot 状态显示与轮换
 ├── tracking/
 │   ├── player-stats.js     # 单个玩家统计数据聚合
 │   ├── playtime-tracker.js # 基于会话的游玩时间追踪
 │   ├── kill-tracker.js     # 击杀统计累积与增量计算
 │   └── snapshot-service.js # 定期世界状态快照
 └── web-map/
-    ├── server.js           # Express API 服务器（50+ 个端点）
+    ├── server.js           # Express API 服务器（65+ 个端点）
     ├── auth.js             # Discord OAuth2 + 基于角色的访问控制
     └── public/             # 仪表盘前端（HTML/JS/CSS）
 ```
@@ -300,7 +307,7 @@ src/
 ### 测试
 
 ```bash
-npm test                 # 在 40 个测试文件中执行 1426 个测试
+npm test                 # 在 47 个测试文件中执行 1622 个测试
 ```
 
 ### 构建 CSS
