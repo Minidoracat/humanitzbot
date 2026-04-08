@@ -1,7 +1,7 @@
 /**
  * Database manager for the HumanitZ bot.
  *
- * Thin facade over 11 domain repositories (see src/db/repositories/).
+ * Thin facade over 12 domain repositories (see src/db/repositories/).
  * Handles lifecycle, schema migration, and delegates all domain queries.
  *
  *   - Auto-initialisation (creates tables on first run)
@@ -35,6 +35,7 @@ import { DeathCauseRepository } from './repositories/death-cause-repository.js';
 import { AntiCheatRepository } from './repositories/anti-cheat-repository.js';
 import { TimelineRepository } from './repositories/timeline-repository.js';
 import { GameDataRepository } from './repositories/game-data-repository.js';
+import { QuestRepository } from './repositories/quest-repository.js';
 import { type DbRow } from './repositories/db-utils.js';
 
 const __dirname = getDirname(import.meta.url);
@@ -49,9 +50,6 @@ interface PreparedStatements {
   setWorldState: Database.Statement;
   getWorldState: Database.Statement;
   getAllWorldState: Database.Statement;
-  // Quests
-  clearQuests: Database.Statement;
-  insertQuest: Database.Statement;
   // Server settings
   upsertSetting: Database.Statement;
   getSetting: Database.Statement;
@@ -82,6 +80,7 @@ class HumanitZDB {
   private _antiCheatRepo: AntiCheatRepository | null = null;
   private _timelineRepo: TimelineRepository | null = null;
   private _gameDataRepo: GameDataRepository | null = null;
+  private _questRepo: QuestRepository | null = null;
 
   constructor(options: { dbPath?: string; memory?: boolean; label?: string } = {}) {
     this._dbPath = options.dbPath ?? DEFAULT_DB_PATH;
@@ -142,6 +141,10 @@ class HumanitZDB {
     if (!this._gameDataRepo) throw new Error('Database not initialized — call init() first');
     return this._gameDataRepo;
   }
+  private get _quest(): QuestRepository {
+    if (!this._questRepo) throw new Error('Database not initialized — call init() first');
+    return this._questRepo;
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  Lifecycle
@@ -186,6 +189,7 @@ class HumanitZDB {
     this._antiCheatRepo = new AntiCheatRepository(this._handle, this._log.label);
     this._timelineRepo = new TimelineRepository(this._handle, this._log.label);
     this._gameDataRepo = new GameDataRepository(this._handle, this._log.label);
+    this._questRepo = new QuestRepository(this._handle, this._log.label);
 
     const version = this._getMeta('schema_version');
     this._log.info(`Database ready (v${version}, ${this._memory ? 'in-memory' : this._dbPath})`);
@@ -208,6 +212,7 @@ class HumanitZDB {
       this._antiCheatRepo = null;
       this._timelineRepo = null;
       this._gameDataRepo = null;
+      this._questRepo = null;
     }
   }
 
@@ -1226,12 +1231,6 @@ class HumanitZDB {
     this._stmts.getWorldState = this._handle.prepare('SELECT value FROM world_state WHERE key = ?');
     this._stmts.getAllWorldState = this._handle.prepare('SELECT * FROM world_state');
 
-    // Quests
-    this._stmts.clearQuests = this._handle.prepare('DELETE FROM quests');
-    this._stmts.insertQuest = this._handle.prepare(
-      "INSERT INTO quests (id, type, state, data, updated_at) VALUES (?, ?, ?, ?, datetime('now'))",
-    );
-
     // Server settings
     this._stmts.upsertSetting = this._handle.prepare(
       "INSERT OR REPLACE INTO server_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))",
@@ -1636,17 +1635,7 @@ class HumanitZDB {
   // ═══════════════════════════════════════════════════════════════════════════
 
   replaceQuests(quests: Array<Record<string, unknown>>): void {
-    const insert = this._handle.transaction((items: Array<Record<string, unknown>>) => {
-      this._replaceQuestsInner(items);
-    });
-    insert(quests);
-  }
-
-  _replaceQuestsInner(quests: Array<Record<string, unknown>>) {
-    this._stmts.clearQuests.run();
-    for (const q of quests) {
-      this._stmts.insertQuest.run(q.id, q.type, q.state, JSON.stringify(q.data));
-    }
+    this._quest.replaceQuests(quests);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1802,7 +1791,7 @@ class HumanitZDB {
         this._worldObject.innerReplaceLootActors(data.lootActors as Array<Record<string, unknown>>);
       }
       if (Array.isArray(data.quests) && data.quests.length > 0) {
-        this._replaceQuestsInner(data.quests as Array<Record<string, unknown>>);
+        this._quest.innerReplaceQuests(data.quests as Array<Record<string, unknown>>);
       }
       if (Array.isArray(data.horses) && data.horses.length > 0) {
         this._worldObject.innerReplaceWorldHorses(data.horses as Array<Record<string, unknown>>);
