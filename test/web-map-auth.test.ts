@@ -388,6 +388,12 @@ describe('Web Map Auth', () => {
       process.env.DISCORD_OAUTH_SECRET = 'test-secret';
       process.env.WEB_MAP_CALLBACK_URL = 'http://localhost:3000/auth/callback';
 
+      // Set guildId on the config singleton directly — env vars are only read at
+      // module load time so process.env.DISCORD_GUILD_ID has no effect here.
+      const config = cjsRequire('../src/config/index').default;
+      const savedGuildId = config.guildId;
+      config.guildId = '987654321';
+
       const { setupAuth: setup, TIER: T } = cjsRequire('../src/web-map/auth');
 
       // Build a mock bot client with a guild member cache
@@ -449,6 +455,7 @@ describe('Web Map Auth', () => {
 
       delete process.env.DISCORD_OAUTH_SECRET;
       delete process.env.WEB_MAP_CALLBACK_URL;
+      config.guildId = savedGuildId;
     });
   });
 
