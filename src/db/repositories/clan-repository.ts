@@ -30,29 +30,47 @@ export class ClanRepository extends BaseRepository {
   }
 
   upsertClan(name: string, members: Array<Record<string, unknown>>) {
-    this._stmts.upsertClan.run(name);
-    this._stmts.deleteClanMembers.run(name);
-    for (const m of members) {
-      this._stmts.insertClanMember.run(name, m.steamId, m.name, m.rank, m.canInvite ? 1 : 0, m.canKick ? 1 : 0);
-    }
+    const tx = this._handle.transaction(() => {
+      this._stmts.upsertClan.run(name);
+      this._stmts.deleteClanMembers.run(name);
+      for (const m of members) {
+        this._stmts.insertClanMember.run(name, m.steamId, m.name, m.rank, m.canInvite ? 1 : 0, m.canKick ? 1 : 0);
+      }
+    });
+    tx();
   }
 
   getAllClans() {
-    const clans = this._stmts.getAllClans.all() as DbRow[];
-    return clans.map((c) => ({
-      ...c,
-      members: (this._stmts.getClanMembers.all(c.name) as DbRow[]).map((m) => ({
-        steamId: m.steam_id,
-        name: m.name,
-        rank: m.rank,
-        canInvite: m.can_invite,
-        canKick: m.can_kick,
-        // Preserve snake_case for any code that still uses it
-        steam_id: m.steam_id,
-        can_invite: m.can_invite,
-        can_kick: m.can_kick,
-      })),
-    }));
+    const rows = this._handle
+      .prepare(
+        `SELECT c.name as clan_name, c.updated_at, cm.steam_id, cm.name as member_name, cm.rank, cm.can_invite, cm.can_kick
+         FROM clans c
+         LEFT JOIN clan_members cm ON c.name = cm.clan_name
+         ORDER BY c.name, cm.rank DESC, cm.name`,
+      )
+      .all() as DbRow[];
+
+    const clansMap = new Map<string, DbRow & { members: DbRow[] }>();
+    for (const row of rows) {
+      const clanName = row.clan_name as string;
+      if (!clansMap.has(clanName)) {
+        clansMap.set(clanName, { name: clanName, updated_at: row.updated_at, members: [] });
+      }
+      const clan = clansMap.get(clanName);
+      if (row.steam_id && clan) {
+        clan.members.push({
+          steamId: row.steam_id,
+          name: row.member_name,
+          rank: row.rank,
+          canInvite: row.can_invite,
+          canKick: row.can_kick,
+          steam_id: row.steam_id,
+          can_invite: row.can_invite,
+          can_kick: row.can_kick,
+        });
+      }
+    }
+    return [...clansMap.values()];
   }
 
   /**

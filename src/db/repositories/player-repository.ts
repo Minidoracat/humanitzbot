@@ -698,10 +698,13 @@ export class PlayerRepository extends BaseRepository {
     const nameLower = name.toLowerCase().trim();
     if (!nameLower) return;
 
-    // Mark previous aliases from this source as non-current
-    this._stmts.clearCurrentAlias.run(steamId, source);
-    // Upsert the new alias
-    this._stmts.upsertAlias.run(steamId, name.trim(), nameLower, source);
+    const tx = this._handle.transaction(() => {
+      // Mark previous aliases from this source as non-current
+      this._stmts.clearCurrentAlias.run(steamId, source);
+      // Upsert the new alias
+      this._stmts.upsertAlias.run(steamId, name.trim(), nameLower, source);
+    });
+    tx();
   }
 
   /**

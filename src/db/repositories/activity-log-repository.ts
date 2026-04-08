@@ -164,20 +164,17 @@ export class ActivityLogRepository extends BaseRepository {
 
   /** Get the most recent N activity entries. */
   getRecentActivity(limit = 50, offset = 0) {
-    if (offset > 0) return this._stmts.getRecentActivityPaged.all(limit, offset).map(_parseActivityRow);
-    return this._stmts.getRecentActivity.all(limit).map(_parseActivityRow);
+    return this._stmts.getRecentActivityPaged.all(limit, offset).map(_parseActivityRow);
   }
 
   /** Get recent activity for a specific category. */
   getActivityByCategory(category: string, limit = 50, offset = 0) {
-    if (offset > 0) return this._stmts.getActivityByCategoryPaged.all(category, limit, offset).map(_parseActivityRow);
-    return this._stmts.getActivityByCategory.all(category, limit).map(_parseActivityRow);
+    return this._stmts.getActivityByCategoryPaged.all(category, limit, offset).map(_parseActivityRow);
   }
 
   /** Get recent activity for a specific actor (container name, steam ID, etc.). */
   getActivityByActor(actor: string, limit = 50, offset = 0) {
-    if (offset > 0) return this._stmts.getActivityByActorPaged.all(actor, limit, offset).map(_parseActivityRow);
-    return this._stmts.getActivityByActor.all(actor, limit).map(_parseActivityRow);
+    return this._stmts.getActivityByActorPaged.all(actor, limit, offset).map(_parseActivityRow);
   }
 
   /** Get all activity since a given ISO timestamp. */
@@ -187,7 +184,7 @@ export class ActivityLogRepository extends BaseRepository {
 
   /** Purge old activity entries (e.g. '-30 days'). */
   purgeOldActivity(olderThan: string) {
-    this._stmts.purgeOldActivity.run(olderThan);
+    return this._stmts.purgeOldActivity.run(olderThan);
   }
 
   /** Count total activity entries. */
