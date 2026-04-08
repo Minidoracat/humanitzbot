@@ -199,41 +199,44 @@ export class ItemRepository extends BaseRepository {
     attribution: Record<string, unknown> | null,
     moveType: string = 'move',
   ) {
-    const old = this._stmts.findItemInstanceById.get(instanceId) as DbRow | undefined;
-    if (!old) return;
+    const tx = this._handle.transaction(() => {
+      const old = this._stmts.findItemInstanceById.get(instanceId) as DbRow | undefined;
+      if (!old) return;
 
-    // Update location
-    this._stmts.updateItemInstanceLocation.run(
-      to.locationType,
-      to.locationId || '',
-      to.locationSlot || '',
-      to.x ?? null,
-      to.y ?? null,
-      to.z ?? null,
-      to.amount ?? old.amount,
-      to.groupId ?? null,
-      instanceId,
-    );
+      // Update location
+      this._stmts.updateItemInstanceLocation.run(
+        to.locationType,
+        to.locationId || '',
+        to.locationSlot || '',
+        to.x ?? null,
+        to.y ?? null,
+        to.z ?? null,
+        to.amount ?? old.amount,
+        to.groupId ?? null,
+        instanceId,
+      );
 
-    // Record movement
-    this._stmts.insertItemMovement.run(
-      instanceId,
-      null,
-      moveType,
-      old.item,
-      old.location_type,
-      old.location_id,
-      old.location_slot,
-      to.locationType,
-      to.locationId || '',
-      to.locationSlot || '',
-      to.amount ?? old.amount,
-      attribution?.steamId || '',
-      attribution?.name || '',
-      to.x ?? null,
-      to.y ?? null,
-      to.z ?? null,
-    );
+      // Record movement
+      this._stmts.insertItemMovement.run(
+        instanceId,
+        null,
+        moveType,
+        old.item,
+        old.location_type,
+        old.location_id,
+        old.location_slot,
+        to.locationType,
+        to.locationId || '',
+        to.locationSlot || '',
+        to.amount ?? old.amount,
+        attribution?.steamId || '',
+        attribution?.name || '',
+        to.x ?? null,
+        to.y ?? null,
+        to.z ?? null,
+      );
+    });
+    tx();
   }
 
   /**
@@ -310,34 +313,37 @@ export class ItemRepository extends BaseRepository {
    * @returns {{ id: number, created: boolean }}
    */
   upsertItemGroup(group: Record<string, unknown>) {
-    const existing = this._stmts.findActiveGroupByLocation.get(
-      group.fingerprint,
-      group.locationType,
-      group.locationId || '',
-      group.locationSlot || '',
-    ) as DbRow | undefined;
-    if (existing) {
-      this._stmts.updateItemGroupQuantity.run(group.quantity, existing.id);
-      return { id: existing.id as number, created: false };
-    }
-    const result = this._stmts.insertItemGroup.run(
-      group.fingerprint,
-      group.item,
-      group.durability || 0,
-      group.ammo || 0,
-      _json(group.attachments),
-      group.cap || 0,
-      group.maxDur || 0,
-      group.locationType,
-      group.locationId || '',
-      group.locationSlot || '',
-      group.x ?? null,
-      group.y ?? null,
-      group.z ?? null,
-      group.quantity || 1,
-      group.stackSize || 1,
-    );
-    return { id: Number(result.lastInsertRowid), created: true };
+    const tx = this._handle.transaction(() => {
+      const existing = this._stmts.findActiveGroupByLocation.get(
+        group.fingerprint,
+        group.locationType,
+        group.locationId || '',
+        group.locationSlot || '',
+      ) as DbRow | undefined;
+      if (existing) {
+        this._stmts.updateItemGroupQuantity.run(group.quantity, existing.id);
+        return { id: existing.id as number, created: false };
+      }
+      const result = this._stmts.insertItemGroup.run(
+        group.fingerprint,
+        group.item,
+        group.durability || 0,
+        group.ammo || 0,
+        _json(group.attachments),
+        group.cap || 0,
+        group.maxDur || 0,
+        group.locationType,
+        group.locationId || '',
+        group.locationSlot || '',
+        group.x ?? null,
+        group.y ?? null,
+        group.z ?? null,
+        group.quantity || 1,
+        group.stackSize || 1,
+      );
+      return { id: Number(result.lastInsertRowid), created: true };
+    });
+    return tx();
   }
 
   updateItemGroupQuantity(groupId: number, quantity: number) {
@@ -385,7 +391,7 @@ export class ItemRepository extends BaseRepository {
     return this._stmts.getActiveItemGroups.all();
   }
 
-  getItemGroupsByItem(item: Record<string, unknown>) {
+  getItemGroupsByItem(item: string) {
     return this._stmts.getItemGroupsByItem.all(item);
   }
 

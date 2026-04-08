@@ -93,7 +93,7 @@ export class ChatLogRepository extends BaseRepository {
 
   /** Purge old chat entries (e.g. '-30 days'). */
   purgeOldChat(olderThan: string) {
-    this._stmts.purgeOldChat.run(olderThan);
+    return this._stmts.purgeOldChat.run(olderThan);
   }
 
   /** Count total chat entries. */

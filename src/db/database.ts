@@ -1529,7 +1529,7 @@ class HumanitZDB {
     return this._item.searchItemInstances(query, limit);
   }
   purgeOldLostItems(age = '-30 days') {
-    this._item.purgeOldLostItems(age);
+    return this._item.purgeOldLostItems(age);
   }
   getItemInstancesByGroup(groupId: number) {
     return this._item.getItemInstancesByGroup(groupId);
@@ -1569,7 +1569,7 @@ class HumanitZDB {
   getActiveItemGroups() {
     return this._item.getActiveItemGroups();
   }
-  getItemGroupsByItem(item: Record<string, unknown>) {
+  getItemGroupsByItem(item: string) {
     return this._item.getItemGroupsByItem(item);
   }
   getItemGroupsByLocation(locationType: string, locationId: string) {
@@ -1582,7 +1582,7 @@ class HumanitZDB {
     return this._item.searchItemGroups(query, limit);
   }
   purgeOldLostGroups(age = '-30 days') {
-    this._item.purgeOldLostGroups(age);
+    return this._item.purgeOldLostGroups(age);
   }
   recordGroupMovement(opts: Record<string, unknown>): void {
     this._item.recordGroupMovement(opts);
@@ -1608,7 +1608,7 @@ class HumanitZDB {
     return this._item.getItemMovementsByLocation(locationType, locationId, limit);
   }
   purgeOldMovements(age = '-30 days') {
-    this._item.purgeOldMovements(age);
+    return this._item.purgeOldMovements(age);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1716,7 +1716,7 @@ class HumanitZDB {
     return this._activityLog.getActivitySince(isoTimestamp);
   }
   purgeOldActivity(olderThan: string) {
-    this._activityLog.purgeOldActivity(olderThan);
+    return this._activityLog.purgeOldActivity(olderThan);
   }
   getActivityCount() {
     return this._activityLog.getActivityCount();
@@ -1751,7 +1751,7 @@ class HumanitZDB {
     this._chatLog.clearChatLog();
   }
   purgeOldChat(olderThan: string) {
-    this._chatLog.purgeOldChat(olderThan);
+    return this._chatLog.purgeOldChat(olderThan);
   }
   getChatCount() {
     return this._chatLog.getChatCount();

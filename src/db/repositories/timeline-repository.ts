@@ -116,7 +116,7 @@ export class TimelineRepository extends BaseRepository {
    * All entity arrays are written inside a single transaction for consistency.
    *
    * @param {object} data
-   * @param {object} data.snapshot - { gameDday, gameTime, playerCount, onlineCount, aiCount, ... }
+   * @param {object} data.snapshot - { gameDay, gameTime, playerCount, onlineCount, aiCount, ... }
    * @param {Array}  data.players  - [{ steamId, name, online, x, y, z, health, ... }]
    * @param {Array}  data.ai       - [{ aiType, category, displayName, nodeUid, x, y, z }]
    * @param {Array}  data.vehicles - [{ class, displayName, x, y, z, health, ... }]
