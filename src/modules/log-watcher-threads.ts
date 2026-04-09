@@ -68,8 +68,10 @@ interface LogWatcherThis {
     [key: string]: unknown;
   };
   _db: {
-    getStateJSON(key: string, defaultVal: unknown): unknown;
-    setStateJSON(key: string, value: unknown): void;
+    botState: {
+      getStateJSON(key: string, defaultVal: unknown): unknown;
+      setStateJSON(key: string, value: unknown): void;
+    };
     activityLog: {
       getActivitySince(isoTimestamp: string): ActivityEvent[];
     };
@@ -155,7 +157,7 @@ async function _getOrCreateDailyThread(this: LogWatcherThis): Promise<ThreadLike
     try {
       let raw: { date?: string; counts?: DayCounts } | null = null;
       if (this._db) {
-        raw = this._db.getStateJSON('day_counts', null) as { date?: string; counts?: DayCounts } | null;
+        raw = this._db.botState.getStateJSON('day_counts', null) as { date?: string; counts?: DayCounts } | null;
       }
       if (raw?.date && raw.date !== today && raw.counts) {
         const total = Object.values(raw.counts).reduce((s, v) => s + (v || 0), 0);

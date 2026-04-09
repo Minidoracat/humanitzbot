@@ -47,6 +47,7 @@ export function mockDb({ players = [], clans = [], state = null, extras = {} }: 
         return clans;
       },
     },
+    botState: stateAccessors,
     // Legacy flat accessors (for backward compat with existing tests)
     getAllPlayers() {
       return players;
@@ -54,7 +55,6 @@ export function mockDb({ players = [], clans = [], state = null, extras = {} }: 
     getAllClans() {
       return clans;
     },
-    ...stateAccessors,
     _store: store,
     ...extras,
   };

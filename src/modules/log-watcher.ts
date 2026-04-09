@@ -329,7 +329,7 @@ class LogWatcher {
   _loadDayCounts() {
     try {
       if (!this._db) return;
-      const raw = this._db.getStateJSON('day_counts', null) as { date?: string; counts?: DayCounts } | null;
+      const raw = this._db.botState.getStateJSON('day_counts', null) as { date?: string; counts?: DayCounts } | null;
       if (raw?.date === this._config.getToday()) {
         this._dayCounts = { ...this._dayCounts, ...raw.counts };
         this._log.info(`Restored day counts for ${raw.date} (DB)`);
@@ -344,7 +344,7 @@ class LogWatcher {
     try {
       if (!this._db) return;
       const data = { date: this._dailyDate || this._config.getToday(), counts: this._dayCounts };
-      this._db.setStateJSON('day_counts', data);
+      this._db.botState.setStateJSON('day_counts', data);
       this._dayCountsDirty = false;
     } catch (err: unknown) {
       this._log.warn('Could not save day counts:', errMsg(err));
@@ -361,7 +361,7 @@ class LogWatcher {
   _loadPvpKills() {
     try {
       if (!this._db) return;
-      const raw = this._db.getStateJSON('pvp_kills', null) as PvpKillEntry[] | null;
+      const raw = this._db.botState.getStateJSON('pvp_kills', null) as PvpKillEntry[] | null;
       if (Array.isArray(raw)) {
         this._pvpKills = raw;
         this._log.info(`PVP: Loaded ${raw.length} PvP kill(s) from DB`);
@@ -376,7 +376,7 @@ class LogWatcher {
     if (!this._pvpKillsDirty) return;
     try {
       if (!this._db) return;
-      this._db.setStateJSON('pvp_kills', this._pvpKills);
+      this._db.botState.setStateJSON('pvp_kills', this._pvpKills);
       this._pvpKillsDirty = false;
     } catch (err: unknown) {
       this._log.warn('PVP: Could not save pvp kills:', errMsg(err));
@@ -629,7 +629,7 @@ class LogWatcher {
   _loadOffsets(): SavedOffsets | null {
     try {
       if (this._db) {
-        const raw = this._db.getStateJSON('log_offsets', null) as Record<string, unknown> | null;
+        const raw = this._db.botState.getStateJSON('log_offsets', null) as Record<string, unknown> | null;
         if (raw) {
           return {
             hmzLogSize: typeof raw.hmzLogSize === 'number' ? raw.hmzLogSize : 0,
@@ -657,7 +657,7 @@ class LogWatcher {
         savedAt: new Date().toISOString(),
       };
       if (this._db) {
-        this._db.setStateJSON('log_offsets', data);
+        this._db.botState.setStateJSON('log_offsets', data);
       }
     } catch (err: unknown) {
       this._log.warn('Could not save offsets:', errMsg(err));
