@@ -325,7 +325,7 @@ describe('SaveService agent mode', () => {
     assert.ok(emitted, 'Should have emitted sync event');
 
     // Verify data made it to the DB
-    const players = db.getAllPlayers();
+    const players = db.player.getAllPlayers();
     assert.ok(players.length > 0, 'Should have players in DB after cache sync');
   });
 

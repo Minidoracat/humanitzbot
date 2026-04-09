@@ -339,7 +339,7 @@ export class KillTracker {
     try {
       let raw: TrackerData | null = null;
       if (this._db) {
-        raw = this._db.getStateJSON('kill_tracker', null) as TrackerData | null;
+        raw = this._db.botState.getStateJSON('kill_tracker', null) as TrackerData | null;
         if (raw) {
           this._data = raw;
           const count = Object.keys(this._data.players).length;
@@ -390,7 +390,7 @@ export class KillTracker {
   save(): void {
     if (!this._dirty) return;
     try {
-      if (this._db) this._db.setStateJSON('kill_tracker', this._data);
+      if (this._db) this._db.botState.setStateJSON('kill_tracker', this._data);
       this._dirty = false;
     } catch (err) {
       this._log.error('Failed to save kill tracker:', errMsg(err));
@@ -925,7 +925,7 @@ export class KillTracker {
     let baseline: WeeklyBaseline = { weekStart: null, players: {} };
     try {
       if (this._db) {
-        const saved = this._db.getStateJSON('weekly_baseline', null) as WeeklyBaseline | null;
+        const saved = this._db.botState.getStateJSON('weekly_baseline', null) as WeeklyBaseline | null;
         if (saved) baseline = saved;
       }
     } catch (_) {
@@ -941,7 +941,7 @@ export class KillTracker {
         baseline.players[id] = this._snapshotPlayerStats(id, saveData);
       }
       try {
-        if (this._db) this._db.setStateJSON('weekly_baseline', baseline);
+        if (this._db) this._db.botState.setStateJSON('weekly_baseline', baseline);
         this._log.info('Weekly baseline reset');
       } catch (err) {
         this._log.error('Failed to write weekly baseline:', errMsg(err));

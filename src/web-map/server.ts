@@ -5257,7 +5257,7 @@ class WebMapServer {
             }
           }
           if (!serverInfo.gameDay) {
-            const ws = srv.db.getAllWorldState();
+            const ws = srv.db.worldState.getAllWorldState();
             if (ws.day) serverInfo.gameDay = ws.day;
             if (!serverInfo.season && ws.season) serverInfo.season = ws.season;
           }
@@ -5374,7 +5374,7 @@ class WebMapServer {
             if (settings.DaysPerSeason) result.primary.daysPerSeason = parseInt(settings.DaysPerSeason, 10) || 28;
           }
         }
-        const ws = this._db.getAllWorldState();
+        const ws = this._db.worldState.getAllWorldState();
         if (!result.primary.gameDay && ws.day) result.primary.gameDay = ws.day;
         if (!result.primary.season && ws.season) result.primary.season = ws.season;
       } catch {
@@ -5538,7 +5538,7 @@ class WebMapServer {
     }
     if (srv.db) {
       try {
-        const ws = srv.db.getAllWorldState();
+        const ws = srv.db.worldState.getAllWorldState();
         if (!result.gameDay && ws.day) result.gameDay = ws.day;
         if (!result.season && ws.season) result.season = ws.season;
       } catch {

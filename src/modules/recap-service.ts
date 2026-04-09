@@ -54,8 +54,10 @@ interface RecapDB {
     topKillers(limit: number): unknown[];
     topPlaytime(limit: number): unknown[];
   };
-  getStateJSON(key: string, defaultVal: unknown): unknown;
-  setStateJSON(key: string, value: unknown): void;
+  botState: {
+    getStateJSON(key: string, defaultVal: unknown): unknown;
+    setStateJSON(key: string, value: unknown): void;
+  };
 }
 
 interface PeaksData {
@@ -631,7 +633,7 @@ class RecapService {
   _loadState(): RecapState {
     if (!this._db) return {};
     try {
-      return this._db.getStateJSON(STATE_KEY, {}) as RecapState;
+      return this._db.botState.getStateJSON(STATE_KEY, {}) as RecapState;
     } catch {
       return {};
     }
@@ -642,7 +644,7 @@ class RecapService {
     try {
       const state = this._loadState();
       state.lastDaily = { date, ...stats };
-      this._db.setStateJSON(STATE_KEY, state);
+      this._db.botState.setStateJSON(STATE_KEY, state);
     } catch (err: unknown) {
       this._log.error('Failed to save daily state:', errMsg(err));
     }
@@ -653,7 +655,7 @@ class RecapService {
     try {
       const state = this._loadState();
       state.lastWeekly = stats;
-      this._db.setStateJSON(STATE_KEY, state);
+      this._db.botState.setStateJSON(STATE_KEY, state);
     } catch (err: unknown) {
       this._log.error('Failed to save weekly state:', errMsg(err));
     }

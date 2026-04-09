@@ -424,7 +424,7 @@ client.once(Events.ClientReady, (readyClient) => {
     // ── One-time config migration (.env + servers.json → config_documents) ──
     configRepo = new ConfigRepository(db);
 
-    if (!db.getState('config_migration_done')) {
+    if (!db.botState.getState('config_migration_done')) {
       try {
         // 1. Migrate .env values → DB (read from process.env, NOT the file —
         //    env-sync may have already commented out non-bootstrap keys)
@@ -449,7 +449,7 @@ client.once(Events.ClientReady, (readyClient) => {
         const displayCount = migrateDisplaySettings(db, configRepo);
 
         // Mark migration as done
-        db.setState('config_migration_done', 'true');
+        db.botState.setState('config_migration_done', 'true');
         console.log(
           `[BOT] Config migrated to DB: ${envResult.appKeys} app, ${envResult.serverKeys} server, ${serverCount} managed servers, ${displayCount} display settings`,
         );
@@ -586,7 +586,7 @@ client.once(Events.ClientReady, (readyClient) => {
         ];
         for (const key of transientKeys) {
           try {
-            db.deleteState(key);
+            db.botState.deleteState(key);
           } catch {
             // ignore
           }
@@ -1211,7 +1211,7 @@ client.once(Events.ClientReady, (readyClient) => {
     // ── Write running flag + clean old lifecycle embeds + post online notification ──
     try {
       try {
-        db.setStateJSON('bot_running', JSON.stringify({ startedAt: startedAt.toISOString() }));
+        db.botState.setStateJSON('bot_running', { startedAt: startedAt.toISOString() });
       } catch {
         // ignore
       }
@@ -1407,7 +1407,7 @@ async function shutdown(reason = 'Manual shutdown'): Promise<void> {
   // closing DB here ensures WAL is checkpointed before the new process opens it.
   if (db) {
     try {
-      db.deleteState('bot_running');
+      db.botState.deleteState('bot_running');
     } catch (err: unknown) {
       console.warn('[BOT] Could not clear bot_running flag:', errMsg(err));
     }

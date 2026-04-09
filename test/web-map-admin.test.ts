@@ -36,8 +36,6 @@ function mockSrv(overrides: Record<string, unknown> = {}) {
       extras: {
         chatLog: { insertChat: () => {} },
         antiCheat: { updateAcFlagStatus: () => {} },
-        insertChat: () => {},
-        updateAcFlagStatus: () => {},
         db: {
           prepare: () => ({
             all: () => [],

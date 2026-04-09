@@ -40,9 +40,11 @@ interface MilestoneLogWatcher {
 
 /** DB interface used by MilestoneTracker. */
 interface MilestoneDB {
-  getState(key: string): string | null;
-  getStateJSON(key: string, defaultVal: unknown): unknown;
-  setStateJSON(key: string, value: unknown): void;
+  botState: {
+    getState(key: string): string | null;
+    getStateJSON(key: string, defaultVal: unknown): unknown;
+    setStateJSON(key: string, value: unknown): void;
+  };
   player: {
     getAllPlayers(): DbRow[];
   };
@@ -109,7 +111,7 @@ function _loadState(db: MilestoneDB | null): MilestoneState {
   const defaults: MilestoneState = { kills: {}, playtime: {}, survival: {}, challenges: {}, firsts: {}, clans: {} };
   if (!db) return defaults;
   try {
-    const raw = db.getStateJSON(STATE_KEY, null) as Partial<MilestoneState> | null;
+    const raw = db.botState.getStateJSON(STATE_KEY, null) as Partial<MilestoneState> | null;
     if (!raw) return defaults;
     // Merge with defaults so new categories are covered
     return { ...defaults, ...raw };
@@ -121,7 +123,7 @@ function _loadState(db: MilestoneDB | null): MilestoneState {
 function _saveState(db: MilestoneDB | null, state: MilestoneState): void {
   if (!db) return;
   try {
-    db.setStateJSON(STATE_KEY, state);
+    db.botState.setStateJSON(STATE_KEY, state);
   } catch (err: unknown) {
     console.error('[MILESTONES] Failed to save state:', errMsg(err));
   }
@@ -166,7 +168,7 @@ class MilestoneTracker {
 
     // First-run detection: if no milestone state exists in DB, we need to
     // backfill (silently record existing milestones without announcing them)
-    this._needsBackfill = !this._db || !this._db.getState(STATE_KEY);
+    this._needsBackfill = !this._db || !this._db.botState.getState(STATE_KEY);
 
     // Queue of milestone embeds to post (batched per sync)
     this._pendingEmbeds = [];

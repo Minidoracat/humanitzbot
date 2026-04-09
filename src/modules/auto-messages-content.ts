@@ -22,11 +22,13 @@ import { COLOR } from '../rcon/rcon-colors.js';
 type ConfigType = typeof _defaultConfig;
 
 interface DbLike {
-  getStateJSON(key: string, defaultVal: null): Record<string, unknown> | null;
-  setStateJSON?(key: string, value: unknown): void;
-  getState?(key: string): string | null;
-  getAllPlayers?(): PlayerRow[];
-  getAllClans?(): unknown[];
+  botState: {
+    getStateJSON(key: string, defaultVal: null): Record<string, unknown> | null;
+    setStateJSON?(key: string, value: unknown): void;
+    getState?(key: string): string | null;
+  };
+  player?: { getAllPlayers(): PlayerRow[] };
+  clan?: { getAllClans(): unknown[] };
 }
 
 interface PlayerRow {
@@ -117,7 +119,7 @@ function _rconColorLink(link: string) {
 function loadCachedSettings(db: DbLike | null): Record<string, unknown> {
   try {
     if (db) {
-      const data = db.getStateJSON('server_settings', null);
+      const data = db.botState.getStateJSON('server_settings', null);
       if (data) return data;
     }
   } catch {
@@ -129,7 +131,7 @@ function loadCachedSettings(db: DbLike | null): Record<string, unknown> {
 function loadWelcomeStats(db: DbLike | null): WelcomeStats {
   try {
     if (db) {
-      const data = db.getStateJSON('welcome_stats', null);
+      const data = db.botState.getStateJSON('welcome_stats', null);
       if (data) return data as WelcomeStats;
     }
   } catch {
