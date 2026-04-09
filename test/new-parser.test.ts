@@ -606,13 +606,13 @@ describe('HumanitZDB', () => {
 
   describe('world state', () => {
     it('stores and retrieves world state', () => {
-      db.setWorldState('daysPassed', '42');
-      assert.equal(db.getWorldState('daysPassed'), '42');
+      db.worldState.setWorldState('daysPassed', '42');
+      assert.equal(db.worldState.getWorldState('daysPassed'), '42');
     });
 
     it('getAllWorldState returns all keys', () => {
-      db.setWorldState('currentSeason', 'Summer');
-      const ws = db.getAllWorldState();
+      db.worldState.setWorldState('currentSeason', 'Summer');
+      const ws = db.worldState.getAllWorldState();
       assert.equal(ws.daysPassed, '42');
       assert.equal(ws.currentSeason, 'Summer');
     });
@@ -718,8 +718,8 @@ describe('HumanitZDB', () => {
       assert.equal(p.name, 'SyncPlayer');
       assert.equal(p.lifetime_kills, 200);
 
-      assert.equal(db.getWorldState('daysPassed'), '100');
-      assert.equal(db.getWorldState('currentSeason'), 'Winter');
+      assert.equal(db.worldState.getWorldState('daysPassed'), '100');
+      assert.equal(db.worldState.getWorldState('currentSeason'), 'Winter');
 
       const structs = db.worldObject.getStructures();
       assert.equal(structs.length, 1);

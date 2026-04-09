@@ -639,7 +639,7 @@ Available commands:
       return;
     }
     try {
-      const state: Record<string, unknown> = this._db.getAllWorldState();
+      const state: Record<string, unknown> = this._db.worldState.getAllWorldState();
       const entries = Object.entries(state);
       if (entries.length === 0) {
         this._print('No world state data.');
