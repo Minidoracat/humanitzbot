@@ -705,11 +705,13 @@ describe('saveDisplaySetting / saveDisplaySettings', () => {
     const state: Record<string, unknown> = {};
     return {
       state,
-      getStateJSON(key: string, def: unknown) {
-        return state[key] !== undefined ? state[key] : def;
-      },
-      setStateJSON(key: string, value: unknown) {
-        state[key] = value;
+      botState: {
+        getStateJSON(key: string, def: unknown) {
+          return state[key] !== undefined ? state[key] : def;
+        },
+        setStateJSON(key: string, value: unknown) {
+          state[key] = value;
+        },
       },
     };
   }

@@ -32,7 +32,7 @@ describe('MilestoneTracker', () => {
       assert.ok(mt.getLastCheckCount() > 0, 'Should have silently recorded milestones');
       assert.ok(!mt._needsBackfill, 'Backfill flag should be cleared');
 
-      const state = db.getStateJSON(MilestoneTracker.STATE_KEY);
+      const state = db.botState.getStateJSON(MilestoneTracker.STATE_KEY);
       assert.ok(state, 'State should be saved');
       assert.ok(state.kills['76561198000000001'].includes(100), 'Should record 100 kill milestone');
       assert.ok(state.kills['76561198000000001'].includes(500), 'Should record 500 kill milestone');
@@ -290,7 +290,7 @@ describe('MilestoneTracker', () => {
 
       await mt.check();
 
-      const saved = db.getStateJSON(MilestoneTracker.STATE_KEY);
+      const saved = db.botState.getStateJSON(MilestoneTracker.STATE_KEY);
       assert.ok(saved.kills['76561198000000001'].includes(100));
     });
 
@@ -307,8 +307,8 @@ describe('MilestoneTracker', () => {
       const mt = new MilestoneTracker(mockClient(), { db });
 
       let saveCalled = false;
-      const origSet = db.setStateJSON.bind(db);
-      db.setStateJSON = (...args: any[]) => {
+      const origSet = db.botState.setStateJSON.bind(db.botState);
+      db.botState.setStateJSON = (...args: any[]) => {
         saveCalled = true;
         origSet(...args);
       };

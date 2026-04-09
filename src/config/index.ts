@@ -1033,12 +1033,14 @@ config.saveDisplaySetting = function (db: unknown, cfgKey: string, value: unknow
     if (!db) return;
     try {
       const dbObj = db as {
-        getStateJSON(key: string, def: Record<string, unknown>): Record<string, unknown>;
-        setStateJSON(key: string, val: Record<string, unknown>): void;
+        botState: {
+          getStateJSON(key: string, def: Record<string, unknown>): Record<string, unknown>;
+          setStateJSON(key: string, val: Record<string, unknown>): void;
+        };
       };
-      const overrides = dbObj.getStateJSON('display_settings', {});
+      const overrides = dbObj.botState.getStateJSON('display_settings', {});
       overrides[cfgKey] = value;
-      dbObj.setStateJSON('display_settings', overrides);
+      dbObj.botState.setStateJSON('display_settings', overrides);
     } catch (err) {
       console.warn('[CONFIG] Could not save display override:', errMsg(err));
     }
@@ -1065,12 +1067,14 @@ config.saveDisplaySettings = function (db: unknown, settings: Record<string, unk
     if (!db) return;
     try {
       const dbObj = db as {
-        getStateJSON(key: string, def: Record<string, unknown>): Record<string, unknown>;
-        setStateJSON(key: string, val: Record<string, unknown>): void;
+        botState: {
+          getStateJSON(key: string, def: Record<string, unknown>): Record<string, unknown>;
+          setStateJSON(key: string, val: Record<string, unknown>): void;
+        };
       };
-      const overrides = dbObj.getStateJSON('display_settings', {});
+      const overrides = dbObj.botState.getStateJSON('display_settings', {});
       Object.assign(overrides, settings);
-      dbObj.setStateJSON('display_settings', overrides);
+      dbObj.botState.setStateJSON('display_settings', overrides);
     } catch (err) {
       console.warn('[CONFIG] Could not save display overrides:', errMsg(err));
     }

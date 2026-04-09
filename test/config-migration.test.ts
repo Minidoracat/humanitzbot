@@ -130,7 +130,7 @@ describe('config-migration', () => {
     repo.set('app', { serverName: 'Existing', enableChatRelay: true });
 
     // Set display_settings in bot_state
-    db.setStateJSON('display_settings', {
+    db.botState.setStateJSON('display_settings', {
       showVitals: false,
       showInventory: true,
     });

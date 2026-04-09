@@ -253,7 +253,7 @@ describe('RecapService', () => {
       // Manually call the internal save method
       rs._saveLastDaily('2026-02-26', { totalEvents: 42, uniquePlayers: 5 });
 
-      const state = db.getStateJSON(RecapService.STATE_KEY);
+      const state = db.botState.getStateJSON(RecapService.STATE_KEY);
       assert.ok(state);
       assert.equal(state.lastDaily.date, '2026-02-26');
       assert.equal(state.lastDaily.totalEvents, 42);
@@ -265,7 +265,7 @@ describe('RecapService', () => {
 
       rs._saveWeeklyStats({ uniquePlayers: 12, deaths: 30, totalEvents: 500 });
 
-      const state = db.getStateJSON(RecapService.STATE_KEY);
+      const state = db.botState.getStateJSON(RecapService.STATE_KEY);
       assert.ok(state.lastWeekly);
       assert.equal(state.lastWeekly.uniquePlayers, 12);
       assert.equal(state.lastWeekly.deaths, 30);
@@ -278,7 +278,7 @@ describe('RecapService', () => {
       rs._saveLastDaily('2026-02-26', { totalEvents: 42 });
       rs._saveWeeklyStats({ uniquePlayers: 12 });
 
-      const state = db.getStateJSON(RecapService.STATE_KEY);
+      const state = db.botState.getStateJSON(RecapService.STATE_KEY);
       assert.ok(state.lastDaily);
       assert.ok(state.lastWeekly);
     });

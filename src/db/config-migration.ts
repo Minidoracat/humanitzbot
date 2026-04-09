@@ -35,7 +35,9 @@ interface ConfigRepo {
 }
 
 interface HumanitZDBLike {
-  getStateJSON(key: string, defaultVal: unknown): unknown;
+  botState: {
+    getStateJSON(key: string, defaultVal: unknown): unknown;
+  };
 }
 
 // ── Bootstrap keys that MUST stay in .env ────────────────────
@@ -239,7 +241,7 @@ function migrateServersJsonToDb(serverDefs: Array<Record<string, unknown>>, conf
 }
 
 function migrateDisplaySettings(db: HumanitZDBLike, configRepo: ConfigRepo): number {
-  const overrides = db.getStateJSON('display_settings', null);
+  const overrides = db.botState.getStateJSON('display_settings', null);
 
   if (!overrides || typeof overrides !== 'object') return 0;
 
