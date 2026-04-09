@@ -546,7 +546,7 @@ describe('HumanitZDB', () => {
 
   describe('upsertPlayer', () => {
     it('inserts a new player', () => {
-      db.upsertPlayer('76561198000000001', {
+      db.player.upsertPlayer('76561198000000001', {
         name: 'TestPlayer',
         male: true,
         startingPerk: 'Mechanic',
@@ -555,7 +555,7 @@ describe('HumanitZDB', () => {
         inventory: [{ item: 'Axe', amount: 1, durability: 50 }],
       });
 
-      const p = db.getPlayer('76561198000000001');
+      const p = db.player.getPlayer('76561198000000001');
       assert.ok(p);
       assert.equal(p.name, 'TestPlayer');
       assert.equal(p.starting_perk, 'Mechanic');
@@ -566,12 +566,12 @@ describe('HumanitZDB', () => {
     });
 
     it('updates existing player', () => {
-      db.upsertPlayer('76561198000000001', {
+      db.player.upsertPlayer('76561198000000001', {
         name: 'TestPlayer',
         health: 50,
         zeeksKilled: 100,
       });
-      const p = db.getPlayer('76561198000000001');
+      const p = db.player.getPlayer('76561198000000001');
       assert.equal(p.zeeks_killed, 100);
       assert.ok(Math.abs(p.health - 50) < 0.1);
     });
@@ -579,26 +579,26 @@ describe('HumanitZDB', () => {
 
   describe('getAllPlayers', () => {
     it('returns all players', () => {
-      db.upsertPlayer('76561198000000002', { name: 'Player2', lifetimeKills: 10 });
-      const all = db.getAllPlayers();
+      db.player.upsertPlayer('76561198000000002', { name: 'Player2', lifetimeKills: 10 });
+      const all = db.player.getAllPlayers();
       assert.ok(all.length >= 2);
     });
   });
 
   describe('leaderboards', () => {
     before(() => {
-      db.upsertPlayer('76561198000000003', { name: 'Killer', lifetimeKills: 500, fishCaught: 20 });
-      db.upsertPlayer('76561198000000004', { name: 'Fisher', lifetimeKills: 5, fishCaught: 200 });
+      db.player.upsertPlayer('76561198000000003', { name: 'Killer', lifetimeKills: 500, fishCaught: 20 });
+      db.player.upsertPlayer('76561198000000004', { name: 'Fisher', lifetimeKills: 5, fishCaught: 200 });
     });
 
     it('topKillers returns sorted by kills', () => {
-      const top = db.topKillers(5);
+      const top = db.leaderboard.topKillers(5);
       assert.ok(top.length >= 2);
       assert.ok(top[0].lifetime_kills >= top[1].lifetime_kills);
     });
 
     it('topFish returns sorted by fish caught', () => {
-      const top = db.topFish(5);
+      const top = db.leaderboard.topFish(5);
       assert.ok(top.length >= 1);
       assert.equal(top[0].name, 'Fisher');
     });
@@ -620,7 +620,7 @@ describe('HumanitZDB', () => {
 
   describe('structures', () => {
     it('replaces all structures', () => {
-      db.replaceStructures([
+      db.worldObject.replaceStructures([
         {
           actorClass: 'BP_WoodWall',
           displayName: 'WoodWall',
@@ -636,18 +636,18 @@ describe('HumanitZDB', () => {
           maxHealth: 200,
         },
       ]);
-      const all = db.getStructures();
+      const all = db.worldObject.getStructures();
       assert.equal(all.length, 2);
     });
 
     it('getStructuresByOwner returns filtered', () => {
-      const owned = db.getStructuresByOwner('76561198000000001');
+      const owned = db.worldObject.getStructuresByOwner('76561198000000001');
       assert.equal(owned.length, 1);
       assert.equal(owned[0].display_name, 'WoodWall');
     });
 
     it('getStructureCounts returns owner counts', () => {
-      const counts = db.getStructureCounts();
+      const counts = db.worldObject.getStructureCounts();
       assert.ok(counts.length >= 1);
       assert.ok(counts[0].count >= 1);
     });
@@ -655,8 +655,10 @@ describe('HumanitZDB', () => {
 
   describe('vehicles', () => {
     it('replaces all vehicles', () => {
-      db.replaceVehicles([{ class: 'BP_Sedan', displayName: 'Sedan', health: 500, maxHealth: 1000, fuel: 50 }]);
-      const all = db.getAllVehicles();
+      db.worldObject.replaceVehicles([
+        { class: 'BP_Sedan', displayName: 'Sedan', health: 500, maxHealth: 1000, fuel: 50 },
+      ]);
+      const all = db.worldObject.getAllVehicles();
       assert.equal(all.length, 1);
       assert.equal(all[0].display_name, 'Sedan');
     });
@@ -664,11 +666,11 @@ describe('HumanitZDB', () => {
 
   describe('clans', () => {
     it('upserts a clan with members', () => {
-      db.upsertClan('TestClan', [
+      db.clan.upsertClan('TestClan', [
         { steamId: '76561198000000001', name: 'Player1', rank: 'Leader', canInvite: true, canKick: true },
         { steamId: '76561198000000002', name: 'Player2', rank: 'Member', canInvite: false, canKick: false },
       ]);
-      const clans = db.getAllClans();
+      const clans = db.clan.getAllClans();
       assert.ok(clans.length >= 1);
       const tc = clans.find((c: any) => c.name === 'TestClan');
       assert.ok(tc);
@@ -712,14 +714,14 @@ describe('HumanitZDB', () => {
       });
 
       // Verify everything was synced
-      const p = db.getPlayer('76561198000000010');
+      const p = db.player.getPlayer('76561198000000010');
       assert.equal(p.name, 'SyncPlayer');
       assert.equal(p.lifetime_kills, 200);
 
       assert.equal(db.getWorldState('daysPassed'), '100');
       assert.equal(db.getWorldState('currentSeason'), 'Winter');
 
-      const structs = db.getStructures();
+      const structs = db.worldObject.getStructures();
       assert.equal(structs.length, 1);
       assert.equal(structs[0].display_name, 'Fence');
     });
@@ -736,23 +738,23 @@ describe('HumanitZDB', () => {
 
   describe('game reference seeding', () => {
     it('seeds game items', () => {
-      db.seedGameItems([
+      db.gameData.seedGameItems([
         { id: 'Axe', name: 'Fire Axe', description: 'A fire axe', category: 'melee', stackSize: 1 },
         { id: 'Bandage', name: 'Bandage', description: 'Heals wounds', category: 'medical', stackSize: 5 },
       ]);
-      const item = db.getGameItem('Axe');
+      const item = db.gameData.getGameItem('Axe');
       assert.ok(item);
       assert.equal(item.name, 'Fire Axe');
     });
 
     it('searches game items', () => {
-      const results = db.searchGameItems('axe');
+      const results = db.gameData.searchGameItems('axe');
       assert.ok(results.length >= 1);
       assert.equal(results[0].id, 'Axe');
     });
 
     it('seeds professions', () => {
-      db.seedGameProfessions([
+      db.gameData.seedGameProfessions([
         {
           id: 'Mechanic',
           enumValue: 'Enum_Professions::NewEnumerator3',
@@ -764,11 +766,11 @@ describe('HumanitZDB', () => {
     });
 
     it('seeds loading tips and gets random tip', () => {
-      db.seedLoadingTips([
+      db.gameData.seedLoadingTips([
         { text: 'Tip 1', category: 'general' },
         { text: 'Tip 2', category: 'combat' },
       ]);
-      const tip = db.getRandomTip();
+      const tip = db.gameData.getRandomTip();
       assert.ok(tip);
       assert.ok(tip.text);
     });
@@ -776,7 +778,7 @@ describe('HumanitZDB', () => {
 
   describe('server totals', () => {
     it('returns aggregate stats', () => {
-      const totals = db.getServerTotals();
+      const totals = db.leaderboard.getServerTotals();
       assert.ok(totals.total_players > 0);
       assert.ok(typeof totals.total_kills === 'number');
     });
@@ -786,8 +788,8 @@ describe('HumanitZDB', () => {
 
   describe('registerAlias', () => {
     it('registers a name↔steamId association', () => {
-      db.registerAlias('76561198000000099', 'AliasTestPlayer', 'idmap');
-      const result = db.resolveNameToSteamId('AliasTestPlayer');
+      db.player.registerAlias('76561198000000099', 'AliasTestPlayer', 'idmap');
+      const result = db.player.resolveNameToSteamId('AliasTestPlayer');
       assert.ok(result);
       assert.equal(result.steamId, '76561198000000099');
       assert.equal(result.name, 'AliasTestPlayer');
@@ -795,38 +797,38 @@ describe('HumanitZDB', () => {
     });
 
     it('is case-insensitive', () => {
-      const result = db.resolveNameToSteamId('aliastestplayer');
+      const result = db.player.resolveNameToSteamId('aliastestplayer');
       assert.ok(result);
       assert.equal(result.steamId, '76561198000000099');
     });
 
     it('rejects invalid steamIds', () => {
-      db.registerAlias('name:BadKey', 'Ghost', 'log');
-      const result = db.resolveNameToSteamId('Ghost');
+      db.player.registerAlias('name:BadKey', 'Ghost', 'log');
+      const result = db.player.resolveNameToSteamId('Ghost');
       assert.equal(result, null);
     });
 
     it('rejects empty names', () => {
-      db.registerAlias('76561198000000099', '', 'log');
+      db.player.registerAlias('76561198000000099', '', 'log');
       // Should not create a blank alias
-      const aliases = db.getPlayerAliases('76561198000000099');
+      const aliases = db.player.getPlayerAliases('76561198000000099');
       assert.ok(!aliases.some((a: any) => a.name === ''));
     });
   });
 
   describe('resolveNameToSteamId', () => {
     it('resolves exact match', () => {
-      db.registerAlias('76561198000000050', 'ExactMatch', 'connect_log');
-      const r = db.resolveNameToSteamId('ExactMatch');
+      db.player.registerAlias('76561198000000050', 'ExactMatch', 'connect_log');
+      const r = db.player.resolveNameToSteamId('ExactMatch');
       assert.equal(r.steamId, '76561198000000050');
     });
 
     it('returns null for unknown name', () => {
-      assert.equal(db.resolveNameToSteamId('TotallyUnknown'), null);
+      assert.equal(db.player.resolveNameToSteamId('TotallyUnknown'), null);
     });
 
     it('treats 17-digit numbers as direct SteamIDs', () => {
-      const r = db.resolveNameToSteamId('76561198000000001');
+      const r = db.player.resolveNameToSteamId('76561198000000001');
       assert.equal(r.steamId, '76561198000000001');
       assert.equal(r.source, 'direct');
     });
@@ -834,32 +836,32 @@ describe('HumanitZDB', () => {
 
   describe('resolveSteamIdToName', () => {
     it('returns best current name', () => {
-      db.registerAlias('76561198000000051', 'OldName', 'log');
-      db.registerAlias('76561198000000051', 'CurrentName', 'idmap');
-      const name = db.resolveSteamIdToName('76561198000000051');
+      db.player.registerAlias('76561198000000051', 'OldName', 'log');
+      db.player.registerAlias('76561198000000051', 'CurrentName', 'idmap');
+      const name = db.player.resolveSteamIdToName('76561198000000051');
       assert.equal(name, 'CurrentName');
     });
 
     it('returns steamId when no aliases exist', () => {
-      const name = db.resolveSteamIdToName('76561198999999999');
+      const name = db.player.resolveSteamIdToName('76561198999999999');
       assert.equal(name, '76561198999999999');
     });
 
     it('prefers higher-priority sources', () => {
-      db.registerAlias('76561198000000052', 'LogName', 'log');
-      db.registerAlias('76561198000000052', 'IdmapName', 'idmap');
-      db.registerAlias('76561198000000052', 'ConnLogName', 'connect_log');
-      const name = db.resolveSteamIdToName('76561198000000052');
+      db.player.registerAlias('76561198000000052', 'LogName', 'log');
+      db.player.registerAlias('76561198000000052', 'IdmapName', 'idmap');
+      db.player.registerAlias('76561198000000052', 'ConnLogName', 'connect_log');
+      const name = db.player.resolveSteamIdToName('76561198000000052');
       assert.equal(name, 'IdmapName');
     });
   });
 
   describe('getPlayerAliases', () => {
     it('returns all names for a player', () => {
-      db.registerAlias('76561198000000060', 'Name1', 'log');
-      db.registerAlias('76561198000000060', 'Name2', 'connect_log');
-      db.registerAlias('76561198000000060', 'Name3', 'idmap');
-      const aliases = db.getPlayerAliases('76561198000000060');
+      db.player.registerAlias('76561198000000060', 'Name1', 'log');
+      db.player.registerAlias('76561198000000060', 'Name2', 'connect_log');
+      db.player.registerAlias('76561198000000060', 'Name3', 'idmap');
+      const aliases = db.player.getPlayerAliases('76561198000000060');
       assert.ok(aliases.length >= 3);
       const names = aliases.map((a: any) => a.name);
       assert.ok(names.includes('Name1'));
@@ -870,45 +872,45 @@ describe('HumanitZDB', () => {
 
   describe('importIdMap', () => {
     it('bulk imports id map entries', () => {
-      db.importIdMap([
+      db.player.importIdMap([
         { steamId: '76561198000000070', name: 'MapPlayer1' },
         { steamId: '76561198000000071', name: 'MapPlayer2' },
         { steamId: '76561198000000072', name: 'MapPlayer3' },
       ]);
-      assert.equal(db.resolveNameToSteamId('MapPlayer1').steamId, '76561198000000070');
-      assert.equal(db.resolveNameToSteamId('MapPlayer2').steamId, '76561198000000071');
-      assert.equal(db.resolveNameToSteamId('MapPlayer3').steamId, '76561198000000072');
+      assert.equal(db.player.resolveNameToSteamId('MapPlayer1').steamId, '76561198000000070');
+      assert.equal(db.player.resolveNameToSteamId('MapPlayer2').steamId, '76561198000000071');
+      assert.equal(db.player.resolveNameToSteamId('MapPlayer3').steamId, '76561198000000072');
     });
   });
 
   describe('importConnectLog', () => {
     it('bulk imports connect log entries', () => {
-      db.importConnectLog([
+      db.player.importConnectLog([
         { steamId: '76561198000000080', name: 'ConnPlayer1' },
         { steamId: '76561198000000081', name: 'ConnPlayer2' },
       ]);
-      assert.equal(db.resolveNameToSteamId('ConnPlayer1').steamId, '76561198000000080');
-      assert.equal(db.resolveSteamIdToName('76561198000000081'), 'ConnPlayer2');
+      assert.equal(db.player.resolveNameToSteamId('ConnPlayer1').steamId, '76561198000000080');
+      assert.equal(db.player.resolveSteamIdToName('76561198000000081'), 'ConnPlayer2');
     });
   });
 
   describe('searchPlayersByName', () => {
     it('finds players by partial name', () => {
-      db.registerAlias('76561198000000090', 'SearchableJohn', 'idmap');
-      const results = db.searchPlayersByName('searchable');
+      db.player.registerAlias('76561198000000090', 'SearchableJohn', 'idmap');
+      const results = db.player.searchPlayersByName('searchable');
       assert.ok(results.length > 0);
       assert.equal(results[0].steamId, '76561198000000090');
     });
 
     it('returns empty for no match', () => {
-      const results = db.searchPlayersByName('xyzzynonexistent');
+      const results = db.player.searchPlayersByName('xyzzynonexistent');
       assert.equal(results.length, 0);
     });
   });
 
   describe('getAliasStats', () => {
     it('returns counts', () => {
-      const stats = db.getAliasStats();
+      const stats = db.player.getAliasStats();
       assert.ok(stats.uniquePlayers > 0);
       assert.ok(stats.totalAliases > 0);
       assert.ok(stats.totalAliases >= stats.uniquePlayers);
@@ -917,12 +919,12 @@ describe('HumanitZDB', () => {
 
   describe('upsertPlayer auto-registers alias', () => {
     it('creates alias on player upsert with name', () => {
-      db.upsertPlayer('76561198000000095', {
+      db.player.upsertPlayer('76561198000000095', {
         name: 'AutoAliasPlayer',
         male: true,
         health: 100,
       });
-      const r = db.resolveNameToSteamId('AutoAliasPlayer');
+      const r = db.player.resolveNameToSteamId('AutoAliasPlayer');
       assert.ok(r);
       assert.equal(r.steamId, '76561198000000095');
     });
@@ -930,19 +932,19 @@ describe('HumanitZDB', () => {
 
   describe('name change tracking via aliases', () => {
     it('tracks old and new names for the same player', () => {
-      db.registerAlias('76561198000000085', 'OriginalName', 'connect_log');
-      db.registerAlias('76561198000000085', 'NewerName', 'connect_log');
+      db.player.registerAlias('76561198000000085', 'OriginalName', 'connect_log');
+      db.player.registerAlias('76561198000000085', 'NewerName', 'connect_log');
 
       // Both names should resolve to the same SteamID
-      assert.equal(db.resolveNameToSteamId('OriginalName').steamId, '76561198000000085');
-      assert.equal(db.resolveNameToSteamId('NewerName').steamId, '76561198000000085');
+      assert.equal(db.player.resolveNameToSteamId('OriginalName').steamId, '76561198000000085');
+      assert.equal(db.player.resolveNameToSteamId('NewerName').steamId, '76561198000000085');
 
       // Current name should be the newer one
-      const name = db.resolveSteamIdToName('76561198000000085');
+      const name = db.player.resolveSteamIdToName('76561198000000085');
       assert.equal(name, 'NewerName');
 
       // Both should appear in aliases
-      const aliases = db.getPlayerAliases('76561198000000085');
+      const aliases = db.player.getPlayerAliases('76561198000000085');
       const names = aliases.map((a: any) => a.name);
       assert.ok(names.includes('OriginalName'));
       assert.ok(names.includes('NewerName'));
@@ -985,7 +987,7 @@ describe('Integration: parse .sav → sync to DB', () => {
         companions: parsed.companions,
       });
 
-      const allPlayers = db.getAllPlayers();
+      const allPlayers = db.player.getAllPlayers();
       assert.ok(allPlayers.length > 0, 'Should have players in DB after sync');
 
       const firstPlayer = allPlayers[0];
@@ -995,7 +997,7 @@ describe('Integration: parse .sav → sync to DB', () => {
     });
 
     it('leaderboards work after sync', () => {
-      const top = db.topKillers(10);
+      const top = db.leaderboard.topKillers(10);
       assert.ok(Array.isArray(top));
     });
   }

@@ -59,7 +59,7 @@ describe('StdinConsole', () => {
     db = new HumanitZDB({ memory: true });
     db.init();
     // Seed some test data
-    db.upsertPlayer('76561198000000001', {
+    db.player.upsertPlayer('76561198000000001', {
       name: 'TestPlayer',
       level: 15,
       zeeksKilled: 42,
@@ -71,7 +71,7 @@ describe('StdinConsole', () => {
       thirst: 70,
       infection: 0,
     });
-    db.upsertPlayer('76561198000000002', {
+    db.player.upsertPlayer('76561198000000002', {
       name: 'AnotherPlayer',
       level: 8,
       zeeksKilled: 100,

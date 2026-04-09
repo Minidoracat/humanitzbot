@@ -481,7 +481,7 @@ describe('Item Tracker', () => {
         worldState: {},
       };
       reconcileItems(db, snapshot);
-      assert.equal(db.getItemInstanceCount(), 2);
+      assert.equal(db.item.getItemInstanceCount(), 2);
     });
 
     it('getItemInstancesByLocation returns items at a specific location', () => {
@@ -508,7 +508,7 @@ describe('Item Tracker', () => {
       };
       reconcileItems(db, snapshot);
 
-      const playerItems = db.getItemInstancesByLocation('player', '76561100000000001');
+      const playerItems = db.item.getItemInstancesByLocation('player', '76561100000000001');
       assert.equal(playerItems.length, 2);
     });
 
@@ -877,7 +877,7 @@ describe('Item Tracker', () => {
       const stats = reconcileItems(db, snap2);
       assert.ok(stats.groups.transferred > 0 || stats.groups.created > 0);
 
-      const movements = db.getRecentItemMovements(10);
+      const movements = db.item.getRecentItemMovements(10);
       const transfers = movements.filter((m: any) => m.move_type === 'group_transfer');
       if (transfers.length > 0) {
         assert.equal(transfers[0].item, 'Nails');
