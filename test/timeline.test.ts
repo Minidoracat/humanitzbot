@@ -82,7 +82,7 @@ describe('DB — insertTimelineSnapshot + queries', () => {
   let snapId: number;
 
   it('inserts a timeline snapshot with entities', () => {
-    snapId = db.insertTimelineSnapshot({
+    snapId = db.timeline.insertTimelineSnapshot({
       snapshot: {
         gameDay: 42,
         gameTime: 14.5,
@@ -216,7 +216,7 @@ describe('DB — insertTimelineSnapshot + queries', () => {
   });
 
   it('getTimelineSnapshots returns snapshot metadata', () => {
-    const snaps = db.getTimelineSnapshots(10);
+    const snaps = db.timeline.getTimelineSnapshots(10);
     assert.ok(snaps.length >= 1);
     const s = snaps[0];
     assert.equal(s.game_day, 42);
@@ -231,7 +231,7 @@ describe('DB — insertTimelineSnapshot + queries', () => {
   });
 
   it('getTimelineSnapshotFull returns all entities', () => {
-    const full = db.getTimelineSnapshotFull(snapId);
+    const full = db.timeline.getTimelineSnapshotFull(snapId);
     assert.ok(full);
     assert.ok(full.snapshot);
     assert.equal(full.snapshot.id, snapId);
@@ -245,7 +245,7 @@ describe('DB — insertTimelineSnapshot + queries', () => {
   });
 
   it('getTimelineSnapshotFull player data is correct', () => {
-    const full = db.getTimelineSnapshotFull(snapId);
+    const full = db.timeline.getTimelineSnapshotFull(snapId);
     const alice = full.players.find((p: { name: string }) => p.name === 'Alice');
     assert.ok(alice);
     assert.equal(alice.steam_id, '76561198000000001');
@@ -258,7 +258,7 @@ describe('DB — insertTimelineSnapshot + queries', () => {
   });
 
   it('getTimelineSnapshotFull AI data is correct', () => {
-    const full = db.getTimelineSnapshotFull(snapId);
+    const full = db.timeline.getTimelineSnapshotFull(snapId);
     const wolf = full.ai.find((a: { ai_type: string }) => a.ai_type === 'AnimalWold');
     assert.ok(wolf);
     assert.equal(wolf.category, 'animal');
@@ -267,40 +267,40 @@ describe('DB — insertTimelineSnapshot + queries', () => {
   });
 
   it('getTimelineSnapshotFull vehicle data is correct', () => {
-    const full = db.getTimelineSnapshotFull(snapId);
+    const full = db.timeline.getTimelineSnapshotFull(snapId);
     assert.equal(full.vehicles[0].display_name, 'Sedan');
     assert.equal(full.vehicles[0].fuel, 15.5);
     assert.equal(full.vehicles[0].item_count, 3);
   });
 
   it('getTimelineSnapshotFull structure data is correct', () => {
-    const full = db.getTimelineSnapshotFull(snapId);
+    const full = db.timeline.getTimelineSnapshotFull(snapId);
     assert.equal(full.structures[0].display_name, 'Wood Wall');
     assert.equal(full.structures[0].owner_steam_id, '76561198000000001');
     assert.equal(full.structures[0].upgrade_level, 1);
   });
 
   it('getTimelineSnapshotFull house data is correct', () => {
-    const full = db.getTimelineSnapshotFull(snapId);
+    const full = db.timeline.getTimelineSnapshotFull(snapId);
     assert.equal(full.houses[0].uid, 'house_001');
     assert.equal(full.houses[0].windows_open, 2);
     assert.equal(full.houses[0].has_generator, 1);
   });
 
   it('getTimelineSnapshotFull companion data is correct', () => {
-    const full = db.getTimelineSnapshotFull(snapId);
+    const full = db.timeline.getTimelineSnapshotFull(snapId);
     assert.equal(full.companions[0].entity_type, 'dog');
     assert.equal(full.companions[0].owner_steam_id, '76561198000000001');
   });
 
   it('getTimelineSnapshotFull backpack data is correct', () => {
-    const full = db.getTimelineSnapshotFull(snapId);
+    const full = db.timeline.getTimelineSnapshotFull(snapId);
     assert.equal(full.backpacks[0].item_count, 5);
     assert.ok(Array.isArray(full.backpacks[0].items_summary)); // parsed from JSON
   });
 
   it('getTimelineBounds returns correct bounds', () => {
-    const bounds = db.getTimelineBounds();
+    const bounds = db.timeline.getTimelineBounds();
     assert.ok(bounds);
     assert.ok(bounds.earliest);
     assert.ok(bounds.latest);
@@ -308,20 +308,20 @@ describe('DB — insertTimelineSnapshot + queries', () => {
   });
 
   it('getTimelineSnapshotRange returns snapshots in range', () => {
-    db.getTimelineBounds();
-    const snaps = db.getTimelineSnapshotRange('2000-01-01', '2100-01-01');
+    db.timeline.getTimelineBounds();
+    const snaps = db.timeline.getTimelineSnapshotRange('2000-01-01', '2100-01-01');
     assert.ok(snaps.length >= 1);
   });
 
   it('getTimelineSnapshotFull returns null for missing ID', () => {
-    const result = db.getTimelineSnapshotFull(999999);
+    const result = db.timeline.getTimelineSnapshotFull(999999);
     assert.equal(result, null);
   });
 });
 
 describe('DB — Player position history', () => {
   it('getPlayerPositionHistory returns player trail', () => {
-    const trail = db.getPlayerPositionHistory('76561198000000001', '2000-01-01', '2100-01-01');
+    const trail = db.timeline.getPlayerPositionHistory('76561198000000001', '2000-01-01', '2100-01-01');
     assert.ok(trail.length >= 1);
     assert.equal(trail[0].pos_x, 100);
     assert.equal(trail[0].pos_y, 200);
@@ -329,14 +329,14 @@ describe('DB — Player position history', () => {
   });
 
   it('getPlayerPositionHistory returns empty for unknown player', () => {
-    const trail = db.getPlayerPositionHistory('0000000000000000', '2000-01-01', '2100-01-01');
+    const trail = db.timeline.getPlayerPositionHistory('0000000000000000', '2000-01-01', '2100-01-01');
     assert.equal(trail.length, 0);
   });
 });
 
 describe('DB — AI population history', () => {
   it('getAIPopulationHistory returns population data', () => {
-    const pop = db.getAIPopulationHistory('2000-01-01', '2100-01-01');
+    const pop = db.timeline.getAIPopulationHistory('2000-01-01', '2100-01-01');
     assert.ok(pop.length >= 1);
     assert.equal(pop[0].ai_count, 3);
     assert.equal(pop[0].zombies, 1);
@@ -347,7 +347,7 @@ describe('DB — AI population history', () => {
 
 describe('DB — Death causes', () => {
   it('inserts a death cause', () => {
-    db.insertDeathCause({
+    db.deathCause.insertDeathCause({
       victimName: 'Alice',
       victimSteamId: '76561198000000001',
       causeType: 'zombie',
@@ -362,7 +362,7 @@ describe('DB — Death causes', () => {
   });
 
   it('inserts a PvP death cause', () => {
-    db.insertDeathCause({
+    db.deathCause.insertDeathCause({
       victimName: 'Bob',
       victimSteamId: '76561198000000002',
       causeType: 'player',
@@ -376,7 +376,7 @@ describe('DB — Death causes', () => {
   });
 
   it('getDeathCauses returns recent deaths', () => {
-    const deaths = db.getDeathCauses(10);
+    const deaths = db.deathCause.getDeathCauses(10);
     assert.ok(deaths.length >= 2);
     assert.equal(deaths[0].victim_name, 'Bob'); // most recent first
     assert.equal(deaths[0].cause_type, 'player');
@@ -384,20 +384,20 @@ describe('DB — Death causes', () => {
   });
 
   it('getDeathCausesByPlayer filters by player name', () => {
-    const deaths = db.getDeathCausesByPlayer('Alice', 10);
+    const deaths = db.deathCause.getDeathCausesByPlayer('Alice', 10);
     assert.ok(deaths.length >= 1);
     assert.equal(deaths[0].victim_name, 'Alice');
     assert.equal(deaths[0].cause_name, 'Runner');
   });
 
   it('getDeathCausesByPlayer filters by steam ID', () => {
-    const deaths = db.getDeathCausesByPlayer('76561198000000002', 10);
+    const deaths = db.deathCause.getDeathCausesByPlayer('76561198000000002', 10);
     assert.ok(deaths.length >= 1);
     assert.equal(deaths[0].victim_name, 'Bob');
   });
 
   it('getDeathCauseStats returns aggregated stats', () => {
-    const stats = db.getDeathCauseStats();
+    const stats = db.deathCause.getDeathCauseStats();
     assert.ok(stats.length >= 2);
     const zombieStat = stats.find((s: { cause_type: string }) => s.cause_type === 'zombie');
     assert.ok(zombieStat);
@@ -406,14 +406,14 @@ describe('DB — Death causes', () => {
   });
 
   it('getDeathCausesSince returns deaths after timestamp', () => {
-    const deaths = db.getDeathCausesSince('2000-01-01');
+    const deaths = db.deathCause.getDeathCausesSince('2000-01-01');
     assert.ok(deaths.length >= 2);
   });
 });
 
 describe('DB — purgeOldTimeline', () => {
   it('purgeOldTimeline does not delete recent data', () => {
-    const result = db.purgeOldTimeline('-1 second');
+    const result = db.timeline.purgeOldTimeline('-1 second');
     // Should delete everything (all are older than 1 second ago), but it uses
     // datetime('now', ...) so recent inserts may or may not be affected.
     // At minimum, it shouldn't crash
@@ -544,7 +544,7 @@ describe('SnapshotService', () => {
   });
 
   it('stored snapshot has correct metadata', () => {
-    const snaps = serviceDb.getTimelineSnapshots(1);
+    const snaps = serviceDb.timeline.getTimelineSnapshots(1);
     assert.equal(snaps.length, 1);
     const s = snaps[0];
     assert.equal(s.game_day, 45);
@@ -556,7 +556,7 @@ describe('SnapshotService', () => {
   });
 
   it('stored snapshot has correct entity data', () => {
-    const full = serviceDb.getTimelineSnapshotFull(service.lastSnapshotId);
+    const full = serviceDb.timeline.getTimelineSnapshotFull(service.lastSnapshotId);
     assert.ok(full);
     assert.equal(full.players.length, 1);
     assert.equal(full.players[0].name, 'TestPlayer');
@@ -570,14 +570,14 @@ describe('SnapshotService', () => {
   });
 
   it('horse is stored as companion with entity_type=horse', () => {
-    const full = serviceDb.getTimelineSnapshotFull(service.lastSnapshotId);
+    const full = serviceDb.timeline.getTimelineSnapshotFull(service.lastSnapshotId);
     const horse = full.companions.find((c: { entity_type: string }) => c.entity_type === 'horse');
     assert.ok(horse);
     assert.equal(horse.display_name, 'Spirit');
   });
 
   it('AI display names are resolved', () => {
-    const full = serviceDb.getTimelineSnapshotFull(service.lastSnapshotId);
+    const full = serviceDb.timeline.getTimelineSnapshotFull(service.lastSnapshotId);
     const zombie = full.ai.find((a: { ai_type: string }) => a.ai_type === 'ZombieDefault');
     assert.ok(zombie);
     assert.equal(zombie.display_name, 'Zombie');
