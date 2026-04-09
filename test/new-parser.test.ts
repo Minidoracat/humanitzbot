@@ -729,8 +729,8 @@ describe('HumanitZDB', () => {
 
   describe('snapshots', () => {
     it('creates and retrieves snapshots', () => {
-      db.createSnapshot('weekly', '76561198000000001', { kills: 42, deaths: 3 });
-      const snap = db.getLatestSnapshot('weekly', '76561198000000001');
+      db.worldState.createSnapshot('weekly', '76561198000000001', { kills: 42, deaths: 3 });
+      const snap = db.worldState.getLatestSnapshot('weekly', '76561198000000001');
       assert.ok(snap);
       assert.equal(snap.data.kills, 42);
     });

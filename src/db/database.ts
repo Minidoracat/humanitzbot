@@ -39,7 +39,6 @@ import { QuestRepository } from './repositories/quest-repository.js';
 import { MetaRepository } from './repositories/meta-repository.js';
 import { WorldStateRepository } from './repositories/world-state-repository.js';
 import { BotStateRepository } from './repositories/bot-state-repository.js';
-import { type DbRow } from './repositories/db-utils.js';
 
 const __dirname = getDirname(import.meta.url);
 const DEFAULT_DB_PATH = path.join(__dirname, '..', '..', 'data', 'humanitz.db');
@@ -1361,47 +1360,6 @@ class HumanitZDB {
         this.worldState.innerUpsertSetting(key, String(value));
       }
     }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  Server settings
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  upsertSettings(settings: Record<string, string>): void {
-    const upsert = this._handle.transaction((obj: Record<string, string>) => {
-      for (const [key, value] of Object.entries(obj)) {
-        this._stmts.upsertSetting.run(key, value);
-      }
-    });
-    upsert(settings);
-  }
-
-  getSetting(key: string) {
-    const r = this._stmts.getSetting.get(key) as DbRow | undefined;
-    return r ? r.value : null;
-  }
-  getAllSettings() {
-    const rows = this._stmts.getAllSettings.all() as DbRow[];
-    const result: Record<string, unknown> = {};
-    for (const r of rows) result[r.key as string] = r.value;
-    return result;
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  Snapshots (for weekly/daily deltas)
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  createSnapshot(type: string, steamId: string, data: Record<string, unknown>) {
-    this._stmts.insertSnapshot.run(type, steamId, JSON.stringify(data));
-  }
-
-  getLatestSnapshot(type: string, steamId: string) {
-    const row = this._stmts.getLatestSnapshot.get(type, steamId) as DbRow | undefined;
-    return row ? { ...row, data: JSON.parse((row.data as string) || '{}') as unknown } : null;
-  }
-
-  purgeSnapshots(olderThan: string) {
-    this._stmts.purgeOldSnapshots.run(olderThan);
   }
 }
 
