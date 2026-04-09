@@ -43,31 +43,11 @@ import { BotStateRepository } from './repositories/bot-state-repository.js';
 const __dirname = getDirname(import.meta.url);
 const DEFAULT_DB_PATH = path.join(__dirname, '..', '..', 'data', 'humanitz.db');
 
-/** Prepared statements that remain in the facade (not delegated to repositories). */
-interface PreparedStatements {
-  // Meta
-  getMeta: Database.Statement;
-  setMeta: Database.Statement;
-  // World state
-  setWorldState: Database.Statement;
-  getWorldState: Database.Statement;
-  getAllWorldState: Database.Statement;
-  // Server settings
-  upsertSetting: Database.Statement;
-  getSetting: Database.Statement;
-  getAllSettings: Database.Statement;
-  // Snapshots
-  insertSnapshot: Database.Statement;
-  getLatestSnapshot: Database.Statement;
-  purgeOldSnapshots: Database.Statement;
-}
-
 class HumanitZDB {
   _dbPath: string;
   _memory: boolean;
   _log: Logger;
   _db: Database.Database | null;
-  _stmts: PreparedStatements;
   private _dbRaw: Database.Database | null;
 
   // ── Repository references ──
@@ -93,7 +73,6 @@ class HumanitZDB {
     this._log = createLogger(options.label, 'DB');
     this._db = null;
     this._dbRaw = null;
-    this._stmts = {} as PreparedStatements;
   }
 
   /** Get the active database handle. Throws if not initialized or closed. */
@@ -240,7 +219,6 @@ class HumanitZDB {
     this._handle.pragma('busy_timeout = 5000');
 
     this._applySchema();
-    this._prepareStatements();
 
     // Instantiate repositories
     this._playerRepo = new PlayerRepository(this._handle, this._log.label);
@@ -268,7 +246,6 @@ class HumanitZDB {
       this._dbRaw.close();
       this._db = null;
       this._dbRaw = null;
-      this._stmts = {} as PreparedStatements;
       this._playerRepo = null;
       this._clanRepo = null;
       this._leaderboardRepo = null;
@@ -1232,37 +1209,6 @@ class HumanitZDB {
 
   _setMeta(key: string, value: string | null) {
     this._handle.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(key, value);
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  Prepared statements
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  _prepareStatements() {
-    // Meta
-    this._stmts.getMeta = this._handle.prepare('SELECT value FROM meta WHERE key = ?');
-    this._stmts.setMeta = this._handle.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)');
-
-    // World state
-    this._stmts.setWorldState = this._handle.prepare(
-      "INSERT OR REPLACE INTO world_state (key, value, updated_at) VALUES (?, ?, datetime('now'))",
-    );
-    this._stmts.getWorldState = this._handle.prepare('SELECT value FROM world_state WHERE key = ?');
-    this._stmts.getAllWorldState = this._handle.prepare('SELECT * FROM world_state');
-
-    // Server settings
-    this._stmts.upsertSetting = this._handle.prepare(
-      "INSERT OR REPLACE INTO server_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))",
-    );
-    this._stmts.getSetting = this._handle.prepare('SELECT value FROM server_settings WHERE key = ?');
-    this._stmts.getAllSettings = this._handle.prepare('SELECT * FROM server_settings ORDER BY key');
-
-    // Snapshots
-    this._stmts.insertSnapshot = this._handle.prepare('INSERT INTO snapshots (type, steam_id, data) VALUES (?, ?, ?)');
-    this._stmts.getLatestSnapshot = this._handle.prepare(
-      'SELECT * FROM snapshots WHERE type = ? AND steam_id = ? ORDER BY created_at DESC LIMIT 1',
-    );
-    this._stmts.purgeOldSnapshots = this._handle.prepare("DELETE FROM snapshots WHERE created_at < datetime('now', ?)");
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

@@ -48,13 +48,6 @@ export function mockDb({ players = [], clans = [], state = null, extras = {} }: 
       },
     },
     botState: stateAccessors,
-    // Legacy flat accessors (for backward compat with existing tests)
-    getAllPlayers() {
-      return players;
-    },
-    getAllClans() {
-      return clans;
-    },
     _store: store,
     ...extras,
   };
