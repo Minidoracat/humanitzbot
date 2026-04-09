@@ -1211,7 +1211,7 @@ client.once(Events.ClientReady, (readyClient) => {
     // ── Write running flag + clean old lifecycle embeds + post online notification ──
     try {
       try {
-        db.botState.setStateJSON('bot_running', JSON.stringify({ startedAt: startedAt.toISOString() }));
+        db.botState.setStateJSON('bot_running', { startedAt: startedAt.toISOString() });
       } catch {
         // ignore
       }
