@@ -150,7 +150,7 @@ class ServerStatus {
 
   _loadMessageId() {
     try {
-      if (this._db) return this._db.getState('msg_id_server_status') || null;
+      if (this._db) return this._db.botState.getState('msg_id_server_status') || null;
     } catch {}
     return null;
   }
@@ -158,7 +158,7 @@ class ServerStatus {
   _saveMessageId() {
     if (!this.statusMessage) return;
     try {
-      if (this._db) this._db.setState('msg_id_server_status', this.statusMessage.id);
+      if (this._db) this._db.botState.setState('msg_id_server_status', this.statusMessage.id);
     } catch {}
   }
 
@@ -256,7 +256,7 @@ class ServerStatus {
   _loadState() {
     try {
       if (!this._db) return;
-      const data = this._db.getStateJSON('server_status_cache', null) as Record<string, unknown> | null;
+      const data = this._db.botState.getStateJSON('server_status_cache', null) as Record<string, unknown> | null;
       if (!data) return;
       if (data.onlineSince) this._onlineSince = new Date(data.onlineSince as string);
       if (data.offlineSince) this._offlineSince = new Date(data.offlineSince as string);
@@ -275,7 +275,7 @@ class ServerStatus {
   _saveState() {
     try {
       if (!this._db) return;
-      this._db.setStateJSON('server_status_cache', {
+      this._db.botState.setStateJSON('server_status_cache', {
         onlineSince: this._onlineSince?.toISOString() || null,
         offlineSince: this._offlineSince?.toISOString() || null,
         lastOnline: this._lastOnline,
@@ -291,7 +291,7 @@ class ServerStatus {
   _loadServerSettings(): Record<string, unknown> {
     try {
       if (this._db) {
-        const data = this._db.getStateJSON('server_settings', null) as Record<string, unknown> | null;
+        const data = this._db.botState.getStateJSON('server_settings', null) as Record<string, unknown> | null;
         if (data) return data;
       }
     } catch {}

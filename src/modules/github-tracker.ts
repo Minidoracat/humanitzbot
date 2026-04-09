@@ -40,8 +40,10 @@ interface GitHubTrackerDeps {
 }
 
 interface GitHubTrackerDB {
-  getStateJSON(key: string, defaultVal: unknown): unknown;
-  setStateJSON(key: string, value: unknown): void;
+  botState: {
+    getStateJSON(key: string, defaultVal: unknown): unknown;
+    setStateJSON(key: string, value: unknown): void;
+  };
 }
 
 interface ThreadLike {
@@ -476,7 +478,7 @@ class GitHubTracker {
   _loadState(): Record<string, RepoState> {
     if (!this._db) return {};
     try {
-      return this._db.getStateJSON('github_tracker', {}) as Record<string, RepoState>;
+      return this._db.botState.getStateJSON('github_tracker', {}) as Record<string, RepoState>;
     } catch {
       return {};
     }
@@ -485,7 +487,7 @@ class GitHubTracker {
   _saveState() {
     if (!this._db) return;
     try {
-      this._db.setStateJSON('github_tracker', this._state);
+      this._db.botState.setStateJSON('github_tracker', this._state);
     } catch (err: unknown) {
       this._log.warn('Could not save state:', errMsg(err));
     }

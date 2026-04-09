@@ -80,9 +80,9 @@ describe('StdinConsole', () => {
       health: 100,
       maxHealth: 100,
     });
-    db.setPlayerOnline('76561198000000001', true);
-    db.setState('test_key', 'test_value');
-    db.setStateJSON('json_key', { hello: 'world' });
+    db.player.setPlayerOnline('76561198000000001', true);
+    db.botState.setState('test_key', 'test_value');
+    db.botState.setStateJSON('json_key', { hello: 'world' });
   });
 
   after(() => {
@@ -228,18 +228,18 @@ describe('StdinConsole', () => {
     const lines = await captureOutput(wsc, () => wsc._dispatch('state.set new_key new_value'));
     const joined = lines.join('\n');
     assert.ok(joined.includes('Set'), 'Should confirm set');
-    assert.equal(db.getState('new_key'), 'new_value');
+    assert.equal(db.botState.getState('new_key'), 'new_value');
     // Cleanup
-    db.deleteState('new_key');
+    db.botState.deleteState('new_key');
   });
 
   it('state.delete works in writable mode', async () => {
-    db.setState('temp_key', 'temp');
+    db.botState.setState('temp_key', 'temp');
     const wsc = new StdinConsole({ db, writable: true });
     const lines = await captureOutput(wsc, () => wsc._dispatch('state.delete temp_key'));
     const joined = lines.join('\n');
     assert.ok(joined.includes('Deleted'), 'Should confirm delete');
-    assert.equal(db.getState('temp_key'), null);
+    assert.equal(db.botState.getState('temp_key'), null);
   });
 
   // ── stats ───────────────────────────────────────────────────
@@ -280,7 +280,7 @@ describe('StdinConsole', () => {
   it('sql allows mutations in writable mode', async () => {
     const wsc = new StdinConsole({ db, writable: true });
     // Insert a temp row, then delete it
-    db.setState('sql_test', 'y');
+    db.botState.setState('sql_test', 'y');
     const lines = await captureOutput(wsc, () => wsc._dispatch("sql DELETE FROM bot_state WHERE key = 'sql_test'"));
     const joined = lines.join('\n');
     assert.ok(joined.includes('OK'), 'Should allow mutation');
@@ -339,7 +339,7 @@ describe('StdinConsole', () => {
   // ── world ───────────────────────────────────────────────────
 
   it('world shows world state', async () => {
-    db.setWorldState('day_count', '42');
+    db.worldState.setWorldState('day_count', '42');
     const lines = await captureOutput(sc, () => sc._dispatch('world'));
     const joined = lines.join('\n');
     assert.ok(joined.includes('day_count') || joined.includes('42'), 'Should show world state');

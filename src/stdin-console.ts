@@ -409,7 +409,7 @@ Available commands:
       return;
     }
     try {
-      const rows = this._db.getAllState() as DbRow[];
+      const rows = this._db.botState.getAllState() as DbRow[];
       if (rows.length === 0) {
         this._print('No bot_state entries.');
         return;
@@ -437,7 +437,7 @@ Available commands:
     const key = args[0] ?? '';
 
     try {
-      const val: string | null = this._db.getState(key);
+      const val: string | null = this._db.botState.getState(key);
       if (val === null) {
         this._print(`Key "${key}" not found.`);
       } else {
@@ -471,7 +471,7 @@ Available commands:
     const value = args.slice(1).join(' ');
 
     try {
-      this._db.setState(key, value);
+      this._db.botState.setState(key, value);
       this._print(`Set "${key}" = ${value}`);
     } catch (err: unknown) {
       this._print(`State set failed: ${errMsg(err)}`);
@@ -494,7 +494,7 @@ Available commands:
     const key = args[0] ?? '';
 
     try {
-      this._db.deleteState(key);
+      this._db.botState.deleteState(key);
       this._print(`Deleted key "${key}".`);
     } catch (err: unknown) {
       this._print(`State delete failed: ${errMsg(err)}`);

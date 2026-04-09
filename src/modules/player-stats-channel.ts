@@ -629,7 +629,7 @@ class PlayerStatsChannel {
       this._enrichServerSettings();
       // Cache to DB
       try {
-        if (this._db) this._db.setStateJSON('server_settings', this._serverSettings);
+        if (this._db) this._db.botState.setStateJSON('server_settings', this._serverSettings);
       } catch (_: unknown) {}
       this._log.info(`Parsed server settings: ${Object.keys(this._serverSettings).length} keys`);
     } catch (err: unknown) {
@@ -678,7 +678,7 @@ class PlayerStatsChannel {
   _loadCachedServerSettings() {
     try {
       if (this._db) {
-        const cached = this._db.getStateJSON('server_settings', null);
+        const cached = this._db.botState.getStateJSON('server_settings', null);
         if (cached && typeof cached === 'object') this._serverSettings = cached as Record<string, unknown>;
       }
     } catch (_: unknown) {}
@@ -873,7 +873,7 @@ class PlayerStatsChannel {
         topClans: topClans.slice(0, 5),
         weekly,
       };
-      if (this._db) this._db.setStateJSON('welcome_stats', cache);
+      if (this._db) this._db.botState.setStateJSON('welcome_stats', cache);
     } catch (err: unknown) {
       this._log.error('Failed to cache welcome stats:', (err as Error).message);
     }
@@ -945,7 +945,7 @@ class PlayerStatsChannel {
   _loadMessageId(): string | null {
     try {
       if (this._db) {
-        const val = this._db.getState('msg_id_player_stats');
+        const val = this._db.botState.getState('msg_id_player_stats');
         return val != null && typeof val === 'string' ? val : null;
       }
     } catch {}
@@ -955,7 +955,7 @@ class PlayerStatsChannel {
   _saveMessageId() {
     if (!this.statusMessage) return;
     try {
-      if (this._db) this._db.setState('msg_id_player_stats', this.statusMessage.id);
+      if (this._db) this._db.botState.setState('msg_id_player_stats', this.statusMessage.id);
     } catch {}
   }
 

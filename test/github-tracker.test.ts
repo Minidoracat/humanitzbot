@@ -13,7 +13,7 @@ function mockDb(initialState: Record<string, any> = {}) {
   if (Object.keys(initialState).length > 0) {
     store.set('github_tracker', JSON.stringify(initialState));
   }
-  return {
+  const stateAccessors = {
     getStateJSON(key: string, def: any = null) {
       const raw = store.get(key);
       if (raw == null) return def;
@@ -26,6 +26,9 @@ function mockDb(initialState: Record<string, any> = {}) {
     setStateJSON(key: string, value: any) {
       store.set(key, JSON.stringify(value));
     },
+  };
+  return {
+    botState: stateAccessors,
     _store: store,
   };
 }
@@ -161,7 +164,7 @@ describe('GitHubTracker', () => {
       const tracker = new GitHubTracker(mockClient(mockChannel()), { config: mockConfig(), db });
       tracker._state = { 'owner/repo': { seenPrIds: [42] } };
       tracker._saveState();
-      const saved = db.getStateJSON('github_tracker', null);
+      const saved = db.botState.getStateJSON('github_tracker', null);
       assert.deepEqual(saved['owner/repo'].seenPrIds, [42]);
     });
 
