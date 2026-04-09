@@ -1319,25 +1319,6 @@ class HumanitZDB {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //  World state
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  setWorldState(key: string, value: unknown): void {
-    const stored = value !== null && typeof value === 'object' ? JSON.stringify(value) : String(value);
-    this._stmts.setWorldState.run(key, stored);
-  }
-  getWorldState(key: string) {
-    const r = this._stmts.getWorldState.get(key) as DbRow | undefined;
-    return r ? r.value : null;
-  }
-  getAllWorldState() {
-    const rows = this._stmts.getAllWorldState.all() as DbRow[];
-    const result: Record<string, unknown> = {};
-    for (const r of rows) result[r.key as string] = r.value;
-    return result;
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
   //  Save sync (cross-repository orchestration)
   // ═══════════════════════════════════════════════════════════════════════════
 

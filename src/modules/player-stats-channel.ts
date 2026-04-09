@@ -542,7 +542,7 @@ class PlayerStatsChannel {
       this._lastSaveUpdate = new Date();
 
       // World state from DB
-      this._worldState = this._db.getAllWorldState();
+      this._worldState = this._db.worldState.getAllWorldState();
 
       // Clan data from DB
       try {

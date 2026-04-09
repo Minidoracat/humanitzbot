@@ -1139,7 +1139,7 @@ class SaveService extends EventEmitter {
     try {
       const containers = this._db.worldObject.getAllContainers();
       const horses = this._db.worldObject.getAllWorldHorses();
-      const worldState = this._db.getAllWorldState();
+      const worldState = this._db.worldState.getAllWorldState();
       const vehiclesList = this._db.worldObject.getAllVehicles();
       const structuresList = this._db.worldObject.getStructures();
       let playersList: unknown[] = [];
