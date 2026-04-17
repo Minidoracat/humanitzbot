@@ -715,6 +715,31 @@ describe('Web Map Auth', () => {
       }
     });
 
+    it('test-login: startup log prints URL template without leaking the token', () => {
+      const originalWarn = console.warn;
+      const logs: string[] = [];
+      console.warn = (msg: unknown) => {
+        logs.push(String(msg));
+      };
+      try {
+        setupWithTestToken(VALID_TOKEN, 'development');
+        const combined = logs.join('\n');
+
+        // Template with derived origin + placeholder — not the raw token
+        assert.match(
+          combined,
+          /Test login URL: http:\/\/localhost:3000\/auth\/test-login\?token=<YOUR_TOKEN>&tier=admin/,
+        );
+        assert.match(combined, /Anyone with the token gets admin access/);
+
+        // Token MUST NOT appear in logs — prevents leak via log aggregators
+        assert.doesNotMatch(combined, new RegExp(VALID_TOKEN));
+      } finally {
+        console.warn = originalWarn;
+        cleanupTestTokenEnv();
+      }
+    });
+
     it('test-login: does NOT register endpoint when NODE_ENV=production (security guard)', () => {
       try {
         const routes = setupWithTestToken(VALID_TOKEN, 'production');
