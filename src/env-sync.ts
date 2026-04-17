@@ -281,7 +281,9 @@ function syncEnv(): SyncResult {
       const entry = env.entries.get(key);
       if (!entry) continue;
       if (entry.comment) output.push(entry.comment);
-      output.push(`${key}=${entry.value}`);
+      // Respect the commented state so a user-disabled dynamic key stays
+      // disabled across schema bumps (env now parsed with includeCommented: true).
+      output.push(entry.commented ? `#${key}=${entry.value}` : `${key}=${entry.value}`);
       output.push('');
     }
   }
