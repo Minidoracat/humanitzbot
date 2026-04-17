@@ -408,9 +408,15 @@ function setupAuth(
   // and NODE_ENV !== 'production'. Creates a synthetic session bypassing Discord.
   const testAuthToken = getTestAuthToken();
   if (testAuthToken) {
-    console.warn(
-      `[AUTH] Test login enabled — /auth/test-login accepts the configured token (NODE_ENV=${process.env['NODE_ENV'] ?? 'unset'})`,
-    );
+    // Derive the public base from the OAuth callback URL so operators see a
+    // ready-to-use template. Token is intentionally NOT printed — logs often
+    // get shipped to aggregators / rotated to disk / captured in screenshots,
+    // and the token alone grants admin access.
+    const baseUrl = new URL(authCfg.callbackUrl).origin;
+    console.warn(`[AUTH] Test login enabled — NODE_ENV=${process.env['NODE_ENV'] ?? 'unset'}`);
+    console.warn(`[AUTH] Test login URL: ${baseUrl}/auth/test-login?token=<YOUR_TOKEN>&tier=admin`);
+    console.warn('[AUTH] Replace <YOUR_TOKEN> with WEB_PANEL_TEST_AUTH_TOKEN from your .env');
+    console.warn('[AUTH] ⚠ Anyone with the token gets admin access — treat it like a password');
     app.get('/auth/test-login', (req: Request, res: Response) => {
       const hmzReq = req as HmzRequest;
       const provided = req.query['token'];
