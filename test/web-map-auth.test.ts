@@ -194,15 +194,12 @@ describe('Web Map Auth', () => {
   // ── setupAuth ──────────────────────────────────────────────
 
   describe('setupAuth', () => {
-    it('returns no-op middleware when OAuth is not configured', () => {
+    it('disabled mode: sets public tier when OAuth is not configured', () => {
       delete process.env.DISCORD_OAUTH_SECRET;
       delete process.env.WEB_MAP_CALLBACK_URL;
 
-      // Fresh require to pick up env changes — actually setupAuth reads env at call time
-
       const { setupAuth: setup } = _auth as any;
 
-      // Minimal Express app mock
       const routes: Record<string, unknown> = {};
       const app = {
         get: (path: string, handler: unknown) => {
@@ -217,16 +214,233 @@ describe('Web Map Auth', () => {
       const middleware = setup(app);
       assert.equal(typeof middleware, 'function');
 
-      // No-op middleware should call next()
+      // Middleware should set public tier
+      const req: Record<string, unknown> = {};
       let nextCalled = false;
-      middleware({}, {}, () => {
+      middleware(req, {}, () => {
+        nextCalled = true;
+      });
+      assert.equal(nextCalled, true);
+      assert.equal(req.tier, 'public');
+      assert.equal(req.tierLevel, 0);
+
+      // /auth/me should return authenticated: false + oauthNotConfigured
+      let meResponse: Record<string, unknown> = {};
+      const meHandler = routes['GET /auth/me'] as (req: unknown, res: unknown) => void;
+      meHandler(
+        {},
+        {
+          json: (data: Record<string, unknown>) => {
+            meResponse = data;
+          },
+        },
+      );
+      assert.equal(meResponse.authenticated, false);
+      assert.equal(meResponse.tier, 'public');
+      assert.equal(meResponse.oauthNotConfigured, true);
+
+      // Auth routes should still be registered
+      assert.equal(typeof routes['GET /auth/login'], 'function');
+    });
+
+    // ── Partial OAuth config: both secret and callback URL must be set ──
+
+    it('partial OAuth: only DISCORD_OAUTH_SECRET set → disabled mode', () => {
+      process.env.DISCORD_OAUTH_SECRET = 'test-secret';
+      delete process.env.WEB_MAP_CALLBACK_URL;
+
+      try {
+        const { setupAuth: setup } = _auth as any;
+
+        const routes: Record<string, unknown> = {};
+        const app = {
+          get: (path: string, handler: unknown) => {
+            routes[`GET ${path}`] = handler;
+          },
+          post: () => {},
+          use: () => {},
+        };
+
+        const middleware = setup(app);
+        const req: Record<string, unknown> = {};
+        middleware(req, {}, () => {});
+        assert.equal(req.tier, 'public');
+        assert.equal(req.tierLevel, 0);
+
+        let meResponse: Record<string, unknown> = {};
+        const meHandler = routes['GET /auth/me'] as (req: unknown, res: unknown) => void;
+        meHandler(
+          {},
+          {
+            json: (data: Record<string, unknown>) => {
+              meResponse = data;
+            },
+          },
+        );
+        assert.equal(meResponse.authenticated, false);
+        assert.equal(meResponse.oauthNotConfigured, true);
+      } finally {
+        delete process.env.DISCORD_OAUTH_SECRET;
+      }
+    });
+
+    it('partial OAuth: only WEB_MAP_CALLBACK_URL set → disabled mode', () => {
+      delete process.env.DISCORD_OAUTH_SECRET;
+      process.env.WEB_MAP_CALLBACK_URL = 'http://localhost:3000/auth/callback';
+
+      try {
+        const { setupAuth: setup } = _auth as any;
+
+        const routes: Record<string, unknown> = {};
+        const app = {
+          get: (path: string, handler: unknown) => {
+            routes[`GET ${path}`] = handler;
+          },
+          post: () => {},
+          use: () => {},
+        };
+
+        const middleware = setup(app);
+        const req: Record<string, unknown> = {};
+        middleware(req, {}, () => {});
+        assert.equal(req.tier, 'public');
+
+        let meResponse: Record<string, unknown> = {};
+        const meHandler = routes['GET /auth/me'] as (req: unknown, res: unknown) => void;
+        meHandler(
+          {},
+          {
+            json: (data: Record<string, unknown>) => {
+              meResponse = data;
+            },
+          },
+        );
+        assert.equal(meResponse.authenticated, false);
+        assert.equal(meResponse.oauthNotConfigured, true);
+      } finally {
+        delete process.env.WEB_MAP_CALLBACK_URL;
+      }
+    });
+
+    // ── Stub session middleware ──
+
+    type StubMiddleware = (req: unknown, res: unknown, next: () => void) => void;
+
+    it('disabled mode: stub session middleware injects empty session with working save/destroy', () => {
+      delete process.env.DISCORD_OAUTH_SECRET;
+      delete process.env.WEB_MAP_CALLBACK_URL;
+
+      const { setupAuth: setup } = _auth as any;
+
+      const middlewares: StubMiddleware[] = [];
+      const app = {
+        get: () => {},
+        post: () => {},
+        use: (mw: StubMiddleware) => {
+          middlewares.push(mw);
+        },
+      };
+
+      setup(app);
+      const stubSession = middlewares[0];
+      assert.ok(stubSession, 'stub session middleware should be registered');
+
+      const req: Record<string, unknown> = {};
+      let nextCalled = false;
+      stubSession(req, {}, () => {
         nextCalled = true;
       });
       assert.equal(nextCalled, true);
 
-      // Stub auth routes should still be registered (so frontend can function)
-      assert.equal(typeof routes['GET /auth/login'], 'function');
-      assert.equal(typeof routes['GET /auth/me'], 'function');
+      const session = req.session as Record<string, unknown>;
+      assert.ok(session, 'req.session should be injected');
+      assert.equal(session.user, undefined, 'disabled mode leaves user undefined');
+      assert.equal(typeof session.save, 'function');
+      assert.equal(typeof session.destroy, 'function');
+
+      let saveErr: unknown = 'unset';
+      (session.save as (cb: (err: Error | null) => void) => void)((err) => {
+        saveErr = err;
+      });
+      assert.equal(saveErr, null, 'stub save() invokes callback with null');
+
+      let destroyErr: unknown = 'unset';
+      (session.destroy as (cb: (err: Error | null) => void) => void)((err) => {
+        destroyErr = err;
+      });
+      assert.equal(destroyErr, null, 'stub destroy() invokes callback with null');
+    });
+
+    // ── Integration: setupAuth middleware + requireTier ──
+
+    it('landingOnly mode: tier injected by middleware is blocked by requireTier("survivor") on API', () => {
+      delete process.env.DISCORD_OAUTH_SECRET;
+      delete process.env.WEB_MAP_CALLBACK_URL;
+
+      const { setupAuth: setup, requireTier: rt } = _auth as any;
+      const app = { get: () => {}, post: () => {}, use: () => {} };
+      const middleware = setup(app);
+
+      const req: Record<string, unknown> = { path: '/api/players' };
+      middleware(req, {}, () => {});
+
+      const guard = rt('survivor');
+      let statusCode: number | null = null;
+      let jsonBody: unknown = null;
+      const res = {
+        status: (c: number) => {
+          statusCode = c;
+          return res;
+        },
+        json: (body: unknown) => {
+          jsonBody = body;
+        },
+        redirect: () => {},
+        send: () => {},
+      };
+      guard(req, res, () => {});
+      assert.equal(statusCode, 401, 'public tier should be blocked from survivor API');
+      assert.ok((jsonBody as Record<string, unknown>).error, 'response should carry an error message');
+    });
+
+    // ── /auth/login and /auth/logout redirect behaviour in no-OAuth modes ──
+
+    it('disabled mode: /auth/login and /auth/logout redirect to /', () => {
+      delete process.env.DISCORD_OAUTH_SECRET;
+      delete process.env.WEB_MAP_CALLBACK_URL;
+
+      const { setupAuth: setup } = _auth as any;
+      const routes: Record<string, unknown> = {};
+      const app = {
+        get: (path: string, handler: unknown) => {
+          routes[`GET ${path}`] = handler;
+        },
+        post: () => {},
+        use: () => {},
+      };
+      setup(app);
+
+      let loginRedirect: string | null = null;
+      (routes['GET /auth/login'] as (req: unknown, res: unknown) => void)(
+        {},
+        {
+          redirect: (t: string) => {
+            loginRedirect = t;
+          },
+        },
+      );
+      assert.equal(loginRedirect, '/');
+
+      let logoutRedirect: string | null = null;
+      (routes['GET /auth/logout'] as (req: unknown, res: unknown) => void)(
+        {},
+        {
+          redirect: (t: string) => {
+            logoutRedirect = t;
+          },
+        },
+      );
+      assert.equal(logoutRedirect, '/');
     });
 
     it('registers auth routes when OAuth is configured', () => {
@@ -458,6 +672,332 @@ describe('Web Map Auth', () => {
         delete process.env.WEB_MAP_CALLBACK_URL;
         config.guildId = savedGuildId;
       }
+    });
+
+    // ── /auth/test-login (E2E / AI automation) ──
+
+    const VALID_TOKEN = 'a'.repeat(64); // 64-char hex-like string, passes length check
+
+    type RouteHandler = (req: unknown, res: unknown) => void;
+
+    function setupWithTestToken(token: string | undefined, nodeEnv?: string) {
+      if (token === undefined) delete process.env.WEB_PANEL_TEST_AUTH_TOKEN;
+      else process.env.WEB_PANEL_TEST_AUTH_TOKEN = token;
+      if (nodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = nodeEnv;
+      process.env.DISCORD_OAUTH_SECRET = 'test-secret';
+      process.env.WEB_MAP_CALLBACK_URL = 'http://localhost:3000/auth/callback';
+
+      const routes: Record<string, RouteHandler | undefined> = {};
+      // app.post is variadic: (path, ...handlers). The real route handler is
+      // the last arg; earlier args are per-route middleware (e.g. jsonBodyParser).
+      // Store the last one so tests invoke the handler directly with req.body.
+      const app = {
+        get: (path: string, ...handlers: RouteHandler[]) => {
+          routes[`GET ${path}`] = handlers[handlers.length - 1];
+        },
+        post: (path: string, ...handlers: RouteHandler[]) => {
+          routes[`POST ${path}`] = handlers[handlers.length - 1];
+        },
+        use: () => {},
+      };
+      const { setupAuth: setup } = cjsRequire('../src/web-map/auth');
+      setup(app);
+      return routes;
+    }
+
+    function cleanupTestTokenEnv() {
+      delete process.env.WEB_PANEL_TEST_AUTH_TOKEN;
+      delete process.env.NODE_ENV;
+      delete process.env.DISCORD_OAUTH_SECRET;
+      delete process.env.WEB_MAP_CALLBACK_URL;
+    }
+
+    function makeResponseCapture(): {
+      res: Record<string, unknown>;
+      status: () => number | null;
+      body: () => unknown;
+    } {
+      let statusCode: number | null = null;
+      let jsonBody: unknown = null;
+      const res: Record<string, unknown> = {};
+      res.status = (c: number) => {
+        statusCode = c;
+        return res;
+      };
+      res.json = (body: unknown) => {
+        jsonBody = body;
+        return res;
+      };
+      return { res, status: () => statusCode, body: () => jsonBody };
+    }
+
+    it('test-login: registers POST /auth/test-login when token is set and NODE_ENV is allowlisted', () => {
+      try {
+        const routes = setupWithTestToken(VALID_TOKEN, 'development');
+        assert.equal(typeof routes['POST /auth/test-login'], 'function');
+        // Should NOT be registered as a GET — URL-query transport is rejected by design.
+        assert.equal(routes['GET /auth/test-login'], undefined);
+      } finally {
+        cleanupTestTokenEnv();
+      }
+    });
+
+    it('test-login: startup log prints endpoint template without leaking the token', () => {
+      const originalWarn = console.warn;
+      const logs: string[] = [];
+      console.warn = (msg: unknown) => {
+        logs.push(String(msg));
+      };
+      try {
+        setupWithTestToken(VALID_TOKEN, 'development');
+        const combined = logs.join('\n');
+
+        // Log advertises POST with placeholder — not the raw token
+        assert.match(combined, /POST http:\/\/localhost:3000\/auth\/test-login/);
+        assert.match(combined, /<WEB_PANEL_TEST_AUTH_TOKEN>/);
+        assert.match(combined, /Anyone with the token gets admin access/);
+
+        // Token MUST NOT appear in logs — prevents leak via log aggregators
+        assert.doesNotMatch(combined, new RegExp(VALID_TOKEN));
+      } finally {
+        console.warn = originalWarn;
+        cleanupTestTokenEnv();
+      }
+    });
+
+    it('test-login: does NOT register endpoint when NODE_ENV=production (security guard)', () => {
+      try {
+        const routes = setupWithTestToken(VALID_TOKEN, 'production');
+        assert.equal(routes['POST /auth/test-login'], undefined);
+      } finally {
+        cleanupTestTokenEnv();
+      }
+    });
+
+    it('test-login: does NOT register endpoint when token is shorter than 32 chars', () => {
+      try {
+        const routes = setupWithTestToken('short', 'development');
+        assert.equal(routes['POST /auth/test-login'], undefined);
+      } finally {
+        cleanupTestTokenEnv();
+      }
+    });
+
+    it('test-login: does NOT register endpoint when token is unset', () => {
+      try {
+        const routes = setupWithTestToken(undefined, 'development');
+        assert.equal(routes['POST /auth/test-login'], undefined);
+      } finally {
+        cleanupTestTokenEnv();
+      }
+    });
+
+    it('test-login: valid token creates synthetic admin session and returns ok=true', () => {
+      try {
+        const routes = setupWithTestToken(VALID_TOKEN, 'development');
+        const handler = routes['POST /auth/test-login'] as RouteHandler;
+
+        const session: Record<string, unknown> = {
+          save(cb: (err: Error | null) => void) {
+            cb(null);
+          },
+        };
+        const req = { body: { token: VALID_TOKEN }, session };
+        const { res, body } = makeResponseCapture();
+
+        handler(req, res);
+
+        const payload = body() as Record<string, unknown>;
+        assert.equal(payload.ok, true);
+        assert.equal(payload.tier, 'admin');
+        assert.equal(payload.userId, 'e2e-test');
+
+        const user = session.user as Record<string, unknown>;
+        assert.ok(user, 'session.user should be populated');
+        assert.equal(user.userId, 'e2e-test');
+        assert.equal(user.username, 'E2E Test User');
+        assert.equal(user.tier, 'admin');
+        assert.equal(user.tierLevel, TIER.admin);
+        assert.equal(user.inGuild, false, 'synthetic session should not claim guild membership');
+        assert.equal(user.isTestSession, true, 'session should be flagged as test');
+      } finally {
+        cleanupTestTokenEnv();
+      }
+    });
+
+    it('test-login: accepts tier body field when it is a valid tier', () => {
+      try {
+        const routes = setupWithTestToken(VALID_TOKEN, 'development');
+        const handler = routes['POST /auth/test-login'] as RouteHandler;
+
+        const session: Record<string, unknown> = {
+          save(cb: (err: Error | null) => void) {
+            cb(null);
+          },
+        };
+        const req = { body: { token: VALID_TOKEN, tier: 'survivor' }, session };
+        const { res } = makeResponseCapture();
+        handler(req, res);
+
+        const user = session.user as Record<string, unknown>;
+        assert.equal(user.tier, 'survivor');
+        assert.equal(user.tierLevel, TIER.survivor);
+      } finally {
+        cleanupTestTokenEnv();
+      }
+    });
+
+    it('test-login: falls back to admin tier when tier body field is invalid', () => {
+      try {
+        const routes = setupWithTestToken(VALID_TOKEN, 'development');
+        const handler = routes['POST /auth/test-login'] as RouteHandler;
+
+        const session: Record<string, unknown> = {
+          save(cb: (err: Error | null) => void) {
+            cb(null);
+          },
+        };
+        const req = { body: { token: VALID_TOKEN, tier: 'superuser' }, session };
+        const { res } = makeResponseCapture();
+        handler(req, res);
+
+        const user = session.user as Record<string, unknown>;
+        assert.equal(user.tier, 'admin', 'invalid tier should fall back to admin');
+      } finally {
+        cleanupTestTokenEnv();
+      }
+    });
+
+    it('test-login: rejects wrong token with 401 INVALID_TOKEN', () => {
+      try {
+        const routes = setupWithTestToken(VALID_TOKEN, 'development');
+        const handler = routes['POST /auth/test-login'] as RouteHandler;
+
+        const wrongToken = 'b'.repeat(64); // same length, different content
+        const req = { body: { token: wrongToken }, session: {} };
+        const { res, status, body } = makeResponseCapture();
+        handler(req, res);
+
+        assert.equal(status(), 401);
+        assert.deepEqual(body(), { ok: false, error: 'INVALID_TOKEN' });
+      } finally {
+        cleanupTestTokenEnv();
+      }
+    });
+
+    it('test-login: rejects different-length token without timingSafeEqual crash', () => {
+      try {
+        const routes = setupWithTestToken(VALID_TOKEN, 'development');
+        const handler = routes['POST /auth/test-login'] as RouteHandler;
+
+        const req = { body: { token: 'tooshort' }, session: {} };
+        const { res, status } = makeResponseCapture();
+        handler(req, res);
+        assert.equal(status(), 401, 'different-length token should be rejected before timingSafeEqual');
+      } finally {
+        cleanupTestTokenEnv();
+      }
+    });
+
+    it('test-login: rejects missing token with 401 MISSING_TOKEN', () => {
+      try {
+        const routes = setupWithTestToken(VALID_TOKEN, 'development');
+        const handler = routes['POST /auth/test-login'] as RouteHandler;
+
+        const req = { body: {}, session: {} };
+        const { res, status, body } = makeResponseCapture();
+        handler(req, res);
+        assert.equal(status(), 401);
+        assert.deepEqual(body(), { ok: false, error: 'MISSING_TOKEN' });
+      } finally {
+        cleanupTestTokenEnv();
+      }
+    });
+
+    it('test-login: treats absent req.body as missing token (defensive)', () => {
+      try {
+        const routes = setupWithTestToken(VALID_TOKEN, 'development');
+        const handler = routes['POST /auth/test-login'] as RouteHandler;
+
+        const req = { session: {} };
+        const { res, status, body } = makeResponseCapture();
+        handler(req, res);
+        assert.equal(status(), 401);
+        assert.deepEqual(body(), { ok: false, error: 'MISSING_TOKEN' });
+      } finally {
+        cleanupTestTokenEnv();
+      }
+    });
+  });
+
+  // ── getTestAuthToken ───────────────────────────────────────
+
+  describe('getTestAuthToken', () => {
+    const { getTestAuthToken } = _test;
+    const VALID = 'a'.repeat(64);
+
+    function withEnv(token: string | undefined, nodeEnv: string | undefined, fn: () => void): void {
+      if (token === undefined) delete process.env.WEB_PANEL_TEST_AUTH_TOKEN;
+      else process.env.WEB_PANEL_TEST_AUTH_TOKEN = token;
+      if (nodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = nodeEnv;
+      try {
+        fn();
+      } finally {
+        delete process.env.WEB_PANEL_TEST_AUTH_TOKEN;
+        delete process.env.NODE_ENV;
+      }
+    }
+
+    it('returns null when WEB_PANEL_TEST_AUTH_TOKEN is unset', () => {
+      withEnv(undefined, 'development', () => {
+        assert.equal(getTestAuthToken(), null);
+      });
+    });
+
+    // Allowlist: fail-closed, only known-safe NODE_ENV values accepted.
+
+    it('returns null when NODE_ENV is unset (fail-closed default)', () => {
+      withEnv(VALID, undefined, () => {
+        assert.equal(getTestAuthToken(), null);
+      });
+    });
+
+    it('returns null when NODE_ENV=production', () => {
+      withEnv(VALID, 'production', () => {
+        assert.equal(getTestAuthToken(), null);
+      });
+    });
+
+    it('returns null for unknown NODE_ENV values (e.g. staging, typos)', () => {
+      for (const bad of ['staging', 'prod', 'Development', '']) {
+        withEnv(VALID, bad, () => {
+          assert.equal(getTestAuthToken(), null, `NODE_ENV='${bad}' should be rejected`);
+        });
+      }
+    });
+
+    it('accepts token when NODE_ENV is in the allowlist', () => {
+      for (const good of ['development', 'dev', 'test']) {
+        withEnv(VALID, good, () => {
+          assert.equal(getTestAuthToken(), VALID, `NODE_ENV='${good}' should be accepted`);
+        });
+      }
+    });
+
+    it('returns null when token is shorter than 32 characters (even with safe NODE_ENV)', () => {
+      withEnv('a'.repeat(31), 'development', () => {
+        assert.equal(getTestAuthToken(), null);
+      });
+    });
+
+    it('NODE_ENV allowlist check runs before length check', () => {
+      // Short token + unsafe NODE_ENV should still log the env-rejection path,
+      // not the length path. Behaviourally both reject, so assert null.
+      withEnv('a'.repeat(31), 'production', () => {
+        assert.equal(getTestAuthToken(), null);
+      });
     });
   });
 
