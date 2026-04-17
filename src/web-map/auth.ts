@@ -54,12 +54,17 @@ const ROLE_REFRESH_INTERVAL = 5 * 60 * 1000;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+// Allowlist of NODE_ENV values where /auth/test-login may be registered.
+// Fail-closed: anything else (unset, 'production', typos) rejects the token.
+const TEST_LOGIN_SAFE_ENVS = new Set(['development', 'dev', 'test']);
+
 function getTestAuthToken(): string | null {
   const raw = process.env['WEB_PANEL_TEST_AUTH_TOKEN'];
   if (!raw) return null;
-  if (process.env['NODE_ENV'] === 'production') {
+  const nodeEnv = process.env['NODE_ENV'] ?? '';
+  if (!TEST_LOGIN_SAFE_ENVS.has(nodeEnv)) {
     console.error(
-      '[AUTH] WEB_PANEL_TEST_AUTH_TOKEN is set but NODE_ENV=production — refusing to register /auth/test-login',
+      `[AUTH] WEB_PANEL_TEST_AUTH_TOKEN requires NODE_ENV to be one of ${[...TEST_LOGIN_SAFE_ENVS].join(', ')} (got ${nodeEnv ? `'${nodeEnv}'` : 'unset'}) — refusing to register /auth/test-login`,
     );
     return null;
   }
