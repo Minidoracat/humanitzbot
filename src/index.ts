@@ -40,6 +40,7 @@ import SaveService from './parsers/save-service.js';
 import { seed as seedGameReference } from './parsers/game-reference.js';
 import { writeAgent } from './parsers/agent-builder.js';
 import WebMapServer from './web-map/server.js';
+import { planWebPanelStartup } from './web-map/startup-plan.js';
 import SnapshotService from './tracking/snapshot-service.js';
 import StdinConsole from './stdin-console.js';
 import { createBotStatusManager } from './utils/status.js';
@@ -539,30 +540,32 @@ client.once(Events.ClientReady, (readyClient) => {
     }
 
     // ── Web panel — start EARLY so it's reachable while modules initialise ──
-    const webMapPort = parseInt(process.env['WEB_MAP_PORT'] ?? '', 10);
-    if (webMapPort) {
-      const oauthConfigured = !!(config.discordClientSecret && process.env['WEB_MAP_CALLBACK_URL']);
+    const webPanelPlan = planWebPanelStartup(process.env, config);
+    if (webPanelPlan.action === 'disabled') {
+      setStatus('WebMap', '⚫ Disabled (no WEB_MAP_PORT)');
+      console.log('[BOT] Web panel disabled — set WEB_MAP_PORT in .env to enable');
+    } else {
+      const { port, mode } = webPanelPlan;
       try {
-        if (!oauthConfigured) {
-          if (process.env['WEB_PANEL_ALLOW_NO_AUTH'] === 'true') {
-            console.warn('[BOT] Web panel starting in dev mode — auto-login as admin (WEB_PANEL_ALLOW_NO_AUTH)');
-          } else {
-            console.log('[BOT] Web panel starting without OAuth — landing page only (login disabled)');
-            console.log('[BOT] Set DISCORD_OAUTH_SECRET + WEB_MAP_CALLBACK_URL in .env to enable login');
-          }
+        if (mode === 'devAutoLogin') {
+          console.warn('[BOT] Web panel starting in dev mode — auto-login as admin (WEB_PANEL_ALLOW_NO_AUTH)');
+        } else if (mode === 'landingOnly') {
+          console.log('[BOT] Web panel starting without OAuth — landing page only (login disabled)');
+          console.log('[BOT] Set DISCORD_OAUTH_SECRET + WEB_MAP_CALLBACK_URL in .env to enable login');
         }
-        webMapServer = new WebMapServer(readyClient, { db, configRepo });
-        await webMapServer.start();
-        const suffix = oauthConfigured ? '' : ' (no auth)';
-        setStatus('WebMap', `🟢 Running on http://localhost:${webMapPort}${suffix}`);
-        console.log(`[BOT] Web panel started: http://localhost:${webMapPort}`);
+        // Assign the module-level variable only after start() succeeds, so a failed
+        // start doesn't leave a half-initialised server reachable to shutdown handlers.
+        const server = new WebMapServer(readyClient, { db, configRepo });
+        await server.start();
+        webMapServer = server;
+        const icon = mode === 'devAutoLogin' ? '🟠' : '🟢';
+        const suffix = mode === 'oauth' ? '' : mode === 'devAutoLogin' ? ' (DEV AUTO-LOGIN)' : ' (no auth)';
+        setStatus('WebMap', `${icon} Running on http://localhost:${port}${suffix}`);
+        console.log(`[BOT] Web panel started: http://localhost:${port}`);
       } catch (err: unknown) {
         setStatus('WebMap', `⚠️ Failed to start: ${errMsg(err)}`);
         console.error('[BOT] Web panel failed to start:', errMsg(err));
       }
-    } else {
-      setStatus('WebMap', '⚫ Disabled (no WEB_MAP_PORT)');
-      console.log('[BOT] Web panel disabled — set WEB_MAP_PORT in .env to enable');
     }
 
     // ── Wipe saved message IDs on FIRST_RUN ──
