@@ -198,6 +198,34 @@ describe('syncEnv', () => {
     assert.match(content, /^PVP_HOURS_MON=18:00-22:00$/m);
   });
 
+  it('preserves commented state of dynamic keys (no re-activation on schema bump)', () => {
+    const { envPath, examplePath } = setupTmp();
+    // User temporarily disabled a dynamic profile by commenting it.
+    // Before the dynamic-keys commented-state fix, the sync re-activated it
+    // because env was parsed with includeCommented: true but the dynamic-keys
+    // rewrite branch ignored entry.commented.
+    fs.writeFileSync(
+      envPath,
+      [
+        'ENV_SCHEMA_VERSION=4',
+        'DISCORD_TOKEN=tok',
+        '#RESTART_PROFILE_CALM=disabled-profile',
+        'PVP_HOURS_MON=18:00-22:00',
+        '',
+      ].join('\n'),
+    );
+    fs.writeFileSync(examplePath, ['ENV_SCHEMA_VERSION=5', 'DISCORD_TOKEN=placeholder', ''].join('\n'));
+
+    envSync.syncEnv();
+    const content = fs.readFileSync(envPath, 'utf8');
+
+    // Commented dynamic key stays commented — not re-activated.
+    assert.match(content, /^#RESTART_PROFILE_CALM=disabled-profile$/m);
+    assert.doesNotMatch(content, /^RESTART_PROFILE_CALM=disabled-profile$/m);
+    // Active dynamic key unchanged.
+    assert.match(content, /^PVP_HOURS_MON=18:00-22:00$/m);
+  });
+
   it('creates a backup of the old .env', () => {
     const { envPath, examplePath, backupDir } = setupTmp();
     fs.writeFileSync(envPath, 'ENV_SCHEMA_VERSION=4\nDISCORD_TOKEN=tok\n');
