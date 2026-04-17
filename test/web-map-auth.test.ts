@@ -898,44 +898,69 @@ describe('Web Map Auth', () => {
 
   describe('getTestAuthToken', () => {
     const { getTestAuthToken } = _test;
+    const VALID = 'a'.repeat(64);
+
+    function withEnv(token: string | undefined, nodeEnv: string | undefined, fn: () => void): void {
+      if (token === undefined) delete process.env.WEB_PANEL_TEST_AUTH_TOKEN;
+      else process.env.WEB_PANEL_TEST_AUTH_TOKEN = token;
+      if (nodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = nodeEnv;
+      try {
+        fn();
+      } finally {
+        delete process.env.WEB_PANEL_TEST_AUTH_TOKEN;
+        delete process.env.NODE_ENV;
+      }
+    }
 
     it('returns null when WEB_PANEL_TEST_AUTH_TOKEN is unset', () => {
-      delete process.env.WEB_PANEL_TEST_AUTH_TOKEN;
-      delete process.env.NODE_ENV;
-      assert.equal(getTestAuthToken(), null);
-    });
-
-    it('returns null when NODE_ENV=production even with a valid token', () => {
-      process.env.WEB_PANEL_TEST_AUTH_TOKEN = 'a'.repeat(64);
-      process.env.NODE_ENV = 'production';
-      try {
+      withEnv(undefined, 'development', () => {
         assert.equal(getTestAuthToken(), null);
-      } finally {
-        delete process.env.WEB_PANEL_TEST_AUTH_TOKEN;
-        delete process.env.NODE_ENV;
-      }
+      });
     });
 
-    it('returns null when token is shorter than 32 characters', () => {
-      process.env.WEB_PANEL_TEST_AUTH_TOKEN = 'a'.repeat(31);
-      delete process.env.NODE_ENV;
-      try {
+    // Allowlist: fail-closed, only known-safe NODE_ENV values accepted.
+
+    it('returns null when NODE_ENV is unset (fail-closed default)', () => {
+      withEnv(VALID, undefined, () => {
         assert.equal(getTestAuthToken(), null);
-      } finally {
-        delete process.env.WEB_PANEL_TEST_AUTH_TOKEN;
+      });
+    });
+
+    it('returns null when NODE_ENV=production', () => {
+      withEnv(VALID, 'production', () => {
+        assert.equal(getTestAuthToken(), null);
+      });
+    });
+
+    it('returns null for unknown NODE_ENV values (e.g. staging, typos)', () => {
+      for (const bad of ['staging', 'prod', 'Development', '']) {
+        withEnv(VALID, bad, () => {
+          assert.equal(getTestAuthToken(), null, `NODE_ENV='${bad}' should be rejected`);
+        });
       }
     });
 
-    it('returns the token when valid and NODE_ENV is not production', () => {
-      const token = 'a'.repeat(32);
-      process.env.WEB_PANEL_TEST_AUTH_TOKEN = token;
-      process.env.NODE_ENV = 'development';
-      try {
-        assert.equal(getTestAuthToken(), token);
-      } finally {
-        delete process.env.WEB_PANEL_TEST_AUTH_TOKEN;
-        delete process.env.NODE_ENV;
+    it('accepts token when NODE_ENV is in the allowlist', () => {
+      for (const good of ['development', 'dev', 'test']) {
+        withEnv(VALID, good, () => {
+          assert.equal(getTestAuthToken(), VALID, `NODE_ENV='${good}' should be accepted`);
+        });
       }
+    });
+
+    it('returns null when token is shorter than 32 characters (even with safe NODE_ENV)', () => {
+      withEnv('a'.repeat(31), 'development', () => {
+        assert.equal(getTestAuthToken(), null);
+      });
+    });
+
+    it('NODE_ENV allowlist check runs before length check', () => {
+      // Short token + unsafe NODE_ENV should still log the env-rejection path,
+      // not the length path. Behaviourally both reject, so assert null.
+      withEnv('a'.repeat(31), 'production', () => {
+        assert.equal(getTestAuthToken(), null);
+      });
     });
   });
 
