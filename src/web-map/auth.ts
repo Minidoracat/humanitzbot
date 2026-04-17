@@ -3,6 +3,7 @@
  */
 
 import crypto from 'crypto';
+import { json as jsonBodyParser } from 'express';
 import expressSession from 'express-session';
 import { doubleCsrf } from 'csrf-csrf';
 import cookieParser from 'cookie-parser';
@@ -23,6 +24,8 @@ interface SessionUser {
   tierLevel: number | undefined;
   inGuild: boolean;
   lastRoleCheck: number;
+  // Marks sessions created via /auth/test-login so audit logs can filter them out.
+  isTestSession?: boolean;
 }
 
 interface HmzSession {
@@ -51,6 +54,27 @@ const COOKIE_NAME = 'hmz_session';
 const ROLE_REFRESH_INTERVAL = 5 * 60 * 1000;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+// Allowlist of NODE_ENV values where /auth/test-login may be registered.
+// Fail-closed: anything else (unset, 'production', typos) rejects the token.
+const TEST_LOGIN_SAFE_ENVS = new Set(['development', 'dev', 'test']);
+
+function getTestAuthToken(): string | null {
+  const raw = process.env['WEB_PANEL_TEST_AUTH_TOKEN'];
+  if (!raw) return null;
+  const nodeEnv = process.env['NODE_ENV'] ?? '';
+  if (!TEST_LOGIN_SAFE_ENVS.has(nodeEnv)) {
+    console.error(
+      `[AUTH] WEB_PANEL_TEST_AUTH_TOKEN requires NODE_ENV to be one of ${[...TEST_LOGIN_SAFE_ENVS].join(', ')} (got ${nodeEnv ? `'${nodeEnv}'` : 'unset'}) — refusing to register /auth/test-login`,
+    );
+    return null;
+  }
+  if (raw.length < 32) {
+    console.error('[AUTH] WEB_PANEL_TEST_AUTH_TOKEN must be >= 32 characters — refusing to register /auth/test-login');
+    return null;
+  }
+  return raw;
+}
 
 let _cachedSessionSecret: string | undefined;
 function getSessionSecret(): string {
@@ -246,14 +270,30 @@ function setupAuth(
   const authCfg = getAuthConfig();
 
   if (!authCfg.clientSecret || !authCfg.callbackUrl) {
-    console.warn('[AUTH] Discord OAuth not configured — all routes UNPROTECTED');
+    // Per-request stub session so route handlers that call req.session.* don't crash.
+    app.use((_req: Request, _res: Response, next: NextFunction) => {
+      Object.assign(_req, {
+        session: {
+          user: undefined,
+          save(cb: (err: Error | null) => void) {
+            cb(null);
+          },
+          destroy(cb: (err: Error | null) => void) {
+            cb(null);
+          },
+        },
+      });
+      next();
+    });
+
+    console.warn('[AUTH] Discord OAuth not configured — web panel login disabled');
+    console.warn('[AUTH] Set DISCORD_OAUTH_SECRET + WEB_MAP_CALLBACK_URL in .env to enable');
     app.get('/auth/me', (_req: Request, res: Response) => {
       res.json({
-        authenticated: true,
-        tier: 'admin',
-        tierLevel: TIER['admin'],
-        username: 'Admin (no OAuth)',
-        devMode: true,
+        authenticated: false,
+        tier: 'public',
+        tierLevel: TIER['public'],
+        oauthNotConfigured: true,
       });
     });
     app.get('/auth/login', (_req: Request, res: Response) => {
@@ -264,8 +304,8 @@ function setupAuth(
     });
     return (_req: Request, _res: Response, next: NextFunction) => {
       const hmzReq = _req as HmzRequest;
-      hmzReq.tier = 'admin';
-      hmzReq.tierLevel = TIER['admin'];
+      hmzReq.tier = 'public';
+      hmzReq.tierLevel = TIER['public'];
       next();
     };
   }
@@ -300,6 +340,13 @@ function setupAuth(
       return;
     }
     if (req.path === '/auth/callback') {
+      next();
+      return;
+    }
+    // /auth/test-login is authenticated by the token in the request body,
+    // not by session/origin. It must work from CI runners / AI agents whose
+    // Origin may not match WEB_MAP_CALLBACK_URL.
+    if (req.path === '/auth/test-login') {
       next();
       return;
     }
@@ -347,6 +394,13 @@ function setupAuth(
       next();
       return;
     }
+    // /auth/test-login has its own bearer-style auth (token in body) and is
+    // only reachable when NODE_ENV is a dev-like value, so a CSRF check is
+    // inapplicable and would require a pre-existing session.
+    if (req.path === '/auth/test-login') {
+      next();
+      return;
+    }
     doubleCsrfProtection(req, res, next);
   });
   app.use((err: Error & { code?: string }, req: Request, res: Response, next: NextFunction) => {
@@ -363,6 +417,56 @@ function setupAuth(
   if (authCfg.modRoles.length > 0) console.log(`[AUTH] Mod roles: ${authCfg.modRoles.join(', ')}`);
   if (authCfg.survivorRoles.length > 0) console.log(`[AUTH] Survivor roles: ${authCfg.survivorRoles.join(', ')}`);
   else console.log(`[AUTH] No survivor roles set — any guild member gets survivor access`);
+
+  // ── Test login (E2E / AI automation) ──
+  // Registered only when WEB_PANEL_TEST_AUTH_TOKEN is set, token length >= 32,
+  // and NODE_ENV !== 'production'. Creates a synthetic session bypassing Discord.
+  const testAuthToken = getTestAuthToken();
+  if (testAuthToken) {
+    // Derive the public base from the OAuth callback URL so operators see a
+    // ready-to-use template. Token is intentionally NOT printed — logs often
+    // get shipped to aggregators / rotated to disk / captured in screenshots,
+    // and the token alone grants admin access.
+    const baseUrl = new URL(authCfg.callbackUrl).origin;
+    console.warn(`[AUTH] Test login enabled — NODE_ENV=${process.env['NODE_ENV'] ?? 'unset'}`);
+    console.warn(`[AUTH] Test login endpoint: POST ${baseUrl}/auth/test-login`);
+    console.warn(`[AUTH] Body: {"token":"<WEB_PANEL_TEST_AUTH_TOKEN>","tier":"admin"}`);
+    console.warn('[AUTH] ⚠ Anyone with the token gets admin access — treat it like a password');
+    app.post('/auth/test-login', jsonBodyParser(), (req: Request, res: Response) => {
+      const hmzReq = req as HmzRequest;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const provided = body['token'];
+      if (typeof provided !== 'string') {
+        return res.status(401).json({ ok: false, error: 'MISSING_TOKEN' });
+      }
+      const expected = Buffer.from(testAuthToken);
+      const actual = Buffer.from(provided);
+      if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) {
+        console.warn(`[AUTH] Test login rejected: invalid token (len=${String(actual.length)})`);
+        return res.status(401).json({ ok: false, error: 'INVALID_TOKEN' });
+      }
+      const requestedTier = body['tier'];
+      const tier = typeof requestedTier === 'string' && requestedTier in TIER ? requestedTier : 'admin';
+
+      hmzReq.session.user = {
+        userId: 'e2e-test',
+        username: 'E2E Test User',
+        displayName: 'E2E Test',
+        avatar: null,
+        roles: [],
+        tier,
+        tierLevel: TIER[tier],
+        inGuild: false,
+        lastRoleCheck: Date.now(),
+        isTestSession: true,
+      };
+      hmzReq.session.save((err: Error | null) => {
+        if (err) console.error('[AUTH] Test session save error:', err.message);
+        console.warn(`[AUTH] Test login granted tier=${tier} userId=e2e-test`);
+        res.json({ ok: true, tier, userId: 'e2e-test' });
+      });
+    });
+  }
 
   // ── Auth routes ──
   app.get('/auth/login', (_req: Request, res: Response) => {
@@ -610,5 +714,5 @@ export { setupAuth, requireTier, isEnabled, isAuthorised, resolveTier, TIER };
 export type { HmzRequest, SessionUser, DiscordClient };
 
 // Exported for testing
-const _test = { getSessionSecret, _parseCookies, getAuthConfig };
+const _test = { getSessionSecret, _parseCookies, getAuthConfig, getTestAuthToken };
 export { _test };

@@ -328,6 +328,45 @@ describe('syncEnv', () => {
     // The stray commented variant is naturally dropped since sync rewrites from the example's section order.
     assert.doesNotMatch(content, /^#FOO=old$/m);
   });
+
+  // ── PR #35 upgrade path (v7 → v9) ─────────────────────────────
+
+  it('v7 → v9 upgrade: preserves OAuth secrets, adds WEB_PANEL_TEST_AUTH_TOKEN, bumps schema version', () => {
+    const { envPath, examplePath } = setupTmp();
+    // Simulate a user who already has the web panel configured under schema v7.
+    // After PR #35 merges they pull, env-sync sees version mismatch and runs.
+    fs.writeFileSync(
+      envPath,
+      [
+        'ENV_SCHEMA_VERSION=7',
+        'DISCORD_TOKEN=bot-token-abc',
+        'DISCORD_CLIENT_ID=111111',
+        'DISCORD_GUILD_ID=222222',
+        'WEB_MAP_PORT=3000',
+        'DISCORD_OAUTH_SECRET=real-oauth-secret-xyz',
+        'WEB_MAP_CALLBACK_URL=https://hz-1.example.com/auth/callback',
+        '#WEB_MAP_TRUST_PROXY=loopback',
+        '',
+      ].join('\n'),
+    );
+    // Use the shipped .env.example so the test catches drift between the
+    // committed example and this assertion.
+    const realExample = fs.readFileSync(path.join(__dirname, '..', '.env.example'), 'utf8');
+    fs.writeFileSync(examplePath, realExample);
+
+    envSync.syncEnv();
+    const content = fs.readFileSync(envPath, 'utf8');
+
+    assert.match(content, /^ENV_SCHEMA_VERSION=9$/m);
+    assert.match(content, /^DISCORD_TOKEN=bot-token-abc$/m);
+    assert.match(content, /^DISCORD_OAUTH_SECRET=real-oauth-secret-xyz$/m);
+    assert.match(content, /^WEB_MAP_CALLBACK_URL=https:\/\/hz-1\.example\.com\/auth\/callback$/m);
+    assert.match(content, /^#WEB_MAP_TRUST_PROXY=loopback$/m);
+    assert.match(content, /^#WEB_PANEL_TEST_AUTH_TOKEN=$/m);
+    assert.match(content, /^#NODE_ENV=development$/m);
+    // Sync should be idempotent — no further resync after the upgrade
+    assert.equal(envSync.needsSync(), false);
+  });
 });
 
 // ══════════════════════════════════════════════════════════
