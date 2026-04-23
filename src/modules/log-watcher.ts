@@ -9,6 +9,7 @@ import _defaultPlayerStats, { type PlayerStats } from '../tracking/player-stats.
 import { classifyDamageSource, isNpcDamageSource } from '../tracking/damage-classifier.js';
 import { createLogger, type Logger } from '../utils/log.js';
 import { errMsg } from '../utils/error.js';
+import { logRejection } from '../utils/log-rejection.js';
 import type { HumanitZDB } from '../db/database.js';
 import type { PanelApi } from '../server/panel-api.js';
 import * as logWatcherThreads from './log-watcher-threads.js';
@@ -223,6 +224,7 @@ class LogWatcher {
   _deathCauseTracker: Map<string, DeathCauseEntry>;
   _midnightCheckInterval?: ReturnType<typeof setInterval> | null;
   _onIdMapRefresh?: ((idMap: Record<string, string>) => void) | null;
+  _polling: boolean;
 
   constructor(client: Client, deps: LogWatcherDeps = {}) {
     this._config = deps.config ?? _defaultConfig;
@@ -238,6 +240,7 @@ class LogWatcher {
     this.logChannel = null;
     this._headless = false; // true when running without a Discord channel (web-panel-only data collection)
     this.interval = null;
+    this._polling = false;
 
     // HMZLog.log state
     this.lastSize = 0;
@@ -575,14 +578,14 @@ class LogWatcher {
 
     // Start polling
     this.interval = setInterval(() => {
-      void this._poll();
+      logRejection(this._poll(), this._log, `${this._log.label}:poll`);
     }, this._config.logPollInterval);
 
     // Proactive midnight rollover check — ensures the daily summary posts
     // even if no log events happen around midnight in the configured timezone.
     if (!this._headless) {
       this._midnightCheckInterval = setInterval(() => {
-        void this._checkDayRollover();
+        logRejection(this._checkDayRollover(), this._log, `${this._log.label}:day-rollover`);
       }, 60000);
     }
 
@@ -855,6 +858,20 @@ class LogWatcher {
   }
 
   async _poll() {
+    if (this._polling) {
+      // Previous SFTP poll still running — skip this tick to avoid
+      // overlapping connections and duplicate reads on the same offset.
+      return;
+    }
+    this._polling = true;
+    try {
+      await this._pollInner();
+    } finally {
+      this._polling = false;
+    }
+  }
+
+  async _pollInner() {
     const sftp = new SftpClient();
     try {
       await sftp.connect(this._config.sftpConnectConfig());
@@ -1276,7 +1293,7 @@ class LogWatcher {
           .setDescription(`**${attackerRaw}** destroyed **${cleanBuilding}**`)
           .setColor(0x95a5a6)
           .setFooter({ text: this._formatTime(timestamp) });
-        void this._sendToThread(embed);
+        logRejection(this._sendToThread(embed), this._log, `${this._log.label}:send-thread:building-destroyed`);
       }
       return true;
     }
@@ -1297,7 +1314,7 @@ class LogWatcher {
         .setDescription(`**${playerName}** gained admin access`)
         .setColor(0x9b59b6)
         .setFooter({ text: this._formatTime(timestamp) });
-      void this._sendToThread(embed);
+      logRejection(this._sendToThread(embed), this._log, `${this._log.label}:send-thread:admin-access`);
       return true;
     }
 
@@ -1328,7 +1345,7 @@ class LogWatcher {
         .setDescription(`**${playerName}**\n\`${type}\``)
         .setColor(0xe74c3c)
         .setFooter({ text: this._formatTime(timestamp) });
-      void this._sendToThread(embed);
+      logRejection(this._sendToThread(embed), this._log, `${this._log.label}:send-thread:anticheat-alert`);
       return true;
     }
 
@@ -1347,7 +1364,7 @@ class LogWatcher {
         .setDescription(`**${playerName}**\n\`${type}\``)
         .setColor(0xe74c3c)
         .setFooter({ text: this._formatTime(timestamp) });
-      void this._sendToThread(embed);
+      logRejection(this._sendToThread(embed), this._log, `${this._log.label}:send-thread:anticheat-alert-2`);
       return true;
     }
 
@@ -1367,7 +1384,7 @@ class LogWatcher {
         .setDescription(`**${playerName}** — Warn ${current}/${max}`)
         .setColor(0xf39c12)
         .setFooter({ text: this._formatTime(timestamp) });
-      void this._sendToThread(embed);
+      logRejection(this._sendToThread(embed), this._log, `${this._log.label}:send-thread:speed-hack-warning`);
       return true;
     }
 
@@ -1394,7 +1411,7 @@ class LogWatcher {
         .setDescription(`**${playerName}** kicked for speed hacking`)
         .setColor(0xe74c3c)
         .setFooter({ text: this._formatTime(timestamp) });
-      void this._sendToThread(embed);
+      logRejection(this._sendToThread(embed), this._log, `${this._log.label}:send-thread:speed-hack-kick`);
       return true;
     }
 
@@ -1414,7 +1431,7 @@ class LogWatcher {
         .setDescription(`\`${type}\``)
         .setColor(0xe74c3c)
         .setFooter({ text: this._formatTime(timestamp) });
-      void this._sendToThread(embed);
+      logRejection(this._sendToThread(embed), this._log, `${this._log.label}:send-thread:security-kick`);
       return true;
     }
 
@@ -1466,7 +1483,7 @@ class LogWatcher {
         .setDescription(`**${name}** joined the server`)
         .setColor(0x2ecc71)
         .setFooter({ text: this._formatTime(timestamp) });
-      void this._sendToThread(embed);
+      logRejection(this._sendToThread(embed), this._log, `${this._log.label}:send-thread:player-connect`);
     } else {
       this._playerStats.recordDisconnect(name, steamId, timestamp);
       this._playtime.playerLeave(steamId, timestamp);
@@ -1483,7 +1500,7 @@ class LogWatcher {
         .setDescription(`**${name}** left the server`)
         .setColor(0x95a5a6)
         .setFooter({ text: this._formatTime(timestamp) });
-      void this._sendToThread(embed);
+      logRejection(this._sendToThread(embed), this._log, `${this._log.label}:send-thread:player-disconnect`);
     }
 
     return true;
