@@ -199,7 +199,7 @@ class SaveService extends EventEmitter {
     this._log.info(`Starting save service — mode: ${modeLabel}, poll every ${String(this._pollInterval / 1000)}s`);
     await this._poll();
     this._timer = setInterval(() => {
-      logRejection(this._poll(), this._log, 'save-service:poll');
+      logRejection(this._poll(), this._log, `${this._log.label}:poll`);
     }, this._pollInterval);
   }
 

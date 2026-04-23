@@ -353,7 +353,7 @@ class PvpScheduler {
             this._transitioning = false;
           }),
           this._log,
-          'pvp-scheduler:toggle',
+          `${this._log.label}:toggle`,
         );
         return;
       }
