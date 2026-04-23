@@ -24,6 +24,7 @@ dist/
 # AI agent work plans (local-only, per-developer)
 .sisyphus/
 .omc/
+.omx/
 
 # Auto-generated changelog JSON (README.md is the user-facing doc)
 CHANGELOG.json
