@@ -15,6 +15,12 @@ const MAX_LOGS_PER_WINDOW = 2;
 /**
  * Attach a `.catch` handler to a fire-and-forget promise.
  * Dedupes: same `ctx` logs at most MAX_LOGS_PER_WINDOW times per DEDUPE_WINDOW_MS.
+ *
+ * IMPORTANT: `ctx` is the dedupe key and must be instance-specific in
+ * multi-server deployments. Include the logger label (or another per-instance
+ * identifier) so that an error storm on one server does not suppress legitimate
+ * error reports from another — e.g. `${this._log.label}:poll` rather than
+ * `'log-watcher:poll'`.
  */
 export function logRejection(promise: Promise<unknown>, log: LogErrorFn, ctx: string): void {
   promise.catch((err: unknown) => {

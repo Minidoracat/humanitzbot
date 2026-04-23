@@ -191,7 +191,7 @@ class ActivityLog {
     // Listen for save sync events
     if (this._saveService) {
       this._syncHandler = (result: SyncResult) => {
-        logRejection(this._onSync(result), this._log, 'activity-log:on-sync');
+        logRejection(this._onSync(result), this._log, `${this._log.label}:on-sync`);
       };
       this._saveService.on('sync', this._syncHandler);
     }

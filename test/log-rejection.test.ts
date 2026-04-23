@@ -90,4 +90,24 @@ describe('logRejection', () => {
     await flushMicrotasks();
     assert.equal(calls.length, 6); // previous 3 + 2 new errors + 1 new notice
   });
+
+  it('label-scoped ctx isolates dedupe budgets across instances (multi-server)', async () => {
+    // Regression: an error storm on one server must not suppress legitimate
+    // errors from another server. Production code composes ctx as
+    // `${this._log.label}:<action>` so each server-scoped logger gets its own
+    // dedupe window.
+    const { calls, log } = makeLog();
+
+    for (let i = 0; i < 50; i++) {
+      logRejection(Promise.reject(new Error(`sa-${String(i)}`)), log, `server-a:poll`);
+    }
+    await flushMicrotasks();
+    assert.equal(calls.length, 3); // server-a: 2 errors + 1 suppressed notice
+
+    // server-b is a different instance — its own error must still be logged.
+    logRejection(Promise.reject(new Error('sb-0')), log, `server-b:poll`);
+    await flushMicrotasks();
+    assert.equal(calls.length, 4);
+    assert.match(calls[3] ?? '', /\[server-b:poll\] sb-0/);
+  });
 });

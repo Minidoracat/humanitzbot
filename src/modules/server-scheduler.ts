@@ -315,7 +315,7 @@ class ServerScheduler {
             this._transitioning = false;
           }),
           this._log,
-          'server-scheduler:restart',
+          `${this._log.label}:restart`,
         );
         return;
       }

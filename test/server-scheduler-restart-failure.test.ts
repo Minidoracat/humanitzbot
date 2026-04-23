@@ -22,6 +22,7 @@ describe('server-scheduler _transitioning reset after _executeRestart settles', 
     const stub = {
       _transitioning: true,
       _log: {
+        label: 'srv-sched-a',
         error: (..._args: unknown[]) => {
           /* noop */
         },
@@ -47,6 +48,7 @@ describe('server-scheduler _transitioning reset after _executeRestart settles', 
     const stub = {
       _transitioning: true,
       _log: {
+        label: 'srv-sched-a',
         error: (..._args: unknown[]) => {
           /* noop */
         },
@@ -68,11 +70,12 @@ describe('server-scheduler _transitioning reset after _executeRestart settles', 
     assert.equal(stub._transitioning, false);
   });
 
-  it('logs rejection reason with ctx prefix', async () => {
+  it('logs rejection with label-scoped ctx prefix (multi-server isolation)', async () => {
     const calls: string[] = [];
     const stub = {
       _transitioning: true,
       _log: {
+        label: 'srv-sched-b',
         error: (...args: unknown[]) => {
           calls.push(args.map(String).join(' '));
         },
@@ -87,12 +90,12 @@ describe('server-scheduler _transitioning reset after _executeRestart settles', 
         stub._transitioning = false;
       }),
       stub._log,
-      'server-scheduler:restart',
+      `${stub._log.label}:restart`,
     );
 
     await flushMicrotasks();
     assert.equal(stub._transitioning, false);
     assert.ok(calls.length >= 1);
-    assert.match(calls[0] ?? '', /\[server-scheduler:restart\] panel api 500/);
+    assert.match(calls[0] ?? '', /\[srv-sched-b:restart\] panel api 500/);
   });
 });
