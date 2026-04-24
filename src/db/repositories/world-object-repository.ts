@@ -8,16 +8,20 @@ export class WorldObjectRepository extends BaseRepository {
     clearStructures: Database.Statement;
     insertStructure: Database.Statement;
     getStructures: Database.Statement;
+    getPositionedStructures: Database.Statement;
     getStructuresByOwner: Database.Statement;
     countStructuresByOwner: Database.Statement;
+    findStructureByName: Database.Statement;
     // Vehicles
     clearVehicles: Database.Statement;
     insertVehicle: Database.Statement;
     getAllVehicles: Database.Statement;
+    getPositionedVehicles: Database.Statement;
     // Companions
     clearCompanions: Database.Statement;
     insertCompanion: Database.Statement;
     getAllCompanions: Database.Statement;
+    getPositionedCompanions: Database.Statement;
     // World horses
     clearWorldHorses: Database.Statement;
     insertWorldHorse: Database.Statement;
@@ -25,11 +29,14 @@ export class WorldObjectRepository extends BaseRepository {
     // Dead bodies
     clearDeadBodies: Database.Statement;
     insertDeadBody: Database.Statement;
+    getPositionedDeadBodies: Database.Statement;
     // Containers
     clearContainers: Database.Statement;
     insertContainer: Database.Statement;
     getAllContainers: Database.Statement;
     getContainersWithItems: Database.Statement;
+    getPositionedContainers: Database.Statement;
+    findContainerByName: Database.Statement;
     // Loot actors
     clearLootActors: Database.Statement;
     insertLootActor: Database.Statement;
@@ -51,9 +58,15 @@ export class WorldObjectRepository extends BaseRepository {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
       `),
       getStructures: this._handle.prepare('SELECT * FROM structures ORDER BY actor_class'),
+      getPositionedStructures: this._handle.prepare(
+        'SELECT id, display_name, actor_class, owner_steam_id, pos_x, pos_y, pos_z, current_health, max_health, upgrade_level, inventory FROM structures WHERE pos_x IS NOT NULL',
+      ),
       getStructuresByOwner: this._handle.prepare('SELECT * FROM structures WHERE owner_steam_id = ?'),
       countStructuresByOwner: this._handle.prepare(
         'SELECT owner_steam_id, COUNT(*) as count FROM structures GROUP BY owner_steam_id ORDER BY count DESC',
+      ),
+      findStructureByName: this._handle.prepare(
+        'SELECT * FROM structures WHERE display_name LIKE ? OR actor_class LIKE ? LIMIT 1',
       ),
 
       // Vehicles
@@ -63,6 +76,9 @@ export class WorldObjectRepository extends BaseRepository {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
       `),
       getAllVehicles: this._handle.prepare('SELECT * FROM vehicles'),
+      getPositionedVehicles: this._handle.prepare(
+        'SELECT id, display_name, class, pos_x, pos_y, pos_z, health, max_health, fuel FROM vehicles WHERE pos_x IS NOT NULL',
+      ),
 
       // Companions
       clearCompanions: this._handle.prepare('DELETE FROM companions'),
@@ -71,6 +87,9 @@ export class WorldObjectRepository extends BaseRepository {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
       `),
       getAllCompanions: this._handle.prepare('SELECT * FROM companions'),
+      getPositionedCompanions: this._handle.prepare(
+        'SELECT id, type, actor_name, owner_steam_id, pos_x, pos_y, pos_z, health, extra FROM companions WHERE pos_x IS NOT NULL',
+      ),
 
       // World horses
       clearWorldHorses: this._handle.prepare('DELETE FROM world_horses'),
@@ -85,6 +104,9 @@ export class WorldObjectRepository extends BaseRepository {
       insertDeadBody: this._handle.prepare(
         "INSERT OR REPLACE INTO dead_bodies (actor_name, pos_x, pos_y, pos_z, updated_at) VALUES (?, ?, ?, ?, datetime('now'))",
       ),
+      getPositionedDeadBodies: this._handle.prepare(
+        'SELECT actor_name, pos_x, pos_y, pos_z FROM dead_bodies WHERE pos_x IS NOT NULL',
+      ),
 
       // Containers
       clearContainers: this._handle.prepare('DELETE FROM containers'),
@@ -94,6 +116,10 @@ export class WorldObjectRepository extends BaseRepository {
       `),
       getAllContainers: this._handle.prepare('SELECT * FROM containers ORDER BY actor_name'),
       getContainersWithItems: this._handle.prepare("SELECT * FROM containers WHERE items != '[]' ORDER BY actor_name"),
+      getPositionedContainers: this._handle.prepare(
+        'SELECT actor_name, pos_x, pos_y, pos_z, items, locked FROM containers WHERE pos_x IS NOT NULL AND pos_x != 0',
+      ),
+      findContainerByName: this._handle.prepare('SELECT * FROM containers WHERE actor_name LIKE ? LIMIT 1'),
 
       // Loot actors
       clearLootActors: this._handle.prepare('DELETE FROM loot_actors'),
@@ -148,12 +174,21 @@ export class WorldObjectRepository extends BaseRepository {
     return this._stmts.getStructures.all();
   }
 
+  getPositionedStructures() {
+    return this._stmts.getPositionedStructures.all();
+  }
+
   getStructuresByOwner(steamId: string) {
     return this._stmts.getStructuresByOwner.all(steamId);
   }
 
   getStructureCounts() {
     return this._stmts.countStructuresByOwner.all();
+  }
+
+  findStructureByName(name: string) {
+    const pattern = `%${name}%`;
+    return this._stmts.findStructureByName.get(pattern, pattern);
   }
 
   // ── Vehicles ─────────────────────────────────────────────────────────────────
@@ -187,6 +222,10 @@ export class WorldObjectRepository extends BaseRepository {
     return this._stmts.getAllVehicles.all();
   }
 
+  getPositionedVehicles() {
+    return this._stmts.getPositionedVehicles.all();
+  }
+
   // ── Companions ───────────────────────────────────────────────────────────────
 
   replaceCompanions(companions: Array<Record<string, unknown>>): void {
@@ -213,6 +252,10 @@ export class WorldObjectRepository extends BaseRepository {
 
   getAllCompanions() {
     return this._stmts.getAllCompanions.all();
+  }
+
+  getPositionedCompanions() {
+    return this._stmts.getPositionedCompanions.all();
   }
 
   // ── World horses ─────────────────────────────────────────────────────────────
@@ -265,6 +308,10 @@ export class WorldObjectRepository extends BaseRepository {
     }
   }
 
+  getPositionedDeadBodies() {
+    return this._stmts.getPositionedDeadBodies.all();
+  }
+
   // ── Containers ────────────────────────────────────────────────────────────────
 
   replaceContainers(containers: Array<Record<string, unknown>>): void {
@@ -303,6 +350,14 @@ export class WorldObjectRepository extends BaseRepository {
 
   getContainersWithItems() {
     return this._stmts.getContainersWithItems.all();
+  }
+
+  getPositionedContainers() {
+    return this._stmts.getPositionedContainers.all();
+  }
+
+  findContainerByName(name: string) {
+    return this._stmts.findContainerByName.get(`%${name}%`);
   }
 
   // ── Loot actors ───────────────────────────────────────────────────────────────

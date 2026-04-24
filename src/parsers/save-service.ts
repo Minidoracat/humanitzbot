@@ -247,29 +247,7 @@ class SaveService extends EventEmitter {
   _repairSteamIdNames(): void {
     if (Object.keys(this._idMap).length === 0) return;
     try {
-      const rawDb = (this._db._db ?? this._db) as unknown as Record<string, unknown>; // SAFETY: raw DB handle access for _repairSteamIdNames
-      if (typeof rawDb['prepare'] !== 'function') return;
-      const prepare = rawDb['prepare'] as (sql: string) => {
-        all: () => Array<{ actor: string }>;
-        run: (name: string, actor: string) => { changes: number };
-      };
-
-      const rows = prepare(
-        `SELECT DISTINCT actor FROM activity_log
-         WHERE actor_name = actor AND actor GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'`,
-      ).all();
-
-      let fixed = 0;
-      const stmt = prepare('UPDATE activity_log SET actor_name = ? WHERE actor = ? AND actor_name = actor');
-
-      for (const row of rows) {
-        const name = this._idMap[row.actor];
-        if (name) {
-          const info = stmt.run(name, row.actor);
-          fixed += info.changes;
-        }
-      }
-
+      const fixed = this._db.activityLog.repairActorNames(this._idMap);
       if (fixed > 0) {
         this._log.info(`Repaired ${String(fixed)} activity_log row(s) with resolved player names`);
       }
