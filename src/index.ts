@@ -474,6 +474,7 @@ client.once(Events.ClientReady, (readyClient) => {
 
     config.hydrate(configRepo);
     config.loadDisplayOverrides(db); // Legacy no-op — kept for backward compat
+    panelApi.invalidateConfig();
 
     console.log('[BOT] SQLite database initialised');
 

@@ -90,6 +90,12 @@ function makeMockDb(overrides: Record<string, unknown> = {}) {
   const tlOvr = (overrides.timeline || {}) as Record<string, unknown>;
   const dcOvr = (overrides.deathCause || {}) as Record<string, unknown>;
   merged.clan = { getAllClans: merged.getAllClans, ...clanOvr };
+  merged.player = {
+    countAllPlayers: () => 0,
+    listAllPlayerNames: () => [],
+    listNamedPlayers: () => [],
+    ...((overrides.player || {}) as Record<string, unknown>),
+  };
   merged.activityLog = {
     getRecentActivity: merged.getRecentActivity,
     getActivityByCategory: merged.getActivityByCategory,
@@ -117,6 +123,19 @@ function makeMockDb(overrides: Record<string, unknown> = {}) {
     getDeathCausesByPlayer: merged.getDeathCausesByPlayer,
     getDeathCauseStats: merged.getDeathCauseStats,
     ...dcOvr,
+  };
+  merged.rawQuery = (sql: string, params: unknown[] = [], opts: { mode?: string } = {}) => {
+    type MockStatement = {
+      all?: (...args: unknown[]) => unknown;
+      get?: (...args: unknown[]) => unknown;
+      run?: (...args: unknown[]) => unknown;
+    };
+    const db = merged.db as { prepare?: (query: string) => MockStatement } | undefined;
+    const stmt = db?.prepare?.(sql);
+    if (!stmt) return opts.mode === 'get' ? undefined : [];
+    if (opts.mode === 'run') return stmt.run?.(...params);
+    if (opts.mode === 'get') return stmt.get?.(...params);
+    return stmt.all?.(...params) ?? [];
   };
   return merged;
 }

@@ -506,16 +506,12 @@ Available commands:
       this._print('No database available.');
       return;
     }
-    const raw = this._db.db;
-    if (!raw) {
-      this._print('Raw DB handle not available.');
-      return;
-    }
-
     try {
-      const tables = raw
-        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
-        .all() as DbRow[];
+      const tables = this._db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        [],
+        { ctx: 'stdin-console:stats' },
+      ) as DbRow[];
       this._print(`Database statistics (${tables.length} tables):`);
       this._print(`${'Table'.padEnd(35)} ${'Rows'.padStart(10)}`);
       this._print('-'.repeat(46));
@@ -523,9 +519,10 @@ Available commands:
       let totalRows = 0;
       for (const tbl of tables) {
         try {
-          const row = raw.prepare(`SELECT COUNT(*) as count FROM "${String(tbl.name)}"`).get() as
-            | { count: number }
-            | undefined;
+          const row = this._db.rawQuery(`SELECT COUNT(*) as count FROM "${String(tbl.name)}"`, [], {
+            ctx: 'stdin-console:count',
+            mode: 'get',
+          }) as { count: number } | undefined;
           const count = row?.count ?? 0;
           totalRows += count;
           this._print(`${String(tbl.name).padEnd(35)} ${String(count).padStart(10)}`);
@@ -545,16 +542,12 @@ Available commands:
       this._print('No database available.');
       return;
     }
-    const raw = this._db.db;
-    if (!raw) {
-      this._print('Raw DB handle not available.');
-      return;
-    }
-
     try {
-      const tables = raw
-        .prepare("SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
-        .all() as DbRow[];
+      const tables = this._db.rawQuery(
+        "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        [],
+        { ctx: 'stdin-console:list-tables' },
+      ) as DbRow[];
       this._print(`Tables (${tables.length}):`);
       for (const tbl of tables) {
         this._print(`  ${String(tbl.name)}`);
@@ -569,12 +562,6 @@ Available commands:
       this._print('No database available.');
       return;
     }
-    const dbHandle = this._db.db;
-    if (!dbHandle) {
-      this._print('Raw DB handle not available.');
-      return;
-    }
-
     // Extract everything after "sql "
     const query = rawInput.slice(4).trim();
     if (!query) {
@@ -596,7 +583,7 @@ Available commands:
 
     try {
       if (isRead) {
-        const rows = dbHandle.prepare(query).all() as DbRow[];
+        const rows = this._db.rawQuery(query, [], { ctx: 'stdin-console:select' }) as DbRow[];
         if (rows.length === 0) {
           this._print('(no rows)');
           return;
@@ -625,7 +612,7 @@ Available commands:
         if (rows.length > 100) this._print(`... (${rows.length - 100} more rows)`);
         this._print(`(${rows.length} row${rows.length !== 1 ? 's' : ''})`);
       } else {
-        const result = dbHandle.prepare(query).run();
+        const result = this._db.rawQuery(query, [], { ctx: 'stdin-console:mutation', mode: 'run', mutation: true });
         this._print(`OK — ${String(result.changes)} row(s) affected.`);
       }
     } catch (err: unknown) {

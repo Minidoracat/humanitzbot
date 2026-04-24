@@ -72,6 +72,8 @@ export class AntiCheatRepository extends BaseRepository {
     getAcFlagsByDetector: Database.Statement;
     getAcFlagsSince: Database.Statement;
     getAcFlagCount: Database.Statement;
+    countAcFlagsByStatus: Database.Statement;
+    countAllAcFlags: Database.Statement;
     updateAcFlagStatus: Database.Statement;
     escalateAcFlag: Database.Statement;
     // Risk scores
@@ -108,6 +110,8 @@ export class AntiCheatRepository extends BaseRepository {
       getAcFlagCount: this._handle.prepare(
         'SELECT COUNT(*) as count FROM anticheat_flags WHERE steam_id = ? AND severity IN (?, ?) AND status = ? AND created_at >= ?',
       ),
+      countAcFlagsByStatus: this._handle.prepare('SELECT COUNT(*) as count FROM anticheat_flags WHERE status = ?'),
+      countAllAcFlags: this._handle.prepare('SELECT COUNT(*) as count FROM anticheat_flags'),
       updateAcFlagStatus: this._handle.prepare(
         "UPDATE anticheat_flags SET status = ?, reviewed_by = ?, reviewed_at = datetime('now'), review_notes = ? WHERE id = ?",
       ),
@@ -200,6 +204,16 @@ export class AntiCheatRepository extends BaseRepository {
   getAcFlagCount(steamId: string, sev1: string, sev2: string, status: string, since: string) {
     const row = this._stmts.getAcFlagCount.get(steamId, sev1, sev2, status, since) as DbRow | undefined;
     return row?.count ?? 0;
+  }
+
+  countAcFlagsByStatus(status: string): number {
+    const row = this._stmts.countAcFlagsByStatus.get(status) as DbRow | undefined;
+    return (row?.count as number | undefined) ?? 0;
+  }
+
+  countAllAcFlags(): number {
+    const row = this._stmts.countAllAcFlags.get() as DbRow | undefined;
+    return (row?.count as number | undefined) ?? 0;
   }
 
   /** Update a flag's review status. */

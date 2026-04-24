@@ -2,11 +2,23 @@ import type Database from 'better-sqlite3';
 import { BaseRepository } from './base-repository.js';
 import { _json } from './db-utils.js';
 
+const FIND_BY_NAME_TABLES = new Map<string, string>([
+  ['game_items', 'game_items'],
+  ['game_buildings', 'game_buildings'],
+  ['game_vehicles_ref', 'game_vehicles_ref'],
+  ['game_animals', 'game_animals'],
+  ['game_recipes', 'game_recipes'],
+  ['game_afflictions', 'game_afflictions'],
+  ['game_skills', 'game_skills'],
+]);
+
 export class GameDataRepository extends BaseRepository {
   declare private _stmts: {
     upsertGameItem: Database.Statement;
     getGameItem: Database.Statement;
     searchGameItems: Database.Statement;
+    countSeededItems: Database.Statement;
+    findByNameByTable: Map<string, Database.Statement>;
   };
 
   protected _prepareStatements(): void {
@@ -24,6 +36,13 @@ export class GameDataRepository extends BaseRepository {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
       getGameItem: this._handle.prepare('SELECT * FROM game_items WHERE id = ?'),
       searchGameItems: this._handle.prepare('SELECT * FROM game_items WHERE name LIKE ? OR id LIKE ? LIMIT 20'),
+      countSeededItems: this._handle.prepare('SELECT COUNT(*) as count FROM game_items'),
+      findByNameByTable: new Map(
+        Array.from(FIND_BY_NAME_TABLES.entries(), ([table, safeTable]) => [
+          table,
+          this._handle.prepare(`SELECT * FROM ${safeTable} WHERE name LIKE ? LIMIT 1`),
+        ]),
+      ),
     };
   }
 
@@ -165,6 +184,17 @@ export class GameDataRepository extends BaseRepository {
 
   getRandomTip() {
     return this._handle.prepare('SELECT text FROM game_loading_tips ORDER BY RANDOM() LIMIT 1').get();
+  }
+
+  countSeededItems(): number {
+    const row = this._stmts.countSeededItems.get() as { count?: number } | undefined;
+    return row?.count ?? 0;
+  }
+
+  findByName(table: string, name: string) {
+    const stmt = this._stmts.findByNameByTable.get(table);
+    if (!stmt) throw new Error(`Unsupported game-data lookup table: ${table}`);
+    return stmt.get(`%${name}%`);
   }
 
   // ─── New game reference seed methods (schema v11) ─────────────────────────

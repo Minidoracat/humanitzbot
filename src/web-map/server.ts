@@ -737,10 +737,7 @@ class WebMapServer {
     // Fall back to DB player names if file was empty/missing
     if (Object.keys(map).length === 0 && db) {
       try {
-        const rows = (db._db?.prepare("SELECT steam_id, name FROM players WHERE name != ''").all() ?? []) as {
-          steam_id: string;
-          name: string;
-        }[];
+        const rows = db.player.listNamedPlayers();
         for (const row of rows) {
           if (row.steam_id && row.name) map[row.steam_id] = row.name;
         }
@@ -1722,18 +1719,10 @@ class WebMapServer {
       if (!srv.db) return res.json({ categories: {}, hourly: [], daily: [], types: {} });
 
       try {
-        const db = srv.db.db;
-        if (!db) return res.json({ categories: {}, hourly: [], daily: [], types: {} });
-
-        // Total count
-        const totalRow = db.prepare('SELECT COUNT(*) as total FROM activity_log').get() as
-          | { total: number }
-          | undefined;
+        const total = srv.db.activityLog.getActivityCount();
 
         // Count by type
-        const typeCounts = db
-          .prepare('SELECT type, COUNT(*) as count FROM activity_log GROUP BY type ORDER BY count DESC')
-          .all() as { type: string; count: number }[];
+        const typeCounts = srv.db.activityLog.countByType() as { type: string; count: number }[];
         const types: Record<string, number> = {};
         for (const r of typeCounts) types[r.type] = r.count;
 
@@ -1769,52 +1758,16 @@ class WebMapServer {
         }
 
         // Hourly distribution (last 7 days)
-        const hourly = db
-          .prepare(
-            `
-          SELECT CAST(strftime('%H', created_at) AS INTEGER) as hour, COUNT(*) as count
-          FROM activity_log
-          WHERE created_at >= datetime('now', '-7 days')
-          GROUP BY hour ORDER BY hour
-        `,
-          )
-          .all() as { hour: number; count: number }[];
+        const hourly = srv.db.activityLog.hourlyDistribution(7) as { hour: number; count: number }[];
 
         // Daily totals (last 30 days)
-        const daily = db
-          .prepare(
-            `
-          SELECT date(created_at) as day, COUNT(*) as count
-          FROM activity_log
-          WHERE created_at >= datetime('now', '-30 days')
-          GROUP BY day ORDER BY day
-        `,
-          )
-          .all() as { day: string; count: number }[];
+        const daily = srv.db.activityLog.dailyCount(30) as { day: string; count: number }[];
 
         // Daily by category (last 14 days, for stacked chart)
-        const dailyByType = db
-          .prepare(
-            `
-          SELECT date(created_at) as day, type, COUNT(*) as count
-          FROM activity_log
-          WHERE created_at >= datetime('now', '-14 days')
-          GROUP BY day, type ORDER BY day
-        `,
-          )
-          .all() as { day: string; type: string; count: number }[];
+        const dailyByType = srv.db.activityLog.dailyByType(14) as { day: string; type: string; count: number }[];
 
         // Top actors (last 7 days)
-        const topActors = db
-          .prepare(
-            `
-          SELECT COALESCE(actor_name, actor, steam_id) as actor, COUNT(*) as count
-          FROM activity_log
-          WHERE created_at >= datetime('now', '-7 days') AND actor IS NOT NULL AND actor != ''
-          GROUP BY actor ORDER BY count DESC LIMIT 10
-        `,
-          )
-          .all() as { actor: string; count: number }[];
+        const topActors = srv.db.activityLog.topActors(7, 10) as { actor: string; count: number }[];
 
         // Resolve actor names
         const idMap = srv.idMap;
@@ -1823,12 +1776,10 @@ class WebMapServer {
         }
 
         // Date range
-        const range = db
-          .prepare('SELECT MIN(created_at) as earliest, MAX(created_at) as latest FROM activity_log')
-          .get() as { earliest: string | null; latest: string | null } | undefined;
+        const range = srv.db.activityLog.dateRange();
 
         res.json({
-          total: totalRow?.total || 0,
+          total,
           types,
           categories,
           hourly,
@@ -1895,23 +1846,26 @@ class WebMapServer {
       ]);
 
       try {
-        const db = srv.db.db;
-        if (!db) return res.json({ tables: [] });
-        const allTables = db
-          .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
-          .all() as Array<{ name: string }>;
+        const allTables = srv.db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+          [],
+          { ctx: 'admin:list-tables' },
+        ) as Array<{ name: string }>;
         const tables = [];
 
         for (const t of allTables) {
           if (!ALLOWED.has(t.name)) continue;
           try {
-            const row = db.prepare(`SELECT COUNT(*) as c FROM "${t.name}"`).get() as { c: number } | undefined;
-            const cols = db.prepare(`PRAGMA table_info("${t.name}")`).all() as {
+            const row = srv.db.rawQuery(`SELECT COUNT(*) as c FROM "${t.name}"`, [], {
+              ctx: 'admin:table-count',
+              mode: 'get',
+            }) as { c: number } | undefined;
+            const cols = srv.db.rawQuery(`PRAGMA table_info("${t.name}")`, [], { ctx: 'admin:table-info' }) as Array<{
               name: string;
               type: string;
               pk: number;
               notnull: number;
-            }[];
+            }>;
             tables.push({
               name: t.name,
               rowCount: row?.c || 0,
@@ -1967,18 +1921,13 @@ class WebMapServer {
       const limit = Math.min(parseInt(String(body.limit ?? '200'), 10) || 200, 1000);
 
       try {
-        const db = srv.db.db;
-        if (!db) {
-          sendErrorWithData(res, API_ERRORS.NO_DATABASE, { rows: [], columns: [] });
-          return;
-        }
         // Wrap in a limited query if no LIMIT clause
         let query = sql;
         if (!/\bLIMIT\b/i.test(sql)) {
           query = sql.replace(/;?\s*$/, '') + ' LIMIT ' + String(limit);
         }
 
-        const rows = db.prepare(query).all() as Record<string, unknown>[];
+        const rows = srv.db.rawQuery(query, [], { ctx: 'admin:run-query' });
         const columns = rows.length > 0 ? Object.keys(rows[0] ?? {}) : [];
 
         res.json({ rows, columns, count: rows.length });
@@ -2010,15 +1959,8 @@ class WebMapServer {
       const result: Record<string, unknown> = {};
 
       try {
-        const sdb = srv.db.db;
-        if (!sdb) return res.json({ structures: [], vehicles: [], containers: [], companions: [], deadBodies: [] });
-
         if (showAll || layers.includes('structures')) {
-          const rows = sdb
-            .prepare(
-              'SELECT id, display_name, actor_class, owner_steam_id, pos_x, pos_y, pos_z, current_health, max_health, upgrade_level, inventory FROM structures WHERE pos_x IS NOT NULL',
-            )
-            .all() as StructureRow[];
+          const rows = srv.db.worldObject.getPositionedStructures() as StructureRow[];
           result.structures = rows.map((r: StructureRow) => {
             const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
             let itemCount = 0;
@@ -2041,11 +1983,7 @@ class WebMapServer {
         }
 
         if (showAll || layers.includes('vehicles')) {
-          const rows = sdb
-            .prepare(
-              'SELECT id, display_name, class, pos_x, pos_y, pos_z, health, max_health, fuel FROM vehicles WHERE pos_x IS NOT NULL',
-            )
-            .all() as VehicleRow[];
+          const rows = srv.db.worldObject.getPositionedVehicles() as VehicleRow[];
           result.vehicles = rows.map((r: VehicleRow) => {
             const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
             return {
@@ -2061,11 +1999,7 @@ class WebMapServer {
         }
 
         if (showAll || layers.includes('containers')) {
-          const rows = sdb
-            .prepare(
-              'SELECT actor_name, pos_x, pos_y, pos_z, items, locked FROM containers WHERE pos_x IS NOT NULL AND pos_x != 0',
-            )
-            .all() as ContainerRow[];
+          const rows = srv.db.worldObject.getPositionedContainers() as ContainerRow[];
           result.containers = rows.map((r: ContainerRow) => {
             const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
             let itemCount = 0;
@@ -2085,11 +2019,7 @@ class WebMapServer {
         }
 
         if (showAll || layers.includes('companions')) {
-          const rows = sdb
-            .prepare(
-              'SELECT id, type, actor_name, owner_steam_id, pos_x, pos_y, pos_z, health, extra FROM companions WHERE pos_x IS NOT NULL',
-            )
-            .all() as CompanionRow[];
+          const rows = srv.db.worldObject.getPositionedCompanions() as CompanionRow[];
           result.companions = rows.map((r: CompanionRow) => {
             const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
             return { id: r.id, type: r.type, owner: r.owner_steam_id, lat, lng, health: r.health };
@@ -2097,9 +2027,7 @@ class WebMapServer {
         }
 
         if (showAll || layers.includes('deadBodies')) {
-          const rows = sdb
-            .prepare('SELECT actor_name, pos_x, pos_y, pos_z FROM dead_bodies WHERE pos_x IS NOT NULL')
-            .all() as DeadBodyRow[];
+          const rows = srv.db.worldObject.getPositionedDeadBodies() as DeadBodyRow[];
           result.deadBodies = rows.map((r: DeadBodyRow) => {
             const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
             return { name: r.actor_name, lat, lng };
@@ -2111,15 +2039,9 @@ class WebMapServer {
           showAll || layers.includes('zombies') || layers.includes('animals') || layers.includes('bandits');
         if (wantAI) {
           try {
-            const latestSnap = sdb
-              .prepare('SELECT id FROM timeline_snapshots ORDER BY created_at DESC LIMIT 1')
-              .get() as { id: number } | undefined;
-            if (latestSnap) {
-              const aiRows = sdb
-                .prepare(
-                  'SELECT ai_type, category, display_name, pos_x, pos_y FROM timeline_ai WHERE snapshot_id = ? AND pos_x IS NOT NULL',
-                )
-                .all(latestSnap.id) as Array<{
+            const latestSnapId = srv.db.timeline.getLatestTimelineSnapshotId();
+            if (latestSnapId) {
+              const aiRows = srv.db.timeline.getTimelineAIForMap(latestSnapId) as Array<{
                 ai_type: string;
                 category: string;
                 display_name: string;
@@ -2148,10 +2070,7 @@ class WebMapServer {
 
         // Build steam_id → name lookup for owner resolution
         const nameMap: Record<string, string> = {};
-        const nameRows = sdb.prepare('SELECT steam_id, name FROM players').all() as {
-          steam_id: string;
-          name: string;
-        }[];
+        const nameRows = srv.db.player.listAllPlayerNames();
         for (const nr of nameRows) nameMap[nr.steam_id] = nr.name;
         result.nameMap = nameMap;
 
@@ -2447,28 +2366,26 @@ class WebMapServer {
       const name = decodeURIComponent((req.params.name as string) || '');
       if (!name) return res.json({ found: false });
 
-      const db = srv.db.db;
-      if (!db) return res.json({ found: false });
       const result: Record<string, unknown> = { found: false, type, name, data: {} };
 
       try {
         // Route by type to appropriate reference/world table
         if (type === 'item') {
-          const row = db.prepare('SELECT * FROM game_items WHERE name LIKE ? LIMIT 1').get(`%${name}%`);
+          const row = srv.db.gameData.findByName('game_items', name);
           if (row) {
             result.found = true;
             result.data = row;
             result.refTable = 'game_items';
           }
         } else if (type === 'structure' || type === 'building') {
-          const row = db.prepare('SELECT * FROM game_buildings WHERE name LIKE ? LIMIT 1').get(`%${name}%`);
+          const row = srv.db.gameData.findByName('game_buildings', name);
           if (row) {
             result.found = true;
             result.data = row;
             result.refTable = 'game_buildings';
           }
           if (!result.found) {
-            const wRow = db.prepare('SELECT * FROM structures WHERE type LIKE ? LIMIT 1').get(`%${name}%`);
+            const wRow = srv.db.worldObject.findStructureByName(name);
             if (wRow) {
               result.found = true;
               result.data = wRow;
@@ -2476,42 +2393,42 @@ class WebMapServer {
             }
           }
         } else if (type === 'vehicle') {
-          const row = db.prepare('SELECT * FROM game_vehicles_ref WHERE name LIKE ? LIMIT 1').get(`%${name}%`);
+          const row = srv.db.gameData.findByName('game_vehicles_ref', name);
           if (row) {
             result.found = true;
             result.data = row;
             result.refTable = 'game_vehicles_ref';
           }
         } else if (type === 'animal') {
-          const row = db.prepare('SELECT * FROM game_animals WHERE name LIKE ? LIMIT 1').get(`%${name}%`);
+          const row = srv.db.gameData.findByName('game_animals', name);
           if (row) {
             result.found = true;
             result.data = row;
             result.refTable = 'game_animals';
           }
         } else if (type === 'recipe') {
-          const row = db.prepare('SELECT * FROM game_recipes WHERE name LIKE ? LIMIT 1').get(`%${name}%`);
+          const row = srv.db.gameData.findByName('game_recipes', name);
           if (row) {
             result.found = true;
             result.data = row;
             result.refTable = 'game_recipes';
           }
         } else if (type === 'affliction') {
-          const row = db.prepare('SELECT * FROM game_afflictions WHERE name LIKE ? LIMIT 1').get(`%${name}%`);
+          const row = srv.db.gameData.findByName('game_afflictions', name);
           if (row) {
             result.found = true;
             result.data = row;
             result.refTable = 'game_afflictions';
           }
         } else if (type === 'skill') {
-          const row = db.prepare('SELECT * FROM game_skills WHERE name LIKE ? LIMIT 1').get(`%${name}%`);
+          const row = srv.db.gameData.findByName('game_skills', name);
           if (row) {
             result.found = true;
             result.data = row;
             result.refTable = 'game_skills';
           }
         } else if (type === 'container') {
-          const row = db.prepare('SELECT * FROM containers WHERE type LIKE ? LIMIT 1').get(`%${name}%`);
+          const row = srv.db.worldObject.findContainerByName(name);
           if (row) {
             result.found = true;
             result.data = row;
@@ -2521,7 +2438,7 @@ class WebMapServer {
 
         // Fallback: try game_items for anything not found
         if (!result.found) {
-          const fallback = db.prepare('SELECT * FROM game_items WHERE name LIKE ? LIMIT 1').get(`%${name}%`);
+          const fallback = srv.db.gameData.findByName('game_items', name);
           if (fallback) {
             result.found = true;
             result.data = fallback;
@@ -2530,10 +2447,7 @@ class WebMapServer {
         }
 
         // Count activity log references
-        const actCount = db
-          .prepare('SELECT COUNT(*) as c FROM activity_log WHERE details LIKE ? OR item LIKE ?')
-          .get(`%${name}%`, `%${name}%`);
-        result.activityCount = (actCount as Record<string, unknown>).c || 0;
+        result.activityCount = srv.db.activityLog.countByTextSearch(`%${name}%`);
 
         res.json(result);
       } catch (err: unknown) {
@@ -2615,11 +2529,10 @@ class WebMapServer {
       }
 
       try {
-        const db = srv.db.db;
-        if (!db) return res.json({ rows: [], columns: [] });
-
         // Get column names
-        const pragma = db.prepare(`PRAGMA table_info("${table}")`).all() as { name: string; type: string }[];
+        const pragma = srv.db.rawQuery(`PRAGMA table_info("${table}")`, [], {
+          ctx: 'admin:pragma',
+        }) as Array<{ name: string; type: string }>;
         const columns = pragma.map((c) => c.name);
 
         // Build query with optional search
@@ -2646,11 +2559,11 @@ class WebMapServer {
         query += ` LIMIT ?`;
         params.push(limit);
 
-        const rows = db.prepare(query).all(...params);
+        const rows = srv.db.rawQuery(query, params, { ctx: 'admin:run-query-params' }) as DbRow[];
 
         // Resolve steam IDs in player-related tables
         if (columns.includes('steam_id') || columns.includes('owner_steam_id')) {
-          for (const row of rows as DbRow[]) {
+          for (const row of rows) {
             const sid = (row.steam_id || row.owner_steam_id) as string;
             if (sid && srv.idMap[sid] && !row.name && !row.actor_name && !row.player_name) {
               row._resolved_name = srv.idMap[sid];
@@ -3963,10 +3876,7 @@ class WebMapServer {
         // Resolve player names from players table
         const nameMap: Record<string, string> = {};
         try {
-          const rows = (srv.db.db?.prepare('SELECT steam_id, name FROM players').all() ?? []) as {
-            steam_id: string;
-            name: string;
-          }[];
+          const rows = srv.db.player.listAllPlayerNames();
           for (const r of rows) nameMap[r.steam_id] = r.name;
         } catch {
           /* */
@@ -4030,16 +3940,9 @@ class WebMapServer {
         const srv = req.srv;
         const countByStatus = (s: string | null) => {
           try {
-            if (!srv.db?.db) return 0;
-            if (s)
-              return (
-                srv.db.db.prepare('SELECT COUNT(*) as count FROM anticheat_flags WHERE status = ?').get(s) as Record<
-                  string,
-                  unknown
-                >
-              ).count;
-            return (srv.db.db.prepare('SELECT COUNT(*) as count FROM anticheat_flags').get() as Record<string, unknown>)
-              .count;
+            if (!srv.db) return 0;
+            if (s) return srv.db.antiCheat.countAcFlagsByStatus(s);
+            return srv.db.antiCheat.countAllAcFlags();
           } catch {
             return 0;
           }
@@ -4992,13 +4895,10 @@ class WebMapServer {
         full.backpacks = (full.backpacks as Record<string, unknown>[]).map(convert);
 
         // Build name map for owner resolution
-        const nameMap = {};
+        const nameMap: Record<string, string> = {};
         try {
-          const rows = (req.srv.db.db?.prepare('SELECT steam_id, name FROM players').all() ?? []) as Record<
-            string,
-            unknown
-          >[];
-          for (const r of rows) (nameMap as Record<string, string>)[r.steam_id as string] = r.name as string;
+          const rows = req.srv.db.player.listAllPlayerNames();
+          for (const r of rows) nameMap[r.steam_id] = r.name;
         } catch {
           /* */
         }
@@ -5244,14 +5144,14 @@ class WebMapServer {
       // DB/file enrichment (fast, no RCON)
       if (srv?.db) {
         try {
-          const cnt = srv.db.db?.prepare('SELECT COUNT(*) as cnt FROM players').get() as { cnt: number } | undefined;
-          if (cnt?.cnt) serverInfo.totalPlayers = cnt.cnt;
+          const cnt = srv.db.player.countAllPlayers();
+          if (cnt) serverInfo.totalPlayers = cnt;
           if (!serverInfo.maxPlayers) {
-            const settingsRow = srv.db.db
-              ?.prepare("SELECT value FROM bot_state WHERE key = 'server_settings'")
-              .get() as { value: string } | undefined;
-            if (settingsRow?.value) {
-              const settings = JSON.parse(settingsRow.value) as Record<string, string | undefined>;
+            const settings = srv.db.botState.getStateJSON('server_settings', null) as Record<
+              string,
+              string | undefined
+            > | null;
+            if (settings) {
               if (settings.MaxPlayers) serverInfo.maxPlayers = parseInt(settings.MaxPlayers, 10) || null;
               if (settings.DaysPerSeason) serverInfo.daysPerSeason = parseInt(settings.DaysPerSeason, 10) || 28;
             }
@@ -5297,13 +5197,11 @@ class WebMapServer {
       }
       if (srv?.db) {
         try {
-          const settingsRow = srv.db.db?.prepare("SELECT value FROM bot_state WHERE key = 'server_settings'").get() as
-            | DbRow
-            | undefined;
-          if (settingsRow?.value)
-            serverInfo.settings = _extractLandingSettings(
-              JSON.parse(settingsRow.value as string) as Record<string, string | undefined>,
-            );
+          const settings = srv.db.botState.getStateJSON('server_settings', null) as Record<
+            string,
+            string | undefined
+          > | null;
+          if (settings) serverInfo.settings = _extractLandingSettings(settings);
         } catch {
           /* non-critical */
         }
@@ -5353,8 +5251,8 @@ class WebMapServer {
     // Non-RCON enrichment for primary (fast)
     if (this._db) {
       try {
-        const cnt = this._db.db?.prepare('SELECT COUNT(*) as cnt FROM players').get();
-        if ((cnt as DbRow | undefined)?.cnt) result.primary.totalPlayers = (cnt as DbRow).cnt as number;
+        const cnt = this._db.player.countAllPlayers();
+        if (cnt) result.primary.totalPlayers = cnt;
       } catch {
         /* db unavailable */
       }
@@ -5366,10 +5264,11 @@ class WebMapServer {
     if (this._db) {
       try {
         if (!result.primary.maxPlayers) {
-          const settingsRow = this._db.db?.prepare("SELECT value FROM bot_state WHERE key = 'server_settings'").get();
-          const settingsVal = (settingsRow as DbRow | undefined)?.value;
-          if (settingsVal) {
-            const settings = JSON.parse(settingsVal as string) as Record<string, string | undefined>;
+          const settings = this._db.botState.getStateJSON('server_settings', null) as Record<
+            string,
+            string | undefined
+          > | null;
+          if (settings) {
             if (settings.MaxPlayers) result.primary.maxPlayers = parseInt(settings.MaxPlayers, 10) || null;
             if (settings.DaysPerSeason) result.primary.daysPerSeason = parseInt(settings.DaysPerSeason, 10) || 28;
           }
@@ -5405,12 +5304,11 @@ class WebMapServer {
     }
     if (this._db) {
       try {
-        const settingsRow = this._db.db?.prepare("SELECT value FROM bot_state WHERE key = 'server_settings'").get();
-        const settingsRowVal = (settingsRow as DbRow | undefined)?.value;
-        if (settingsRowVal)
-          result.primary.settings = _extractLandingSettings(
-            JSON.parse(settingsRowVal as string) as Record<string, string | undefined>,
-          );
+        const settings = this._db.botState.getStateJSON('server_settings', null) as Record<
+          string,
+          string | undefined
+        > | null;
+        if (settings) result.primary.settings = _extractLandingSettings(settings);
       } catch {
         /* non-critical */
       }
@@ -5556,11 +5454,8 @@ class WebMapServer {
     }
     if (!result.daysPerSeason && srv.db) {
       try {
-        const settingsRow = srv.db.db?.prepare("SELECT value FROM bot_state WHERE key = 'server_settings'").get() as
-          | DbRow
-          | undefined;
-        if (settingsRow?.value) {
-          const s = JSON.parse(settingsRow.value as string) as Record<string, string | undefined>;
+        const s = srv.db.botState.getStateJSON('server_settings', null) as Record<string, string | undefined> | null;
+        if (s) {
           if (s.DaysPerSeason) result.daysPerSeason = parseInt(s.DaysPerSeason, 10) || 28;
         }
       } catch {
@@ -5577,8 +5472,8 @@ class WebMapServer {
     result.totalPlayers = players.size;
     if (!result.totalPlayers && srv.db) {
       try {
-        const cnt = srv.db.db?.prepare('SELECT COUNT(*) as cnt FROM players').get() as { cnt: number } | undefined;
-        if (cnt?.cnt) result.totalPlayers = cnt.cnt;
+        const cnt = srv.db.player.countAllPlayers();
+        if (cnt) result.totalPlayers = cnt;
       } catch {
         /* db unavailable */
       }

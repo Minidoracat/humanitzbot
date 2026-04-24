@@ -35,11 +35,20 @@ export function mockDb({ players = [], clans = [], state = null, extras = {} }: 
     },
   };
 
-  return {
+  const dbObj: Record<string, any> = {
     // Repository getters (new pattern)
     player: {
       getAllPlayers() {
         return players;
+      },
+      countAllPlayers() {
+        return players.length;
+      },
+      listAllPlayerNames() {
+        return players.map((p) => ({ steam_id: p.steam_id, name: p.name }));
+      },
+      listNamedPlayers() {
+        return players.filter((p) => p.name).map((p) => ({ steam_id: p.steam_id, name: p.name }));
       },
     },
     clan: {
@@ -51,6 +60,14 @@ export function mockDb({ players = [], clans = [], state = null, extras = {} }: 
     _store: store,
     ...extras,
   };
+  dbObj.rawQuery = (sql: string, params: unknown[] = [], opts: { mode?: string } = {}) => {
+    const stmt = dbObj.db?.prepare(sql);
+    if (!stmt) return opts.mode === 'get' ? undefined : [];
+    if (opts.mode === 'run') return stmt.run(...params);
+    if (opts.mode === 'get') return stmt.get(...params);
+    return stmt.all(...params);
+  };
+  return dbObj;
 }
 
 // CJS compat

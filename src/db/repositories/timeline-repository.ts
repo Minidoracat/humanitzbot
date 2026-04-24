@@ -8,6 +8,7 @@ export class TimelineRepository extends BaseRepository {
     getTimelineSnapshots: Database.Statement;
     getTimelineSnapshotRange: Database.Statement;
     getTimelineSnapshotById: Database.Statement;
+    getLatestTimelineSnapshotId: Database.Statement;
     getTimelineSnapshotCount: Database.Statement;
     purgeOldTimeline: Database.Statement;
     getTimelineSnapshotBounds: Database.Statement;
@@ -20,6 +21,7 @@ export class TimelineRepository extends BaseRepository {
     insertTimelineBackpack: Database.Statement;
     getTimelinePlayers: Database.Statement;
     getTimelineAI: Database.Statement;
+    getTimelineAIForMap: Database.Statement;
     getTimelineVehicles: Database.Statement;
     getTimelineStructures: Database.Statement;
     getTimelineHouses: Database.Statement;
@@ -43,6 +45,9 @@ export class TimelineRepository extends BaseRepository {
         'SELECT * FROM timeline_snapshots WHERE created_at BETWEEN ? AND ? ORDER BY created_at ASC',
       ),
       getTimelineSnapshotById: this._handle.prepare('SELECT * FROM timeline_snapshots WHERE id = ?'),
+      getLatestTimelineSnapshotId: this._handle.prepare(
+        'SELECT id FROM timeline_snapshots ORDER BY created_at DESC LIMIT 1',
+      ),
       getTimelineSnapshotCount: this._handle.prepare('SELECT COUNT(*) as count FROM timeline_snapshots'),
       purgeOldTimeline: this._handle.prepare("DELETE FROM timeline_snapshots WHERE created_at < datetime('now', ?)"),
       getTimelineSnapshotBounds: this._handle.prepare(
@@ -83,6 +88,9 @@ export class TimelineRepository extends BaseRepository {
       // ── Timeline queries (for time-scroll API) ──
       getTimelinePlayers: this._handle.prepare('SELECT * FROM timeline_players WHERE snapshot_id = ?'),
       getTimelineAI: this._handle.prepare('SELECT * FROM timeline_ai WHERE snapshot_id = ?'),
+      getTimelineAIForMap: this._handle.prepare(
+        'SELECT ai_type, category, display_name, pos_x, pos_y FROM timeline_ai WHERE snapshot_id = ? AND pos_x IS NOT NULL',
+      ),
       getTimelineVehicles: this._handle.prepare('SELECT * FROM timeline_vehicles WHERE snapshot_id = ?'),
       getTimelineStructures: this._handle.prepare('SELECT * FROM timeline_structures WHERE snapshot_id = ?'),
       getTimelineHouses: this._handle.prepare('SELECT * FROM timeline_houses WHERE snapshot_id = ?'),
@@ -341,6 +349,15 @@ export class TimelineRepository extends BaseRepository {
         return b;
       }),
     };
+  }
+
+  getLatestTimelineSnapshotId(): number | null {
+    const row = this._stmts.getLatestTimelineSnapshotId.get() as { id?: number } | undefined;
+    return row?.id ?? null;
+  }
+
+  getTimelineAIForMap(snapshotId: number) {
+    return this._stmts.getTimelineAIForMap.all(snapshotId);
   }
 
   /** Get timeline bounds (earliest, latest, count). */

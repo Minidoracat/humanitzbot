@@ -99,6 +99,23 @@ module.exports = defineConfig([
     },
   },
 
+  // ── Backend TypeScript: raw DB access guard ────────────────────────────────
+  {
+    name: 'backend/no-raw-prepare-outside-db',
+    files: ['src/**/*.ts'],
+    ignores: ['src/db/**', 'src/web-map/session-stores/**'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "CallExpression[callee.property.name='prepare']",
+          message:
+            'Use db.rawQuery() or a repository method; direct .prepare() is banned outside src/db/. See temp/raw-db-inventory.md.',
+        },
+      ],
+    },
+  },
+
   // ── Test TypeScript config ──────────────────────────────────
   {
     name: 'tests/node-test-ts',
