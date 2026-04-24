@@ -73,16 +73,16 @@ const GAME_REF_VERSION = 2;
 function seed(db: HumanitZDB): void {
   // Check if re-seed is needed (version mismatch or empty)
   try {
-    const count = db.db?.prepare('SELECT COUNT(*) as n FROM game_items').get() as { n: number } | undefined;
+    const count = db.gameData.countSeededItems();
     const storedVersion = db.meta.getMeta('game_ref_version');
     const currentVersion = String(GAME_REF_VERSION);
 
-    if (count && count.n > 0 && storedVersion === currentVersion) {
-      console.log(`[GameRef] Game reference data up to date (v${currentVersion}, ${String(count.n)} items) — skipping`);
+    if (count > 0 && storedVersion === currentVersion) {
+      console.log(`[GameRef] Game reference data up to date (v${currentVersion}, ${String(count)} items) — skipping`);
       return;
     }
 
-    if (count && count.n > 0 && storedVersion !== currentVersion) {
+    if (count > 0 && storedVersion !== currentVersion) {
       console.log(
         `[GameRef] Game reference data outdated (v${storedVersion ?? '?'} → v${currentVersion}) — re-seeding...`,
       );

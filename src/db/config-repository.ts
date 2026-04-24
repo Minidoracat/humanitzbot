@@ -14,7 +14,6 @@ import type Database from 'better-sqlite3';
 import { errMsg } from '../utils/error.js';
 
 interface HumanitZDBLike {
-  _db?: Database.Database | null;
   db?: Database.Database | null;
 }
 
@@ -56,7 +55,7 @@ class ConfigRepository {
 
   constructor(db: HumanitZDBLike) {
     this._db = db;
-    const handle = db._db ?? db.db;
+    const handle = db.db;
     if (!handle) throw new Error('ConfigRepository requires a database handle');
     this._handle = handle;
     this._prepareStatements();

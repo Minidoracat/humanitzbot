@@ -97,6 +97,9 @@ export class PlayerRepository extends BaseRepository {
     getAllPlayerLogStats: Database.Statement;
     upsertPlayerPlaytime: Database.Statement;
     getAllPlayerPlaytime: Database.Statement;
+    countAllPlayers: Database.Statement;
+    listNamedPlayers: Database.Statement;
+    listAllPlayerNames: Database.Statement;
     setServerPeak: Database.Statement;
     getServerPeak: Database.Statement;
     getAllServerPeaks: Database.Statement;
@@ -377,6 +380,10 @@ export class PlayerRepository extends BaseRepository {
       WHERE playtime_seconds > 0 OR session_count > 0
     `),
 
+      countAllPlayers: this._handle.prepare('SELECT COUNT(*) as count FROM players'),
+      listNamedPlayers: this._handle.prepare("SELECT steam_id, name FROM players WHERE name != ''"),
+      listAllPlayerNames: this._handle.prepare('SELECT steam_id, name FROM players'),
+
       // Server peaks
       setServerPeak: this._handle.prepare(
         "INSERT OR REPLACE INTO server_peaks (key, value, updated_at) VALUES (?, ?, datetime('now'))",
@@ -551,6 +558,19 @@ export class PlayerRepository extends BaseRepository {
       .all()
       .map(_parsePlayerRow)
       .filter((r): r is DbRow => r !== null);
+  }
+
+  countAllPlayers(): number {
+    const row = this._stmts.countAllPlayers.get() as { count?: number } | undefined;
+    return row?.count ?? 0;
+  }
+
+  listNamedPlayers(): Array<{ steam_id: string; name: string }> {
+    return this._stmts.listNamedPlayers.all() as Array<{ steam_id: string; name: string }>;
+  }
+
+  listAllPlayerNames(): Array<{ steam_id: string; name: string }> {
+    return this._stmts.listAllPlayerNames.all() as Array<{ steam_id: string; name: string }>;
   }
 
   getOnlinePlayers(): DbRow[] {

@@ -8,7 +8,10 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import * as _panel_api from '../src/server/panel-api.js';
+import config from '../src/config/index.js';
+
 const { createPanelApi } = _panel_api as any;
+const singletonPanelApi = (_panel_api as any).default;
 
 const SERVER_URL = 'https://panel.test.com/server/abc123';
 const API_KEY = 'test-api-key';
@@ -56,6 +59,50 @@ describe('createPanelApi', () => {
     assert.notEqual(api, null);
     assert.equal(api.available, true);
     assert.equal(api.backend, 'pterodactyl');
+  });
+});
+
+describe('singleton config hydration', () => {
+  const originalPanelServerUrl = config.panelServerUrl;
+  const originalPanelApiKey = config.panelApiKey;
+  let originalFetch: typeof global.fetch;
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+    singletonPanelApi.invalidateConfig();
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    config.panelServerUrl = originalPanelServerUrl;
+    config.panelApiKey = originalPanelApiKey;
+    singletonPanelApi.invalidateConfig();
+  });
+
+  it('can be invalidated after config hydration and re-reads panel credentials', async () => {
+    config.panelServerUrl = 'https://panel.before.test/server/before';
+    config.panelApiKey = 'before-key';
+    assert.equal(singletonPanelApi.available, true);
+
+    config.panelServerUrl = 'https://panel.after.test/server/after';
+    config.panelApiKey = 'after-key';
+    singletonPanelApi.invalidateConfig();
+
+    let capturedUrl: string | undefined;
+    let capturedHeaders: Record<string, string> | undefined;
+    (global as unknown as Record<string, unknown>).fetch = async (
+      url: string,
+      opts: { headers: Record<string, string> },
+    ) => {
+      capturedUrl = url;
+      capturedHeaders = opts.headers;
+      return mockResponse({ attributes: { current_state: 'running', resources: {} } });
+    };
+
+    await singletonPanelApi.getResources();
+
+    assert.equal(capturedUrl, 'https://panel.after.test/api/client/servers/after/resources');
+    assert.equal(capturedHeaders?.Authorization, 'Bearer after-key');
   });
 });
 

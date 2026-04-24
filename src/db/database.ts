@@ -42,12 +42,26 @@ import { BotStateRepository } from './repositories/bot-state-repository.js';
 
 const __dirname = getDirname(import.meta.url);
 const DEFAULT_DB_PATH = path.join(__dirname, '..', '..', 'data', 'humanitz.db');
+const READ_ONLY_RAW_PRAGMAS = new Set([
+  'table_info',
+  'table_xinfo',
+  'index_list',
+  'index_info',
+  'index_xinfo',
+  'foreign_key_list',
+  'database_list',
+  'schema_version',
+  'user_version',
+  'integrity_check',
+  'quick_check',
+  'compile_options',
+]);
 
 class HumanitZDB {
   _dbPath: string;
   _memory: boolean;
   _log: Logger;
-  _db: Database.Database | null;
+  private _db: Database.Database | null;
   private _dbRaw: Database.Database | null;
 
   // ── Repository references ──
@@ -77,8 +91,8 @@ class HumanitZDB {
 
   /** Get the active database handle. Throws if not initialized or closed. */
   private get _handle(): Database.Database {
-    if (!this._db) throw new Error('Database not initialized — call init() first');
-    return this._db;
+    if (!this._dbRaw) throw new Error('Database not initialized — call init() first');
+    return this._dbRaw;
   }
 
   /** PlayerRepository — player CRUD, playtime, aliases, peaks. */
@@ -188,6 +202,97 @@ class HumanitZDB {
       }
       return result as T;
     })();
+  }
+
+  /**
+   * Controlled raw SQL escape hatch for admin/browser tooling.
+   *
+   * Prefer repository methods for domain reads/writes. Use this only for
+   * bounded dynamic SQL surfaces where a repository cannot know the target
+   * table/query shape ahead of time (for example the admin DB browser or the
+   * local stdin SQL console). Every call must provide a `ctx` tag for audit
+   * logging and future metrics.
+   */
+  rawQuery(
+    sql: string,
+    params: unknown[] | Record<string, unknown>,
+    options: { ctx: string; mode?: 'all'; mutation?: false },
+  ): Record<string, unknown>[];
+  rawQuery(
+    sql: string,
+    params: unknown[] | Record<string, unknown>,
+    options: { ctx: string; mode: 'get'; mutation?: false },
+  ): Record<string, unknown> | undefined;
+  rawQuery(
+    sql: string,
+    params: unknown[] | Record<string, unknown>,
+    options: { ctx: string; mode: 'run'; mutation: true },
+  ): Database.RunResult;
+  rawQuery(
+    sql: string,
+    params: unknown[] | Record<string, unknown> = [],
+    options: { ctx: string; mode?: 'all' | 'get' | 'run'; mutation?: boolean },
+  ): Record<string, unknown>[] | Record<string, unknown> | Database.RunResult | undefined {
+    const ctx = options.ctx.trim();
+    if (!ctx) throw new Error('rawQuery requires a non-empty ctx');
+
+    const mode = options.mode ?? 'all';
+    const mutation = options.mutation === true;
+    this._assertRawQueryAllowed(sql, mode, mutation);
+
+    const stmt = this._handle.prepare(sql);
+    const bind = (runner: (...values: unknown[]) => unknown): unknown => {
+      if (Array.isArray(params)) return runner(...params);
+      return runner(params);
+    };
+
+    if (mode === 'run') return bind(stmt.run.bind(stmt)) as Database.RunResult;
+    if (mode === 'get') return bind(stmt.get.bind(stmt)) as Record<string, unknown> | undefined;
+    return bind(stmt.all.bind(stmt)) as Record<string, unknown>[];
+  }
+
+  private _assertRawQueryAllowed(sql: string, mode: 'all' | 'get' | 'run', mutation: boolean): void {
+    const stripped = sql
+      .replace(/\/\*[^*]*(?:\*(?!\/)[^*]*)*\*\//g, '')
+      .replace(/--[^\n]*/g, '')
+      .trim();
+    const upper = stripped.toUpperCase();
+
+    if (mode === 'run' && !mutation) {
+      throw new Error('rawQuery run mode requires mutation=true');
+    }
+    if (mutation) {
+      if (mode !== 'run') throw new Error('rawQuery mutation=true requires run mode');
+      return;
+    }
+
+    const isRead =
+      upper.startsWith('SELECT') ||
+      upper.startsWith('WITH') ||
+      upper.startsWith('PRAGMA ') ||
+      upper.startsWith('EXPLAIN');
+    if (!isRead) {
+      throw new Error('rawQuery read mode only allows SELECT/WITH/PRAGMA/EXPLAIN statements');
+    }
+
+    if (
+      /\b(DROP|DELETE|INSERT|UPDATE|ALTER|CREATE|ATTACH|DETACH|REPLACE|VACUUM|ANALYZE|REINDEX|LOAD_EXTENSION)\b/i.test(
+        stripped,
+      )
+    ) {
+      throw new Error('rawQuery read mode rejected a statement containing mutation keywords');
+    }
+    if (upper.startsWith('PRAGMA')) {
+      if (/\bPRAGMA\s+[\w.]+\s*=/i.test(stripped)) {
+        throw new Error('rawQuery read mode rejected mutating PRAGMA assignment');
+      }
+
+      const match = stripped.match(/^PRAGMA\s+(?:(?:main|temp)\.)?([A-Za-z_][A-Za-z0-9_]*)\b/i);
+      const pragmaName = match?.[1]?.toLowerCase();
+      if (!pragmaName || !READ_ONLY_RAW_PRAGMAS.has(pragmaName)) {
+        throw new Error(`rawQuery read mode rejected non-allowlisted PRAGMA: ${pragmaName ?? 'unknown'}`);
+      }
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
