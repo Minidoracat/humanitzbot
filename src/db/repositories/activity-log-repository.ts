@@ -275,12 +275,14 @@ export class ActivityLogRepository extends BaseRepository {
     if (Object.keys(idMap).length === 0) return 0;
     const rows = this._stmts.distinctNumericActorsNeedingNames.all() as Array<{ actor: string }>;
     let fixed = 0;
-    for (const row of rows) {
-      const name = idMap[row.actor];
-      if (!name) continue;
-      const info = this._stmts.repairActorName.run(name, row.actor);
-      fixed += info.changes;
-    }
+    this._handle.transaction(() => {
+      for (const row of rows) {
+        const name = idMap[row.actor];
+        if (!name) continue;
+        const info = this._stmts.repairActorName.run(name, row.actor);
+        fixed += info.changes;
+      }
+    })();
     return fixed;
   }
 

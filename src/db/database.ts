@@ -62,7 +62,6 @@ class HumanitZDB {
   _memory: boolean;
   _log: Logger;
   private _db: Database.Database | null;
-  private _dbRaw: Database.Database | null;
 
   // ── Repository references ──
   private _playerRepo: PlayerRepository | null = null;
@@ -86,13 +85,12 @@ class HumanitZDB {
     this._memory = options.memory ?? false;
     this._log = createLogger(options.label, 'DB');
     this._db = null;
-    this._dbRaw = null;
   }
 
   /** Get the active database handle. Throws if not initialized or closed. */
   private get _handle(): Database.Database {
-    if (!this._dbRaw) throw new Error('Database not initialized — call init() first');
-    return this._dbRaw;
+    if (!this._db) throw new Error('Database not initialized — call init() first');
+    return this._db;
   }
 
   /** PlayerRepository — player CRUD, playtime, aliases, peaks. */
@@ -300,7 +298,7 @@ class HumanitZDB {
   // ═══════════════════════════════════════════════════════════════════════════
 
   init(): void {
-    if (this._dbRaw) return;
+    if (this._db) return;
 
     // Ensure data directory exists
     if (!this._memory) {
@@ -317,8 +315,7 @@ class HumanitZDB {
       }
     }
 
-    this._dbRaw = new Database(this._memory ? ':memory:' : this._dbPath);
-    this._db = this._dbRaw;
+    this._db = new Database(this._memory ? ':memory:' : this._dbPath);
     this._handle.pragma('journal_mode = WAL');
     this._handle.pragma('foreign_keys = ON');
     this._handle.pragma('busy_timeout = 5000');
@@ -347,10 +344,9 @@ class HumanitZDB {
   }
 
   close(): void {
-    if (this._dbRaw) {
-      this._dbRaw.close();
+    if (this._db) {
+      this._db.close();
       this._db = null;
-      this._dbRaw = null;
       this._playerRepo = null;
       this._clanRepo = null;
       this._leaderboardRepo = null;
