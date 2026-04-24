@@ -31,6 +31,15 @@ export class ActivityLogRepository extends BaseRepository {
     purgeOldActivity: Database.Statement;
     countActivity: Database.Statement;
     countActivityBySource: Database.Statement;
+    countByType: Database.Statement;
+    hourlyDistribution: Database.Statement;
+    dailyCount: Database.Statement;
+    dailyByType: Database.Statement;
+    topActors: Database.Statement;
+    dateRange: Database.Statement;
+    countByTextSearch: Database.Statement;
+    distinctNumericActorsNeedingNames: Database.Statement;
+    repairActorName: Database.Statement;
   };
 
   protected _prepareStatements(): void {
@@ -69,6 +78,46 @@ export class ActivityLogRepository extends BaseRepository {
       purgeOldActivity: this._handle.prepare("DELETE FROM activity_log WHERE created_at < datetime('now', ?)"),
       countActivity: this._handle.prepare('SELECT COUNT(*) as count FROM activity_log'),
       countActivityBySource: this._handle.prepare('SELECT source, COUNT(*) as count FROM activity_log GROUP BY source'),
+      countByType: this._handle.prepare(
+        'SELECT type, COUNT(*) as count FROM activity_log GROUP BY type ORDER BY count DESC',
+      ),
+      hourlyDistribution: this._handle.prepare(`
+        SELECT CAST(strftime('%H', created_at) AS INTEGER) as hour, COUNT(*) as count
+        FROM activity_log
+        WHERE created_at >= datetime('now', ?)
+        GROUP BY hour ORDER BY hour
+      `),
+      dailyCount: this._handle.prepare(`
+        SELECT date(created_at) as day, COUNT(*) as count
+        FROM activity_log
+        WHERE created_at >= datetime('now', ?)
+        GROUP BY day ORDER BY day
+      `),
+      dailyByType: this._handle.prepare(`
+        SELECT date(created_at) as day, type, COUNT(*) as count
+        FROM activity_log
+        WHERE created_at >= datetime('now', ?)
+        GROUP BY day, type ORDER BY day
+      `),
+      topActors: this._handle.prepare(`
+        SELECT COALESCE(actor_name, actor, steam_id) as actor, COUNT(*) as count
+        FROM activity_log
+        WHERE created_at >= datetime('now', ?) AND actor IS NOT NULL AND actor != ''
+        GROUP BY actor ORDER BY count DESC LIMIT ?
+      `),
+      dateRange: this._handle.prepare(
+        'SELECT MIN(created_at) as earliest, MAX(created_at) as latest FROM activity_log',
+      ),
+      countByTextSearch: this._handle.prepare(
+        'SELECT COUNT(*) as count FROM activity_log WHERE details LIKE ? OR item LIKE ?',
+      ),
+      distinctNumericActorsNeedingNames: this._handle.prepare(
+        `SELECT DISTINCT actor FROM activity_log
+         WHERE actor_name = actor AND actor GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'`,
+      ),
+      repairActorName: this._handle.prepare(
+        'UPDATE activity_log SET actor_name = ? WHERE actor = ? AND actor_name = actor',
+      ),
     };
   }
 
@@ -191,6 +240,48 @@ export class ActivityLogRepository extends BaseRepository {
   getActivityCount() {
     const row = this._stmts.countActivity.get() as DbRow | undefined;
     return row?.count || 0;
+  }
+
+  countByType() {
+    return this._stmts.countByType.all();
+  }
+
+  hourlyDistribution(days = 7) {
+    return this._stmts.hourlyDistribution.all(`-${String(days)} days`);
+  }
+
+  dailyCount(days = 30) {
+    return this._stmts.dailyCount.all(`-${String(days)} days`);
+  }
+
+  dailyByType(days = 14) {
+    return this._stmts.dailyByType.all(`-${String(days)} days`);
+  }
+
+  topActors(days = 7, limit = 10) {
+    return this._stmts.topActors.all(`-${String(days)} days`, limit);
+  }
+
+  dateRange() {
+    return this._stmts.dateRange.get() as { earliest: string | null; latest: string | null } | undefined;
+  }
+
+  countByTextSearch(pattern: string): number {
+    const row = this._stmts.countByTextSearch.get(pattern, pattern) as { count?: number } | undefined;
+    return row?.count ?? 0;
+  }
+
+  repairActorNames(idMap: Record<string, string>): number {
+    if (Object.keys(idMap).length === 0) return 0;
+    const rows = this._stmts.distinctNumericActorsNeedingNames.all() as Array<{ actor: string }>;
+    let fixed = 0;
+    for (const row of rows) {
+      const name = idMap[row.actor];
+      if (!name) continue;
+      const info = this._stmts.repairActorName.run(name, row.actor);
+      fixed += info.changes;
+    }
+    return fixed;
   }
 
   /** Get activity counts grouped by source. */

@@ -116,6 +116,8 @@ class PanelApi {
   _serverId: string | null;
   _apiKey: string | null;
   _available: boolean | null;
+  private _initialized: boolean;
+  private readonly _staticConfig: { serverUrl: string; apiKey: string } | null;
 
   // Prototype-mixed methods — declared here, assigned via Object.assign below
   declare getResources: () => Promise<PanelResourceResult>;
@@ -141,6 +143,8 @@ class PanelApi {
   declare updateStartupVariable: (key: string, value: string) => Promise<ApiRecord>;
 
   constructor(opts?: { serverUrl?: string; apiKey?: string }) {
+    this._staticConfig =
+      opts && opts.serverUrl && opts.apiKey ? { serverUrl: opts.serverUrl, apiKey: opts.apiKey } : null;
     if (opts && opts.serverUrl && opts.apiKey) {
       const parsed = _parseUrl(opts.serverUrl);
       if (!parsed) throw new Error('Invalid panel server URL');
@@ -148,11 +152,13 @@ class PanelApi {
       this._serverId = parsed.serverId;
       this._apiKey = opts.apiKey;
       this._available = true;
+      this._initialized = true;
     } else {
       this._baseUrl = null;
       this._serverId = null;
       this._apiKey = null;
       this._available = null;
+      this._initialized = false;
     }
   }
 
@@ -169,13 +175,31 @@ class PanelApi {
   }
 
   _ensureParsed(): void {
-    if (this._baseUrl !== null) return;
-    const cfg = _defaultConfig;
-    const parsed = _parseUrl(cfg.panelServerUrl);
+    if (this._initialized) return;
+    this._initialized = true;
+
+    const parsed = _parseUrl(this._staticConfig?.serverUrl ?? _defaultConfig.panelServerUrl);
+    this._baseUrl = null;
+    this._serverId = null;
+    this._apiKey = null;
+    this._available = null;
     if (!parsed) return;
     this._baseUrl = parsed.baseUrl;
     this._serverId = parsed.serverId;
-    this._apiKey = cfg.panelApiKey;
+    this._apiKey = this._staticConfig?.apiKey ?? _defaultConfig.panelApiKey;
+    this._available = !!this._apiKey;
+  }
+
+  /**
+   * Re-read singleton config after DB hydration overlays .env values.
+   * Factory-created instances keep their explicit constructor credentials.
+   */
+  invalidateConfig(): void {
+    this._initialized = false;
+    this._baseUrl = null;
+    this._serverId = null;
+    this._apiKey = null;
+    this._available = null;
   }
 
   async _request(endpoint: string, options: RequestInit = {}): Promise<unknown> {
