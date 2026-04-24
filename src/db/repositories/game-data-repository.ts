@@ -18,6 +18,7 @@ export class GameDataRepository extends BaseRepository {
     getGameItem: Database.Statement;
     searchGameItems: Database.Statement;
     countSeededItems: Database.Statement;
+    findByNameByTable: Map<string, Database.Statement>;
   };
 
   protected _prepareStatements(): void {
@@ -36,6 +37,12 @@ export class GameDataRepository extends BaseRepository {
       getGameItem: this._handle.prepare('SELECT * FROM game_items WHERE id = ?'),
       searchGameItems: this._handle.prepare('SELECT * FROM game_items WHERE name LIKE ? OR id LIKE ? LIMIT 20'),
       countSeededItems: this._handle.prepare('SELECT COUNT(*) as count FROM game_items'),
+      findByNameByTable: new Map(
+        Array.from(FIND_BY_NAME_TABLES.entries(), ([table, safeTable]) => [
+          table,
+          this._handle.prepare(`SELECT * FROM ${safeTable} WHERE name LIKE ? LIMIT 1`),
+        ]),
+      ),
     };
   }
 
@@ -185,9 +192,9 @@ export class GameDataRepository extends BaseRepository {
   }
 
   findByName(table: string, name: string) {
-    const safeTable = FIND_BY_NAME_TABLES.get(table);
-    if (!safeTable) throw new Error(`Unsupported game-data lookup table: ${table}`);
-    return this._handle.prepare(`SELECT * FROM ${safeTable} WHERE name LIKE ? LIMIT 1`).get(`%${name}%`);
+    const stmt = this._stmts.findByNameByTable.get(table);
+    if (!stmt) throw new Error(`Unsupported game-data lookup table: ${table}`);
+    return stmt.get(`%${name}%`);
   }
 
   // ─── New game reference seed methods (schema v11) ─────────────────────────
