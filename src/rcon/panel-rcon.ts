@@ -173,9 +173,31 @@ class PanelRcon extends EventEmitter {
     const token = auth.token;
 
     return new Promise((resolve, reject) => {
+      let settled = false;
+
+      const clearConnectTimers = () => {
+        clearTimeout(timeout);
+      };
+
+      const failConnect = (err: Error) => {
+        clearConnectTimers();
+        if (!settled) {
+          settled = true;
+          reject(err);
+        }
+      };
+
+      const resolveConnect = () => {
+        clearConnectTimers();
+        if (!settled) {
+          settled = true;
+          resolve();
+        }
+      };
+
       const timeout = setTimeout(() => {
         this._cleanup();
-        reject(new Error('WebSocket connection timeout'));
+        failConnect(new Error('WebSocket connection timeout'));
       }, 15000);
 
       const ws = new this._WebSocket(wsUrl, {
@@ -195,9 +217,8 @@ class PanelRcon extends EventEmitter {
         } catch (err) {
           const error = err instanceof Error ? err : new Error(String(err));
           this._log.error('Auth send failed:', error.message);
-          clearTimeout(timeout);
-          reject(error);
           this._cleanup();
+          failConnect(error);
         }
       });
 
@@ -215,37 +236,31 @@ class PanelRcon extends EventEmitter {
           return;
         }
 
-        this._handleMessage(msg, resolve, timeout);
+        this._handleMessage(msg, resolveConnect, timeout);
       });
 
       ws.on('error', (err: Error) => {
         this._log.error('WebSocket error:', err.message);
-        clearTimeout(timeout);
         if (this._everConnected && !this._disconnectedAt) {
           this._disconnectedAt = Date.now();
           this.emit('disconnect', { reason: err.message });
         }
-        if (!this.connected) {
-          reject(err);
-        }
         this._cleanup();
+        failConnect(err);
         this._scheduleReconnect();
       });
 
       ws.on('close', (code: number, reason: Buffer) => {
         const reasonStr = reason.length > 0 ? reason.toString() : `code ${String(code)}`;
-        const connectingSocketClosed = this._ws === ws && !this.connected;
+        const connectingSocketClosed = this._ws === ws && !settled;
         if (this.connected || connectingSocketClosed) {
           this._log.info(`WebSocket closed: ${reasonStr}`);
           if (this._everConnected && !this._disconnectedAt) {
             this._disconnectedAt = Date.now();
             this.emit('disconnect', { reason: reasonStr });
           }
-          clearTimeout(timeout);
           this._cleanup();
-          if (connectingSocketClosed) {
-            reject(new Error(`WebSocket closed: ${reasonStr}`));
-          }
+          failConnect(new Error(`WebSocket closed: ${reasonStr}`));
           this._scheduleReconnect();
         }
       });

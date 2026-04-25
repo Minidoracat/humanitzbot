@@ -460,6 +460,30 @@ describe('connect lifecycle', () => {
     }
   });
 
+  it('settles once when WebSocket error and close both fire while connecting', async () => {
+    class ErrorThenCloseWS extends MockWebSocket {
+      constructor(url: string, opts: unknown) {
+        super(url, opts);
+        setImmediate(() => {
+          this.emit('error', new Error('ws failed'));
+          this.emit('close', 1006, Buffer.alloc(0));
+        });
+      }
+    }
+
+    const rcon = createTestRcon({ WebSocket: ErrorThenCloseWS });
+    rcon._everConnected = true;
+    let reconnectSchedules = 0;
+    rcon._scheduleReconnect = () => {
+      reconnectSchedules++;
+    };
+
+    await assert.rejects(rcon.connect(), { message: /ws failed/ });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(reconnectSchedules, 1, 'should schedule reconnect once for paired error/close events');
+  });
+
   it('returns immediately when already connected and authenticated', async () => {
     const rcon = createTestRcon();
     await connectRcon(rcon);

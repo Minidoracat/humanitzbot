@@ -546,6 +546,47 @@ describe('_scheduleReconnect', () => {
     assert.equal(rcon._reconnectBackoff.nextDelayMs(), 15000, 'manual disconnect resets reconnect backoff');
   });
 
+  it('deduplicates concurrent connect attempts', async () => {
+    let socketCount = 0;
+
+    class CountingSocket extends EventEmitter {
+      connectCallback: (() => void) | null = null;
+      writes: Buffer[] = [];
+
+      connect(_port: number, _host: string, cb: () => void) {
+        socketCount++;
+        this.connectCallback = cb;
+        return this;
+      }
+      write(packet: Buffer) {
+        this.writes.push(packet);
+      }
+      destroy() {}
+    }
+
+    const rcon = new RconManager({
+      host: '127.0.0.1',
+      port: 27015,
+      password: 'test',
+      Socket: CountingSocket,
+    });
+
+    const p1 = rcon.connect();
+    const p2 = rcon.connect();
+
+    assert.equal(socketCount, 1, 'should only create one TCP socket while connect is pending');
+    const socket = rcon.socket as InstanceType<typeof CountingSocket>;
+    assert.ok(socket.connectCallback);
+    socket.connectCallback();
+    assert.equal(socket.writes.length, 1, 'should only send one auth packet');
+    rcon._authCallback(1);
+
+    await Promise.all([p1, p2]);
+    assert.equal(rcon.connected, true);
+    assert.equal(rcon.authenticated, true);
+    rcon.disconnect();
+  });
+
   it('rejects a failed reconnect attempt after the first successful connection', async () => {
     class FailingSocket extends EventEmitter {
       connect() {

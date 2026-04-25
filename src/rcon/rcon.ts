@@ -39,6 +39,7 @@ class RconManager extends EventEmitter {
   _cacheTtl: number | null;
   _Socket: typeof net.Socket;
   _reconnectBackoff: ReconnectBackoff;
+  _connectPromise: Promise<void> | null;
   /** True after first successful connect — distinguishes initial connection from reconnects. */
   _everConnected: boolean;
   /** Timestamp of last disconnect (for uptime reporting). */
@@ -64,6 +65,7 @@ class RconManager extends EventEmitter {
     this._cacheTtl = options.cacheTtl ?? null;
     this._Socket = options.Socket ?? net.Socket;
     this._reconnectBackoff = new ReconnectBackoff();
+    this._connectPromise = null;
     this._everConnected = false;
     this._disconnectedAt = null;
   }
@@ -71,6 +73,15 @@ class RconManager extends EventEmitter {
   async connect(): Promise<void> {
     if (this.connected && this.authenticated) return;
 
+    if (this._connectPromise) return this._connectPromise;
+
+    this._connectPromise = this._doConnect().finally(() => {
+      this._connectPromise = null;
+    });
+    return this._connectPromise;
+  }
+
+  async _doConnect(): Promise<void> {
     this._cleanup();
 
     return new Promise((resolve, reject) => {
