@@ -178,7 +178,7 @@ export class PlayerRepository extends BaseRepository {
         @custom_data, datetime('now'), datetime('now'), datetime('now')
       )
       ON CONFLICT(steam_id) DO UPDATE SET
-        name = excluded.name,
+        name = CASE WHEN excluded.name != '' THEN excluded.name ELSE players.name END,
         male = excluded.male,
         starting_perk = excluded.starting_perk,
         affliction = excluded.affliction,
