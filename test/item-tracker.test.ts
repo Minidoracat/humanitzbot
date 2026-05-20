@@ -1240,16 +1240,22 @@ describe('Item Tracker', () => {
 
       assert.ok(indexNames('item_instances').includes('idx_item_inst_lost_at'));
       assert.ok(indexNames('item_groups').includes('idx_item_grp_lost_at'));
+      assert.ok(indexNames('item_movements').includes('idx_item_mov_instance'));
+      assert.ok(indexNames('item_movements').includes('idx_item_mov_group'));
 
       db.db.exec(`
         DROP INDEX IF EXISTS idx_item_inst_lost_at;
         DROP INDEX IF EXISTS idx_item_grp_lost_at;
+        DROP INDEX IF EXISTS idx_item_mov_instance;
+        DROP INDEX IF EXISTS idx_item_mov_group;
       `);
       db._setMeta('schema_version', '15');
       db._applySchema();
 
       assert.ok(indexNames('item_instances').includes('idx_item_inst_lost_at'));
       assert.ok(indexNames('item_groups').includes('idx_item_grp_lost_at'));
+      assert.ok(indexNames('item_movements').includes('idx_item_mov_instance'));
+      assert.ok(indexNames('item_movements').includes('idx_item_mov_group'));
       assert.equal(db._getMeta('schema_version'), '16');
     });
   });
