@@ -620,12 +620,15 @@ class WebMapServer {
     if (!db) return map;
 
     try {
-      const rows = db.player.listAllPlayerNames() as Array<{ steam_id?: unknown; name?: unknown }>;
+      const rows = db.player.listAllPlayerDisplayNames() as Array<{
+        steam_id?: unknown;
+        name?: unknown;
+        display_name?: unknown;
+      }>;
       for (const row of rows) {
         const steamId = typeof row.steam_id === 'string' ? row.steam_id.trim() : '';
         if (!/^\d{17}$/.test(steamId)) continue;
-        const resolved = this._resolveDbPlayerName(db, steamId);
-        const name = this._cleanPlayerDisplayName(resolved) || this._cleanPlayerDisplayName(row.name);
+        const name = this._cleanPlayerDisplayName(row.display_name) || this._cleanPlayerDisplayName(row.name);
         if (/^\d{17}$/.test(steamId) && name) map[steamId] = name;
       }
     } catch {

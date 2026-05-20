@@ -94,11 +94,18 @@ function makeMockDb(overrides: Record<string, unknown> = {}) {
   merged.player = {
     countAllPlayers: () => 0,
     listAllPlayerNames: () => [],
+    listAllPlayerDisplayNames: () => [],
     listNamedPlayers: () => [],
     resolveSteamIdToName: (steamId: string) => steamId,
     resolveNameToSteamId: () => null,
     ...((overrides.player || {}) as Record<string, unknown>),
   };
+  if (!('listAllPlayerDisplayNames' in ((overrides.player || {}) as Record<string, unknown>))) {
+    merged.player.listAllPlayerDisplayNames = () =>
+      merged.player
+        .listAllPlayerNames()
+        .map((row: { steam_id: string; name: string }) => ({ ...row, display_name: row.name }));
+  }
   merged.activityLog = {
     getRecentActivity: merged.getRecentActivity,
     getActivityByCategory: merged.getActivityByCategory,
@@ -258,6 +265,31 @@ describe('Web Map Read Endpoints', () => {
 
       const players = (res.body as Record<string, unknown>).players as Record<string, unknown>[];
       assert.equal(players[0]?.name, 'Db Alice');
+    });
+
+    it('loads SQLite display names without per-player alias lookups', async () => {
+      const steamId = '76561198000000005';
+      let displayListCalls = 0;
+      let resolveCalls = 0;
+      server._parseSaveData = () => new Map([[steamId, { x: 100, y: 200, z: 0, male: true }]]);
+      const db = makeMockDb({
+        player: {
+          listAllPlayerDisplayNames: () => {
+            displayListCalls++;
+            return [{ steam_id: steamId, name: 'Old Db Name', display_name: 'Alias Alice' }];
+          },
+          resolveSteamIdToName: () => {
+            resolveCalls++;
+            return 'Alias Alice';
+          },
+        },
+      });
+
+      const map = server._loadDbPlayerNameMap(db);
+
+      assert.equal(map[steamId], 'Alias Alice');
+      assert.equal(displayListCalls, 1);
+      assert.equal(resolveCalls, 0);
     });
 
     it('uses live RCON names for online players before SQLite names', async () => {

@@ -1280,6 +1280,8 @@ class HumanitZDB {
         this._handle.exec(`
           CREATE INDEX IF NOT EXISTS idx_item_inst_lost_at ON item_instances(lost, lost_at);
           CREATE INDEX IF NOT EXISTS idx_item_grp_lost_at ON item_groups(lost, lost_at);
+          CREATE INDEX IF NOT EXISTS idx_item_mov_instance ON item_movements(instance_id);
+          CREATE INDEX IF NOT EXISTS idx_item_mov_group ON item_movements(group_id);
         `);
         this._log.info('Migration v15→v16: item tracker purge indexes');
       }
