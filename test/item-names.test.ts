@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import path from 'path';
 import fs from 'fs';
 
-import { resolveItemName, resolveItemArray, normalizeItemLocale } from '../src/i18n/item-names.js';
+import { resolveItemName, resolveItemArray, resolveItemId, normalizeItemLocale } from '../src/i18n/item-names.js';
 
 import * as _i18n from '../src/i18n/index.js';
 const { t } = _i18n as any;
@@ -167,5 +167,34 @@ describe('items i18next namespace', () => {
     assert.equal(t('items:WalkieTalkie', 'zh-TW'), '無線電對講機');
     assert.equal(t('items:WalkieTalkie', 'zh-CN'), '无线电对讲机');
     assert.equal(t('items:12G', 'en'), '12 Gauge Shells');
+  });
+});
+
+describe('resolveItemId (reverse lookup)', () => {
+  it('resolves localized display labels back to the canonical raw id', () => {
+    assert.equal(resolveItemId('無線電對講機'), 'WalkieTalkie');
+    assert.equal(resolveItemId('无线电对讲机'), 'WalkieTalkie');
+    assert.equal(resolveItemId('12 Gauge Shells'), '12G');
+  });
+
+  it('accepts raw ids in any casing and round-trips display names', () => {
+    assert.equal(resolveItemId('walkietalkie'), 'WalkieTalkie');
+    assert.equal(resolveItemId('12g'), '12G');
+    // Round-trips return the canonical items.json id casing ('GasMask2'),
+    // which may differ from save-file drift ('Gasmask2') — DB lookups that
+    // consume this value go through a COLLATE NOCASE query.
+    for (const id of ['GasMask2', 'ScrapMetal', 'Bandage']) {
+      for (const lng of LOCALES) {
+        const roundTripped = resolveItemId(resolveItemName(id, lng));
+        assert.equal(roundTripped?.toLowerCase(), id.toLowerCase(), `${id} should round-trip via ${lng}`);
+      }
+    }
+  });
+
+  it('returns null for unknown labels and non-strings', () => {
+    assert.equal(resolveItemId('definitely-not-an-item-label'), null);
+    assert.equal(resolveItemId(''), null);
+    assert.equal(resolveItemId(null), null);
+    assert.equal(resolveItemId(42), null);
   });
 });

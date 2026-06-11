@@ -20,7 +20,7 @@ import type { RuntimeConfigApplier } from '../config/runtime-config-applier.js';
 import { parseSave, PERK_MAP } from '../parsers/save-parser.js';
 import { AFFLICTION_MAP } from '../parsers/game-data.js';
 import { cleanName as cleanActorName, cleanNameCached, cleanItemName } from '../parsers/ue4-names.js';
-import { resolveItemName, resolveItemArray, normalizeItemLocale } from '../i18n/item-names.js';
+import { resolveItemName, resolveItemArray, resolveItemId, normalizeItemLocale } from '../i18n/item-names.js';
 import playerStats from '../tracking/player-stats.js';
 import playtime from '../tracking/playtime-tracker.js';
 import rcon from '../rcon/rcon.js';
@@ -2743,9 +2743,21 @@ class WebMapServer {
           }
         }
 
-        // Fall back to item name search if no fingerprint match
+        // Fall back to item name search if no fingerprint match. The frontend
+        // may send a localized display label or a cased variant ('Gasmask2'
+        // vs 'GasMask2') instead of the raw id stored in the tracking DB —
+        // retry case-insensitively, then reverse-resolve the label to an id.
         if (!match && itemName) {
-          const instances = srv.db.item.getItemInstancesByItem(itemName as string) as ItemInstanceRow[];
+          let instances = srv.db.item.getItemInstancesByItem(itemName as string) as ItemInstanceRow[];
+          if (instances.length === 0) {
+            instances = srv.db.item.getItemInstancesByItemNoCase(itemName as string) as ItemInstanceRow[];
+          }
+          if (instances.length === 0) {
+            const rawId = resolveItemId(itemName);
+            if (rawId && rawId.toLowerCase() !== (itemName as string).toLowerCase()) {
+              instances = srv.db.item.getItemInstancesByItemNoCase(rawId) as ItemInstanceRow[];
+            }
+          }
           if (instances.length > 0) {
             const inst = steamId
               ? (instances.find((i: ItemInstanceRow) => i.location_type === 'player' && i.location_id === steamId) ??

@@ -1104,7 +1104,7 @@ class PlayerStatsChannel {
     // ── Recipes ──
     if (deltas.recipeDeltas.length > 0 && this._config.enableRecipeFeed) {
       const lines = deltas.recipeDeltas.map(({ name, type, items }: RecipeDeltaItem) => {
-        const names = items.map((r) => _cleanItemName(r)).filter(Boolean);
+        const names = items.map((r) => _cleanItemName(r, locale)).filter(Boolean);
         const display =
           names.length <= 5
             ? names.join(', ')
@@ -1123,7 +1123,7 @@ class PlayerStatsChannel {
     // ── Skills ──
     if (deltas.skillDeltas.length > 0 && this._config.enableSkillFeed) {
       const lines = deltas.skillDeltas.map(({ name, items }: SkillDeltaItem) => {
-        const names = items.map((s) => _cleanItemName(s).toUpperCase());
+        const names = items.map((s) => _cleanItemName(s, locale).toUpperCase());
         return statsText('skills_line', { name, plural_suffix: pluralSuffix(names.length), names: names.join(', ') });
       });
       sections.push({ header: statsText('header_skills'), lines });
@@ -1134,7 +1134,7 @@ class PlayerStatsChannel {
       const lines = deltas.professionDeltas.map(({ name, items }: ProfDeltaItem) => {
         const names = items.map((p) => {
           if (typeof p === 'number') return PERK_INDEX_MAP[p] || statsText('profession_fallback', { id: p });
-          if (typeof p === 'string') return PERK_MAP[p] || _cleanItemName(p);
+          if (typeof p === 'string') return PERK_MAP[p] || _cleanItemName(p, locale);
           return '';
         });
         return statsText('professions_line', {
@@ -1154,9 +1154,9 @@ class PlayerStatsChannel {
           .map((l) => {
             if (typeof l === 'object' && l !== null) {
               const lo = l as Record<string, unknown>;
-              return _cleanItemName(lo['name'] ?? lo['id'] ?? JSON.stringify(l));
+              return _cleanItemName(lo['name'] ?? lo['id'] ?? JSON.stringify(l), locale);
             }
-            return _cleanItemName(l);
+            return _cleanItemName(l, locale);
           })
           .filter(Boolean);
         const display =
@@ -1173,9 +1173,9 @@ class PlayerStatsChannel {
           .map((u) => {
             if (typeof u === 'object' && u !== null) {
               const uo = u as Record<string, unknown>;
-              return _cleanItemName(uo['name'] ?? uo['id'] ?? JSON.stringify(u));
+              return _cleanItemName(uo['name'] ?? uo['id'] ?? JSON.stringify(u), locale);
             }
-            return _cleanItemName(u);
+            return _cleanItemName(u, locale);
           })
           .filter(Boolean);
         const display =
@@ -1356,12 +1356,12 @@ function _parseIni(text: string) {
  * (resolveItemName: items i18n namespace → en → shared heuristic cleaner).
  * Returns '' for null/undefined (not 'Unknown') to preserve .filter(Boolean) patterns.
  */
-function _cleanItemName(name: unknown) {
+function _cleanItemName(name: unknown, locale?: string) {
   if (!name) return '';
   const str =
     typeof name === 'string' ? name : typeof name === 'number' || typeof name === 'boolean' ? String(name) : '';
   if (!str) return '';
-  const cleaned = resolveItemName(str, getLocale());
+  const cleaned = resolveItemName(str, locale ?? getLocale());
   return cleaned === 'Unknown' ? '' : cleaned;
 }
 

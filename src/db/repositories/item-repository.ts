@@ -65,6 +65,7 @@ export class ItemRepository extends BaseRepository {
     getActiveItemInstancesPage: Database.Statement;
     getActiveItemInstancesPageByLocation: Database.Statement;
     getItemInstancesByItem: Database.Statement;
+    getItemInstancesByItemNoCase: Database.Statement;
     getItemInstancesByLocation: Database.Statement;
     getItemInstanceCount: Database.Statement;
     searchItemInstances: Database.Statement;
@@ -150,6 +151,9 @@ export class ItemRepository extends BaseRepository {
       `),
       getItemInstancesByItem: this._handle.prepare(
         'SELECT * FROM item_instances WHERE item = ? AND lost = 0 ORDER BY location_type',
+      ),
+      getItemInstancesByItemNoCase: this._handle.prepare(
+        'SELECT * FROM item_instances WHERE item = ? COLLATE NOCASE AND lost = 0 ORDER BY location_type',
       ),
       getItemInstancesByLocation: this._handle.prepare(
         'SELECT * FROM item_instances WHERE location_type = ? AND location_id = ? AND lost = 0',
@@ -491,6 +495,11 @@ export class ItemRepository extends BaseRepository {
 
   getItemInstancesByItem(item: string) {
     return this._stmts.getItemInstancesByItem.all(item);
+  }
+
+  /** Case-insensitive variant — save files drift casing ('Gasmask2' vs 'GasMask2'). */
+  getItemInstancesByItemNoCase(item: string) {
+    return this._stmts.getItemInstancesByItemNoCase.all(item);
   }
 
   getItemInstancesByLocation(locationType: string, locationId: string) {

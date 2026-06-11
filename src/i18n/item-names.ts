@@ -31,6 +31,15 @@ const ITEM_NAME_INDEX: Record<SupportedLang, Map<string, string>> = {
   'zh-CN': new Map(),
 };
 
+// Reverse index: lowercased display name (any locale) → canonical raw item id.
+// Lets the panel resolve localized labels coming back from the frontend
+// (e.g. /api/panel/items/lookup click paths) into the raw ids stored in the
+// item tracking DB. First entry wins on collisions (variant items sharing a
+// display name), which matches the heuristic nature of name-based lookup.
+const ITEM_ID_BY_NAME = new Map<string, string>();
+// Also accept raw ids in any casing as input to the reverse lookup.
+const ITEM_ID_BY_LOWER_ID = new Map<string, string>();
+
 for (const lng of SUPPORTED_LANGS) {
   try {
     const filePath = path.join(LOCALES_DIR, lng, 'items.json');
@@ -41,6 +50,9 @@ for (const lng of SUPPORTED_LANGS) {
       const lower = id.toLowerCase();
       // First entry wins on (unexpected) case-insensitive collisions.
       if (!index.has(lower)) index.set(lower, name);
+      if (!ITEM_ID_BY_LOWER_ID.has(lower)) ITEM_ID_BY_LOWER_ID.set(lower, id);
+      const nameLower = name.toLowerCase();
+      if (!ITEM_ID_BY_NAME.has(nameLower)) ITEM_ID_BY_NAME.set(nameLower, id);
     }
   } catch {
     // Missing/corrupt locale file → resolution falls through to 'en'/cleanItemName.
@@ -129,4 +141,16 @@ function resolveItemArray(items: unknown[], locale?: string | null): unknown[] {
     .filter(Boolean);
 }
 
-export { resolveItemName, resolveItemArray, normalizeItemLocale };
+/**
+ * Reverse-resolve a display label (any supported locale) or arbitrarily-cased
+ * raw id back to the canonical raw item id stored in save data / the item
+ * tracking DB. Returns null when the label is unknown.
+ */
+function resolveItemId(label: unknown): string | null {
+  if (typeof label !== 'string') return null;
+  const key = label.trim().toLowerCase();
+  if (!key) return null;
+  return ITEM_ID_BY_LOWER_ID.get(key) ?? ITEM_ID_BY_NAME.get(key) ?? null;
+}
+
+export { resolveItemName, resolveItemArray, resolveItemId, normalizeItemLocale };
