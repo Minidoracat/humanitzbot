@@ -13,7 +13,8 @@
 import { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } from 'discord.js';
 import { PERK_MAP } from '../parsers/save-parser.js';
 import * as gameData from '../parsers/game-data.js';
-import { cleanItemName as _rawClean, cleanItemArray, isHexGuid } from '../parsers/ue4-names.js';
+import { cleanItemName as _rawClean, isHexGuid } from '../parsers/ue4-names.js';
+import { resolveItemName, resolveItemArray } from '../i18n/item-names.js';
 import { buildScheduleField } from '../server/server-display.js';
 import { t, getLocale, fmtDate, fmtTime, fmtNumber } from '../i18n/index.js';
 import { parseDbTimestampUtc } from '../db/timestamp.js';
@@ -128,6 +129,20 @@ function _clean(name: unknown): string {
   const nameStr = typeof name === 'string' ? name : String(name);
   if (isHexGuid(nameStr)) return '';
   const c = _rawClean(nameStr);
+  return c === 'Unknown' ? '' : c;
+}
+
+/**
+ * Locale-aware variant of _clean for actual game item ids (inventory,
+ * equipment). Resolves through the items i18n namespace before falling back
+ * to the heuristic cleaner; returns '' for junk/null/hex GUIDs.
+ */
+function _cleanItem(name: unknown, locale: string): string {
+  if (!name) return '';
+  if (typeof name !== 'string' && typeof name !== 'number') return '';
+  const nameStr = typeof name === 'string' ? name : String(name);
+  if (isHexGuid(nameStr)) return '';
+  const c = resolveItemName(nameStr, locale);
   return c === 'Unknown' ? '' : c;
 }
 
@@ -1082,7 +1097,7 @@ function buildFullPlayerEmbed(this: PSCThis, steamId: string, { isAdmin = false 
       return !!item && !/^empty$/i.test(itemStr) && !/^empty$/i.test(_clean(item));
     };
     const fmtItem = (i: ItemEntry): string => {
-      const name = _clean(i['item']);
+      const name = _cleanItem(i['item'], locale);
       if (!name) return '';
       const amount = typeof i['amount'] === 'number' ? i['amount'] : 1;
       const amt = amount > 1 ? ` \u00D7${amount}` : '';
@@ -1375,8 +1390,8 @@ function buildFullPlayerEmbed(this: PSCThis, steamId: string, { isAdmin = false 
   if (save) {
     const lootItemUnique = save['lootItemUnique'];
     const craftedUniques = save['craftedUniques'];
-    const foundItems = cleanItemArray(Array.isArray(lootItemUnique) ? lootItemUnique : []);
-    const craftedItems = cleanItemArray(Array.isArray(craftedUniques) ? craftedUniques : []);
+    const foundItems = resolveItemArray(Array.isArray(lootItemUnique) ? lootItemUnique : [], locale);
+    const craftedItems = resolveItemArray(Array.isArray(craftedUniques) ? craftedUniques : [], locale);
     if (foundItems.length > 0) {
       if (foundItems.length <= 5) {
         extraBits.push(`\u2B50 ${foundItems.join(', ')}`);

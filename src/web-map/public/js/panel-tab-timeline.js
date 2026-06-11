@@ -17,6 +17,20 @@ Panel.tabs = Panel.tabs || {};
   const fmtDateTime = Panel.core.utils.fmtDateTime;
   var getCssColor = Panel.core.getCssColor;
 
+  /**
+   * Treat empty and UE4 'None' names as missing so markers fall back to a
+   * readable label instead of rendering the literal 'None' or blank.
+   */
+  function _entityName(name, fallback) {
+    const n = String(name == null ? '' : name).trim();
+    if (!n || /^none$/i.test(n)) return fallback;
+    return n;
+  }
+
+  function _tlUnknown() {
+    return i18next.t('web:timeline.popup.unknown', { defaultValue: 'Unknown' });
+  }
+
   // ── Timeline State (self-contained) ──
   const TL = {
     map: null,
@@ -369,7 +383,10 @@ Panel.tabs = Panel.tabs || {};
               : tlIcon(getCssColor('map-zombie', '#9b59b6'), 5, 'circle');
         const layerKey = cat === 'animal' ? 'animals' : cat === 'bandit' ? 'bandits' : 'zombies';
         const m = L.marker([a.lat, a.lng], { icon: icon });
-        m.bindTooltip(a.display_name || a.ai_type, { direction: 'top', offset: [0, -5] });
+        m.bindTooltip(esc(_entityName(a.display_name || a.ai_type, _tlUnknown())), {
+          direction: 'top',
+          offset: [0, -5],
+        });
         m.addTo(TL.layers[layerKey]);
       });
     }
@@ -379,8 +396,8 @@ Panel.tabs = Panel.tabs || {};
       d.vehicles.forEach(function (v) {
         if (v.lat == null) return;
         const m = L.marker([v.lat, v.lng], { icon: tlIcon('#3498db', 9, 'square') });
-        const name = v.display_name || v.class || i18next.t('web:activity.vehicle');
-        m.bindTooltip(name, { direction: 'top', offset: [0, -7] });
+        const name = _entityName(v.display_name || v.class, i18next.t('web:activity.vehicle'));
+        m.bindTooltip(esc(name), { direction: 'top', offset: [0, -7] });
         m.bindPopup(
           '<div class="tl-popup"><b>' +
             esc(name) +
@@ -403,9 +420,9 @@ Panel.tabs = Panel.tabs || {};
       d.structures.forEach(function (s) {
         if (s.lat == null) return;
         const m = L.marker([s.lat, s.lng], { icon: tlIcon('#95a5a6', 4, 'square') });
-        const name = s.display_name || s.actor_class || i18next.t('web:activity.structure');
+        const name = _entityName(s.display_name || s.actor_class, i18next.t('web:activity.structure'));
         const owner = TL.nameMap[s.owner_steam_id] || s.owner_steam_id || '?';
-        m.bindTooltip(name, { direction: 'top', offset: [0, -5] });
+        m.bindTooltip(esc(name), { direction: 'top', offset: [0, -5] });
         m.bindPopup(
           '<div class="tl-popup"><b>' +
             esc(name) +
@@ -428,9 +445,9 @@ Panel.tabs = Panel.tabs || {};
       d.companions.forEach(function (c) {
         if (c.lat == null) return;
         const m = L.marker([c.lat, c.lng], { icon: tlIcon('#f1c40f', 7, 'diamond') });
-        const name = c.display_name || c.entity_type || 'Companion';
+        const name = _entityName(c.display_name || c.entity_type, 'Companion');
         const owner = TL.nameMap[c.owner_steam_id] || '';
-        m.bindTooltip(name + (owner ? ' (' + owner + ')' : ''), { direction: 'top', offset: [0, -6] });
+        m.bindTooltip(esc(name) + (owner ? ' (' + esc(owner) + ')' : ''), { direction: 'top', offset: [0, -6] });
         m.addTo(TL.layers.companions);
       });
     }
@@ -483,7 +500,7 @@ Panel.tabs = Panel.tabs || {};
       deaths.forEach(function (d) {
         if (d.lat == null) return;
         const m = L.marker([d.lat, d.lng], { icon: tlIcon('#ff0000', 8, 'circle', 'Death'), zIndexOffset: -100 });
-        const cause = d.cause_name || d.cause_type || 'Unknown';
+        const cause = _entityName(d.cause_name || d.cause_type, _tlUnknown());
         const t = fmtDateTime(d.created_at);
         m.bindPopup(
           '<div class="tl-popup"><b>💀 ' +

@@ -91,6 +91,11 @@ function simplifyName(raw) {
   if (!raw) return raw;
   if (typeof raw === 'object') raw = raw.item || raw.name || String(raw);
   if (typeof raw !== 'string') return String(raw);
+  // UE4 serializes missing names as the literal 'None' — show the i18n
+  // unknown label instead of leaking it into the popup.
+  if (/^none$/i.test(raw.trim())) {
+    return i18next.t('web:map.player_detail.unknown', { defaultValue: 'Unknown' });
+  }
   return raw
     .replace(/^BP_/i, '')
     .replace(/_C$/i, '')
@@ -435,7 +440,16 @@ async function authFetch(url, opts) {
 
 // ── Fetch players (fast, local data) ───────────────────────
 async function fetchPlayersQuick() {
-  const url = currentServer === 'primary' ? '/api/players' : `/api/players?server=${encodeURIComponent(currentServer)}`;
+  const params = [];
+  if (currentServer !== 'primary') params.push(`server=${encodeURIComponent(currentServer)}`);
+  // Item names in the player payload (inventory, recipes) are resolved
+  // server-side per request — pass the active map language.
+  const lang =
+    typeof i18next !== 'undefined' && i18next && (i18next.resolvedLanguage || i18next.language)
+      ? i18next.resolvedLanguage || i18next.language
+      : '';
+  if (lang) params.push(`lang=${encodeURIComponent(lang)}`);
+  const url = params.length > 0 ? `/api/players?${params.join('&')}` : '/api/players';
   const res = await authFetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();

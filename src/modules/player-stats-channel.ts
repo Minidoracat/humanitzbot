@@ -12,7 +12,7 @@ import _defaultPlayerStats from '../tracking/player-stats.js';
 import { KillTracker } from '../tracking/kill-tracker.js';
 import { parseSave, parseClanData, PERK_MAP, PERK_INDEX_MAP } from '../parsers/save-parser.js';
 import * as gameData from '../parsers/game-data.js';
-import { cleanItemName as _sharedCleanItemName } from '../parsers/ue4-names.js';
+import { resolveItemName } from '../i18n/item-names.js';
 import * as playerStatsEmbeds from './player-stats-embeds.js';
 import os from 'os';
 import type { HumanitZDB } from '../db/database.js';
@@ -1352,7 +1352,8 @@ function _parseIni(text: string) {
 }
 
 /**
- * Clean an item name using the shared cleaner from ue4-names.js.
+ * Resolve an item name for Discord embeds in the configured bot locale
+ * (resolveItemName: items i18n namespace → en → shared heuristic cleaner).
  * Returns '' for null/undefined (not 'Unknown') to preserve .filter(Boolean) patterns.
  */
 function _cleanItemName(name: unknown) {
@@ -1360,7 +1361,7 @@ function _cleanItemName(name: unknown) {
   const str =
     typeof name === 'string' ? name : typeof name === 'number' || typeof name === 'boolean' ? String(name) : '';
   if (!str) return '';
-  const cleaned = _sharedCleanItemName(str);
+  const cleaned = resolveItemName(str, getLocale());
   return cleaned === 'Unknown' ? '' : cleaned;
 }
 
