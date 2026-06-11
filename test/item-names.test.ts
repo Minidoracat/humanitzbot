@@ -66,6 +66,24 @@ describe('locales items.json data', () => {
     }
   });
 
+  it('keeps display names unique per locale, modulo known variant pairs', () => {
+    // resolveItemId reverse lookups are first-wins on duplicate labels, so new
+    // collisions silently bias lookups — keep them explicit. These pairs are
+    // genuine game variants sharing one human label.
+    const allowedDuplicateIds = new Set(['BrownPantsShortPockets', 'Canteen1']);
+    for (const lng of LOCALES) {
+      const seen = new Map<string, string>();
+      for (const [id, displayName] of Object.entries(data[lng])) {
+        const lower = displayName.toLowerCase();
+        const prev = seen.get(lower);
+        if (prev !== undefined && !allowedDuplicateIds.has(id)) {
+          assert.fail(`${lng}: duplicate display name '${displayName}' for ids '${id}' and '${prev}'`);
+        }
+        if (prev === undefined) seen.set(lower, id);
+      }
+    }
+  });
+
   it('keeps shared glossary roots consistent across entries', () => {
     const rules: Array<[RegExp, string, string]> = [
       [/Shells\b/, '霰彈', '霰弹'],

@@ -153,7 +153,7 @@ export class ItemRepository extends BaseRepository {
         'SELECT * FROM item_instances WHERE item = ? AND lost = 0 ORDER BY location_type',
       ),
       getItemInstancesByItemNoCase: this._handle.prepare(
-        'SELECT * FROM item_instances WHERE item = ? COLLATE NOCASE AND lost = 0 ORDER BY location_type',
+        'SELECT * FROM item_instances WHERE item COLLATE NOCASE = ? AND lost = 0 ORDER BY location_type',
       ),
       getItemInstancesByLocation: this._handle.prepare(
         'SELECT * FROM item_instances WHERE location_type = ? AND location_id = ? AND lost = 0',
