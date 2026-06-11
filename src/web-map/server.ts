@@ -1040,6 +1040,9 @@ class WebMapServer {
   /**
    * Read and parse a JSON save cache file, reusing the previous parse for the
    * same data dir while the source file and its mtime are unchanged.
+   *
+   * The returned Map is the shared cache entry — callers must treat it as
+   * read-only; mutating it would corrupt the cache for every other consumer.
    */
   _readSaveJsonCached(dataDir: string, sourcePath: string, mtimeMs: number): Map<string, unknown> {
     const cached = this._saveJsonCache.get(dataDir);

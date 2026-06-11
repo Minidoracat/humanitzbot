@@ -19,6 +19,7 @@
  */
 
 import { normalizeInventory } from './item-fingerprint.js';
+import { yieldToEventLoop } from '../utils/async.js';
 // HumanitZDB is the canonical type; HumanitZDBLike below provides a typed
 // adapter so reconcileItems() can use db.item.xxx() with correct return types.
 // Once ItemRepository has typed return values, replace HumanitZDBLike with HumanitZDB.
@@ -148,10 +149,6 @@ interface HumanitZDBLike {
 // ═══════════════════════════════════════════════════════════════════════════
 //  Main entry
 // ═══════════════════════════════════════════════════════════════════════════
-
-function _yieldToEventLoop(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
-}
 
 function _runInWriteTransaction<T>(db: HumanitZDBLike, fn: () => T): T {
   return db.transaction ? db.transaction(fn) : fn();
@@ -336,11 +333,11 @@ async function reconcileItems(
   // per container. Instead, each reconcile pass commits in its own
   // transaction with an event-loop yield in between, so the synchronous
   // better-sqlite3 writes never block the process for the whole reconcile.
-  await _yieldToEventLoop();
+  await yieldToEventLoop();
   _runInWriteTransaction(db, () => {
     _reconcileUniqueItems(db, uniqueItems, snapshot, nameResolver, stats);
   });
-  await _yieldToEventLoop();
+  await yieldToEventLoop();
   _runInWriteTransaction(db, () => {
     _reconcileFungibleGroups(db, fungibleGroups, snapshot, nameResolver, stats);
   });

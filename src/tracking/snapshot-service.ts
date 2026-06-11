@@ -191,7 +191,11 @@ interface SaveData {
 
 interface RecordSnapshotOptions {
   onlinePlayers?: Set<string>;
-  /** Bypass the min-interval throttle (explicit manual/forced snapshots). */
+  /**
+   * Bypass the min-interval throttle. No production caller passes this yet —
+   * it is reserved for a future manual "snapshot now" action, which must set
+   * it or be silently throttled.
+   */
   force?: boolean;
 }
 

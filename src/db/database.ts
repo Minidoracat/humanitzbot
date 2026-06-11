@@ -39,6 +39,7 @@ import { QuestRepository } from './repositories/quest-repository.js';
 import { MetaRepository } from './repositories/meta-repository.js';
 import { WorldStateRepository } from './repositories/world-state-repository.js';
 import { BotStateRepository } from './repositories/bot-state-repository.js';
+import { yieldToEventLoop } from '../utils/async.js';
 
 const __dirname = getDirname(import.meta.url);
 const DEFAULT_DB_PATH = path.join(__dirname, '..', '..', 'data', 'humanitz.db');
@@ -46,9 +47,6 @@ const DEFAULT_DB_PATH = path.join(__dirname, '..', '..', 'data', 'humanitz.db');
 // how long any single phase transaction can hold the event loop.
 const SAVE_SYNC_PLAYER_BATCH_SIZE = 100;
 
-function yieldToEventLoop(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
-}
 const READ_ONLY_RAW_PRAGMAS = new Set([
   'table_info',
   'table_xinfo',

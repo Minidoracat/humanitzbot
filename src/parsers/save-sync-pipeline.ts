@@ -4,12 +4,9 @@ import { reconcileItems } from '../db/item-tracker.js';
 import type { HumanitZDB } from '../db/database.js';
 import type { Logger } from '../utils/log.js';
 import { errMsg } from '../utils/error.js';
+import { yieldToEventLoop } from '../utils/async.js';
 
 const MAINTENANCE_PURGE_INTERVAL_SYNCS = 100;
-
-function yieldToEventLoop(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
-}
 
 export type SaveActivityEvent = ReturnType<typeof diffSaveState>[number];
 export type SaveItemStats = Awaited<ReturnType<typeof reconcileItems>>;
