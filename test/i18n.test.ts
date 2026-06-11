@@ -114,7 +114,7 @@ describe('i18n module', () => {
         typeof v === 'object' && v !== null ? leaves(v, p + k + '.') : [p + k],
       );
     }
-    const ns = ['common', 'web', 'discord', 'api', 'commands'];
+    const ns = ['common', 'web', 'discord', 'api', 'commands', 'items'];
     const localesDir = path.join(__dirname, '..', 'locales');
     for (const n of ns) {
       const en = leaves(JSON.parse(fs.readFileSync(path.join(localesDir, 'en', n + '.json'), 'utf8')));
@@ -130,7 +130,7 @@ describe('i18n module', () => {
         typeof v === 'object' && v !== null ? leaves(v, p + k + '.') : [p + k],
       );
     }
-    const ns = ['common', 'web', 'discord', 'api', 'commands'];
+    const ns = ['common', 'web', 'discord', 'api', 'commands', 'items'];
     const localesDir = path.join(__dirname, '..', 'locales');
     for (const n of ns) {
       const en = leaves(JSON.parse(fs.readFileSync(path.join(localesDir, 'en', n + '.json'), 'utf8')));
@@ -149,7 +149,7 @@ describe('i18n module', () => {
       }
       return empties;
     }
-    const ns = ['common', 'web', 'discord', 'api', 'commands'];
+    const ns = ['common', 'web', 'discord', 'api', 'commands', 'items'];
     const localesDir = path.join(__dirname, '..', 'locales');
     for (const n of ns) {
       const data = JSON.parse(fs.readFileSync(path.join(localesDir, 'zh-TW', n + '.json'), 'utf8'));
@@ -167,7 +167,7 @@ describe('i18n module', () => {
       }
       return empties;
     }
-    const ns = ['common', 'web', 'discord', 'api', 'commands'];
+    const ns = ['common', 'web', 'discord', 'api', 'commands', 'items'];
     const localesDir = path.join(__dirname, '..', 'locales');
     for (const n of ns) {
       const data = JSON.parse(fs.readFileSync(path.join(localesDir, 'zh-CN', n + '.json'), 'utf8'));
@@ -185,7 +185,7 @@ describe('i18n module', () => {
       }
       return result;
     }
-    const ns = ['common', 'web', 'discord', 'api', 'commands'];
+    const ns = ['common', 'web', 'discord', 'api', 'commands', 'items'];
     const localesDir = path.join(__dirname, '..', 'locales');
     for (const n of ns) {
       const enData = flatLeaves(JSON.parse(fs.readFileSync(path.join(localesDir, 'en', n + '.json'), 'utf8')));
@@ -221,7 +221,7 @@ describe('i18n module', () => {
       return result;
     }
     const localesDir = path.join(__dirname, '..', 'locales');
-    const ns = ['common', 'web', 'discord', 'api', 'commands'];
+    const ns = ['common', 'web', 'discord', 'api', 'commands', 'items'];
     for (const n of ns) {
       const enVars = extractVars(JSON.parse(fs.readFileSync(path.join(localesDir, 'en', n + '.json'), 'utf8')));
       for (const lng of ['zh-TW', 'zh-CN']) {

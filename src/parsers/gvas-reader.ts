@@ -235,7 +235,15 @@ const MAP_CAPTURE = new Set([
   'RandQuestConfig',
   'SGlobalContainerSave',
   'LodModularLootActor',
+  'Params', // sandbox / loot-actor params (Name → Float)
+  'Stats', // companion stats (Name → Str: health/Food/Name)
+  'Data', // world quest data (Name → Str)
+  'Time', // world quest timers (Name → DateTime)
 ]);
+
+// Map properties whose StructProperty values are serialized as raw inline
+// FDateTime ticks (8 bytes, untagged) rather than tagged property lists.
+const MAP_INLINE_DATETIME = new Set(['Time']);
 
 // ─── Read a single UProperty ───────────────────────────────────────────────
 
@@ -309,11 +317,21 @@ function readProperty(r: GvasReader, options: ReadPropertyOptions = {}): GvasPro
 
       case 'StrProperty':
       case 'NameProperty':
-      case 'SoftObjectProperty':
       case 'ObjectProperty':
         r.readU8();
         prop.value = r.readFString();
         break;
+
+      case 'SoftObjectProperty': {
+        // Payload is an FSoftObjectPath: assetPath FString + subPath FString
+        // (subPath is empty in practice = 4 zero bytes). Align to dataSize
+        // afterwards so future payload changes cannot desync the stream.
+        r.readU8();
+        const payloadStart = r.getOffset();
+        prop.value = r.readFString();
+        r.setOffset(payloadStart + dataSize);
+        break;
+      }
 
       case 'EnumProperty':
         prop.enumType = r.readFString();
@@ -558,6 +576,15 @@ function _readArrayProperty(r: GvasReader, prop: GvasProperty, dataSize: number,
       strs.push(r.readFString());
     }
     prop.value = strs;
+  } else if (innerType === 'SoftObjectProperty') {
+    // Each element is an FSoftObjectPath: assetPath FString + subPath FString
+    const paths: string[] = [];
+    for (let i = 0; i < count; i++) {
+      paths.push(r.readFString());
+      r.readFString(); // subPath (empty in practice)
+    }
+    prop.value = paths;
+    r.setOffset(afterSep + dataSize); // defensive alignment
   } else if (innerType === 'IntProperty') {
     const ints: number[] = [];
     for (let i = 0; i < count; i++) {
@@ -611,7 +638,6 @@ interface InventorySlot {
   attachments?: unknown[];
   cap?: number;
   weight?: number;
-  maxDur?: number;
   wetness?: number;
 }
 
@@ -631,7 +657,6 @@ function _parseInventorySlots(r: GvasReader, count: number): InventorySlot[] {
     let attachments: unknown[] = [];
     let cap = 0;
     let weight = 0;
-    let maxDur = 0;
     let wetness = 0;
     for (const sp of slotProps) {
       if (sp.name === 'Item' && sp.children) {
@@ -645,7 +670,6 @@ function _parseInventorySlots(r: GvasReader, count: number): InventorySlot[] {
       if (sp.name === 'Attachments' && Array.isArray(sp.value)) attachments = sp.value;
       if (sp.name === 'Cap') cap = (sp.value as number) || 0;
       if (sp.name === 'Weight') weight = (sp.value as number) || 0;
-      if (sp.name === 'MaxDur') maxDur = (sp.value as number) || 0;
       if (sp.name === 'Wetness') wetness = (sp.value as number) || 0;
     }
 
@@ -659,7 +683,6 @@ function _parseInventorySlots(r: GvasReader, count: number): InventorySlot[] {
       if (attachments.length) slot.attachments = attachments;
       if (cap) slot.cap = Math.round(cap * 100) / 100;
       if (weight) slot.weight = Math.round(weight * 10000) / 10000;
-      if (maxDur) slot.maxDur = Math.round(maxDur * 100) / 100;
       if (wetness) slot.wetness = Math.round(wetness * 100) / 100;
       items.push(slot);
     }
@@ -685,6 +708,18 @@ function _readMapProperty(r: GvasReader, prop: GvasProperty, dataSize: number, c
   if (MAP_CAPTURE.has(cname)) {
     r.readI32(); // removedCount
     const count = r.readI32();
+
+    // DateTime-valued maps store each value as a raw inline int64 (ticks)
+    if (valType === 'StructProperty' && MAP_INLINE_DATETIME.has(cname) && keyType !== 'StructProperty') {
+      const entries: Record<string, unknown> = {};
+      for (let i = 0; i < count; i++) {
+        const key = keyType === 'IntProperty' ? r.readI32() : r.readFString();
+        entries[key] = r.readI64();
+      }
+      prop.value = entries;
+      r.setOffset(afterSep + dataSize); // defensive alignment
+      return;
+    }
 
     // StructProperty values require recursive parsing
     if (valType === 'StructProperty' || keyType === 'StructProperty') {
@@ -718,6 +753,7 @@ function _readMapProperty(r: GvasReader, prop: GvasProperty, dataSize: number, c
         entries.push(entry);
       }
       prop.value = entries;
+      r.setOffset(afterSep + dataSize); // defensive alignment
       return;
     }
 
@@ -747,6 +783,7 @@ function _readMapProperty(r: GvasReader, prop: GvasProperty, dataSize: number, c
       entries[key] = val;
     }
     prop.value = entries;
+    r.setOffset(afterSep + dataSize); // defensive alignment
   } else {
     // Skip maps we don't need to capture
     r.setOffset(afterSep + dataSize);

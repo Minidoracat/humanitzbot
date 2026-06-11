@@ -1066,8 +1066,9 @@ describe('Web Map Read Endpoints', () => {
       assert.equal(Object.hasOwn(body.categories, 'building'), false);
       assert.deepEqual(body.topPlayers, [{ actor: 'Alice', steam_id: '76561198000000001', count: 2 }]);
       assert.deepEqual(body.topActors, body.topPlayers);
+      // `display` carries the cleaned human label for raw UE4 container names.
       assert.deepEqual(body.topContainers, [
-        { actor: 'BuildContainer_1134', actor_name: 'BuildContainer_1134', count: 3 },
+        { actor: 'BuildContainer_1134', actor_name: 'BuildContainer_1134', display: 'Container', count: 3 },
       ]);
     });
 

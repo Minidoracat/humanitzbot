@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import * as _ue4_names from '../src/parsers/ue4-names.js';
-const { cleanName, cleanItemName, cleanItemArray, isHexGuid } = _ue4_names as any;
+const { cleanName, cleanNameCached, cleanItemName, cleanItemNameCached, cleanItemArray, isHexGuid } = _ue4_names as any;
 
 describe('cleanName', () => {
   it('handles Door_GEN_VARIABLE_BP_ pattern', () => {
@@ -55,6 +55,12 @@ describe('cleanName', () => {
     assert.equal(cleanName(null), 'Unknown');
     assert.equal(cleanName(undefined), 'Unknown');
     assert.equal(cleanName(''), 'Unknown');
+  });
+
+  it("maps UE4 'None' placeholder to Unknown", () => {
+    assert.equal(cleanName('None'), 'Unknown');
+    assert.equal(cleanName('none'), 'Unknown');
+    assert.equal(cleanItemName('None'), 'Unknown');
   });
 
   it('handles full blueprint path', () => {
@@ -122,7 +128,9 @@ describe('cleanItemName', () => {
     assert.equal(cleanItemName('improaxe'), 'Improvised Axe');
     assert.equal(cleanItemName('improarrow'), 'Improvised Arrow');
     assert.equal(cleanItemName('drillkit'), 'Drill Kit');
-    assert.equal(cleanItemName('lockpick'), 'Lock Pick');
+    // Case-insensitive DT lookup now hits row 'LockPick' whose authoritative
+    // in-game Name is 'Lockpick' — table precision wins over the manual alias.
+    assert.equal(cleanItemName('lockpick'), 'Lockpick');
     assert.equal(cleanItemName('binos'), 'Binoculars');
   });
 
@@ -165,11 +173,37 @@ describe('cleanItemName', () => {
     assert.equal(cleanItemName('LEDFlashlight'), 'LED Flashlight');
   });
 
+  // ── Case-insensitive ITEM_NAMES lookup ──
+  // Save files store item ids with inconsistent casing; the DT table rows are
+  // the authoritative spelling. Audit ground truth: '12g' appears 36,351 times
+  // in the production save while the DT row is '12G'.
+
+  it('resolves item ids case-insensitively against ITEM_NAMES', () => {
+    assert.equal(cleanItemName('12G'), '12 Gauge Shells'); // exact
+    assert.equal(cleanItemName('12g'), '12 Gauge Shells'); // lowercase save id
+    assert.equal(cleanItemName('gasmask'), 'Gas Mask');
+    assert.equal(cleanItemName('GASMASK'), 'Gas Mask');
+  });
+
   // ── Trailing digit precision ──
+  // Table lookup (exact + case-insensitive) must win before the trailing-digit
+  // heuristic: 'GasMask2' has its own DT row (Advanced Gas Mask) and must not
+  // be digit-stripped into plain 'GasMask'.
+
+  it('prefers table rows over trailing-digit stripping (Gasmask2)', () => {
+    assert.equal(cleanItemName('GasMask2'), 'Advanced Gas Mask'); // exact DT row
+    assert.equal(cleanItemName('Gasmask2'), 'Advanced Gas Mask'); // save-file casing
+    assert.equal(cleanItemName('GasMask'), 'Gas Mask'); // base item unaffected
+  });
 
   it('strips trailing digit glued to word but preserves spaced numbers', () => {
-    // Glued: "Bandage2" → strip → "Bandage"
-    assert.equal(cleanItemName('Bandage2'), 'Bandage');
+    // Glued: "Bandage2" (no DT row) → strip → "Bandage" → table re-lookup → "Rag".
+    // The re-lookup is intentional: a digit-suffixed duplicate of a known item
+    // should display the same authoritative name as the base item, instead of
+    // the half-cleaned id ('Bandage') that no other code path ever shows.
+    assert.equal(cleanItemName('Bandage2'), 'Rag');
+    // Stripped ids with no table row keep the heuristic-cleaned form.
+    assert.equal(cleanItemName('MysteryThing2'), 'Mystery Thing');
     // Spaced (after Lv expansion): "SwordLv3" → "Sword Lvl 3" (number preserved)
     assert.equal(cleanItemName('SwordLv3'), 'Sword Lvl 3');
   });
@@ -182,6 +216,30 @@ describe('cleanItemName', () => {
     assert.equal(cleanItemName('IsBleeding'), 'Is Bleeding');
     assert.equal(cleanItemName('HasFever'), 'Has Fever');
     assert.equal(cleanItemName('BrokenLeg'), 'Broken Leg');
+  });
+});
+
+describe('memoized cleaners', () => {
+  it('cleanNameCached matches cleanName output', () => {
+    const samples = ['BuildContainer_147', 'ChildActor_GEN_VARIABLE_BP_VehicleStorage_C_CAT_2147253396', 'Barrel'];
+    for (const s of samples) {
+      assert.equal(cleanNameCached(s), cleanName(s));
+      // Second call hits the cache — must stay identical.
+      assert.equal(cleanNameCached(s), cleanName(s));
+    }
+  });
+
+  it('cleanItemNameCached matches cleanItemName output', () => {
+    const samples = ['12g', 'Gasmask2', 'Bandage2', 'BP_WoodPlank_C'];
+    for (const s of samples) {
+      assert.equal(cleanItemNameCached(s), cleanItemName(s));
+      assert.equal(cleanItemNameCached(s), cleanItemName(s));
+    }
+  });
+
+  it('handles non-string input without caching', () => {
+    assert.equal(cleanNameCached(null), 'Unknown');
+    assert.equal(cleanItemNameCached(undefined), 'Unknown');
   });
 });
 

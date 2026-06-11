@@ -18,6 +18,23 @@ Panel.tabs = Panel.tabs || {};
 
   let _inited = false;
   let _itemsData = { instances: [], groups: [], locations: [], counts: {}, pagination: {} };
+
+  /**
+   * Human label for an item row. The API attaches `displayName` (cleaned via
+   * cleanItemName) next to the raw `item` RowName id; the raw id stays in
+   * data-* attributes for fingerprint tracking and server-side search.
+   */
+  function _itemLabel(row) {
+    return (row && (row.displayName || row.item)) || '';
+  }
+
+  /** Render the item label with the raw RowName id as a hover tooltip. */
+  function _itemLabelHtml(row) {
+    const label = _itemLabel(row);
+    const rawId = row && row.item ? String(row.item) : '';
+    if (!rawId || rawId === label) return esc(label);
+    return '<span title="' + esc(rawId) + '">' + esc(label) + '</span>';
+  }
   let _itemsMovements = [];
   let _itemsOffset = 0;
   let _itemsHasMoreInstances = false;
@@ -242,7 +259,9 @@ Panel.tabs = Panel.tabs || {};
       const loc = locations[i];
       const opt = document.createElement('option');
       opt.value = loc.type + '|' + loc.id;
-      opt.textContent = _formatLocationType(loc.type) + ': ' + _shortenId(loc.id) + ' (' + loc.totalItems + ')';
+      opt.textContent =
+        _formatLocationType(loc.type) + ': ' + _resolveLocationLabel(loc.type, loc.id) + ' (' + loc.totalItems + ')';
+      opt.title = loc.id;
       locSelect.appendChild(opt);
     }
     if (
@@ -254,7 +273,10 @@ Panel.tabs = Panel.tabs || {};
       const opt = document.createElement('option');
       opt.value = selected;
       const parts = selected.split('|');
-      opt.textContent = parts.length === 2 ? _formatLocationType(parts[0]) + ': ' + _shortenId(parts[1]) : selected;
+      opt.textContent =
+        parts.length === 2
+          ? _formatLocationType(parts[0]) + ': ' + _resolveLocationLabel(parts[0], parts[1])
+          : selected;
       locSelect.appendChild(opt);
     }
     locSelect.value = selected || '';
@@ -437,7 +459,7 @@ Panel.tabs = Panel.tabs || {};
       html += '<tr class="border-b border-border/30 hover:bg-surface-50/50">';
       html +=
         '<td class="px-2 py-1.5 text-white font-medium">' +
-        esc(inst.item) +
+        _itemLabelHtml(inst) +
         (inst.ammo ? ' <span class="text-muted">(' + inst.ammo + ')</span>' : '') +
         '</td>';
       html += '<td class="px-2 py-1.5">' + (inst.amount || 1) + '</td>';
@@ -486,7 +508,7 @@ Panel.tabs = Panel.tabs || {};
     for (let i = 0; i < groups.length; i++) {
       const g = groups[i];
       html += '<tr class="border-b border-border/30 hover:bg-surface-50/50">';
-      html += '<td class="px-2 py-1.5 text-white font-medium">' + esc(g.item) + '</td>';
+      html += '<td class="px-2 py-1.5 text-white font-medium">' + _itemLabelHtml(g) + '</td>';
       html += '<td class="px-2 py-1.5"><span class="text-surge font-mono">' + g.quantity + '×</span></td>';
       html += '<td class="px-2 py-1.5 text-muted">' + (g.stack_size || 1) + '</td>';
       html += '<td class="px-2 py-1.5">' + _locationBadge(g.location_type, g.location_id, g.location_slot) + '</td>';
@@ -525,7 +547,7 @@ Panel.tabs = Panel.tabs || {};
       html += '<div class="flex items-center gap-2 text-xs py-1 border-b border-border/20">';
       html += '<span class="text-muted w-20 shrink-0">' + _timeAgo(m.created_at) + '</span>';
       html += '<span class="font-medium">' + icon + '</span>';
-      html += '<span class="text-white">' + esc(m.item) + '</span>';
+      html += '<span class="text-white">' + _itemLabelHtml(m) + '</span>';
       html += '<span class="text-muted">×' + (m.amount || 1) + '</span>';
       html += '<span class="text-muted">from</span>' + _locationBadge(m.from_type, m.from_id, m.from_slot);
       html += '<span class="text-muted">to</span>' + _locationBadge(m.to_type, m.to_id, m.to_slot);
@@ -587,6 +609,8 @@ Panel.tabs = Panel.tabs || {};
         entityTable +
         '" data-entity-search="' +
         esc(id) +
+        '" title="' +
+        esc(id) +
         '">' +
         esc(label) +
         '</span>'
@@ -612,13 +636,38 @@ Panel.tabs = Panel.tabs || {};
   function _resolveLocationLabel(type, id) {
     if (!id) return '?';
     if (type === 'player' && /^\d{17}$/.test(id)) {
-      const p = S.players.find(function (pl) {
+      const p = (S.players || []).find(function (pl) {
         return pl.steamId === id;
       });
       if (p && p.name) return p.name;
       return '\u2026' + id.slice(-6);
     }
+    if (type === 'container' || type === 'vehicle' || type === 'structure' || type === 'horse') {
+      return _cleanEntityName(id);
+    }
     return _shortenId(id);
+  }
+
+  /**
+   * Light client-side cleanup for raw UE4 entity ids shown in location badges
+   * ('ChildActor_GEN_VARIABLE_BP_WoodCrate_C_CAT_214\u2026' \u2192 'Wood Crate').
+   * A short instance suffix is kept for disambiguation; the full raw id stays
+   * in the badge tooltip and data-entity-search.
+   */
+  function _cleanEntityName(id) {
+    let name = String(id || '');
+    name = name.replace(/_C_(?:CAT_)?\d+$/, '').replace(/_C$/, '');
+    name = name.replace(/^.*?_GEN_VARIABLE_(?:BP_)?/, '');
+    name = name.replace(/^(?:ChildActor|Storage|Door|Window|Lamp|Light|Prop|Deco)_/i, '');
+    name = name.replace(/^BP_/, '');
+    name = name.replace(/_(\d{1,4})$/, ' #$1');
+    name = name.replace(/_\d{5,}$/, '');
+    name = name
+      .replace(/_/g, ' ')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return name || _shortenId(id);
   }
 
   function _shortenId(id) {
@@ -700,7 +749,7 @@ Panel.tabs = Panel.tabs || {};
         const g = data.group;
         html +=
           '<h2 class="text-lg font-semibold text-white mb-1">' +
-          esc(g.item) +
+          _itemLabelHtml(g) +
           ' <span class="text-surge">×' +
           g.quantity +
           '</span></h2>';
@@ -746,7 +795,7 @@ Panel.tabs = Panel.tabs || {};
             : inst.durability > 0
               ? Math.round(inst.durability * 100)
               : 0;
-        html += '<h2 class="text-lg font-semibold text-white mb-1">' + esc(inst.item) + '</h2>';
+        html += '<h2 class="text-lg font-semibold text-white mb-1">' + _itemLabelHtml(inst) + '</h2>';
         html +=
           '<div class="text-xs text-muted mb-4">' +
           i18next.t('web:item_detail.instance', { id: inst.id, defaultValue: 'Instance #{{id}}' }) +

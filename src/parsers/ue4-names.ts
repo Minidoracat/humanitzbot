@@ -69,6 +69,8 @@ function stringifyRawName(raw: unknown): string {
 function cleanName(raw: unknown): string {
   if (!raw) return 'Unknown';
   const rawStr = stringifyRawName(raw);
+  // UE4 serializes missing FNames as the literal 'None'
+  if (/^none$/i.test(rawStr.trim())) return 'Unknown';
   let name = rawStr;
 
   // Strip trailing UE4 pawn metadata: "(25m) Weapon()" suffix
@@ -150,6 +152,26 @@ function cleanName(raw: unknown): string {
   if (npcAlias) return npcAlias;
 
   return name || rawStr;
+}
+
+// ─── Item name lookup (exact + case-insensitive) ────────────────────────────
+// Save files contain item ids with inconsistent casing ('12g' vs DT row '12G',
+// 'Gasmask2' vs 'GasMask2'). The authoritative table lookup is tried exactly
+// first, then case-insensitively via a lazily built lowercase index so the
+// index is constructed once, not per call.
+let ITEM_NAMES_CI: Map<string, string> | null = null;
+
+function lookupItemName(name: string): string | undefined {
+  const exact = ITEM_NAMES[name];
+  if (exact) return exact;
+  if (!ITEM_NAMES_CI) {
+    ITEM_NAMES_CI = new Map();
+    for (const [key, value] of Object.entries(ITEM_NAMES)) {
+      const lower = key.toLowerCase();
+      if (!ITEM_NAMES_CI.has(lower)) ITEM_NAMES_CI.set(lower, value);
+    }
+  }
+  return ITEM_NAMES_CI.get(name.toLowerCase());
 }
 
 // ─── Manual item name aliases ────────────────────────────────────────────────
@@ -235,6 +257,8 @@ const ITEM_ALIASES = new Map<string, string>([
 function cleanItemName(raw: unknown): string {
   if (!raw) return 'Unknown';
   const rawStr = stringifyRawName(raw);
+  // UE4 serializes missing FNames as the literal 'None'
+  if (/^none$/i.test(rawStr.trim())) return 'Unknown';
   let name = rawStr;
 
   // Full path: strip to last segment
@@ -249,8 +273,11 @@ function cleanItemName(raw: unknown): string {
   // Strip trailing numeric instance IDs: _12345 (5+ digits)
   name = name.replace(/_\d{5,}$/, '');
 
-  // Check authoritative ITEM_NAMES from game data (718 items)
-  const itemDisplayName = ITEM_NAMES[name];
+  // Check authoritative ITEM_NAMES from game data (exact, then case-insensitive).
+  // Table lookup always runs before any heuristic mangling below so DT rows
+  // like 'GasMask2' (Advanced Gas Mask) keep their own identity instead of
+  // being digit-stripped into 'GasMask'.
+  const itemDisplayName = lookupItemName(name);
   if (itemDisplayName) return itemDisplayName;
 
   // Check alias map (case-insensitive)
@@ -269,8 +296,16 @@ function cleanItemName(raw: unknown): string {
   // Expand "Lv" abbreviation: "SwordLv3" → "Sword Lvl 3"
   name = name.replace(/Lv(\d)/g, 'Lvl $1');
 
-  // Strip trailing digit-only duplicate markers stuck to words
-  name = name.replace(/([a-zA-Z])(\d)$/, '$1');
+  // Strip trailing digit-only duplicate markers stuck to words.
+  // This is a heuristic fallback — it only runs when the table/alias lookups
+  // above all missed. If the strip produces a known item id, return its
+  // authoritative name (e.g. unknown 'Bandage3' → 'Bandage' → 'Rag').
+  const deduped = name.replace(/([a-zA-Z])\d$/, '$1');
+  if (deduped !== name) {
+    name = deduped;
+    const dedupedDisplayName = lookupItemName(name);
+    if (dedupedDisplayName) return dedupedDisplayName;
+  }
 
   // CamelCase → spaced
   name = name.replace(/([a-z])([A-Z])/g, '$1 $2');
@@ -286,6 +321,37 @@ function cleanItemName(raw: unknown): string {
 
   return name || rawStr;
 }
+
+// ─── Memoized cleaners for hot paths ─────────────────────────────────────────
+// The activity feed and item endpoints clean thousands of names per paged
+// request with extremely high repetition (a handful of container/item ids
+// dominate millions of rows). A bounded insertion-order Map cache keeps the
+// regex pipeline off the hot path while capping memory for high-cardinality
+// inputs (e.g. 'BuildContainer_<id>' with unique numeric suffixes).
+const NAME_CACHE_MAX = 4096;
+
+function memoizeNameCleaner(fn: (raw: unknown) => string): (raw: unknown) => string {
+  const cache = new Map<string, string>();
+  return (raw: unknown): string => {
+    if (typeof raw !== 'string') return fn(raw);
+    const cached = cache.get(raw);
+    if (cached !== undefined) return cached;
+    const cleaned = fn(raw);
+    if (cache.size >= NAME_CACHE_MAX) {
+      // Evict the oldest entry (Map preserves insertion order).
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
+    cache.set(raw, cleaned);
+    return cleaned;
+  };
+}
+
+/** Memoized cleanName — use on hot paths (activity feed, map data). */
+const cleanNameCached = memoizeNameCleaner(cleanName);
+
+/** Memoized cleanItemName — use on hot paths (items API, activity feed). */
+const cleanItemNameCached = memoizeNameCleaner(cleanItemName);
 
 /**
  * Test whether a string is a hex GUID (used for unique item IDs).
@@ -323,4 +389,13 @@ function cleanItemArray(items: unknown[]): unknown[] {
     .filter(Boolean);
 }
 
-export { cleanName, cleanItemName, cleanItemArray, isHexGuid, CONTAINER_ALIASES, ITEM_ALIASES };
+export {
+  cleanName,
+  cleanNameCached,
+  cleanItemName,
+  cleanItemNameCached,
+  cleanItemArray,
+  isHexGuid,
+  CONTAINER_ALIASES,
+  ITEM_ALIASES,
+};
