@@ -163,12 +163,14 @@ function _runInWriteTransaction<T>(db: HumanitZDBLike, fn: () => T): T {
  */
 function _omittedLocationTypes(snapshot: SnapshotData): Set<string> {
   const omitted = new Set<string>();
-  if (!snapshot.players) omitted.add('player');
-  if (!snapshot.containers) omitted.add('container');
-  if (!snapshot.vehicles) omitted.add('vehicle');
-  if (!snapshot.horses) omitted.add('horse');
-  if (!snapshot.structures) omitted.add('structure');
-  if (!snapshot.worldState) {
+  // Strictly undefined: null follows the syncAllFromSave() contract where it
+  // means an explicit empty payload, which stays authoritative.
+  if (snapshot.players === undefined) omitted.add('player');
+  if (snapshot.containers === undefined) omitted.add('container');
+  if (snapshot.vehicles === undefined) omitted.add('vehicle');
+  if (snapshot.horses === undefined) omitted.add('horse');
+  if (snapshot.structures === undefined) omitted.add('structure');
+  if (snapshot.worldState === undefined) {
     omitted.add('world_drop');
     omitted.add('backpack');
     omitted.add('global_container');
@@ -190,6 +192,10 @@ async function reconcileItems(
   };
 
   const currentItems: LocationItem[] = [];
+
+  // NOTE: every location type emitted by the scan blocks below must have a
+  // matching entry in _omittedLocationTypes(), or omitted snapshot fields
+  // will quietly mark items at the new location type as lost.
 
   // Players
   if (snapshot.players) {
@@ -375,6 +381,7 @@ function _reconcileUniqueItems(
   stats: ReconcileStats,
 ): void {
   const existing = db.item.getActiveItemInstances();
+  const omittedTypes = _omittedLocationTypes(snapshot);
   const existingByFP = new Map<string, ItemInstance[]>();
   for (const inst of existing) {
     if (inst.group_id) continue;
@@ -406,12 +413,15 @@ function _reconcileUniqueItems(
     }
   }
 
-  // Pass 2: fingerprint match (moved)
+  // Pass 2: fingerprint match (moved). Instances at omitted locations are
+  // not move candidates — without source data for that location we cannot
+  // tell "moved" from "two identical items", so a fresh instance is created
+  // instead and the omitted-location instance is left untouched.
   for (const ci of currentItems) {
     if (ci._matchedInstanceId) continue;
     const candidates = existingByFP.get(ci.fingerprint);
     if (!candidates) continue;
-    const moved = candidates.find((c) => !c._matched);
+    const moved = candidates.find((c) => !c._matched && !omittedTypes.has(c.location_type));
     if (moved) {
       moved._matched = true;
       ci._matchedInstanceId = moved.id;
@@ -461,7 +471,6 @@ function _reconcileUniqueItems(
   }
 
   // Pass 4: mark lost (skip locations whose snapshot field was omitted)
-  const omittedTypes = _omittedLocationTypes(snapshot);
   for (const candidates of existingByFP.values()) {
     for (const inst of candidates) {
       if (!inst._matched && !omittedTypes.has(inst.location_type)) {
