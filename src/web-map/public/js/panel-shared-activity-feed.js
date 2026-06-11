@@ -46,12 +46,16 @@ Panel.shared = Panel.shared || {};
       : '';
     if (type === 'item' && opts.activityMode === 'item') {
       const fingerprint = opts.fingerprint ? String(opts.fingerprint).trim() : '';
+      // data-item-name keeps the search-compatible value (matches the item
+      // tracking/search APIs); data-item-display carries the human label.
       return (
         '<span class="activity-item-action cursor-pointer hover:underline ' +
         (opts.cls || 'text-accent') +
         '" data-mode="item" data-search="' +
         esc(activitySearchValue) +
         '" data-item-name="' +
+        esc(activitySearchValue) +
+        '" data-item-display="' +
         esc(name) +
         '"' +
         (fingerprint ? ' data-fingerprint="' + esc(fingerprint) + '"' : '') +
@@ -113,7 +117,7 @@ Panel.shared = Panel.shared || {};
   const ACTIVITY_ITEM_POPOVER_ACTION_CLASS =
     'activity-item-popover-action text-[10px] text-accent hover:underline cursor-pointer';
 
-  function buildActivityItemPopoverHtml(itemName, fingerprint) {
+  function buildActivityItemPopoverHtml(itemName, fingerprint, displayName) {
     const canTrack = !!fingerprint;
     const isAdmin = S.tier >= 3;
     let html =
@@ -125,7 +129,7 @@ Panel.shared = Panel.shared || {};
       esc(activityItemPopoverLabel('title', 'Item actions')) +
       '</div>' +
       '<div class="font-semibold text-primary mb-2 break-words">' +
-      esc(itemName) +
+      esc(displayName || itemName) +
       '</div>';
 
     if (canTrack) {
@@ -193,11 +197,12 @@ Panel.shared = Panel.shared || {};
   function openActivityItemPopover(anchor) {
     const itemName = anchor.dataset.itemName || anchor.dataset.search || anchor.textContent || '';
     if (!itemName) return;
+    const displayName = anchor.dataset.itemDisplay || itemName;
     const fingerprint = (anchor.dataset.fingerprint || '').trim();
     const existing = document.querySelector('.item-popup');
     if (existing) existing.remove();
     const wrapper = document.createElement('div');
-    wrapper.innerHTML = buildActivityItemPopoverHtml(itemName, fingerprint);
+    wrapper.innerHTML = buildActivityItemPopoverHtml(itemName, fingerprint, displayName);
     const popup = wrapper.firstElementChild;
     if (!popup) return;
     document.body.appendChild(popup);
@@ -421,20 +426,32 @@ Panel.shared = Panel.shared || {};
     const details = parseDetails(e.details);
     const rawActor = e.actor || '';
     const actorIsSteamId = /^\d{17}$/.test(String(rawActor));
-    const actor = stripRconTags(e.actor_name || rawActor || e.steam_id || 'Unknown');
+    // `display` is the server-cleaned human label (raw UE4 container/structure
+    // names → readable text). Raw values stay in actor/actor_name and keep
+    // feeding entity search, which matches LIKE against the raw DB columns.
+    const rawActorLabel = stripRconTags(e.actor_name || rawActor || e.steam_id || 'Unknown');
+    const actor = stripRconTags(e.display || '') || rawActorLabel;
     const target = stripRconTags(e.target_name || e.target_steam_id || '');
     const actorSteamId = actorIsSteamId ? rawActor : e.steam_id || '';
     const actorType = actorEntityType(e.type);
+    const actorLinkOpts = { search: rawActorLabel };
+    if (actorType === 'container') {
+      actorLinkOpts.activityMode = 'container';
+      actorLinkOpts.activitySearch = rawActorLabel;
+    }
     const actorHtml =
       actorIsSteamId || (!actorType && actorSteamId)
         ? entityLink(actor, 'player', { steamId: actorSteamId })
         : actorType
-          ? entityLink(actor, actorType, actorType === 'container' ? { activityMode: 'container' } : {})
+          ? entityLink(actor, actorType, actorLinkOpts)
           : esc(actor);
     const targetHtml = target
       ? '<span class="player-link" data-steam-id="' + esc(e.target_steam_id || '') + '">' + esc(target) + '</span>'
       : '';
-    const itemName = stripRconTags(e.item || '');
+    // `item_display` is the proper item-table label (e.g. '12g' → '12 Gauge
+    // Shells'); `item` keeps the legacy cleaned value used for search links.
+    const rawItemLabel = stripRconTags(e.item || '');
+    const itemName = stripRconTags(e.item_display || '') || rawItemLabel;
     const attributedName = stripRconTags(e.attributed_name || details.attributedPlayer || '');
     const attributedSteamId = e.steam_id || details.attributedSteamId || '';
     const attributedHtml = attributedName ? entityLink(attributedName, 'player', { steamId: attributedSteamId }) : '';
@@ -467,7 +484,13 @@ Panel.shared = Panel.shared || {};
     else if (e.type === 'raid_damage') _itype = 'structure';
     const itemFingerprint = eventItemFingerprint(e);
     const itemHtml = itemName
-      ? entityLink(itemName, _itype, _itype === 'item' ? { activityMode: 'item', fingerprint: itemFingerprint } : {})
+      ? entityLink(
+          itemName,
+          _itype,
+          _itype === 'item'
+            ? { activityMode: 'item', fingerprint: itemFingerprint, activitySearch: rawItemLabel }
+            : { search: rawItemLabel },
+        )
       : '';
 
     const _a = function (k) {
@@ -709,7 +732,8 @@ Panel.shared = Panel.shared || {};
 
   function fallbackActivityEvent(e, err) {
     const event = e || {};
-    const actor = stripRconTags(event.actor_name || event.actor || event.steam_id || 'Unknown') || 'Unknown';
+    const actor =
+      stripRconTags(event.display || event.actor_name || event.actor || event.steam_id || 'Unknown') || 'Unknown';
     const type = event.type || 'event';
     const detail = err && err.message ? err.message : err ? String(err) : '';
     return {
@@ -813,12 +837,13 @@ Panel.shared = Panel.shared || {};
             })
             .join(', ');
           const fmt0 = safeFormatActivityEvent(e);
-          const actor = stripRconTags(e.actor_name || e.actor || e.steam_id || 'Unknown');
+          const rawActorLabel = stripRconTags(e.actor_name || e.actor || e.steam_id || 'Unknown');
+          const actor = stripRconTags(e.display || '') || rawActorLabel;
           const groupActorType = actorEntityType(e.type);
           const groupActorSteamId = /^\d{17}$/.test(String(e.actor || '')) ? e.actor : e.steam_id || '';
           const actorHtml =
             groupActorType === 'container'
-              ? entityLink(actor, 'container', { activityMode: 'container' })
+              ? entityLink(actor, 'container', { activityMode: 'container', activitySearch: rawActorLabel })
               : entityLink(actor, 'player', { steamId: groupActorSteamId });
           const time0 = formatActivityTime(e.created_at);
           const actionWord =

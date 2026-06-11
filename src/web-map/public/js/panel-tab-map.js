@@ -20,6 +20,20 @@ Panel.tabs = Panel.tabs || {};
   let _inited = false;
   let mapWorldLayers = {};
 
+  /**
+   * Treat empty and UE4 'None' names as missing so tooltips/popups fall back
+   * to a readable label instead of rendering the literal 'None' or blank.
+   */
+  function _entityName(name, fallback) {
+    const n = String(name == null ? '' : name).trim();
+    if (!n || /^none$/i.test(n)) return fallback;
+    return n;
+  }
+
+  function _unknownLabel() {
+    return i18next.t('web:map.player_detail.unknown', { defaultValue: 'Unknown' });
+  }
+
   function init() {
     if (_inited) return;
     _inited = true;
@@ -138,15 +152,16 @@ Panel.tabs = Panel.tabs || {};
           iconAnchor: [2.5, 2.5],
         });
         const m = L.marker([s.lat, s.lng], { icon: icon });
-        m.bindTooltip(esc(s.name || i18next.t('web:activity.structure')), { direction: 'top', offset: [0, -4] });
-        const ownerName = s.owner && data.nameMap ? data.nameMap[s.owner] || s.owner : 'Unknown';
+        const structureName = _entityName(s.name, i18next.t('web:activity.structure'));
+        m.bindTooltip(esc(structureName), { direction: 'top', offset: [0, -4] });
+        const ownerName = s.owner && data.nameMap ? data.nameMap[s.owner] || s.owner : _unknownLabel();
         const hpPct = s.maxHealth ? Math.round((s.health / s.maxHealth) * 100) : 0;
         const ownerHtml = s.owner
           ? '<span class="player-link" data-steam-id="' + esc(s.owner) + '">' + esc(ownerName) + '</span>'
           : esc(ownerName);
         const popupHtml =
           '<div class="tl-popup" style="min-width:160px"><b>' +
-          entityLink(s.name || i18next.t('web:activity.structure'), 'structure') +
+          entityLink(structureName, 'structure') +
           '</b>' +
           (s.upgrade ? '<br><span style="color:' + palette.muted + '">Level ' + s.upgrade + '</span>' : '') +
           '<br>\u2764\ufe0f ' +
@@ -178,12 +193,13 @@ Panel.tabs = Panel.tabs || {};
           iconAnchor: [3.5, 3.5],
         });
         const m = L.marker([v.lat, v.lng], { icon: icon });
-        m.bindTooltip(esc(v.name || i18next.t('web:activity.vehicle')), { direction: 'top', offset: [0, -5] });
+        const vehicleName = _entityName(v.name, i18next.t('web:activity.vehicle'));
+        m.bindTooltip(esc(vehicleName), { direction: 'top', offset: [0, -5] });
         const hpPct = v.maxHealth ? Math.round((v.health / v.maxHealth) * 100) : 0;
         const hpColor = hpPct > 60 ? palette.calm : hpPct > 30 ? palette.surge : palette.horde;
         const popupHtml =
           '<div class="tl-popup" style="min-width:160px"><b>' +
-          entityLink(v.name || i18next.t('web:activity.vehicle'), 'vehicle') +
+          entityLink(vehicleName, 'vehicle') +
           '</b>' +
           '<br><span style="color:' +
           palette.muted +
@@ -219,13 +235,17 @@ Panel.tabs = Panel.tabs || {};
           iconAnchor: [2, 2],
         });
         const m = L.marker([c.lat, c.lng], { icon: icon });
-        m.bindTooltip(esc(c.name || 'Container') + ' (' + (c.itemCount || 0) + ')', {
+        const containerName = _entityName(
+          c.name,
+          i18next.t('web:location_type.container', { defaultValue: 'Container' }),
+        );
+        m.bindTooltip(esc(containerName) + ' (' + (c.itemCount || 0) + ')', {
           direction: 'top',
           offset: [0, -4],
         });
         const popupHtml =
           '<div class="tl-popup" style="min-width:140px"><b>' +
-          entityLink(c.name || 'Container', 'container') +
+          entityLink(containerName, 'container') +
           '</b>' +
           '<br>\ud83d\udce6 ' +
           (c.itemCount || 0) +
@@ -252,8 +272,8 @@ Panel.tabs = Panel.tabs || {};
           iconAnchor: [3, 3],
         });
         const m = L.marker([c.lat, c.lng], { icon: icon });
-        m.bindTooltip(esc(c.type || 'Companion'), { direction: 'top', offset: [0, -4] });
-        const ownerName = c.owner && data.nameMap ? data.nameMap[c.owner] || c.owner : 'Unknown';
+        m.bindTooltip(esc(_entityName(c.type, 'Companion')), { direction: 'top', offset: [0, -4] });
+        const ownerName = c.owner && data.nameMap ? data.nameMap[c.owner] || c.owner : _unknownLabel();
         const ownerHtml = c.owner
           ? '<span class="player-link" data-steam-id="' + esc(c.owner) + '">' + esc(ownerName) + '</span>'
           : esc(ownerName);
@@ -287,7 +307,7 @@ Panel.tabs = Panel.tabs || {};
           iconAnchor: [3, 3],
         });
         const m = L.marker([z.lat, z.lng], { icon: icon });
-        m.bindTooltip(z.name || 'Zombie', { direction: 'top', offset: [0, -4] });
+        m.bindTooltip(esc(_entityName(z.name, 'Zombie')), { direction: 'top', offset: [0, -4] });
         m.addTo(mapWorldLayers.zombies);
       });
       mapWorldLayers.zombies.addTo(S.map);
@@ -309,7 +329,7 @@ Panel.tabs = Panel.tabs || {};
           iconAnchor: [3.5, 3.5],
         });
         const m = L.marker([a.lat, a.lng], { icon: icon });
-        m.bindTooltip(a.name || 'Animal', { direction: 'top', offset: [0, -4] });
+        m.bindTooltip(esc(_entityName(a.name, 'Animal')), { direction: 'top', offset: [0, -4] });
         m.addTo(mapWorldLayers.animals);
       });
       mapWorldLayers.animals.addTo(S.map);
@@ -331,7 +351,7 @@ Panel.tabs = Panel.tabs || {};
           iconAnchor: [4, 4],
         });
         const m = L.marker([b.lat, b.lng], { icon: icon });
-        m.bindTooltip(b.name || 'Bandit', { direction: 'top', offset: [0, -4] });
+        m.bindTooltip(esc(_entityName(b.name, 'Bandit')), { direction: 'top', offset: [0, -4] });
         m.addTo(mapWorldLayers.bandits);
       });
       mapWorldLayers.bandits.addTo(S.map);

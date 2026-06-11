@@ -80,11 +80,20 @@ window.Panel = window.Panel || {};
     _csrfToken = token || null;
   }
 
-  /** Build API URL with server query param appended */
+  /** Build API URL with server + display-language query params appended */
   function apiUrl(path) {
-    if (S.currentServer === 'primary') return path;
+    const params = [];
+    if (S.currentServer !== 'primary') params.push('server=' + encodeURIComponent(S.currentServer));
+    // The server resolves item display names per request (resolveItemName);
+    // pass the active panel language so labels match the UI locale.
+    const lang =
+      typeof i18next !== 'undefined' && i18next && (i18next.resolvedLanguage || i18next.language)
+        ? i18next.resolvedLanguage || i18next.language
+        : '';
+    if (lang) params.push('lang=' + encodeURIComponent(lang));
+    if (params.length === 0) return path;
     const sep = path.indexOf('?') >= 0 ? '&' : '?';
-    return path + sep + 'server=' + encodeURIComponent(S.currentServer);
+    return path + sep + params.join('&');
   }
 
   /** Fetch wrapper that auto-appends server param and CSRF token */

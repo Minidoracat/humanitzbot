@@ -19,7 +19,8 @@ import { resolveReloadStrategy, summarizeConfigReloadApplyAsync } from '../confi
 import type { RuntimeConfigApplier } from '../config/runtime-config-applier.js';
 import { parseSave, PERK_MAP } from '../parsers/save-parser.js';
 import { AFFLICTION_MAP } from '../parsers/game-data.js';
-import { cleanName as cleanActorName, cleanItemName, cleanItemArray } from '../parsers/ue4-names.js';
+import { cleanName as cleanActorName, cleanNameCached, cleanItemName } from '../parsers/ue4-names.js';
+import { resolveItemName, resolveItemArray, resolveItemId, normalizeItemLocale } from '../i18n/item-names.js';
 import playerStats from '../tracking/player-stats.js';
 import playtime from '../tracking/playtime-tracker.js';
 import rcon from '../rcon/rcon.js';
@@ -265,6 +266,65 @@ function _activityBucketOffsetMinutes(timezone: string): number {
   } catch {
     return 0;
   }
+}
+
+// Event types whose `actor`/`actor_name` columns hold raw UE4 entity names
+// (containers, structures, vehicles, horses…) rather than player names.
+// Historical activity_log rows store those raw names — they are cleaned at the
+// API boundary instead of rewriting millions of DB rows.
+const ENTITY_ACTOR_EVENT_PREFIXES = [
+  'container_',
+  'structure_',
+  'vehicle_',
+  'horse_',
+  'building_',
+  'raid_',
+  'clan_building_',
+  'airdrop_',
+  'world_',
+];
+
+function _hasEntityActor(eventType: string): boolean {
+  for (const prefix of ENTITY_ACTOR_EVENT_PREFIXES) {
+    if (eventType.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+/**
+ * Attach a human-readable `displayName` next to the raw `item` id on item
+ * tracking rows. The raw id stays untouched — the frontend uses it for
+ * tooltips, fingerprint tracking, and LIKE-based search. The label is
+ * locale-aware: pass the locale resolved by _requestLocale(req).
+ */
+function _withItemDisplayName<T extends { item?: string | null }>(
+  row: T,
+  locale?: string,
+): T & { displayName?: string } {
+  if (!row.item) return row;
+  return { ...row, displayName: resolveItemName(row.item, locale) };
+}
+
+/**
+ * Resolve the display locale for an API request. The panel frontend appends
+ * `lang=<i18next language>` to API calls (see apiUrl in panel-core.js and
+ * fetchPlayersQuick in app.js); direct API consumers can use the
+ * Accept-Language header instead. Falls back to English.
+ */
+function _requestLocale(req: { query?: Record<string, unknown>; headers?: Record<string, unknown> }): string {
+  const q = req.query?.lang;
+  if (typeof q === 'string' && q.trim()) return normalizeItemLocale(q);
+  const acceptLanguage = req.headers?.['accept-language'];
+  if (typeof acceptLanguage === 'string' && acceptLanguage) {
+    for (const part of acceptLanguage.split(',')) {
+      const tag = (part.split(';')[0] || '').trim().toLowerCase();
+      if (!tag) continue;
+      if (tag === 'zh-tw' || tag.startsWith('zh-hant')) return 'zh-TW';
+      if (tag === 'zh-cn' || tag.startsWith('zh-hans') || tag === 'zh') return 'zh-CN';
+      if (tag === 'en' || tag.startsWith('en-')) return 'en';
+    }
+  }
+  return 'en';
 }
 
 function _activityQueryString(value: unknown): string {
@@ -1329,6 +1389,7 @@ class WebMapServer {
     // ── API: Get all player positions ──
     app.get('/api/players', requireTier('survivor'), rateLimit(10000, 10), async (req, res) => {
       const srv = req.srv;
+      const itemLocale = _requestLocale(req);
 
       // Resolve data sources based on server
       const players = srv.isPrimary ? this._parseSaveData() : this._parseSaveDataForServer(srv.dataDir);
@@ -1470,21 +1531,22 @@ class WebMapServer {
             cleanItemName(s as string),
           ),
 
-          // Inventory (server-side cleaned)
-          equipment: _cleanInventorySlots((data.equipment as unknown[] | undefined) ?? []),
-          quickSlots: _cleanInventorySlots((data.quickSlots as unknown[] | undefined) ?? []),
-          inventory: _cleanInventorySlots((data.inventory as unknown[] | undefined) ?? []),
-          backpackItems: _cleanInventorySlots((data.backpackItems as unknown[] | undefined) ?? []),
+          // Inventory (server-side cleaned, locale-aware)
+          equipment: _cleanInventorySlots((data.equipment as unknown[] | undefined) ?? [], itemLocale),
+          quickSlots: _cleanInventorySlots((data.quickSlots as unknown[] | undefined) ?? [], itemLocale),
+          inventory: _cleanInventorySlots((data.inventory as unknown[] | undefined) ?? [], itemLocale),
+          backpackItems: _cleanInventorySlots((data.backpackItems as unknown[] | undefined) ?? [], itemLocale),
 
-          // Recipes & skills (cleaned — cleanItemArray filters out hex GUIDs)
-          craftingRecipes: cleanItemArray((data.craftingRecipes as unknown[] | undefined) ?? []),
-          buildingRecipes: cleanItemArray((data.buildingRecipes as unknown[] | undefined) ?? []),
-          unlockedSkills: cleanItemArray((data.unlockedSkills as unknown[] | undefined) ?? []),
+          // Recipes & skills (cleaned — resolveItemArray filters out hex GUIDs
+          // and localizes table-backed item names)
+          craftingRecipes: resolveItemArray((data.craftingRecipes as unknown[] | undefined) ?? [], itemLocale),
+          buildingRecipes: resolveItemArray((data.buildingRecipes as unknown[] | undefined) ?? [], itemLocale),
+          unlockedSkills: resolveItemArray((data.unlockedSkills as unknown[] | undefined) ?? [], itemLocale),
 
           // Lore
           lore: (data.lore as unknown[] | undefined) ?? [],
-          uniqueLoots: cleanItemArray((data.uniqueLoots as unknown[] | undefined) ?? []),
-          craftedUniques: cleanItemArray((data.craftedUniques as unknown[] | undefined) ?? []),
+          uniqueLoots: resolveItemArray((data.uniqueLoots as unknown[] | undefined) ?? [], itemLocale),
+          craftedUniques: resolveItemArray((data.craftedUniques as unknown[] | undefined) ?? [], itemLocale),
 
           // Companions (cleaned)
           companionData: ((data.companionData as Record<string, unknown>[] | undefined) ?? []).map(
@@ -2002,9 +2064,16 @@ class WebMapServer {
         }
 
         // Resolve steam IDs through this server's SQLite aliases + clean UE4 blueprint names
+        const activityLocale = _requestLocale(req);
         const resolved = (events as unknown as ActivityRow[]).map((e) => {
           // SAFETY: getRecentActivity returns DbRow[] with ActivityRow shape
-          const out: ActivityRow & { actor_name?: string; target_name?: string; item?: string } = { ...e };
+          const out: ActivityRow & {
+            actor_name?: string;
+            target_name?: string;
+            item?: string;
+            display?: string;
+            item_display?: string;
+          } = { ...e };
           const actorIsSteamId = !!out.actor && /^\d{17}$/.test(out.actor);
           const details = out.details as unknown;
           if (!out.steam_id && details && typeof details === 'object' && !Array.isArray(details)) {
@@ -2030,8 +2099,19 @@ class WebMapServer {
             const targetName = this._resolveServerPlayerName(srv, out.target_steam_id);
             if (targetName) out.target_name = targetName;
           }
-          if (out.item) out.item = cleanActorName(out.item);
-          if (out.actor && !out.actor_name) out.actor_name = cleanActorName(out.actor);
+          // Display-layer cleaning: `item_display`/`display` carry the
+          // human-readable labels while `item`/`actor`/`actor_name` keep their
+          // previous values so frontend activity search (LIKE queries against
+          // the raw DB columns) keeps matching as before.
+          if (out.item) {
+            out.item_display = resolveItemName(out.item, activityLocale);
+            out.item = cleanNameCached(out.item);
+          }
+          if (out.actor && !out.actor_name) out.actor_name = cleanNameCached(out.actor);
+          if (_hasEntityActor(out.type)) {
+            const rawActorName = out.actor_name || out.actor;
+            if (rawActorName) out.display = cleanNameCached(rawActorName);
+          }
           return out;
         });
 
@@ -2124,6 +2204,7 @@ class WebMapServer {
         const resolvedTopContainers = topContainers.map((c) => ({
           actor: c.actor,
           actor_name: c.actor_name || c.actor,
+          display: cleanNameCached(c.actor_name || c.actor),
           count: c.count,
         }));
 
@@ -2477,9 +2558,10 @@ class WebMapServer {
           ? (srv.db.item.getItemLocationSummaryPage({ limit, offset, search }) as ItemLocationSummaryRow[])
           : [];
 
+        const itemLocale = _requestLocale(req);
         res.json({
-          instances,
-          groups,
+          instances: instances.map((row) => _withItemDisplayName(row, itemLocale)),
+          groups: groups.map((row) => _withItemDisplayName(row, itemLocale)),
           locations,
           counts: {
             instances: srv.db.item.getItemInstanceCount(),
@@ -2538,7 +2620,11 @@ class WebMapServer {
         }
 
         const movements = srv.db.item.getItemMovements(id) as ItemMovementRow[];
-        res.json({ instance, movements });
+        const itemLocale = _requestLocale(req);
+        res.json({
+          instance: _withItemDisplayName(instance as ItemInstanceRow, itemLocale),
+          movements: movements.map((row) => _withItemDisplayName(row, itemLocale)),
+        });
       } catch (err: unknown) {
         sendError(res, API_ERRORS.INTERNAL_SERVER_ERROR, 500, safeError(err));
       }
@@ -2561,10 +2647,11 @@ class WebMapServer {
         } catch {
           groupAttachments = [];
         }
-        const groupOut = { ...group, attachments: groupAttachments };
+        const itemLocale = _requestLocale(req);
+        const groupOut = _withItemDisplayName({ ...group, attachments: groupAttachments }, itemLocale);
 
         const movements = srv.db.item.getItemMovementsByGroup(id) as ItemMovementRow[];
-        res.json({ group: groupOut, movements });
+        res.json({ group: groupOut, movements: movements.map((row) => _withItemDisplayName(row, itemLocale)) });
       } catch (err: unknown) {
         sendError(res, API_ERRORS.INTERNAL_SERVER_ERROR, 500, safeError(err));
       }
@@ -2589,7 +2676,8 @@ class WebMapServer {
           movements = srv.db.item.getRecentItemMovements(limit) as ItemMovementRow[];
         }
 
-        res.json({ movements });
+        const itemLocale = _requestLocale(req);
+        res.json({ movements: movements.map((row) => _withItemDisplayName(row, itemLocale)) });
       } catch (err: unknown) {
         sendError(res, API_ERRORS.INTERNAL_SERVER_ERROR, 500, safeError(err));
       }
@@ -2655,9 +2743,21 @@ class WebMapServer {
           }
         }
 
-        // Fall back to item name search if no fingerprint match
+        // Fall back to item name search if no fingerprint match. The frontend
+        // may send a localized display label or a cased variant ('Gasmask2'
+        // vs 'GasMask2') instead of the raw id stored in the tracking DB —
+        // retry case-insensitively, then reverse-resolve the label to an id.
         if (!match && itemName) {
-          const instances = srv.db.item.getItemInstancesByItem(itemName as string) as ItemInstanceRow[];
+          let instances = srv.db.item.getItemInstancesByItem(itemName as string) as ItemInstanceRow[];
+          if (instances.length === 0) {
+            instances = srv.db.item.getItemInstancesByItemNoCase(itemName as string) as ItemInstanceRow[];
+          }
+          if (instances.length === 0) {
+            const rawId = resolveItemId(itemName);
+            if (rawId && rawId.toLowerCase() !== (itemName as string).toLowerCase()) {
+              instances = srv.db.item.getItemInstancesByItemNoCase(rawId) as ItemInstanceRow[];
+            }
+          }
           if (instances.length > 0) {
             const inst = steamId
               ? (instances.find((i: ItemInstanceRow) => i.location_type === 'player' && i.location_id === steamId) ??
@@ -2687,12 +2787,18 @@ class WebMapServer {
         };
 
         // Enrich movement data with resolved names
-        const enrichedMovements = movements.map((m: ItemMovementRow) => ({
-          ...m,
-          from_name: m.from_type === 'player' ? resolveName(m.from_id) : null,
-          to_name: m.to_type === 'player' ? resolveName(m.to_id) : null,
-          attributed_name: m.attributed_name || resolveName(m.attributed_steam_id),
-        }));
+        const itemLocale = _requestLocale(req);
+        const enrichedMovements = movements.map((m: ItemMovementRow) =>
+          _withItemDisplayName(
+            {
+              ...m,
+              from_name: m.from_type === 'player' ? resolveName(m.from_id) : null,
+              to_name: m.to_type === 'player' ? resolveName(m.to_id) : null,
+              attributed_name: m.attributed_name || resolveName(m.attributed_steam_id),
+            },
+            itemLocale,
+          ),
+        );
 
         // Build ownership chain — unique players who have held this item
         const ownershipChain = [];
@@ -2705,7 +2811,7 @@ class WebMapServer {
         }
 
         res.json({
-          match,
+          match: match ? _withItemDisplayName(match, itemLocale) : match,
           matchType,
           movements: enrichedMovements,
           ownershipChain,
@@ -6328,23 +6434,24 @@ class WebMapServer {
 import { generateFingerprint } from '../db/item-fingerprint.js';
 
 /**
- * Clean inventory slot items — applies cleanItemName to each item object.
- * Filters out empty/None items, cleans names, preserves durability/ammo.
- * Now also generates item fingerprints for tracking system integration.
+ * Clean inventory slot items — applies locale-aware resolveItemName to each
+ * item object. Filters out empty/None items, cleans names, preserves
+ * durability/ammo. Also generates item fingerprints for tracking integration.
  * @param {Array} slots - Array of { item, amount, durability, ammo } or strings
+ * @param {string} [locale] - Display locale resolved via _requestLocale(req)
  * @returns {Array}
  */
-function _cleanInventorySlots(slots: unknown[]): unknown[] {
+function _cleanInventorySlots(slots: unknown[], locale?: string): unknown[] {
   if (!Array.isArray(slots)) return [];
   return slots.map((slot) => {
     if (!slot) return slot;
     if (typeof slot === 'string') {
       if (slot === 'Empty' || slot === 'None') return slot;
-      return cleanItemName(slot);
+      return resolveItemName(slot, locale);
     }
     if (typeof slot === 'object' && (slot as Record<string, unknown>).item) {
       const s = slot as Record<string, unknown>;
-      const cleaned: Record<string, unknown> = { ...s, item: cleanItemName(s.item) };
+      const cleaned: Record<string, unknown> = { ...s, item: resolveItemName(s.item, locale) };
       // Generate fingerprint for item tracking integration
       // Uses the RAW item name for fingerprint (before cleaning) since
       // that's what the item tracker uses

@@ -12,6 +12,16 @@
  *   - Horse events: visible to all
  *   - Vehicle trunk changes: visible to all
  *
+ * Naming policy (display-layer cleaning):
+ *   activity_log rows keep the RAW UE4 actor/item names exactly as emitted by
+ *   the diff engine ('BuildContainer_147', 'ChildActor_GEN_VARIABLE_BP_*').
+ *   All cleaning happens at display time — here via cleanName() and the
+ *   locale-aware resolveItemName() for Discord embeds, and in
+ *   web-map/server.ts via the `display` field on the activity API. Do NOT
+ *   clean names before writing: millions of
+ *   historical rows are raw, and mixing formats would split LIKE search and
+ *   actor-based grouping, while raw instance ids carry entity identity.
+ *
  * Usage:
  *   const ActivityLog = require('./activity-log');
  *   const activityLog = new ActivityLog(client, { db, saveService, logWatcher });
@@ -23,7 +33,8 @@
 import { EmbedBuilder, type Client } from 'discord.js';
 import config from '../config/index.js';
 import { createLogger, type Logger } from '../utils/log.js';
-import { cleanName, cleanItemName } from '../parsers/ue4-names.js';
+import { cleanName } from '../parsers/ue4-names.js';
+import { resolveItemName } from '../i18n/item-names.js';
 import { t, getLocale, fmtNumber } from '../i18n/index.js';
 import { errMsg } from '../utils/error.js';
 import { logRejection } from '../utils/log-rejection.js';
@@ -365,7 +376,7 @@ class ActivityLog {
       const emoji = EVENT_EMOJI[e.type] ?? '•';
       const itemList = batch.items
         .map((i) => {
-          const cleaned = cleanItemName(i.item);
+          const cleaned = resolveItemName(i.item, _activityLocale());
           let label = (i.amount ?? 0) > 1 ? `${cleaned} x${i.amount}` : cleaned;
           if (i.durability != null && i.durability < 100) label += ` (${Math.round(i.durability)}%)`;
           return label;
@@ -495,7 +506,9 @@ function _formatEvent(event: DiffEvent, timeStr: string): string {
       if (Array.isArray(items) && items.length > 0) {
         const cleaned = items
           .slice(0, 5)
-          .map((i: unknown) => cleanItemName(typeof i === 'string' ? i.replace(/ x\d+$/, '') : String(i)));
+          .map((i: unknown) =>
+            resolveItemName(typeof i === 'string' ? i.replace(/ x\d+$/, '') : String(i), _activityLocale()),
+          );
         lostList = `: ${cleaned.join(', ')}`;
         if (items.length > 5) lostList += ` +${items.length - 5} more`;
       }

@@ -142,19 +142,13 @@ interface PlayerData {
   hasExtendedStats: boolean;
   daysSurvived: number;
   timesBitten: number;
-  bites: number;
   fishCaught: number;
   fishCaughtPike: number;
   health: number;
-  maxHealth: number;
   hunger: number;
-  maxHunger: number;
   thirst: number;
-  maxThirst: number;
   stamina: number;
-  maxStamina: number;
   infection: number;
-  maxInfection: number;
   battery: number;
   fatigue: number;
   infectionBuildup: number;
@@ -181,7 +175,6 @@ interface PlayerData {
   buildingRecipes: unknown[];
   unlockedProfessions: unknown[];
   unlockedSkills: unknown[];
-  skillsData: unknown[];
   skillTree: unknown[];
   inventory: unknown[];
   equipment: unknown[];
@@ -242,6 +235,7 @@ interface PlayerData {
   clean: number;
   sleepers: number;
   floatData: Record<string, unknown>;
+  lastLogin: string | null;
   name?: string;
 }
 
@@ -273,19 +267,13 @@ function createPlayerData(): PlayerData {
     hasExtendedStats: false,
     daysSurvived: 0,
     timesBitten: 0,
-    bites: 0,
     fishCaught: 0,
     fishCaughtPike: 0,
     health: 0,
-    maxHealth: 0,
     hunger: 0,
-    maxHunger: 0,
     thirst: 0,
-    maxThirst: 0,
     stamina: 0,
-    maxStamina: 0,
     infection: 0,
-    maxInfection: 0,
     battery: 100,
     fatigue: 0,
     infectionBuildup: 0,
@@ -312,7 +300,6 @@ function createPlayerData(): PlayerData {
     buildingRecipes: [],
     unlockedProfessions: [],
     unlockedSkills: [],
-    skillsData: [],
     skillTree: [],
     inventory: [],
     equipment: [],
@@ -373,6 +360,7 @@ function createPlayerData(): PlayerData {
     clean: 0,
     sleepers: 0,
     floatData: {},
+    lastLogin: null,
   };
 }
 
@@ -445,10 +433,16 @@ interface Container {
 interface LootActor {
   name: string;
   type: string;
+  class: string;
   x: number | null;
   y: number | null;
   z: number | null;
   items: unknown[];
+  spawned: boolean;
+  disabled: boolean;
+  activationStatus: boolean;
+  ownerSteamId: string;
+  params: Record<string, unknown> | null;
 }
 
 interface Quest {
@@ -456,6 +450,11 @@ interface Quest {
   type: string;
   state: string;
   data: Record<string, unknown>;
+  time: Record<string, string>;
+  items: unknown[];
+  x: number | null;
+  y: number | null;
+  z: number | null;
 }
 
 interface Horse {
@@ -468,6 +467,7 @@ interface Horse {
   maxHealth: number;
   energy: number;
   stamina: number;
+  saddle: number;
   ownerSteamId: string;
   name: string;
   saddleInventory: unknown[];
@@ -781,6 +781,8 @@ function parseSave(buf: Buffer): ParseResult {
           y: null,
           z: null,
           health: 0,
+          maxHealth: 0,
+          canDismantle: false,
           ownerSteamId: '',
           locked: false,
           dtName: '',
@@ -798,7 +800,17 @@ function parseSave(buf: Buffer): ParseResult {
               actor['z'] = _round2(tv.translation.z);
             }
           }
-          if (ap.name === 'Health' && typeof ap.value === 'number') actor['health'] = _round(ap.value);
+          if (ap.name === 'Health') {
+            // Newer saves store Health as a Vector2D struct (x=current, y=max)
+            if (typeof ap.value === 'number') {
+              actor['health'] = _round(ap.value);
+            } else if (ap.structType === 'Vector2D' && ap.value && typeof ap.value === 'object') {
+              const hv = ap.value as { x?: number; y?: number };
+              if (typeof hv.x === 'number') actor['health'] = _round(hv.x);
+              if (typeof hv.y === 'number') actor['maxHealth'] = _round(hv.y);
+            }
+          }
+          if (ap.name === 'CanDismantle') actor['canDismantle'] = !!ap.value;
           if (ap.name === 'Owner' && typeof ap.value === 'string') {
             const m = ap.value.match(/(7656\d+)/);
             if (m) actor['ownerSteamId'] = m[1];
@@ -828,6 +840,11 @@ function parseSave(buf: Buffer): ParseResult {
           const graveTime = aiInfo.find((c: GvasProperty) => c.name === 'GraveTimeMinutes')?.value as
             | number
             | undefined;
+          const aiStatus = aiInfo.find((c: GvasProperty) => c.name === 'AIStatus')?.value as string | undefined;
+          const inactiveMinutes = aiInfo.find((c: GvasProperty) => c.name === 'InactiveTimeMinutes')?.value as
+            | number
+            | undefined;
+          const packFollowers = aiInfo.find((c: GvasProperty) => c.name === 'PackFollowers')?.value;
           if (!aiType || aiType === 'EAItype::E_None') continue;
           const typeName = aiType.replace('EAItype::E_', '');
           let category = 'zombie';
@@ -841,21 +858,36 @@ function parseSave(buf: Buffer): ParseResult {
             y: aiLoc ? _round2(aiLoc.y) : null,
             z: aiLoc ? _round2(aiLoc.z) : null,
             graveTimeMinutes: typeof graveTime === 'number' ? graveTime : 0,
+            status: typeof aiStatus === 'string' ? aiStatus.replace('EAIState::E_', '') : '',
+            inactiveMinutes: typeof inactiveMinutes === 'number' ? inactiveMinutes : 0,
+            packFollowers: Array.isArray(packFollowers) ? packFollowers.length : 0,
           });
         }
       }
-      worldState['aiSummary'] = { zombies: 0, bandits: 0, animals: 0, byType: {} as Record<string, number> };
+      worldState['aiSummary'] = {
+        zombies: 0,
+        bandits: 0,
+        animals: 0,
+        alive: 0,
+        byType: {} as Record<string, number>,
+        byStatus: {} as Record<string, number>,
+      };
       const summary = worldState['aiSummary'] as {
         zombies: number;
         bandits: number;
         animals: number;
+        alive: number;
         byType: Record<string, number>;
+        byStatus: Record<string, number>;
       };
-      for (const ai of worldState['aiSpawns'] as Array<{ category: string; type: string }>) {
+      const DEAD_STATUSES = new Set(['Dead', 'Despawned', 'Invalid']);
+      for (const ai of worldState['aiSpawns'] as Array<{ category: string; type: string; status: string }>) {
         if (ai.category === 'zombie') summary.zombies++;
         else if (ai.category === 'bandit') summary.bandits++;
         else if (ai.category === 'animal') summary.animals++;
+        if (!DEAD_STATUSES.has(ai.status)) summary.alive++;
         summary.byType[ai.type] = (summary.byType[ai.type] ?? 0) + 1;
+        if (ai.status) summary.byStatus[ai.status] = (summary.byStatus[ai.status] ?? 0) + 1;
       }
       return;
     }
@@ -1016,7 +1048,23 @@ function parseSave(buf: Buffer): ParseResult {
     }
 
     if (n === 'ExtraParams' && Array.isArray(prop.value)) {
-      worldState['_extraParams'] = prop.value;
+      // Array of S_ExtraSaveParams structs parallel to the BuildActor arrays.
+      // Most entries carry an empty Params map — aggregate the non-empty ones
+      // into a sparse index → params object instead of emitting raw nulls.
+      const sparse: Record<number, Record<string, unknown>> = {};
+      const entries = prop.value as unknown[];
+      for (let i = 0; i < entries.length; i++) {
+        const elem = entries[i];
+        if (!Array.isArray(elem)) continue;
+        for (const ep of elem as GvasProperty[]) {
+          if (ep.name === 'Params' && ep.value && typeof ep.value === 'object' && !Array.isArray(ep.value)) {
+            const params = ep.value as Record<string, unknown>;
+            if (Object.keys(params).length > 0) sparse[i] = params;
+          }
+        }
+      }
+      worldState['extraParams'] = sparse;
+      worldState['extraParamsCount'] = entries.length;
       return;
     }
     if (n === 'BuildingDecay' && Array.isArray(prop.value)) {
@@ -1136,6 +1184,8 @@ function parseSave(buf: Buffer): ParseResult {
       for (const elemProps of prop.value as GvasProperty[][]) {
         if (!Array.isArray(elemProps)) continue;
         const backpack: Record<string, unknown> = { x: null, y: null, z: null, items: [], class: '' };
+        let classPath = '';
+        let softClassPath = '';
         for (const bp of elemProps) {
           if (bp.name === 'BackpackTransform') {
             const tv = bp.value as { translation?: { x: number; y: number; z: number } } | null;
@@ -1145,16 +1195,32 @@ function parseSave(buf: Buffer): ParseResult {
               backpack['z'] = _round2(tv.translation.z);
             }
           }
-          if (bp.name === 'BackpackClass') backpack['class'] = bp.value ?? '';
-          if (bp.name === 'EquippedBackpack') backpack['equipped'] = !!bp.value;
+          if (bp.name === 'BackpackClass') classPath = (bp.value as string) || '';
+          if (bp.name === 'SoftClass' && typeof bp.value === 'string') softClassPath = bp.value;
+          if (bp.name === 'Equipped') backpack['equipped'] = !!bp.value;
+          if (bp.name === 'Attachment' && Array.isArray(bp.value)) {
+            backpack['attachments'] = (bp.value as unknown[]).filter((a) => a && a !== 'None');
+          }
           if (bp.name === 'BackpackInventory' && Array.isArray(bp.value)) backpack['items'] = bp.value;
         }
+        // Newer saves store the blueprint in SoftClass while BackpackClass is 'None'
+        backpack['class'] = classPath && classPath !== 'None' ? classPath : softClassPath || classPath;
         if (backpack['x'] !== null) (worldState['droppedBackpacks'] as unknown[]).push(backpack);
       }
       worldState['totalDroppedBackpacks'] = (worldState['droppedBackpacks'] as unknown[]).length;
       return;
     }
 
+    if (n === 'RadioTowerActive') {
+      worldState['radioTowerActive'] = !!prop.value;
+      return;
+    }
+    if (n === 'MineTransforms' && Array.isArray(prop.value)) {
+      worldState['mineTransforms'] = (prop.value as Array<{ x: number; y: number; z: number } | null>)
+        .filter((v): v is { x: number; y: number; z: number } => !!v && typeof v.x === 'number')
+        .map((v) => ({ x: _round2(v.x), y: _round2(v.y), z: _round2(v.z) }));
+      return;
+    }
     if (n === 'SpawnedHeliCrash' && Array.isArray(prop.value)) {
       worldState['heliCrashData'] = prop.value;
       return;
@@ -1187,6 +1253,7 @@ function parseSave(buf: Buffer): ParseResult {
           }
           if (c.name === 'LifeSpan' && typeof c.value === 'number') airdrop['lifeSpan'] = _round(c.value);
           if (c.name === 'AIAlive' && typeof c.value === 'number') airdrop['aiAlive'] = c.value;
+          if (c.name === 'Landed') airdrop['landed'] = !!c.value;
           if (c.name === 'UID') airdrop['uid'] = c.value;
         }
         worldState['airdrop'] = airdrop;
@@ -1242,7 +1309,6 @@ function parseSave(buf: Buffer): ParseResult {
         for (const c of prop.children) {
           if (c.name === 'LootAmontMultiplier' && typeof c.value === 'number') diff['lootMultiplier'] = c.value;
           if (c.name === 'LootRespawnTimer' && typeof c.value === 'number') diff['lootRespawnTimer'] = c.value;
-          if (c.name === 'ZombieAmountMultiplier' && typeof c.value === 'number') diff['zombieMultiplier'] = c.value;
           if (c.name === 'DayDuration' && typeof c.value === 'number') diff['dayDuration'] = c.value;
           if (c.name === 'StartingSeason') diff['startingSeason'] = SEASON_MAP[c.value as string] ?? c.value;
           if (c.name === 'DaysPerSeason' && typeof c.value === 'number') diff['daysPerSeason'] = c.value;
@@ -1295,19 +1361,16 @@ function parseSave(buf: Buffer): ParseResult {
     if (n === 'RepBoot') p.repBoot = (prop.value as string) || '';
     if (n === 'RepFace') p.repFace = (prop.value as string) || '';
     if (n === 'RepFacial' && typeof prop.value === 'number') p.repFacial = prop.value;
-    if (n === 'Bites' && typeof prop.value === 'number') p.bites = prop.value;
     if (n === 'CBRadioCooldown' && typeof prop.value === 'number') p.cbRadioCooldown = prop.value;
+    if (n === 'LastLogin' && prop.structType === 'DateTime' && typeof prop.value === 'number') {
+      p.lastLogin = _ticksToIso(prop.value);
+    }
 
     if (n === 'CurrentHealth' && typeof prop.value === 'number') p.health = _round(prop.value);
-    if (n === 'MaxHealth' && typeof prop.value === 'number') p.maxHealth = _round(prop.value);
     if (n === 'CurrentHunger' && typeof prop.value === 'number') p.hunger = _round(prop.value);
-    if (n === 'MaxHunger' && typeof prop.value === 'number') p.maxHunger = _round(prop.value);
     if (n === 'CurrentThirst' && typeof prop.value === 'number') p.thirst = _round(prop.value);
-    if (n === 'MaxThirst' && typeof prop.value === 'number') p.maxThirst = _round(prop.value);
     if (n === 'CurrentStamina' && typeof prop.value === 'number') p.stamina = _round(prop.value);
-    if (n === 'MaxStamina' && typeof prop.value === 'number') p.maxStamina = _round(prop.value);
     if (n === 'CurrentInfection' && typeof prop.value === 'number') p.infection = _round(prop.value);
-    if (n === 'MaxInfection' && typeof prop.value === 'number') p.maxInfection = _round(prop.value);
     if (n === 'PlayerBattery' && typeof prop.value === 'number') p.battery = _round(prop.value);
 
     if (n === 'Exp') {
@@ -1374,7 +1437,6 @@ function parseSave(buf: Buffer): ParseResult {
     if (n === 'UnlockedProfessionArr' && Array.isArray(prop.value)) p.unlockedProfessions = prop.value as unknown[];
     if ((n === 'UnlockedSkills' || n.startsWith('UnlockedSkills_')) && Array.isArray(prop.value))
       p.unlockedSkills = (prop.value as unknown[]).filter(Boolean);
-    if (n === 'Skills' && Array.isArray(prop.value)) p.skillsData = prop.value as unknown[];
     if ((n === 'UniqueLoots' || n.startsWith('UniqueLoots_')) && Array.isArray(prop.value))
       p.uniqueLoots = prop.value as unknown[];
     if ((n === 'CraftedUniques' || n.startsWith('CraftedUniques_')) && Array.isArray(prop.value))
@@ -1452,6 +1514,7 @@ function parseSave(buf: Buffer): ParseResult {
         const comp: Record<string, unknown> = {
           class: '',
           displayName: '',
+          name: '',
           x: null,
           y: null,
           z: null,
@@ -1474,10 +1537,22 @@ function parseSave(buf: Buffer): ParseResult {
               comp['z'] = _round2(tv.translation.z);
             }
           }
-          if (cp.name === 'Stats' && cp.children) {
-            for (const sc of cp.children) {
-              if (sc.name === 'Health' && typeof sc.value === 'number') comp['health'] = _round(sc.value);
-              if (sc.name === 'Energy' && typeof sc.value === 'number') comp['energy'] = _round(sc.value);
+          if (cp.name === 'Stats') {
+            if (cp.children) {
+              // Legacy format: tagged struct children
+              for (const sc of cp.children) {
+                if (sc.name === 'Health' && typeof sc.value === 'number') comp['health'] = _round(sc.value);
+                if (sc.name === 'Energy' && typeof sc.value === 'number') comp['energy'] = _round(sc.value);
+              }
+            } else if (cp.value && typeof cp.value === 'object' && !Array.isArray(cp.value)) {
+              // Current format: Map(Name → Str) with health / Food / Name keys
+              for (const [key, raw] of Object.entries(cp.value as Record<string, unknown>)) {
+                const lk = key.toLowerCase();
+                const num = typeof raw === 'string' ? parseFloat(raw) : typeof raw === 'number' ? raw : NaN;
+                if (lk === 'health' && Number.isFinite(num)) comp['health'] = _round(num);
+                else if ((lk === 'food' || lk === 'energy') && Number.isFinite(num)) comp['energy'] = _round(num);
+                else if (lk === 'name' && typeof raw === 'string' && raw) comp['name'] = raw;
+              }
             }
           }
           if (cp.name === 'Vest' && typeof cp.value === 'number') comp['vest'] = cp.value;
@@ -1487,13 +1562,13 @@ function parseSave(buf: Buffer): ParseResult {
         p.companionData.push(comp);
         companions.push({
           type: 'dog',
-          actorName: (comp['displayName'] as string) || (comp['class'] as string),
+          actorName: (comp['name'] as string) || (comp['displayName'] as string) || (comp['class'] as string),
           ownerSteamId: currentSteamID || '',
           x: comp['x'] as number | null,
           y: comp['y'] as number | null,
           z: comp['z'] as number | null,
           health: comp['health'] as number,
-          extra: { energy: comp['energy'], command: comp['command'], vest: comp['vest'] },
+          extra: { energy: comp['energy'], command: comp['command'], vest: comp['vest'], name: comp['name'] },
         });
       }
     }
@@ -1712,13 +1787,12 @@ function _extractVehicles(carArray: GvasProperty[][], vehicleList: Vehicle[]): v
       extra: {},
     };
 
+    let classPath = '';
+    let softClassPath = '';
     for (const cp of carProps) {
-      if (cp.name === 'Class') {
-        vehicle.class = (cp.value as string) || '';
-        vehicle.displayName = simplifyBlueprint((cp.value as string) || '');
-      }
+      if (cp.name === 'Class') classPath = (cp.value as string) || '';
+      if (cp.name === 'SoftClass' && typeof cp.value === 'string') softClassPath = cp.value;
       if (cp.name === 'Health' && typeof cp.value === 'number') vehicle.health = _round(cp.value);
-      if (cp.name === 'MaxHealth' && typeof cp.value === 'number') vehicle.maxHealth = _round(cp.value);
       if (cp.name === 'Fuel' && typeof cp.value === 'number') vehicle.fuel = _round(cp.value);
       if (cp.name === 'Transform') {
         const tv = cp.value as { translation?: { x: number; y: number; z: number } } | null;
@@ -1728,8 +1802,11 @@ function _extractVehicles(carArray: GvasProperty[][], vehicleList: Vehicle[]): v
           vehicle.z = _round2(tv.translation.z);
         }
       }
-      if (!['Class', 'Health', 'MaxHealth', 'Fuel', 'Transform'].includes(cp.name)) vehicle.extra[cp.name] = cp.value;
+      if (!['Class', 'Health', 'Fuel', 'Transform'].includes(cp.name)) vehicle.extra[cp.name] = cp.value;
     }
+    // Newer saves store the blueprint in SoftClass while Class is 'None'
+    vehicle.class = classPath && classPath !== 'None' ? classPath : softClassPath || classPath;
+    vehicle.displayName = simplifyBlueprint(vehicle.class);
     vehicleList.push(vehicle);
   }
 }
@@ -1780,6 +1857,7 @@ function _extractHorses(horseArray: GvasProperty[][], horseList: Horse[]): void 
       maxHealth: 0,
       energy: 0,
       stamina: 0,
+      saddle: 0,
       ownerSteamId: '',
       name: '',
       saddleInventory: [],
@@ -1787,16 +1865,16 @@ function _extractHorses(horseArray: GvasProperty[][], horseList: Horse[]): void 
       extra: {},
     };
 
+    let classPath = '';
+    let softClassPath = '';
     for (const hp of horseProps) {
-      if (hp.name === 'Class') {
-        horse.class = (hp.value as string) || '';
-        horse.displayName = simplifyBlueprint((hp.value as string) || '');
-      }
+      if (hp.name === 'Class') classPath = (hp.value as string) || '';
+      if (hp.name === 'SoftClass' && typeof hp.value === 'string') softClassPath = hp.value;
       if (hp.name === 'HorseName' && typeof hp.value === 'string') horse.name = hp.value;
       if (hp.name === 'Health' && typeof hp.value === 'number') horse.health = _round(hp.value);
-      if (hp.name === 'MaxHealth' && typeof hp.value === 'number') horse.maxHealth = _round(hp.value);
       if (hp.name === 'Energy' && typeof hp.value === 'number') horse.energy = _round(hp.value);
       if (hp.name === 'Stamina' && typeof hp.value === 'number') horse.stamina = _round(hp.value);
+      if (hp.name === 'Saddle' && typeof hp.value === 'number') horse.saddle = hp.value;
       if (hp.name === 'Transform') {
         const tv = hp.value as { translation?: { x: number; y: number; z: number } } | null;
         if (tv?.translation) {
@@ -1816,9 +1894,9 @@ function _extractHorses(horseArray: GvasProperty[][], horseList: Horse[]): void 
           'Class',
           'HorseName',
           'Health',
-          'MaxHealth',
           'Energy',
           'Stamina',
+          'Saddle',
           'Transform',
           'Owner',
           'SaddleInventory',
@@ -1828,6 +1906,9 @@ function _extractHorses(horseArray: GvasProperty[][], horseList: Horse[]): void 
         horse.extra[hp.name] = hp.value;
       }
     }
+    // Newer saves store the blueprint in SoftClass while Class is 'None'
+    horse.class = classPath && classPath !== 'None' ? classPath : softClassPath || classPath;
+    horse.displayName = simplifyBlueprint(horse.class);
     horseList.push(horse);
   }
 }
@@ -1836,12 +1917,60 @@ function _extractLootActors(prop: GvasProperty, actorList: LootActor[]): void {
   if (!Array.isArray(prop.value)) return;
   for (const elemProps of prop.value as GvasProperty[][]) {
     if (!Array.isArray(elemProps)) continue;
-    const actor: LootActor = { name: '', type: '', x: null, y: null, z: null, items: [] };
+    const actor: LootActor = {
+      name: '',
+      type: '',
+      class: '',
+      x: null,
+      y: null,
+      z: null,
+      items: [],
+      spawned: false,
+      disabled: false,
+      activationStatus: false,
+      ownerSteamId: '',
+      params: null,
+    };
     for (const lp of elemProps) {
       if (lp.name === 'Name') actor.name = (lp.value as string) || '';
-      if (lp.name === 'Type') actor.type = (lp.value as string) || '';
-      if (lp.name === 'Items' && Array.isArray(lp.value)) actor.items = lp.value as unknown[];
+      if (lp.name === 'Class' && typeof lp.value === 'string' && lp.value !== 'None') actor.class = lp.value;
+      if (lp.name === 'Transform') {
+        const tv = lp.value as { translation?: { x: number; y: number; z: number } } | null;
+        if (tv?.translation) {
+          actor.x = _round2(tv.translation.x);
+          actor.y = _round2(tv.translation.y);
+          actor.z = _round2(tv.translation.z);
+        }
+      }
+      if (lp.name === 'Spawned?') actor.spawned = !!lp.value;
+      if (lp.name === 'Disabled?') actor.disabled = !!lp.value;
+      if (lp.name === 'ActivationStatus') actor.activationStatus = !!lp.value;
+      if (lp.name === 'PlayerOwner' && typeof lp.value === 'string') {
+        const m = lp.value.match(/(7656\d+)/);
+        if (m?.[1]) actor.ownerSteamId = m[1];
+      }
+      if (lp.name === 'Slots' && Array.isArray(lp.value)) {
+        for (const slot of lp.value as GvasProperty[][]) {
+          if (!Array.isArray(slot)) continue;
+          let itemId = '';
+          let count = 0;
+          let dur = 0;
+          for (const sp of slot) {
+            if (sp.name === 'ItemID' && typeof sp.value === 'string') itemId = sp.value;
+            if (sp.name === 'Count' && typeof sp.value === 'number') count = sp.value;
+            if (sp.name === 'Dur' && typeof sp.value === 'number') dur = sp.value;
+          }
+          if (itemId && itemId !== 'None') {
+            actor.items.push({ item: itemId, amount: count, durability: _round(dur) });
+          }
+        }
+      }
+      if (lp.name === 'Params' && lp.value && typeof lp.value === 'object' && !Array.isArray(lp.value)) {
+        const params = lp.value as Record<string, unknown>;
+        if (Object.keys(params).length > 0) actor.params = params;
+      }
     }
+    actor.type = simplifyBlueprint(actor.class);
     if (actor.name) actorList.push(actor);
   }
 }
@@ -1850,11 +1979,29 @@ function _extractWorldQuests(prop: GvasProperty, questList: Quest[]): void {
   if (!Array.isArray(prop.value)) return;
   for (const elemProps of prop.value as GvasProperty[][]) {
     if (!Array.isArray(elemProps)) continue;
-    const quest: Quest = { id: '', type: '', state: '', data: {} };
+    const quest: Quest = { id: '', type: '', state: '', data: {}, time: {}, items: [], x: null, y: null, z: null };
     for (const qp of elemProps) {
       if (qp.name === 'GUID' || qp.name === 'ID') quest.id = (qp.value as string) || '';
-      if (qp.name === 'QuestType') quest.type = (qp.value as string) || '';
-      if (qp.name === 'State' || qp.name === 'Status') quest.state = (qp.value as string) || '';
+      if (qp.name === 'Data' && qp.value && typeof qp.value === 'object' && !Array.isArray(qp.value)) {
+        quest.data = qp.value as Record<string, unknown>;
+      }
+      if (qp.name === 'Time' && qp.value && typeof qp.value === 'object' && !Array.isArray(qp.value)) {
+        for (const [key, ticks] of Object.entries(qp.value as Record<string, unknown>)) {
+          if (typeof ticks === 'number') {
+            const iso = _ticksToIso(ticks);
+            if (iso) quest.time[key] = iso;
+          }
+        }
+      }
+      if (qp.name === 'Items' && Array.isArray(qp.value)) quest.items = qp.value as unknown[];
+      if (qp.name === 'UpdatedTransform') {
+        const tv = qp.value as { translation?: { x: number; y: number; z: number } } | null;
+        if (tv?.translation) {
+          quest.x = _round2(tv.translation.x);
+          quest.y = _round2(tv.translation.y);
+          quest.z = _round2(tv.translation.z);
+        }
+      }
     }
     if (quest.id) questList.push(quest);
   }
@@ -1901,6 +2048,20 @@ function _round(v: number): number {
 }
 function _round2(v: number): number {
   return v;
+}
+
+// ─── .NET DateTime ticks → ISO string ──────────────────────────────────────
+
+// Ticks between 0001-01-01 and 1970-01-01 (100ns units)
+const DOTNET_EPOCH_OFFSET_TICKS = 621355968000000000;
+// Sanity upper bound: year 2200
+const MAX_REASONABLE_MS = 7258118400000;
+
+function _ticksToIso(ticks: number): string | null {
+  if (!Number.isFinite(ticks) || ticks <= 0) return null;
+  const ms = (ticks - DOTNET_EPOCH_OFFSET_TICKS) / 10000;
+  if (ms <= 0 || ms > MAX_REASONABLE_MS) return null;
+  return new Date(Math.round(ms)).toISOString();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

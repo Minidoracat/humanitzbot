@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * HumanitZ Save Parser Agent v3
+ * HumanitZ Save Parser Agent v4
  * Auto-generated — do not edit manually.
  * Regenerate via: node -e "require('./src/parsers/agent-builder').writeAgent()"
  *
@@ -159,7 +159,16 @@ const MAP_CAPTURE = /* @__PURE__ */ new Set([
   'RandQuestConfig',
   'SGlobalContainerSave',
   'LodModularLootActor',
+  'Params',
+  // sandbox / loot-actor params (Name → Float)
+  'Stats',
+  // companion stats (Name → Str: health/Food/Name)
+  'Data',
+  // world quest data (Name → Str)
+  'Time',
+  // world quest timers (Name → DateTime)
 ]);
+const MAP_INLINE_DATETIME = /* @__PURE__ */ new Set(['Time']);
 function readProperty(r, options = {}) {
   const skipLargeArrays = options.skipLargeArrays ?? false;
   const skipThreshold = options.skipThreshold ?? 10;
@@ -214,11 +223,17 @@ function readProperty(r, options = {}) {
         break;
       case 'StrProperty':
       case 'NameProperty':
-      case 'SoftObjectProperty':
       case 'ObjectProperty':
         r.readU8();
         prop.value = r.readFString();
         break;
+      case 'SoftObjectProperty': {
+        r.readU8();
+        const payloadStart = r.getOffset();
+        prop.value = r.readFString();
+        r.setOffset(payloadStart + dataSize);
+        break;
+      }
       case 'EnumProperty':
         prop.enumType = r.readFString();
         r.readU8();
@@ -418,6 +433,14 @@ function _readArrayProperty(r, prop, dataSize, options) {
       strs.push(r.readFString());
     }
     prop.value = strs;
+  } else if (innerType === 'SoftObjectProperty') {
+    const paths = [];
+    for (let i = 0; i < count; i++) {
+      paths.push(r.readFString());
+      r.readFString();
+    }
+    prop.value = paths;
+    r.setOffset(afterSep + dataSize);
   } else if (innerType === 'IntProperty') {
     const ints = [];
     for (let i = 0; i < count; i++) {
@@ -474,7 +497,6 @@ function _parseInventorySlots(r, count) {
     let attachments = [];
     let cap = 0;
     let weight = 0;
-    let maxDur = 0;
     let wetness = 0;
     for (const sp of slotProps) {
       if (sp.name === 'Item' && sp.children) {
@@ -488,7 +510,6 @@ function _parseInventorySlots(r, count) {
       if (sp.name === 'Attachments' && Array.isArray(sp.value)) attachments = sp.value;
       if (sp.name === 'Cap') cap = sp.value || 0;
       if (sp.name === 'Weight') weight = sp.value || 0;
-      if (sp.name === 'MaxDur') maxDur = sp.value || 0;
       if (sp.name === 'Wetness') wetness = sp.value || 0;
     }
     if (itemName && itemName !== 'None' && itemName !== 'Empty') {
@@ -501,7 +522,6 @@ function _parseInventorySlots(r, count) {
       if (attachments.length) slot.attachments = attachments;
       if (cap) slot.cap = Math.round(cap * 100) / 100;
       if (weight) slot.weight = Math.round(weight * 1e4) / 1e4;
-      if (maxDur) slot.maxDur = Math.round(maxDur * 100) / 100;
       if (wetness) slot.wetness = Math.round(wetness * 100) / 100;
       items.push(slot);
     }
@@ -518,6 +538,16 @@ function _readMapProperty(r, prop, dataSize, cname) {
   if (MAP_CAPTURE.has(cname)) {
     r.readI32();
     const count = r.readI32();
+    if (valType === 'StructProperty' && MAP_INLINE_DATETIME.has(cname) && keyType !== 'StructProperty') {
+      const entries2 = {};
+      for (let i = 0; i < count; i++) {
+        const key = keyType === 'IntProperty' ? r.readI32() : r.readFString();
+        entries2[key] = r.readI64();
+      }
+      prop.value = entries2;
+      r.setOffset(afterSep + dataSize);
+      return;
+    }
     if (valType === 'StructProperty' || keyType === 'StructProperty') {
       const entries2 = [];
       for (let i = 0; i < count; i++) {
@@ -547,6 +577,7 @@ function _readMapProperty(r, prop, dataSize, cname) {
         entries2.push(entry);
       }
       prop.value = entries2;
+      r.setOffset(afterSep + dataSize);
       return;
     }
     const entries = {};
@@ -573,6 +604,7 @@ function _readMapProperty(r, prop, dataSize, cname) {
       entries[key] = val;
     }
     prop.value = entries;
+    r.setOffset(afterSep + dataSize);
   } else {
     r.setOffset(afterSep + dataSize);
     prop.value = null;
@@ -699,19 +731,13 @@ function createPlayerData() {
     hasExtendedStats: false,
     daysSurvived: 0,
     timesBitten: 0,
-    bites: 0,
     fishCaught: 0,
     fishCaughtPike: 0,
     health: 0,
-    maxHealth: 0,
     hunger: 0,
-    maxHunger: 0,
     thirst: 0,
-    maxThirst: 0,
     stamina: 0,
-    maxStamina: 0,
     infection: 0,
-    maxInfection: 0,
     battery: 100,
     fatigue: 0,
     infectionBuildup: 0,
@@ -738,7 +764,6 @@ function createPlayerData() {
     buildingRecipes: [],
     unlockedProfessions: [],
     unlockedSkills: [],
-    skillsData: [],
     skillTree: [],
     inventory: [],
     equipment: [],
@@ -799,6 +824,7 @@ function createPlayerData() {
     clean: 0,
     sleepers: 0,
     floatData: {},
+    lastLogin: null,
   };
 }
 function parseSave(buf) {
@@ -845,7 +871,7 @@ function parseSave(buf) {
     }
   }
   function handleProp(prop) {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     if (!prop) return;
     const n = prop.name;
     if (n === 'SteamID' && typeof prop.value === 'string') {
@@ -1052,6 +1078,8 @@ function parseSave(buf) {
           y: null,
           z: null,
           health: 0,
+          maxHealth: 0,
+          canDismantle: false,
           ownerSteamId: '',
           locked: false,
           dtName: '',
@@ -1069,7 +1097,16 @@ function parseSave(buf) {
               actor['z'] = _round2(tv.translation.z);
             }
           }
-          if (ap.name === 'Health' && typeof ap.value === 'number') actor['health'] = _round(ap.value);
+          if (ap.name === 'Health') {
+            if (typeof ap.value === 'number') {
+              actor['health'] = _round(ap.value);
+            } else if (ap.structType === 'Vector2D' && ap.value && typeof ap.value === 'object') {
+              const hv = ap.value;
+              if (typeof hv.x === 'number') actor['health'] = _round(hv.x);
+              if (typeof hv.y === 'number') actor['maxHealth'] = _round(hv.y);
+            }
+          }
+          if (ap.name === 'CanDismantle') actor['canDismantle'] = !!ap.value;
           if (ap.name === 'Owner' && typeof ap.value === 'string') {
             const m = ap.value.match(/(7656\d+)/);
             if (m) actor['ownerSteamId'] = m[1];
@@ -1094,6 +1131,10 @@ function parseSave(buf) {
           const aiType = (_a = aiInfo.find((c) => c.name === 'AIType')) == null ? void 0 : _a.value;
           const aiLoc = (_b = aiInfo.find((c) => c.name === 'AILocation')) == null ? void 0 : _b.value;
           const graveTime = (_c = aiInfo.find((c) => c.name === 'GraveTimeMinutes')) == null ? void 0 : _c.value;
+          const aiStatus = (_d = aiInfo.find((c) => c.name === 'AIStatus')) == null ? void 0 : _d.value;
+          const inactiveMinutes =
+            (_e = aiInfo.find((c) => c.name === 'InactiveTimeMinutes')) == null ? void 0 : _e.value;
+          const packFollowers = (_f = aiInfo.find((c) => c.name === 'PackFollowers')) == null ? void 0 : _f.value;
           if (!aiType || aiType === 'EAItype::E_None') continue;
           const typeName = aiType.replace('EAItype::E_', '');
           let category = 'zombie';
@@ -1107,16 +1148,29 @@ function parseSave(buf) {
             y: aiLoc ? _round2(aiLoc.y) : null,
             z: aiLoc ? _round2(aiLoc.z) : null,
             graveTimeMinutes: typeof graveTime === 'number' ? graveTime : 0,
+            status: typeof aiStatus === 'string' ? aiStatus.replace('EAIState::E_', '') : '',
+            inactiveMinutes: typeof inactiveMinutes === 'number' ? inactiveMinutes : 0,
+            packFollowers: Array.isArray(packFollowers) ? packFollowers.length : 0,
           });
         }
       }
-      worldState['aiSummary'] = { zombies: 0, bandits: 0, animals: 0, byType: {} };
+      worldState['aiSummary'] = {
+        zombies: 0,
+        bandits: 0,
+        animals: 0,
+        alive: 0,
+        byType: {},
+        byStatus: {},
+      };
       const summary = worldState['aiSummary'];
+      const DEAD_STATUSES = /* @__PURE__ */ new Set(['Dead', 'Despawned', 'Invalid']);
       for (const ai of worldState['aiSpawns']) {
         if (ai.category === 'zombie') summary.zombies++;
         else if (ai.category === 'bandit') summary.bandits++;
         else if (ai.category === 'animal') summary.animals++;
+        if (!DEAD_STATUSES.has(ai.status)) summary.alive++;
         summary.byType[ai.type] = (summary.byType[ai.type] ?? 0) + 1;
+        if (ai.status) summary.byStatus[ai.status] = (summary.byStatus[ai.status] ?? 0) + 1;
       }
       return;
     }
@@ -1138,7 +1192,7 @@ function parseSave(buf) {
           .filter(Boolean);
       } else if (typeof prop.value === 'string' && prop.value.startsWith('<skipped')) {
         worldState['destroyedRandCars'] = parseInt(
-          ((_d = prop.value.match(/\d+/)) == null ? void 0 : _d[0]) ?? '0',
+          ((_g = prop.value.match(/\d+/)) == null ? void 0 : _g[0]) ?? '0',
           10,
         );
       } else {
@@ -1273,7 +1327,20 @@ function parseSave(buf) {
       return;
     }
     if (n === 'ExtraParams' && Array.isArray(prop.value)) {
-      worldState['_extraParams'] = prop.value;
+      const sparse = {};
+      const entries = prop.value;
+      for (let i = 0; i < entries.length; i++) {
+        const elem = entries[i];
+        if (!Array.isArray(elem)) continue;
+        for (const ep of elem) {
+          if (ep.name === 'Params' && ep.value && typeof ep.value === 'object' && !Array.isArray(ep.value)) {
+            const params = ep.value;
+            if (Object.keys(params).length > 0) sparse[i] = params;
+          }
+        }
+      }
+      worldState['extraParams'] = sparse;
+      worldState['extraParamsCount'] = entries.length;
       return;
     }
     if (n === 'BuildingDecay' && Array.isArray(prop.value)) {
@@ -1387,6 +1454,8 @@ function parseSave(buf) {
       for (const elemProps of prop.value) {
         if (!Array.isArray(elemProps)) continue;
         const backpack = { x: null, y: null, z: null, items: [], class: '' };
+        let classPath = '';
+        let softClassPath = '';
         for (const bp of elemProps) {
           if (bp.name === 'BackpackTransform') {
             const tv = bp.value;
@@ -1396,13 +1465,28 @@ function parseSave(buf) {
               backpack['z'] = _round2(tv.translation.z);
             }
           }
-          if (bp.name === 'BackpackClass') backpack['class'] = bp.value ?? '';
-          if (bp.name === 'EquippedBackpack') backpack['equipped'] = !!bp.value;
+          if (bp.name === 'BackpackClass') classPath = bp.value || '';
+          if (bp.name === 'SoftClass' && typeof bp.value === 'string') softClassPath = bp.value;
+          if (bp.name === 'Equipped') backpack['equipped'] = !!bp.value;
+          if (bp.name === 'Attachment' && Array.isArray(bp.value)) {
+            backpack['attachments'] = bp.value.filter((a) => a && a !== 'None');
+          }
           if (bp.name === 'BackpackInventory' && Array.isArray(bp.value)) backpack['items'] = bp.value;
         }
+        backpack['class'] = classPath && classPath !== 'None' ? classPath : softClassPath || classPath;
         if (backpack['x'] !== null) worldState['droppedBackpacks'].push(backpack);
       }
       worldState['totalDroppedBackpacks'] = worldState['droppedBackpacks'].length;
+      return;
+    }
+    if (n === 'RadioTowerActive') {
+      worldState['radioTowerActive'] = !!prop.value;
+      return;
+    }
+    if (n === 'MineTransforms' && Array.isArray(prop.value)) {
+      worldState['mineTransforms'] = prop.value
+        .filter((v) => !!v && typeof v.x === 'number')
+        .map((v) => ({ x: _round2(v.x), y: _round2(v.y), z: _round2(v.z) }));
       return;
     }
     if (n === 'SpawnedHeliCrash' && Array.isArray(prop.value)) {
@@ -1436,6 +1520,7 @@ function parseSave(buf) {
           }
           if (c.name === 'LifeSpan' && typeof c.value === 'number') airdrop['lifeSpan'] = _round(c.value);
           if (c.name === 'AIAlive' && typeof c.value === 'number') airdrop['aiAlive'] = c.value;
+          if (c.name === 'Landed') airdrop['landed'] = !!c.value;
           if (c.name === 'UID') airdrop['uid'] = c.value;
         }
         worldState['airdrop'] = airdrop;
@@ -1487,7 +1572,6 @@ function parseSave(buf) {
         for (const c of prop.children) {
           if (c.name === 'LootAmontMultiplier' && typeof c.value === 'number') diff['lootMultiplier'] = c.value;
           if (c.name === 'LootRespawnTimer' && typeof c.value === 'number') diff['lootRespawnTimer'] = c.value;
-          if (c.name === 'ZombieAmountMultiplier' && typeof c.value === 'number') diff['zombieMultiplier'] = c.value;
           if (c.name === 'DayDuration' && typeof c.value === 'number') diff['dayDuration'] = c.value;
           if (c.name === 'StartingSeason') diff['startingSeason'] = SEASON_MAP[c.value] ?? c.value;
           if (c.name === 'DaysPerSeason' && typeof c.value === 'number') diff['daysPerSeason'] = c.value;
@@ -1535,18 +1619,15 @@ function parseSave(buf) {
     if (n === 'RepBoot') p.repBoot = prop.value || '';
     if (n === 'RepFace') p.repFace = prop.value || '';
     if (n === 'RepFacial' && typeof prop.value === 'number') p.repFacial = prop.value;
-    if (n === 'Bites' && typeof prop.value === 'number') p.bites = prop.value;
     if (n === 'CBRadioCooldown' && typeof prop.value === 'number') p.cbRadioCooldown = prop.value;
+    if (n === 'LastLogin' && prop.structType === 'DateTime' && typeof prop.value === 'number') {
+      p.lastLogin = _ticksToIso(prop.value);
+    }
     if (n === 'CurrentHealth' && typeof prop.value === 'number') p.health = _round(prop.value);
-    if (n === 'MaxHealth' && typeof prop.value === 'number') p.maxHealth = _round(prop.value);
     if (n === 'CurrentHunger' && typeof prop.value === 'number') p.hunger = _round(prop.value);
-    if (n === 'MaxHunger' && typeof prop.value === 'number') p.maxHunger = _round(prop.value);
     if (n === 'CurrentThirst' && typeof prop.value === 'number') p.thirst = _round(prop.value);
-    if (n === 'MaxThirst' && typeof prop.value === 'number') p.maxThirst = _round(prop.value);
     if (n === 'CurrentStamina' && typeof prop.value === 'number') p.stamina = _round(prop.value);
-    if (n === 'MaxStamina' && typeof prop.value === 'number') p.maxStamina = _round(prop.value);
     if (n === 'CurrentInfection' && typeof prop.value === 'number') p.infection = _round(prop.value);
-    if (n === 'MaxInfection' && typeof prop.value === 'number') p.maxInfection = _round(prop.value);
     if (n === 'PlayerBattery' && typeof prop.value === 'number') p.battery = _round(prop.value);
     if (n === 'Exp') {
       if (typeof prop.value === 'number') {
@@ -1603,7 +1684,6 @@ function parseSave(buf) {
     if (n === 'UnlockedProfessionArr' && Array.isArray(prop.value)) p.unlockedProfessions = prop.value;
     if ((n === 'UnlockedSkills' || n.startsWith('UnlockedSkills_')) && Array.isArray(prop.value))
       p.unlockedSkills = prop.value.filter(Boolean);
-    if (n === 'Skills' && Array.isArray(prop.value)) p.skillsData = prop.value;
     if ((n === 'UniqueLoots' || n.startsWith('UniqueLoots_')) && Array.isArray(prop.value)) p.uniqueLoots = prop.value;
     if ((n === 'CraftedUniques' || n.startsWith('CraftedUniques_')) && Array.isArray(prop.value))
       p.craftedUniques = prop.value.filter(Boolean);
@@ -1616,7 +1696,7 @@ function parseSave(buf) {
       p.x === null &&
       prop.type === 'StructProperty' &&
       prop.structType === 'Transform' &&
-      ((_e = prop.value) == null ? void 0 : _e.translation)
+      ((_h = prop.value) == null ? void 0 : _h.translation)
     ) {
       const SKIP_TRANSFORMS = ['PlayerRespawnPoint', 'BackpackTransform', 'Transform', 'CompanionTransform'];
       if (!SKIP_TRANSFORMS.includes(n)) _extractTransform(prop, p);
@@ -1674,6 +1754,7 @@ function parseSave(buf) {
         const comp = {
           class: '',
           displayName: '',
+          name: '',
           x: null,
           y: null,
           z: null,
@@ -1696,10 +1777,20 @@ function parseSave(buf) {
               comp['z'] = _round2(tv.translation.z);
             }
           }
-          if (cp.name === 'Stats' && cp.children) {
-            for (const sc of cp.children) {
-              if (sc.name === 'Health' && typeof sc.value === 'number') comp['health'] = _round(sc.value);
-              if (sc.name === 'Energy' && typeof sc.value === 'number') comp['energy'] = _round(sc.value);
+          if (cp.name === 'Stats') {
+            if (cp.children) {
+              for (const sc of cp.children) {
+                if (sc.name === 'Health' && typeof sc.value === 'number') comp['health'] = _round(sc.value);
+                if (sc.name === 'Energy' && typeof sc.value === 'number') comp['energy'] = _round(sc.value);
+              }
+            } else if (cp.value && typeof cp.value === 'object' && !Array.isArray(cp.value)) {
+              for (const [key, raw] of Object.entries(cp.value)) {
+                const lk = key.toLowerCase();
+                const num = typeof raw === 'string' ? parseFloat(raw) : typeof raw === 'number' ? raw : NaN;
+                if (lk === 'health' && Number.isFinite(num)) comp['health'] = _round(num);
+                else if ((lk === 'food' || lk === 'energy') && Number.isFinite(num)) comp['energy'] = _round(num);
+                else if (lk === 'name' && typeof raw === 'string' && raw) comp['name'] = raw;
+              }
             }
           }
           if (cp.name === 'Vest' && typeof cp.value === 'number') comp['vest'] = cp.value;
@@ -1709,13 +1800,13 @@ function parseSave(buf) {
         p.companionData.push(comp);
         companions.push({
           type: 'dog',
-          actorName: comp['displayName'] || comp['class'],
+          actorName: comp['name'] || comp['displayName'] || comp['class'],
           ownerSteamId: currentSteamID || '',
           x: comp['x'],
           y: comp['y'],
           z: comp['z'],
           health: comp['health'],
-          extra: { energy: comp['energy'], command: comp['command'], vest: comp['vest'] },
+          extra: { energy: comp['energy'], command: comp['command'], vest: comp['vest'], name: comp['name'] },
         });
       }
     }
@@ -1906,13 +1997,12 @@ function _extractVehicles(carArray, vehicleList) {
       upgrades: [],
       extra: {},
     };
+    let classPath = '';
+    let softClassPath = '';
     for (const cp of carProps) {
-      if (cp.name === 'Class') {
-        vehicle.class = cp.value || '';
-        vehicle.displayName = simplifyBlueprint(cp.value || '');
-      }
+      if (cp.name === 'Class') classPath = cp.value || '';
+      if (cp.name === 'SoftClass' && typeof cp.value === 'string') softClassPath = cp.value;
       if (cp.name === 'Health' && typeof cp.value === 'number') vehicle.health = _round(cp.value);
-      if (cp.name === 'MaxHealth' && typeof cp.value === 'number') vehicle.maxHealth = _round(cp.value);
       if (cp.name === 'Fuel' && typeof cp.value === 'number') vehicle.fuel = _round(cp.value);
       if (cp.name === 'Transform') {
         const tv = cp.value;
@@ -1922,8 +2012,10 @@ function _extractVehicles(carArray, vehicleList) {
           vehicle.z = _round2(tv.translation.z);
         }
       }
-      if (!['Class', 'Health', 'MaxHealth', 'Fuel', 'Transform'].includes(cp.name)) vehicle.extra[cp.name] = cp.value;
+      if (!['Class', 'Health', 'Fuel', 'Transform'].includes(cp.name)) vehicle.extra[cp.name] = cp.value;
     }
+    vehicle.class = classPath && classPath !== 'None' ? classPath : softClassPath || classPath;
+    vehicle.displayName = simplifyBlueprint(vehicle.class);
     vehicleList.push(vehicle);
   }
 }
@@ -1971,22 +2063,23 @@ function _extractHorses(horseArray, horseList) {
       maxHealth: 0,
       energy: 0,
       stamina: 0,
+      saddle: 0,
       ownerSteamId: '',
       name: '',
       saddleInventory: [],
       inventory: [],
       extra: {},
     };
+    let classPath = '';
+    let softClassPath = '';
     for (const hp of horseProps) {
-      if (hp.name === 'Class') {
-        horse.class = hp.value || '';
-        horse.displayName = simplifyBlueprint(hp.value || '');
-      }
+      if (hp.name === 'Class') classPath = hp.value || '';
+      if (hp.name === 'SoftClass' && typeof hp.value === 'string') softClassPath = hp.value;
       if (hp.name === 'HorseName' && typeof hp.value === 'string') horse.name = hp.value;
       if (hp.name === 'Health' && typeof hp.value === 'number') horse.health = _round(hp.value);
-      if (hp.name === 'MaxHealth' && typeof hp.value === 'number') horse.maxHealth = _round(hp.value);
       if (hp.name === 'Energy' && typeof hp.value === 'number') horse.energy = _round(hp.value);
       if (hp.name === 'Stamina' && typeof hp.value === 'number') horse.stamina = _round(hp.value);
+      if (hp.name === 'Saddle' && typeof hp.value === 'number') horse.saddle = hp.value;
       if (hp.name === 'Transform') {
         const tv = hp.value;
         if (tv == null ? void 0 : tv.translation) {
@@ -2006,9 +2099,9 @@ function _extractHorses(horseArray, horseList) {
           'Class',
           'HorseName',
           'Health',
-          'MaxHealth',
           'Energy',
           'Stamina',
+          'Saddle',
           'Transform',
           'Owner',
           'SaddleInventory',
@@ -2018,6 +2111,8 @@ function _extractHorses(horseArray, horseList) {
         horse.extra[hp.name] = hp.value;
       }
     }
+    horse.class = classPath && classPath !== 'None' ? classPath : softClassPath || classPath;
+    horse.displayName = simplifyBlueprint(horse.class);
     horseList.push(horse);
   }
 }
@@ -2025,12 +2120,60 @@ function _extractLootActors(prop, actorList) {
   if (!Array.isArray(prop.value)) return;
   for (const elemProps of prop.value) {
     if (!Array.isArray(elemProps)) continue;
-    const actor = { name: '', type: '', x: null, y: null, z: null, items: [] };
+    const actor = {
+      name: '',
+      type: '',
+      class: '',
+      x: null,
+      y: null,
+      z: null,
+      items: [],
+      spawned: false,
+      disabled: false,
+      activationStatus: false,
+      ownerSteamId: '',
+      params: null,
+    };
     for (const lp of elemProps) {
       if (lp.name === 'Name') actor.name = lp.value || '';
-      if (lp.name === 'Type') actor.type = lp.value || '';
-      if (lp.name === 'Items' && Array.isArray(lp.value)) actor.items = lp.value;
+      if (lp.name === 'Class' && typeof lp.value === 'string' && lp.value !== 'None') actor.class = lp.value;
+      if (lp.name === 'Transform') {
+        const tv = lp.value;
+        if (tv == null ? void 0 : tv.translation) {
+          actor.x = _round2(tv.translation.x);
+          actor.y = _round2(tv.translation.y);
+          actor.z = _round2(tv.translation.z);
+        }
+      }
+      if (lp.name === 'Spawned?') actor.spawned = !!lp.value;
+      if (lp.name === 'Disabled?') actor.disabled = !!lp.value;
+      if (lp.name === 'ActivationStatus') actor.activationStatus = !!lp.value;
+      if (lp.name === 'PlayerOwner' && typeof lp.value === 'string') {
+        const m = lp.value.match(/(7656\d+)/);
+        if (m == null ? void 0 : m[1]) actor.ownerSteamId = m[1];
+      }
+      if (lp.name === 'Slots' && Array.isArray(lp.value)) {
+        for (const slot of lp.value) {
+          if (!Array.isArray(slot)) continue;
+          let itemId = '';
+          let count = 0;
+          let dur = 0;
+          for (const sp of slot) {
+            if (sp.name === 'ItemID' && typeof sp.value === 'string') itemId = sp.value;
+            if (sp.name === 'Count' && typeof sp.value === 'number') count = sp.value;
+            if (sp.name === 'Dur' && typeof sp.value === 'number') dur = sp.value;
+          }
+          if (itemId && itemId !== 'None') {
+            actor.items.push({ item: itemId, amount: count, durability: _round(dur) });
+          }
+        }
+      }
+      if (lp.name === 'Params' && lp.value && typeof lp.value === 'object' && !Array.isArray(lp.value)) {
+        const params = lp.value;
+        if (Object.keys(params).length > 0) actor.params = params;
+      }
     }
+    actor.type = simplifyBlueprint(actor.class);
     if (actor.name) actorList.push(actor);
   }
 }
@@ -2038,11 +2181,29 @@ function _extractWorldQuests(prop, questList) {
   if (!Array.isArray(prop.value)) return;
   for (const elemProps of prop.value) {
     if (!Array.isArray(elemProps)) continue;
-    const quest = { id: '', type: '', state: '', data: {} };
+    const quest = { id: '', type: '', state: '', data: {}, time: {}, items: [], x: null, y: null, z: null };
     for (const qp of elemProps) {
       if (qp.name === 'GUID' || qp.name === 'ID') quest.id = qp.value || '';
-      if (qp.name === 'QuestType') quest.type = qp.value || '';
-      if (qp.name === 'State' || qp.name === 'Status') quest.state = qp.value || '';
+      if (qp.name === 'Data' && qp.value && typeof qp.value === 'object' && !Array.isArray(qp.value)) {
+        quest.data = qp.value;
+      }
+      if (qp.name === 'Time' && qp.value && typeof qp.value === 'object' && !Array.isArray(qp.value)) {
+        for (const [key, ticks] of Object.entries(qp.value)) {
+          if (typeof ticks === 'number') {
+            const iso = _ticksToIso(ticks);
+            if (iso) quest.time[key] = iso;
+          }
+        }
+      }
+      if (qp.name === 'Items' && Array.isArray(qp.value)) quest.items = qp.value;
+      if (qp.name === 'UpdatedTransform') {
+        const tv = qp.value;
+        if (tv == null ? void 0 : tv.translation) {
+          quest.x = _round2(tv.translation.x);
+          quest.y = _round2(tv.translation.y);
+          quest.z = _round2(tv.translation.z);
+        }
+      }
     }
     if (quest.id) questList.push(quest);
   }
@@ -2081,6 +2242,14 @@ function _round(v) {
 }
 function _round2(v) {
   return v;
+}
+const DOTNET_EPOCH_OFFSET_TICKS = 621355968e9;
+const MAX_REASONABLE_MS = 72581184e5;
+function _ticksToIso(ticks) {
+  if (!Number.isFinite(ticks) || ticks <= 0) return null;
+  const ms = (ticks - DOTNET_EPOCH_OFFSET_TICKS) / 1e4;
+  if (ms <= 0 || ms > MAX_REASONABLE_MS) return null;
+  return new Date(Math.round(ms)).toISOString();
 }
 function parseClanData(buf) {
   const r = createReader(buf);
@@ -2137,7 +2306,7 @@ const CACHE_FILENAME = 'humanitz-cache.json';
 const SAVE_FILENAME = 'Save_DedicatedSaveMP.sav';
 const CLAN_FILENAME = 'Save_ClanData.sav';
 const ID_MAP_FILENAME = 'PlayerIDMapped.txt';
-const AGENT_VERSION_VALUE = 3;
+const AGENT_VERSION_VALUE = 4;
 const PARSER_SIGNATURE = 'agent-v' + AGENT_VERSION_VALUE;
 
 // ── Argument parsing ──
@@ -2664,7 +2833,7 @@ function parseAndWrite(savePath, outputPath, pretty, idMapPath, playerDirPath) {
   }
 
   const cache = {
-    v: 3,
+    v: 4,
     ts: new Date().toISOString(),
     mtime: _fs.statSync(savePath).mtimeMs,
     idMap: idMapInfo.idMap,

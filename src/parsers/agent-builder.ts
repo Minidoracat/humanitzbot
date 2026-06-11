@@ -29,7 +29,7 @@ const __dirname = getDirname(import.meta.url);
 const GVAS_READER_PATH = path.join(__dirname, 'gvas-reader.ts');
 const SAVE_PARSER_PATH = path.join(__dirname, 'save-parser.ts');
 
-const AGENT_VERSION = 3;
+const AGENT_VERSION = 4;
 
 // ─── Agent CLI template (prepended) ────────────────────────────────────────
 

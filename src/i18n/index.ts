@@ -9,7 +9,11 @@ const __dirname = getDirname(import.meta.url);
 const LOCALES_DIR = path.join(__dirname, '../../locales');
 const SUPPORTED_LANGS = ['en', 'zh-TW', 'zh-CN'] as const;
 type SupportedLang = (typeof SUPPORTED_LANGS)[number];
-const NAMESPACES = ['common', 'web', 'discord', 'api', 'commands'] as const;
+// 'items' is a flat map of game item ids → display names. Item ids must never
+// contain '.' or ':' (i18next key/ns separators) — test/item-names.test.ts
+// enforces this so t('items:<id>') lookups stay safe without keySeparator
+// overrides. Programmatic resolution goes through src/i18n/item-names.ts.
+const NAMESPACES = ['common', 'web', 'discord', 'api', 'commands', 'items'] as const;
 
 const resources: Record<string, Record<string, Record<string, unknown>>> = {};
 for (const lng of SUPPORTED_LANGS) {
