@@ -1642,9 +1642,12 @@ class HumanitZDB {
   }
 
   /**
-   * Full save sync: replace all player data, structures, vehicles, etc.
-   * Single-transaction variant kept for standalone callers (backward compat);
-   * the polling path uses the phased syncAllFromSave() instead.
+   * Legacy core-entity sync: players, world state, structures, vehicles,
+   * companions, clans, and server settings — auxiliary world objects
+   * (dead bodies, containers, loot actors, quests, horses, world drops) are
+   * only synced by syncAllFromSave(). Single-transaction variant kept for
+   * standalone callers (currently tests only); the polling path uses the
+   * phased syncAllFromSave() instead.
    */
   syncFromSave(parsed: Record<string, unknown>) {
     this.transaction(() => {
