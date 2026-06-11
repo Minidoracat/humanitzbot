@@ -358,6 +358,17 @@ describe('SaveSyncPipeline syncFromCache', () => {
     assert.equal(emitted[0]?.playerCount, 1);
   });
 
+  it('keeps worldState and the derived worldDrops undefined when the cache omits worldState', async () => {
+    const db = makeDb();
+    const { pipeline } = makePipeline(db);
+
+    await pipeline.syncFromCache({ v: 1, players: {} });
+
+    const parsed = db.syncPayloads[0] as AnyRecord;
+    assert.equal(parsed.worldState, undefined);
+    assert.equal(parsed.worldDrops, undefined);
+  });
+
   it('passes empty worldDrops through as an array instead of null', async () => {
     const db = makeDb();
     const { pipeline } = makePipeline(db);

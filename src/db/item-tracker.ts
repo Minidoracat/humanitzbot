@@ -154,6 +154,28 @@ function _runInWriteTransaction<T>(db: HumanitZDBLike, fn: () => T): T {
   return db.transaction ? db.transaction(fn) : fn();
 }
 
+/**
+ * Location types whose source field was omitted from the snapshot (e.g. an
+ * older agent cache that predates the field). Unmatched instances/groups at
+ * these locations must not be marked lost — the DB sync leaves their tables
+ * untouched for the same reason. A present-but-empty field stays
+ * authoritative and is NOT treated as omitted.
+ */
+function _omittedLocationTypes(snapshot: SnapshotData): Set<string> {
+  const omitted = new Set<string>();
+  if (!snapshot.players) omitted.add('player');
+  if (!snapshot.containers) omitted.add('container');
+  if (!snapshot.vehicles) omitted.add('vehicle');
+  if (!snapshot.horses) omitted.add('horse');
+  if (!snapshot.structures) omitted.add('structure');
+  if (!snapshot.worldState) {
+    omitted.add('world_drop');
+    omitted.add('backpack');
+    omitted.add('global_container');
+  }
+  return omitted;
+}
+
 async function reconcileItems(
   db: HumanitZDBLike,
   snapshot: SnapshotData,
@@ -438,10 +460,11 @@ function _reconcileUniqueItems(
     stats.created++;
   }
 
-  // Pass 4: mark lost
+  // Pass 4: mark lost (skip locations whose snapshot field was omitted)
+  const omittedTypes = _omittedLocationTypes(snapshot);
   for (const candidates of existingByFP.values()) {
     for (const inst of candidates) {
-      if (!inst._matched) {
+      if (!inst._matched && !omittedTypes.has(inst.location_type)) {
         db.item.markItemLost(inst.id);
         stats.lost++;
       }
@@ -562,10 +585,11 @@ function _reconcileFungibleGroups(
     }
   }
 
-  // Mark lost
+  // Mark lost (skip locations whose snapshot field was omitted)
+  const omittedTypes = _omittedLocationTypes(snapshot);
   for (const [fp, groups] of existingByFP) {
     for (const g of groups) {
-      if (!g._matched) {
+      if (!g._matched && !omittedTypes.has(g.location_type)) {
         db.item.markItemGroupLost(g.id);
         stats.groups.lost++;
 

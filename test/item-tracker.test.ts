@@ -599,6 +599,64 @@ describe('Item Tracker', () => {
     });
   });
 
+  describe('omitted snapshot fields (older agent cache compatibility)', () => {
+    const containerItems = (items: Array<Record<string, unknown>>) => ({
+      players: new Map(),
+      containers: [{ actorName: 'crate_omit', items, x: 1, y: 2, z: 3 }],
+      vehicles: [],
+      horses: [],
+      structures: [],
+      worldState: {},
+    });
+
+    it('does not mark instances lost when their location field is omitted', async () => {
+      const seeded = await reconcileItems(
+        db,
+        containerItems([{ item: 'AK47', amount: 1, durability: 0.85, ammo: 15 }]),
+      );
+      assert.equal(seeded.created, 1);
+
+      // containers omitted entirely (undefined) → instance preserved
+      const omitted = await reconcileItems(db, {
+        players: new Map(),
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
+      });
+      assert.equal(omitted.lost, 0);
+      assert.equal(countRows('item_instances', 'lost = 0'), 1);
+
+      // present-but-empty containers stays authoritative → marked lost
+      const cleared = await reconcileItems(db, containerItems([]));
+      assert.equal(cleared.lost, 1);
+      assert.equal(countRows('item_instances', 'lost = 1'), 1);
+    });
+
+    it('does not mark fungible groups lost when their location field is omitted', async () => {
+      const stacks = [
+        { item: 'Nails', amount: 50, durability: 1.0 },
+        { item: 'Nails', amount: 30, durability: 1.0 },
+      ];
+      const seeded = await reconcileItems(db, containerItems(stacks));
+      assert.equal(seeded.groups.created, 1);
+
+      const omitted = await reconcileItems(db, {
+        players: new Map(),
+        vehicles: [],
+        horses: [],
+        structures: [],
+        worldState: {},
+      });
+      assert.equal(omitted.groups.lost, 0);
+      assert.equal(countRows('item_groups', 'lost = 0'), 1);
+
+      const cleared = await reconcileItems(db, containerItems([]));
+      assert.equal(cleared.groups.lost, 1);
+      assert.equal(countRows('item_groups', 'lost = 1'), 1);
+    });
+  });
+
   describe('world drops DB methods', () => {
     it('replaceWorldDrops stores and retrieves drops', () => {
       db.worldObject.replaceWorldDrops([
