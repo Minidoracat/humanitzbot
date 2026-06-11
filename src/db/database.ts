@@ -1364,6 +1364,9 @@ class HumanitZDB {
       if (fromVersion < 23) {
         let normalized = 0;
         for (const column of ['playtime_first_seen', 'playtime_last_login', 'playtime_last_seen']) {
+          // SQLite parses the 'T...Z' form as UTC and strftime formats in UTC,
+          // so the rewrite preserves the instant; COALESCE keeps the original
+          // value when strftime cannot parse it.
           const result = this._handle
             .prepare(
               `UPDATE players
