@@ -2622,8 +2622,8 @@ class WebMapServer {
           limit: limit + 1,
           offset,
           search,
-          // Let localized display-name queries ('繃帶', 'bandage') reach rows
-          // stored under raw ids ('Bandage') alongside the raw LIKE match.
+          // Let display-name queries ('繃帶', 'antiseptic') reach rows whose raw
+          // id ('Bandage', 'BandageAnti') the raw LIKE match would never hit.
           matchedIds: search ? searchItemIds(search) : [],
           locationType,
           locationId,
