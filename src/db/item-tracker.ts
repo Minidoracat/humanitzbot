@@ -253,10 +253,10 @@ async function reconcileItems(
   // Horses
   if (snapshot.horses) {
     for (const h of snapshot.horses) {
-      if ((h['saddleItems'] as unknown[] | undefined)?.length) {
+      if ((h['saddleInventory'] as unknown[] | undefined)?.length) {
         _addLocationItems(
           currentItems,
-          normalizeInventory(h['saddleItems'] as unknown[]),
+          normalizeInventory(h['saddleInventory'] as unknown[]),
           'horse',
           (h['actorName'] as string | undefined) ?? (h['name'] as string | undefined) ?? '',
           'saddle',
