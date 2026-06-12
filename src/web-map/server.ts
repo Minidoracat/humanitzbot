@@ -1663,8 +1663,12 @@ class WebMapServer {
         startingPerk: professionName,
         // Normalize agent-v4 raw GVAS horse arrays from older snapshots
         horses: normalizePlayerHorses(data.horses),
-        // Save-authoritative last login (game save LastLogin, UTC ISO)
-        saveLastLogin: (data.lastLogin as string | null | undefined) ?? null,
+        // Save-authoritative last login: cache value first, then the players
+        // column (which survives syncs that omit lastLogin via COALESCE)
+        saveLastLogin:
+          (data.lastLogin as string | null | undefined) ??
+          (storedDetail?.['save_last_login'] as string | null | undefined) ??
+          null,
         // Log-derived
         deaths: logStats?.deaths || 0,
         pvpKills: logStats?.pvpKills || 0,
@@ -2493,17 +2497,13 @@ class WebMapServer {
           const rows = srv.db.quest.getPositionedQuests() as unknown as QuestRow[];
           result.quests = rows.map((r: QuestRow) => {
             const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
-            // The quest's readable name and timestamp live in the time map:
+            // The quests' readable names and timestamps live in the time map:
             // { questName: ISO timestamp } — GUID ids carry no display value.
-            let questName = '';
-            let questTime: string | null = null;
+            // One row can hold several quests sharing a transform.
+            let entries: Array<{ name: string; time: string | null }> = [];
             try {
-              const timeMap = JSON.parse(r.time || '{}') as Record<string, string>;
-              const keys = Object.keys(timeMap);
-              if (keys.length) {
-                questName = keys[0] ?? '';
-                questTime = timeMap[questName] ?? null;
-              }
+              const timeMap = JSON.parse(r.time || '{}') as Record<string, string | null>;
+              entries = Object.entries(timeMap).map(([name, time]) => ({ name, time: time ?? null }));
             } catch {}
             let itemCount = 0;
             try {
@@ -2517,7 +2517,8 @@ class WebMapServer {
                   (i as Record<string, unknown>).item !== 'Empty',
               ).length;
             } catch {}
-            return { id: r.id, name: questName || r.id, time: questTime, lat, lng, itemCount };
+            const first = entries[0];
+            return { id: r.id, name: first?.name || r.id, time: first?.time ?? null, entries, lat, lng, itemCount };
           });
         }
 

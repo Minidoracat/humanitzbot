@@ -366,7 +366,8 @@ export class PlayerRepository extends BaseRepository {
         SELECT
           pd.*,
           p.has_save_snapshot AS has_save_snapshot,
-          p.last_save_snapshot_at AS last_save_snapshot_at
+          p.last_save_snapshot_at AS last_save_snapshot_at,
+          p.save_last_login AS save_last_login
         FROM player_details pd
         LEFT JOIN players p ON p.steam_id = pd.steam_id
         WHERE pd.steam_id = ?

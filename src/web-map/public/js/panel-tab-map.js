@@ -374,17 +374,24 @@ Panel.tabs = Panel.tabs || {};
         });
         const m = L.marker([q.lat, q.lng], { icon: icon });
         const questName = _entityName(q.name, i18next.t('web:map.quest'));
-        m.bindTooltip(esc(questName), { direction: 'top', offset: [0, -5] });
+        // One row can carry several quests sharing a transform — show them all
+        const entries = Array.isArray(q.entries) && q.entries.length ? q.entries : [{ name: q.name, time: q.time }];
+        const extraCount = entries.length > 1 ? ' +' + (entries.length - 1) : '';
+        m.bindTooltip(esc(questName) + extraCount, { direction: 'top', offset: [0, -5] });
         let popupHtml = '<div class="tl-popup" style="min-width:160px"><b>' + esc(questName) + '</b>';
-        if (q.time) {
-          popupHtml +=
-            '<br><span style="color:' +
-            palette.muted +
-            '">' +
-            i18next.t('web:map.quest_time') +
-            ':</span> ' +
-            esc(new Date(q.time).toLocaleString());
-        }
+        entries.forEach(function (entry, ei) {
+          const entryName = ei === 0 ? '' : '<b>' + esc(_entityName(entry.name, i18next.t('web:map.quest'))) + '</b> ';
+          if (ei > 0 || entry.time) popupHtml += '<br>' + entryName;
+          if (entry.time) {
+            popupHtml +=
+              '<span style="color:' +
+              palette.muted +
+              '">' +
+              i18next.t('web:map.quest_time') +
+              ':</span> ' +
+              esc(new Date(entry.time).toLocaleString());
+          }
+        });
         if (q.itemCount) {
           popupHtml += '<br>📦 ' + q.itemCount + ' ' + i18next.t('web:map.quest_items');
         }
