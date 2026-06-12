@@ -1857,7 +1857,12 @@ function _extractContainers(prop: GvasProperty, containerList: Container[]): voi
 function normalizePlayerHorses(value: unknown): Horse[] {
   if (!Array.isArray(value) || value.length === 0) return [];
   if (!value.some((entry) => Array.isArray(entry))) return value as Horse[];
-  const horses: Horse[] = [];
+  // Mixed input (raw GVAS arrays alongside structured horses) keeps both:
+  // structured entries pass through, raw entries are extracted.
+  const structured = value.filter(
+    (entry): entry is Horse => !!entry && typeof entry === 'object' && !Array.isArray(entry),
+  );
+  const horses: Horse[] = [...structured];
   _extractHorses(value.filter((entry) => Array.isArray(entry)) as GvasProperty[][], horses);
   return horses;
 }

@@ -393,7 +393,7 @@ Panel.tabs = Panel.tabs || {};
           }
         });
         if (q.itemCount) {
-          popupHtml += '<br>📦 ' + q.itemCount + ' ' + i18next.t('web:map.quest_items');
+          popupHtml += '<br>📦 ' + esc(i18next.t('web:map.quest_items', { count: q.itemCount }));
         }
         popupHtml += '</div>';
         m.bindPopup(popupHtml);

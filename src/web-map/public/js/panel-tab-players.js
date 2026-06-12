@@ -809,9 +809,9 @@ Panel.tabs = Panel.tabs || {};
         }) +
         '</h3>';
       for (let hi = 0; hi < p.horses.length; hi++) {
-        const h = p.horses[hi] || {};
-        // Skip raw GVAS entries from old un-normalized snapshots
-        if (typeof h !== 'object' || Array.isArray(h)) continue;
+        const h = p.horses[hi];
+        // Skip invalid/raw GVAS entries from old un-normalized snapshots
+        if (!h || typeof h !== 'object' || Array.isArray(h)) continue;
         const horseName =
           h.name || h.displayName || i18next.t('web:player_detail.horse.unnamed', { defaultValue: 'Horse' });
         html += '<div class="bg-surface-50 border border-border rounded px-2.5 py-1.5 mb-1.5">';

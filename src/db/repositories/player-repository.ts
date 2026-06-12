@@ -149,6 +149,7 @@ export class PlayerRepository extends BaseRepository {
     getAllPlayerLogStats: Database.Statement;
     upsertPlayerPlaytime: Database.Statement;
     getAllPlayerPlaytime: Database.Statement;
+    getSaveLastLogins: Database.Statement;
     countAllPlayers: Database.Statement;
     listNamedPlayers: Database.Statement;
     listAllPlayerNames: Database.Statement;
@@ -373,6 +374,9 @@ export class PlayerRepository extends BaseRepository {
         WHERE pd.steam_id = ?
       `),
       getAllPlayers: this._handle.prepare('SELECT * FROM players ORDER BY lifetime_kills DESC'),
+      getSaveLastLogins: this._handle.prepare(
+        'SELECT steam_id, save_last_login FROM players WHERE save_last_login IS NOT NULL',
+      ),
       getOnlinePlayers: this._handle.prepare('SELECT * FROM players WHERE online = 1'),
       getOnlinePlayersForDiff: this._handle.prepare(
         'SELECT steam_id, name, online, inventory, equipment, quick_slots, backpack_items, pos_x, pos_y, pos_z FROM players WHERE online = 1',
@@ -855,6 +859,13 @@ export class PlayerRepository extends BaseRepository {
       playtime_last_login: normalizeDbTimestampUtc(data.lastLogin) ?? null,
       playtime_last_seen: normalizeDbTimestampUtc(data.lastSeen) ?? null,
     });
+  }
+
+  /**
+   * All save-authoritative LastLogin values, for API fallback lookups.
+   */
+  getSaveLastLogins(): DbRow[] {
+    return this._stmts.getSaveLastLogins.all() as DbRow[];
   }
 
   /**
