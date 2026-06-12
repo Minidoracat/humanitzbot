@@ -17,13 +17,15 @@ export class QuestRepository extends BaseRepository {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
       ),
       getPositionedQuests: this._handle.prepare(
+        // (0,0) is the save's placeholder for quests whose transform was
+        // never updated — skip them like the AI/container map layers do.
         `SELECT id, type, state, time, items, pos_x, pos_y, pos_z, updated_at
-         FROM quests WHERE pos_x IS NOT NULL`,
+         FROM quests WHERE pos_x IS NOT NULL AND NOT (pos_x = 0 AND pos_y = 0)`,
       ),
     };
   }
 
-  /** Quests with a world position, for the panel map layer. */
+  /** Quests with a real world position, for the panel map layer. */
   getPositionedQuests(): DbRow[] {
     return this._stmts.getPositionedQuests.all() as DbRow[];
   }

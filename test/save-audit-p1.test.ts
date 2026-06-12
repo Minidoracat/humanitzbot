@@ -145,8 +145,13 @@ describe('save-audit P1 DB integration', () => {
       assert.equal(q.pos_z, null);
     });
 
-    it('getPositionedQuests only returns quests with coordinates', () => {
-      db.quest.replaceQuests([makeStructuredQuest(), { id: 'no-pos', type: '', state: '', data: {} }]);
+    it('getPositionedQuests only returns quests with real coordinates', () => {
+      db.quest.replaceQuests([
+        makeStructuredQuest(),
+        { id: 'no-pos', type: '', state: '', data: {} },
+        // (0,0) placeholder transform — most world quests in real saves
+        makeStructuredQuest({ id: 'zero-pos', x: 0, y: 0, z: 0 }),
+      ]);
 
       const rows = db.quest.getPositionedQuests();
       assert.equal(rows.length, 1);
