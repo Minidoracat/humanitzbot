@@ -34,10 +34,9 @@ describe('searchItemIds', () => {
   });
 
   it('returns canonical raw ids (original casing)', () => {
-    const ids = searchItemIds('繃帶');
-    for (const id of ids) {
-      assert.notEqual(id, id.toLowerCase(), `expected canonical casing, got '${id}'`);
-    }
+    // Exact ids, not a casing heuristic — some table ids are legitimately
+    // all-lowercase ('12g'), so asserting the known results is more precise.
+    assert.deepEqual(searchItemIds('繃帶').sort(), ['Bandage', 'BandageAnti']);
   });
 });
 
