@@ -100,6 +100,26 @@ describe('item page search with matchedIds', () => {
     assert.equal(miss.length, 0);
   });
 
+  it('matches save-file casing variants case-insensitively (12g vs 12G)', () => {
+    // 16% of live distinct items drift from the locale table's casing
+    // ('12g' vs '12G') — the IN branch must compare NOCASE to reach them.
+    db.item.createItemInstance({
+      fingerprint: 'fp-shell-1',
+      item: '12g',
+      durability: 100,
+      locationType: 'container',
+      locationId: 'Container_3',
+    });
+    const ids = searchItemIds('鉛徑霰彈');
+    assert.ok(ids.includes('12G'), `expected canonical 12G in ${JSON.stringify(ids)}`);
+    const rows = db.item.getActiveItemInstancesPage({
+      search: '鉛徑霰彈',
+      matchedIds: ids,
+    }) as Array<{ item: string }>;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.item, '12g');
+  });
+
   it('group search accepts matchedIds the same way', () => {
     db.item.upsertItemGroup({
       fingerprint: 'fp-bandage-group',
