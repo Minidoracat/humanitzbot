@@ -698,6 +698,10 @@ window.Panel = window.Panel || {};
         chat: Panel.tabs.chat ? Panel.tabs.chat.load : null,
         clans: Panel.tabs.clans ? Panel.tabs.clans.load : null,
         servers: Panel.tabs.servers ? Panel.tabs.servers.load : null,
+        // Items and map carry server-localized item names / popup labels —
+        // refetch so they switch language without waiting for the next poll
+        items: Panel.tabs.items ? Panel.tabs.items.load : null,
+        map: Panel.tabs.map ? Panel.tabs.map.load : null,
       };
       if (tabLoaders[S.currentTab]) tabLoaders[S.currentTab]();
     }
