@@ -153,4 +153,31 @@ function resolveItemId(label: unknown): string | null {
   return ITEM_ID_BY_LOWER_ID.get(key) ?? ITEM_ID_BY_NAME.get(key) ?? null;
 }
 
-export { resolveItemName, resolveItemArray, resolveItemId, normalizeItemLocale };
+// Hard cap on reverse-search results: a broad query ('a', '的') can match a
+// large share of the ~850 item table; the SQL IN list stays bounded.
+const SEARCH_ITEM_IDS_LIMIT = 200;
+
+/**
+ * Substring counterpart of resolveItemId for search boxes: returns the raw
+ * item ids whose display name (any supported locale) contains the query,
+ * case-insensitively. Lets a panel search for '繃帶' or 'bandage' find rows
+ * stored under the raw id 'Bandage'. Raw-id substring matching is left to the
+ * caller's existing `item LIKE` SQL.
+ */
+function searchItemIds(query: unknown): string[] {
+  if (typeof query !== 'string') return [];
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+  const ids = new Set<string>();
+  for (const lng of SUPPORTED_LANGS) {
+    for (const [lowerId, name] of ITEM_NAME_INDEX[lng]) {
+      if (!name.toLowerCase().includes(needle)) continue;
+      const canonical = ITEM_ID_BY_LOWER_ID.get(lowerId);
+      if (canonical) ids.add(canonical);
+      if (ids.size >= SEARCH_ITEM_IDS_LIMIT) return Array.from(ids);
+    }
+  }
+  return Array.from(ids);
+}
+
+export { resolveItemName, resolveItemArray, resolveItemId, searchItemIds, normalizeItemLocale };

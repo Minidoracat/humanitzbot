@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import _database from '../src/db/database.js';
 const HumanitZDB = _database as any;
 
+import { searchItemIds } from '../src/i18n/item-names.js';
+
 import _webMapServer from '../src/web-map/server.js';
 const WebMapServer = _webMapServer as any;
 
@@ -238,11 +240,25 @@ describe('Item tracker panel routes', () => {
     assert.deepEqual(calls, [
       {
         method: 'instances',
-        options: { limit: 3, offset: 4, search: 'Nail', locationType: '', locationId: '' },
+        options: {
+          limit: 3,
+          offset: 4,
+          search: 'Nail',
+          matchedIds: searchItemIds('Nail'),
+          locationType: '',
+          locationId: '',
+        },
       },
       {
         method: 'groups',
-        options: { limit: 3, offset: 4, search: 'Nail', locationType: '', locationId: '' },
+        options: {
+          limit: 3,
+          offset: 4,
+          search: 'Nail',
+          matchedIds: searchItemIds('Nail'),
+          locationType: '',
+          locationId: '',
+        },
       },
     ]);
   });
@@ -272,7 +288,9 @@ describe('Item tracker panel routes', () => {
     );
 
     assert.equal(instanceCalled, false);
-    assert.deepEqual(calls, [{ limit: 101, offset: 0, search: '', locationType: 'player', locationId: 'steam1' }]);
+    assert.deepEqual(calls, [
+      { limit: 101, offset: 0, search: '', matchedIds: [], locationType: 'player', locationId: 'steam1' },
+    ]);
   });
 
   it('returns safe empty item payloads when the database is unavailable', () => {

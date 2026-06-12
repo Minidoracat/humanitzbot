@@ -18,6 +18,8 @@ interface ItemListPageOptions {
   limit?: number;
   offset?: number;
   search?: string;
+  /** Raw item ids resolved from localized display names (searchItemIds). */
+  matchedIds?: string[];
   locationType?: string;
   locationId?: string;
 }
@@ -165,14 +167,15 @@ export class ItemRepository extends BaseRepository {
       searchItemInstancesPage: this._handle.prepare(`
         SELECT ${ITEM_INSTANCE_LIST_COLUMNS}
         FROM item_instances
-        WHERE (item LIKE ? OR fingerprint LIKE ?) AND lost = 0
+        WHERE (item LIKE ? OR fingerprint LIKE ? OR item IN (SELECT value FROM json_each(?))) AND lost = 0
         ORDER BY item, location_type, id
         LIMIT ? OFFSET ?
       `),
       searchItemInstancesPageByLocation: this._handle.prepare(`
         SELECT ${ITEM_INSTANCE_LIST_COLUMNS}
         FROM item_instances
-        WHERE (item LIKE ? OR fingerprint LIKE ?) AND location_type = ? AND location_id = ? AND lost = 0
+        WHERE (item LIKE ? OR fingerprint LIKE ? OR item IN (SELECT value FROM json_each(?)))
+          AND location_type = ? AND location_id = ? AND lost = 0
         ORDER BY item, location_type, id
         LIMIT ? OFFSET ?
       `),
@@ -244,14 +247,15 @@ export class ItemRepository extends BaseRepository {
       searchItemGroupsPage: this._handle.prepare(`
         SELECT ${ITEM_GROUP_LIST_COLUMNS}
         FROM item_groups
-        WHERE (item LIKE ? OR fingerprint LIKE ?) AND lost = 0
+        WHERE (item LIKE ? OR fingerprint LIKE ? OR item IN (SELECT value FROM json_each(?))) AND lost = 0
         ORDER BY item, location_type, id
         LIMIT ? OFFSET ?
       `),
       searchItemGroupsPageByLocation: this._handle.prepare(`
         SELECT ${ITEM_GROUP_LIST_COLUMNS}
         FROM item_groups
-        WHERE (item LIKE ? OR fingerprint LIKE ?) AND location_type = ? AND location_id = ? AND lost = 0
+        WHERE (item LIKE ? OR fingerprint LIKE ? OR item IN (SELECT value FROM json_each(?)))
+          AND location_type = ? AND location_id = ? AND lost = 0
         ORDER BY item, location_type, id
         LIMIT ? OFFSET ?
       `),
@@ -481,11 +485,21 @@ export class ItemRepository extends BaseRepository {
     const locationId = options.locationId?.trim();
     if (search && locationType && locationId) {
       const like = `%${search}%`;
-      return this._stmts.searchItemInstancesPageByLocation.all(like, like, locationType, locationId, limit, offset);
+      const idsJson = JSON.stringify(options.matchedIds ?? []);
+      return this._stmts.searchItemInstancesPageByLocation.all(
+        like,
+        like,
+        idsJson,
+        locationType,
+        locationId,
+        limit,
+        offset,
+      );
     }
     if (search) {
       const like = `%${search}%`;
-      return this._stmts.searchItemInstancesPage.all(like, like, limit, offset);
+      const idsJson = JSON.stringify(options.matchedIds ?? []);
+      return this._stmts.searchItemInstancesPage.all(like, like, idsJson, limit, offset);
     }
     if (locationType && locationId) {
       return this._stmts.getActiveItemInstancesPageByLocation.all(locationType, locationId, limit, offset);
@@ -621,11 +635,21 @@ export class ItemRepository extends BaseRepository {
     const locationId = options.locationId?.trim();
     if (search && locationType && locationId) {
       const like = `%${search}%`;
-      return this._stmts.searchItemGroupsPageByLocation.all(like, like, locationType, locationId, limit, offset);
+      const idsJson = JSON.stringify(options.matchedIds ?? []);
+      return this._stmts.searchItemGroupsPageByLocation.all(
+        like,
+        like,
+        idsJson,
+        locationType,
+        locationId,
+        limit,
+        offset,
+      );
     }
     if (search) {
       const like = `%${search}%`;
-      return this._stmts.searchItemGroupsPage.all(like, like, limit, offset);
+      const idsJson = JSON.stringify(options.matchedIds ?? []);
+      return this._stmts.searchItemGroupsPage.all(like, like, idsJson, limit, offset);
     }
     if (locationType && locationId) {
       return this._stmts.getActiveItemGroupsPageByLocation.all(locationType, locationId, limit, offset);

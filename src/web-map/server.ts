@@ -20,7 +20,13 @@ import type { RuntimeConfigApplier } from '../config/runtime-config-applier.js';
 import { parseSave, normalizePlayerHorses, PERK_MAP } from '../parsers/save-parser.js';
 import { AFFLICTION_MAP } from '../parsers/game-data.js';
 import { cleanName as cleanActorName, cleanNameCached, cleanItemName } from '../parsers/ue4-names.js';
-import { resolveItemName, resolveItemArray, resolveItemId, normalizeItemLocale } from '../i18n/item-names.js';
+import {
+  resolveItemName,
+  resolveItemArray,
+  resolveItemId,
+  searchItemIds,
+  normalizeItemLocale,
+} from '../i18n/item-names.js';
 import playerStats from '../tracking/player-stats.js';
 import playtime from '../tracking/playtime-tracker.js';
 import rcon from '../rcon/rcon.js';
@@ -2616,6 +2622,9 @@ class WebMapServer {
           limit: limit + 1,
           offset,
           search,
+          // Let localized display-name queries ('繃帶', 'bandage') reach rows
+          // stored under raw ids ('Bandage') alongside the raw LIKE match.
+          matchedIds: search ? searchItemIds(search) : [],
           locationType,
           locationId,
         };
