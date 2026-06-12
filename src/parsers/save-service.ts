@@ -22,6 +22,7 @@ import type { PanelFileApi } from '../server/panel-api.js';
 import { importSftpClient, importSsh2Client, importBuildAgentScript } from '../utils/dynamic-imports.js';
 import type { HumanitZDB } from '../db/database.js';
 import { SaveSyncPipeline, type SaveParsedDataInput, type SaveSyncResult } from './save-sync-pipeline.js';
+import { AGENT_VERSION } from './agent-version.js';
 import type { SaveReadResult } from './save-reader-types.js';
 
 // Shell-safe single-quote escaping for SSH exec arguments
@@ -138,6 +139,7 @@ class SaveService extends EventEmitter {
   private _mode: string | null;
 
   private _agentDeployed: boolean;
+  private _staleAgentCacheVersion: number | null = null;
   private _agentCapable: boolean | null;
   private _panelCapable: boolean | null;
   private _resolvedTrigger: string | null;
@@ -1155,7 +1157,36 @@ class SaveService extends EventEmitter {
   //  Data sync
   // ═══════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Warn (once per stale version) when the cache was produced by an older
+   * agent and force a redeploy. The ssh trigger redeploys on its next poll
+   * via _agentDeployed; rcon/panel triggers never deploy on their own, so
+   * attempt an immediate SFTP redeploy for those when credentials exist.
+   * The stale cache itself still syncs — downstream normalization copes
+   * with older shapes.
+   */
+  _checkAgentCacheVersion(cache: Record<string, unknown>): void {
+    // Caches without a numeric v predate versioning — nothing to compare.
+    const v = typeof cache.v === 'number' ? cache.v : null;
+    if (v == null || v >= AGENT_VERSION) {
+      this._staleAgentCacheVersion = null;
+      return;
+    }
+    this._agentDeployed = false;
+    if (this._staleAgentCacheVersion === v) return;
+    this._staleAgentCacheVersion = v;
+    this._log.warn(
+      `Agent cache is v${String(v)} but the bot expects v${String(AGENT_VERSION)} — forcing agent redeploy`,
+    );
+    if (this._sftpConfig) {
+      this.deployAgent().catch((err: unknown) => {
+        this._log.warn(`Stale-agent redeploy failed (will retry on next ssh-trigger poll): ${errMsg(err)}`);
+      });
+    }
+  }
+
   async _syncFromCache(cache: Record<string, unknown>): Promise<void> {
+    this._checkAgentCacheVersion(cache);
     this._applyCacheIdMap(cache);
     await this._syncPipeline.syncFromCache(cache);
   }
