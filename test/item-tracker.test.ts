@@ -284,7 +284,7 @@ describe('Item Tracker', () => {
           {
             actorName: 'Horse_1',
             displayName: 'Thunder',
-            saddleItems: [{ item: 'Bandage', amount: 3, durability: 1.0 }],
+            saddleInventory: [{ item: 'Bandage', amount: 3, durability: 1.0 }],
             inventory: [],
             x: 300,
             y: 400,
