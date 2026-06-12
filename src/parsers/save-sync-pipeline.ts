@@ -1,6 +1,7 @@
 import { performance } from 'node:perf_hooks';
 import { diffSaveState } from '../db/diff-engine.js';
 import { reconcileItems } from '../db/item-tracker.js';
+import { normalizePlayerHorses } from './save-parser.js';
 import type { HumanitZDB } from '../db/database.js';
 import type { Logger } from '../utils/log.js';
 import { errMsg } from '../utils/error.js';
@@ -130,6 +131,9 @@ export class SaveSyncPipeline {
     const playerSources = new Map<string, Record<string, unknown>>();
     const manifestFiles = cache.playerManifest?.files ?? {};
     for (const [steamId, data] of Object.entries(cache.players ?? {})) {
+      // Agent v4 caches ship per-player horses as raw GVAS property arrays;
+      // normalize here so the DB, snapshots and panel all see one shape.
+      if (data.horses !== undefined) data.horses = normalizePlayerHorses(data.horses);
       players.set(steamId, data);
       const manifest = manifestFiles[steamId];
       if (manifest) {

@@ -239,6 +239,11 @@
     "zombies": "僵尸",
     "animals": "动物",
     "bandits": "土匪",
+    "quests": "任务",
+    "quest": "任务",
+    "quest_time": "时间",
+    "quest_items_one": "{{count}} 项物品",
+    "quest_items_other": "{{count}} 项物品",
     "refresh": "刷新",
     "syncing": "同步中...",
     "refresh_timed_out": "已超时",
@@ -382,6 +387,7 @@
     "kills": "击杀",
     "playtime": "游玩时间",
     "last_seen": "最后活跃",
+    "last_login": "最后登录",
     "days_survived": "生存天数",
     "table_view": "表格视图",
     "card_view": "卡片视图",
@@ -1271,8 +1277,13 @@
       "survival": "生存",
       "vitals": "生命值",
       "status_effects": "状态效果",
+      "horses": "马匹（{{count}}）",
       "crafting_recipes": "制作配方",
       "unlocked_skills": "已解锁技能"
+    },
+    "horse": {
+      "unnamed": "马匹",
+      "saddle": "马鞍"
     },
     "stats": {
       "zombies": "僵尸",

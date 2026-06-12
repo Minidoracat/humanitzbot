@@ -284,7 +284,7 @@ describe('Item Tracker', () => {
           {
             actorName: 'Horse_1',
             displayName: 'Thunder',
-            saddleItems: [{ item: 'Bandage', amount: 3, durability: 1.0 }],
+            saddleInventory: [{ item: 'Bandage', amount: 3, durability: 1.0 }],
             inventory: [],
             x: 300,
             y: 400,
@@ -1390,7 +1390,7 @@ describe('Item Tracker', () => {
       assert.ok(indexNames('item_groups').includes('idx_item_grp_active_location_sort'));
       assert.ok(indexNames('item_movements').includes('idx_item_mov_instance'));
       assert.ok(indexNames('item_movements').includes('idx_item_mov_group'));
-      assert.equal(db._getMeta('schema_version'), '23');
+      assert.equal(db._getMeta('schema_version'), '24');
     });
 
     it('repairs legacy item_movements instance_id NOT NULL during migration', () => {

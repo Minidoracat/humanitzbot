@@ -982,13 +982,15 @@ window.Panel = window.Panel || {};
         }
       });
 
-    ['structures', 'vehicles', 'containers', 'companions'].forEach(function (layer) {
-      const cb = $('#map-layer-' + layer);
-      if (cb)
-        cb.addEventListener('change', function () {
-          if (Panel.tabs.map) Panel.tabs.map.load();
-        });
-    });
+    ['structures', 'vehicles', 'containers', 'companions', 'zombies', 'animals', 'bandits', 'quests'].forEach(
+      function (layer) {
+        const cb = $('#map-layer-' + layer);
+        if (cb)
+          cb.addEventListener('change', function () {
+            if (Panel.tabs.map) Panel.tabs.map.load();
+          });
+      },
+    );
 
     // Activity category pills
     const pills = $$('.activity-pill');
