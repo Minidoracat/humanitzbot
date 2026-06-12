@@ -23,6 +23,7 @@ import path from 'path';
 import fs from 'fs';
 import { SCHEMA_VERSION, ALL_TABLES } from './schema.js';
 import { createLogger, type Logger } from '../utils/log.js';
+import { errMsg } from '../utils/error.js';
 import { getDirname } from '../utils/paths.js';
 import { PlayerRepository } from './repositories/player-repository.js';
 import { ClanRepository } from './repositories/clan-repository.js';
@@ -1393,8 +1394,10 @@ class HumanitZDB {
         for (const ddl of v24Columns) {
           try {
             this._handle.exec(ddl);
-          } catch {
-            /* column already exists */
+          } catch (err) {
+            // Only swallow re-runs; anything else must roll the migration back
+            // rather than committing version=24 with columns missing.
+            if (!/duplicate column/i.test(errMsg(err))) throw err;
           }
         }
         this._log.info('Migration v23→v24: quests time/items/position columns + players.save_last_login');

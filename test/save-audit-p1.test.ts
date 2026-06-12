@@ -215,6 +215,7 @@ describe('save-audit P1 DB integration', () => {
           data       TEXT DEFAULT '{}',
           updated_at TEXT DEFAULT (datetime('now'))
         );
+        ALTER TABLE players DROP COLUMN save_last_login;
       `);
       handle.exec("UPDATE meta SET value = '23' WHERE key = 'schema_version'");
       (legacy as unknown as { _applySchema: () => void })._applySchema();
@@ -225,6 +226,10 @@ describe('save-audit P1 DB integration', () => {
       for (const col of ['time', 'items', 'pos_x', 'pos_y', 'pos_z']) {
         assert.ok(questCols.includes(col), `quests.${col} missing after migration`);
       }
+      const playerCols = (handle.prepare('PRAGMA table_info(players)').all() as Array<{ name: string }>).map(
+        (c) => c.name,
+      );
+      assert.ok(playerCols.includes('save_last_login'), 'players.save_last_login missing after migration');
       const version = handle.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as {
         value: string;
       };

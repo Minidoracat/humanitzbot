@@ -828,7 +828,7 @@ Panel.tabs = Panel.tabs || {};
             '<span>💺 ' +
             i18next.t('web:player_detail.horse.saddle', { defaultValue: 'Saddle' }) +
             ' ' +
-            h.saddle +
+            (Number(h.saddle) || 0) +
             '</span>';
         html += '</div></div>';
       }
