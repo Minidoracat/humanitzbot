@@ -80,28 +80,72 @@ describe('SaveService._checkAgentCacheVersion', () => {
     assert.equal(warns.length, 2);
   });
 
-  it('does nothing for a current or future cache version', () => {
+  it('does nothing for the expected cache version', () => {
     const { svc, deploys, warns } = makeService();
     svc._sftpConfig = { host: 'example' };
 
     svc._checkAgentCacheVersion({ v: AGENT_VERSION });
-    svc._checkAgentCacheVersion({ v: AGENT_VERSION + 1 });
 
     assert.equal(svc._agentDeployed, true);
     assert.equal(deploys.length, 0);
     assert.equal(warns.length, 0);
   });
 
-  it('ignores caches without a numeric version (pre-versioning)', () => {
+  it('treats a newer cache version (bot rollback) as a mismatch and redeploys', async () => {
+    const { svc, deploys, warns } = makeService();
+    svc._sftpConfig = { host: 'example' };
+
+    svc._checkAgentCacheVersion({ v: AGENT_VERSION + 1 });
+    await flush();
+
+    assert.equal(deploys.length, 1);
+    assert.equal(warns.length, 1);
+    assert.match(warns[0] ?? '', /newer than expected/);
+  });
+
+  it('ignores caches without a finite numeric version', () => {
     const { svc, deploys, warns } = makeService();
     svc._sftpConfig = { host: 'example' };
 
     svc._checkAgentCacheVersion({});
     svc._checkAgentCacheVersion({ v: 'old' });
+    svc._checkAgentCacheVersion({ v: NaN });
 
     assert.equal(svc._agentDeployed, true);
     assert.equal(deploys.length, 0);
     assert.equal(warns.length, 0);
+  });
+
+  it('retries the redeploy on the next sync after a transient deploy failure', async () => {
+    const { svc, deploys, warns } = makeService();
+    svc._sftpConfig = { host: 'example' };
+    let failFirst = true;
+    svc.deployAgent = async () => {
+      if (failFirst) {
+        failFirst = false;
+        throw new Error('sftp timeout');
+      }
+      deploys.push(Date.now());
+      svc._agentDeployed = true;
+    };
+
+    svc._checkAgentCacheVersion({ v: AGENT_VERSION - 1 });
+    await flush();
+    assert.equal(deploys.length, 0, 'first deploy attempt fails');
+    assert.equal(warns.length, 2, 'stale warning + failure warning');
+
+    svc._checkAgentCacheVersion({ v: AGENT_VERSION - 1 });
+    await flush();
+    assert.equal(deploys.length, 1, 'failure cleared the throttle, second sync retried');
+  });
+
+  it('reconfigure() clears the throttle so a new server gets its own redeploy', () => {
+    const { svc } = makeService();
+    svc._staleAgentCacheVersion = AGENT_VERSION - 1;
+
+    svc.reconfigure({ savePath: '/srv/other/Save.sav' });
+
+    assert.equal(svc._staleAgentCacheVersion, null);
   });
 
   it('only warns and drops the flag when SFTP is not configured (rcon/panel-only setups)', async () => {

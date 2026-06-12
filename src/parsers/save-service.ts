@@ -139,7 +139,7 @@ class SaveService extends EventEmitter {
   private _mode: string | null;
 
   private _agentDeployed: boolean;
-  private _staleAgentCacheVersion: number | null = null;
+  private _staleAgentCacheVersion: number | null;
   private _agentCapable: boolean | null;
   private _panelCapable: boolean | null;
   private _resolvedTrigger: string | null;
@@ -183,6 +183,7 @@ class SaveService extends EventEmitter {
     this._mode = null;
 
     this._agentDeployed = false;
+    this._staleAgentCacheVersion = null;
     this._agentCapable = null;
     this._panelCapable = null;
     this._resolvedTrigger = null;
@@ -358,6 +359,7 @@ class SaveService extends EventEmitter {
     this._panelCapable = null;
     this._resolvedTrigger = null;
     this._agentDeployed = false;
+    this._staleAgentCacheVersion = null;
     this._mode = null;
     this._agentPath = '';
     this._cachePath = '';
@@ -1166,21 +1168,29 @@ class SaveService extends EventEmitter {
    * with older shapes.
    */
   _checkAgentCacheVersion(cache: Record<string, unknown>): void {
-    // Caches without a numeric v predate versioning — nothing to compare.
-    const v = typeof cache.v === 'number' ? cache.v : null;
-    if (v == null || v >= AGENT_VERSION) {
+    // Defensive: _parseCache already rejects caches without a numeric v >= 1,
+    // but keep this method safe for any caller. Non-finite values must not
+    // reach the throttle (NaN never equals itself, so it would warn forever).
+    const v = typeof cache.v === 'number' && Number.isFinite(cache.v) ? cache.v : null;
+    if (v == null || v === AGENT_VERSION) {
       this._staleAgentCacheVersion = null;
       return;
     }
+    // Any mismatch — older or newer (bot rollback) — means the remote agent
+    // does not match this bot build; redeploy the expected version.
     this._agentDeployed = false;
     if (this._staleAgentCacheVersion === v) return;
     this._staleAgentCacheVersion = v;
+    const drift = v < AGENT_VERSION ? 'older than expected' : 'newer than expected — bot rollback?';
     this._log.warn(
-      `Agent cache is v${String(v)} but the bot expects v${String(AGENT_VERSION)} — forcing agent redeploy`,
+      `Agent cache is v${String(v)} but the bot expects v${String(AGENT_VERSION)} (${drift}) — forcing agent redeploy`,
     );
     if (this._sftpConfig) {
       this.deployAgent().catch((err: unknown) => {
-        this._log.warn(`Stale-agent redeploy failed (will retry on next ssh-trigger poll): ${errMsg(err)}`);
+        // Clear the throttle so the next cache sync retries the deploy
+        // instead of staying silently stale after a transient failure.
+        this._staleAgentCacheVersion = null;
+        this._log.warn(`Stale-agent redeploy failed (will retry on next cache sync): ${errMsg(err)}`);
       });
     }
   }
