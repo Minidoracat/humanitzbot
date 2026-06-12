@@ -529,7 +529,8 @@ function _formatEvent(event: DiffEvent, timeStr: string): string {
     case 'horse_health_changed': {
       const delta = event.amount ?? 0;
       const key = delta > 0 ? 'event_horse_healed' : 'event_horse_damaged';
-      return `${ts}${emoji}${tr(key, { delta })}${loc}`;
+      // Absolute value — the template already says healed/damaged
+      return `${ts}${emoji}${tr(key, { delta: Math.abs(delta) })}${loc}`;
     }
     case 'horse_owner_changed':
       return `${ts}${emoji}${tr('event_horse_owner_changed')}${loc}`;
@@ -568,7 +569,8 @@ function _formatEvent(event: DiffEvent, timeStr: string): string {
     case 'vehicle_fuel_changed': {
       const delta = event.amount ?? 0;
       const key = delta > 0 ? 'event_vehicle_refueled' : 'event_vehicle_fuel_consumed';
-      return `${ts}⛽${tr(key, { delta: Math.round(delta) })}${loc}`;
+      // Absolute value — the template already says refueled/consumed
+      return `${ts}⛽${tr(key, { delta: Math.abs(Math.round(delta)) })}${loc}`;
     }
     case 'vehicle_appeared':
       return `${ts}🚗${tr('event_vehicle_appeared')}${loc}`;

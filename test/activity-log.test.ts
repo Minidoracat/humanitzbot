@@ -292,6 +292,20 @@ describe('activity feed event sentences (i18n)', () => {
     }
   });
 
+  it('renders absolute deltas in damage/consumption sentences', () => {
+    const damaged = _formatEvent(
+      { type: 'horse_health_changed', category: 'horse', actorName: 'Pony', amount: -12 },
+      '',
+    );
+    assert.match(damaged, /12 HP/);
+    assert.ok(!damaged.includes('-12'), `signed delta leaked: ${damaged}`);
+    const consumed = _formatEvent(
+      { type: 'vehicle_fuel_changed', category: 'vehicle', actorName: 'Truck', amount: -7.4 },
+      '',
+    );
+    assert.match(consumed, /\(7\)/);
+  });
+
   it('zh-TW sentence keys render with interpolation (no missing-key fallback)', () => {
     const taken = t('discord:activity_log.event_item_taken', 'zh-TW', {
       player: '小明',
