@@ -1400,6 +1400,9 @@ class HumanitZDB {
             if (!/duplicate column/i.test(errMsg(err))) throw err;
           }
         }
+        this._handle.exec(
+          'CREATE INDEX IF NOT EXISTS idx_quests_pos ON quests(pos_x) WHERE pos_x IS NOT NULL AND NOT (pos_x = 0 AND pos_y = 0)',
+        );
         this._log.info('Migration v23→v24: quests time/items/position columns + players.save_last_login');
       }
 

@@ -38,6 +38,7 @@ import type { PanelApi } from '../server/panel-api.js';
 import serverResources, { formatBytes, formatUptime } from '../server/server-resources.js';
 import { ENV_CATEGORIES, ENV_CATEGORY_GROUPS, GAME_SETTINGS_CATEGORIES } from '../modules/panel-constants.js';
 import { buildMigrationMap, SERVER_SCOPED_KEYS, BOOTSTRAP_KEYS, _coerce } from '../db/config-migration.js';
+import { parseDbTimestampUtc } from '../db/timestamp.js';
 import { ENV_KEY_VALIDATORS, validateField } from '../db/config-validation.js';
 import { readPrivateKey } from '../utils/security.js';
 import {
@@ -458,6 +459,19 @@ function _queryString(value: unknown): string {
   if (typeof value === 'string') return value;
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : '';
   return '';
+}
+
+/**
+ * Resolve the first parseable timestamp to an ISO UTC string. Accepts both the
+ * cache's ISO form and the DB's canonical 'YYYY-MM-DD HH:MM:SS' (UTC) form, so
+ * browser-side `new Date()` never parses a zone-less string as local time.
+ */
+function _isoTimestamp(...candidates: unknown[]): string | null {
+  for (const candidate of candidates) {
+    const parsed = parseDbTimestampUtc(candidate);
+    if (parsed) return parsed.toISOString();
+  }
+  return null;
 }
 
 function _parseBoundedPositiveInt(value: unknown, defaultValue: number, max: number): number {
@@ -1443,6 +1457,18 @@ class WebMapServer {
         }
       }
 
+      // save_last_login fallback (covers caches that omit lastLogin)
+      const saveLoginMap = new Map<string, string>();
+      if (srv.db) {
+        try {
+          for (const r of srv.db.player.getSaveLastLogins()) {
+            saveLoginMap.set(r.steam_id as string, r.save_last_login as string);
+          }
+        } catch {
+          /* pre-v24 DB */
+        }
+      }
+
       const result = [];
 
       for (const [steamId, rawData] of players) {
@@ -1587,7 +1613,7 @@ class WebMapServer {
           totalPlaytime: ptData ? Math.floor(ptData.totalMs / 60000) : 0,
           lastSeen: ptData?.lastSeen || null,
           // Save-authoritative last login (game save LastLogin, UTC ISO)
-          saveLastLogin: (data.lastLogin as string | null | undefined) ?? null,
+          saveLastLogin: _isoTimestamp(data.lastLogin, saveLoginMap.get(steamId)),
         });
       }
 
@@ -1665,10 +1691,7 @@ class WebMapServer {
         horses: normalizePlayerHorses(data.horses),
         // Save-authoritative last login: cache value first, then the players
         // column (which survives syncs that omit lastLogin via COALESCE)
-        saveLastLogin:
-          (data.lastLogin as string | null | undefined) ??
-          (storedDetail?.['save_last_login'] as string | null | undefined) ??
-          null,
+        saveLastLogin: _isoTimestamp(data.lastLogin, storedDetail?.['save_last_login']),
         // Log-derived
         deaths: logStats?.deaths || 0,
         pvpKills: logStats?.pvpKills || 0,
@@ -2518,7 +2541,7 @@ class WebMapServer {
               ).length;
             } catch {}
             const first = entries[0];
-            return { id: r.id, name: first?.name || r.id, time: first?.time ?? null, entries, lat, lng, itemCount };
+            return { id: r.id, name: first?.name ?? '', time: first?.time ?? null, entries, lat, lng, itemCount };
           });
         }
 

@@ -1523,6 +1523,7 @@ CREATE INDEX IF NOT EXISTS idx_vehicles_pos ON vehicles(pos_x) WHERE pos_x IS NO
 CREATE INDEX IF NOT EXISTS idx_companions_pos ON companions(pos_x) WHERE pos_x IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_dead_bodies_pos ON dead_bodies(pos_x) WHERE pos_x IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_containers_pos ON containers(pos_x) WHERE pos_x IS NOT NULL AND pos_x != 0;
+CREATE INDEX IF NOT EXISTS idx_quests_pos ON quests(pos_x) WHERE pos_x IS NOT NULL AND NOT (pos_x = 0 AND pos_y = 0);
 `;
 
 // ─── All tables in creation order ───────────────────────────────────────────
