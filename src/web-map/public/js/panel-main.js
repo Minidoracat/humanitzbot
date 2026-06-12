@@ -699,7 +699,8 @@ window.Panel = window.Panel || {};
         clans: Panel.tabs.clans ? Panel.tabs.clans.load : null,
         servers: Panel.tabs.servers ? Panel.tabs.servers.load : null,
         // Items and map carry server-localized item names / popup labels —
-        // refetch so they switch language without waiting for the next poll
+        // refetch on locale change (map would self-heal at its next poll;
+        // items has no poll at all and would stay stale without this)
         items: Panel.tabs.items ? Panel.tabs.items.load : null,
         map: Panel.tabs.map ? Panel.tabs.map.load : null,
       };

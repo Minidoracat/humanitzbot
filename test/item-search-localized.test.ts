@@ -1,5 +1,5 @@
 /**
- * Tests for localized item search (save-audit P2 follow-up): searchItemIds
+ * Tests for localized item search: searchItemIds
  * reverse lookup + the item-repository page queries that consume matchedIds,
  * so a panel search for '繃帶' finds rows stored under the raw id 'Bandage'.
  */
@@ -7,7 +7,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import HumanitZDB from '../src/db/database.js';
-import { searchItemIds } from '../src/i18n/item-names.js';
+import { searchItemIds, SEARCH_ITEM_IDS_LIMIT } from '../src/i18n/item-names.js';
 
 describe('searchItemIds', () => {
   it('matches zh-TW display-name substrings to raw ids', () => {
@@ -29,13 +29,14 @@ describe('searchItemIds', () => {
   });
 
   it('caps broad queries at the documented limit', () => {
-    // Single-letter query matches a large share of the item table
-    assert.ok(searchItemIds('a').length <= 200);
+    // 'a' matches far more display names than the cap (500+ in en alone),
+    // so an exact match proves the cap actually triggered.
+    assert.equal(searchItemIds('a').length, SEARCH_ITEM_IDS_LIMIT);
   });
 
   it('returns canonical raw ids (original casing)', () => {
     // Exact ids, not a casing heuristic — some table ids are legitimately
-    // all-lowercase ('12g'), so asserting the known results is more precise.
+    // all-lowercase ('9mm', '22ammo'), so asserting the known results is more precise.
     assert.deepEqual(searchItemIds('繃帶').sort(), ['Bandage', 'BandageAnti']);
   });
 });
@@ -101,8 +102,8 @@ describe('item page search with matchedIds', () => {
   });
 
   it('matches save-file casing variants case-insensitively (12g vs 12G)', () => {
-    // 16% of live distinct items drift from the locale table's casing
-    // ('12g' vs '12G') — the IN branch must compare NOCASE to reach them.
+    // Live save data stores some ids with casing that drifts from the locale
+    // table ('12g' vs '12G') — the IN branch must compare NOCASE to reach them.
     db.item.createItemInstance({
       fingerprint: 'fp-shell-1',
       item: '12g',
@@ -120,6 +121,32 @@ describe('item page search with matchedIds', () => {
     assert.equal(rows[0]?.item, '12g');
   });
 
+  it('scopes localized group search to a location', () => {
+    db.item.upsertItemGroup({
+      fingerprint: 'fp-bandage-group-loc',
+      item: 'Bandage',
+      locationType: 'container',
+      locationId: 'Container_9',
+      quantity: 3,
+    });
+    const hit = db.item.getActiveItemGroupsPage({
+      search: '繃帶',
+      matchedIds: searchItemIds('繃帶'),
+      locationType: 'container',
+      locationId: 'Container_9',
+    }) as Array<{ item: string }>;
+    assert.equal(hit.length, 1);
+    assert.equal(hit[0]?.item, 'Bandage');
+
+    const miss = db.item.getActiveItemGroupsPage({
+      search: '繃帶',
+      matchedIds: searchItemIds('繃帶'),
+      locationType: 'container',
+      locationId: 'Container_other',
+    });
+    assert.equal(miss.length, 0);
+  });
+
   it('group search accepts matchedIds the same way', () => {
     db.item.upsertItemGroup({
       fingerprint: 'fp-bandage-group',
@@ -134,5 +161,37 @@ describe('item page search with matchedIds', () => {
     }) as Array<{ item: string }>;
     assert.equal(rows.length, 1);
     assert.equal(rows[0]?.item, 'Bandage');
+  });
+});
+
+describe('activity search with matchedIds', () => {
+  let db: HumanitZDB;
+
+  beforeEach(() => {
+    db = new HumanitZDB({ memory: true, label: 'ActivitySearchTest' });
+    db.init();
+    db.activityLog.insertActivities([
+      { type: 'container_item_removed', category: 'container', actor: 'BuildContainer_1', item: 'Bandage', amount: 2 },
+      { type: 'container_item_removed', category: 'container', actor: 'BuildContainer_1', item: 'AR15', amount: 1 },
+    ]);
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('finds raw-id activity rows via localized display names', () => {
+    // '繃帶' never matches the raw item column — only matchedIds reaches it
+    const rows = db.activityLog.searchActivityByItem('繃帶', {
+      matchedIds: searchItemIds('繃帶'),
+    }) as Array<{ item: string }>;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.item, 'Bandage');
+  });
+
+  it('keeps plain raw-id activity search working without matchedIds', () => {
+    const raw = db.activityLog.searchActivityByItem('AR15', {}) as Array<{ item: string }>;
+    assert.equal(raw.length, 1);
+    assert.equal(raw[0]?.item, 'AR15');
   });
 });

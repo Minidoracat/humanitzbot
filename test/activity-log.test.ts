@@ -5,6 +5,7 @@ import _config from '../src/config/index.js';
 const config = _config as any;
 
 import { _cleanActorName, _formatLocation, _test as _activityTest } from '../src/modules/activity-log.js';
+import { t } from '../src/i18n/index.js';
 
 const { _filterEvents, _formatTime, _categoryTitle } = _activityTest;
 
@@ -235,5 +236,89 @@ describe('_categoryTitle', () => {
 
   it('returns generic title for unknown category', () => {
     assert.equal(_categoryTitle('something_else'), 'Activity');
+  });
+});
+
+// ── Event sentence i18n ──────────────────────────────────────────────────────
+
+describe('activity feed event sentences (i18n)', () => {
+  const { _formatEvent } = _activityTest;
+
+  it('renders translated sentences instead of raw keys (default locale)', () => {
+    const out = _formatEvent({ type: 'container_locked', category: 'container', actorName: 'GunCrate_12' }, '12:00');
+    assert.match(out, /was locked/);
+    assert.ok(!out.includes('activity_log.'), `raw i18n key leaked: ${out}`);
+  });
+
+  it('pluralizes container_destroyed via count', () => {
+    const one = _formatEvent(
+      { type: 'container_destroyed', category: 'container', actorName: 'Crate_1', amount: 1 },
+      '',
+    );
+    const many = _formatEvent(
+      { type: 'container_destroyed', category: 'container', actorName: 'Crate_1', amount: 5 },
+      '',
+    );
+    assert.match(one, /1 item lost/);
+    assert.match(many, /5 items lost/);
+  });
+
+  it('covers every event type without leaking raw keys or falling back to event_generic', () => {
+    const types = [
+      'container_locked',
+      'container_unlocked',
+      'container_destroyed',
+      'horse_appeared',
+      'horse_disappeared',
+      'horse_health_changed',
+      'horse_owner_changed',
+      'airdrop_spawned',
+      'airdrop_despawned',
+      'world_day_advanced',
+      'world_season_changed',
+      'structure_damaged',
+      'structure_destroyed',
+      'structure_upgraded',
+      'structure_built',
+      'vehicle_health_changed',
+      'vehicle_fuel_changed',
+      'vehicle_appeared',
+      'vehicle_destroyed',
+    ];
+    for (const type of types) {
+      const out = _formatEvent({ type, category: 'world', actorName: 'Thing', amount: 2, item: 'Summer' }, '');
+      assert.ok(!out.includes('activity_log.'), `raw i18n key leaked for ${type}: ${out}`);
+      assert.ok(!out.includes(`${type}:`), `fell back to event_generic for ${type}: ${out}`);
+    }
+  });
+
+  it('renders absolute deltas in damage/consumption sentences', () => {
+    const damaged = _formatEvent(
+      { type: 'horse_health_changed', category: 'horse', actorName: 'Pony', amount: -12 },
+      '',
+    );
+    assert.match(damaged, /12 HP/);
+    assert.ok(!damaged.includes('-12'), `signed delta leaked: ${damaged}`);
+    const consumed = _formatEvent(
+      { type: 'vehicle_fuel_changed', category: 'vehicle', actorName: 'Truck', amount: -7.4 },
+      '',
+    );
+    assert.match(consumed, /\(7\)/);
+  });
+
+  it('zh-TW sentence keys render with interpolation (no missing-key fallback)', () => {
+    const taken = t('discord:activity_log.event_item_taken', 'zh-TW', {
+      player: '小明',
+      items: '繃帶 x2',
+      actor: '木箱',
+    });
+    assert.match(taken, /小明/);
+    assert.match(taken, /取走/);
+    const destroyed = t('discord:activity_log.event_container_destroyed', 'zh-TW', {
+      count: 3,
+      countLabel: '3',
+      itemList: '',
+    });
+    assert.match(destroyed, /已被摧毀/);
   });
 });
