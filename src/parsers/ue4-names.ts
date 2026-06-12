@@ -175,35 +175,28 @@ function lookupItemName(name: string): string | undefined {
 }
 
 // ─── Manual item name aliases ────────────────────────────────────────────────
+// Last-resort fallbacks for ids the authoritative item-name tables don't
+// cover (shorthand, OCR/concatenated forms). Table lookups run first in
+// cleanItemName, so only keep entries the tables actually miss — entries
+// shadowed by (or identical to) a table hit are dead weight and get pruned
+// (verified by diffing cleanItemName output with the map emptied).
 const ITEM_ALIASES = new Map<string, string>([
   // Weapons & ammo
-  ['tacticalmachette', 'Tactical Machete'],
   ['tacticalmachete', 'Tactical Machete'],
-  ['22ammo', '.22 Ammo'],
   ['9mmammo', '9mm Ammo'],
   ['45ammo', '.45 Ammo'],
   ['shotgunammo', 'Shotgun Ammo'],
   ['rifleammo', 'Rifle Ammo'],
-  ['357', '.357 Revolver'],
-  ['improaxe', 'Improvised Axe'],
-  ['improarrow', 'Improvised Arrow'],
   ['improdrill', 'Improvised Drill'],
-  ['improhammer', 'Improvised Hammer'],
   ['impromace', 'Improvised Mace'],
   ['improknife', 'Improvised Knife'],
   ['improbat', 'Improvised Bat'],
   ['improbow', 'Improvised Bow'],
   ['improsword', 'Improvised Sword'],
   ['impro backpack', 'Improvised Backpack'],
-  ['drillkit', 'Drill Kit'],
-  ['lockpick', 'Lock Pick'],
-  ['binos', 'Binoculars'],
   ['binocs', 'Binoculars'],
 
   // Attachments
-  ['att_mag_extended', 'Extended Magazine'],
-  ['att_mag_extended_uzi', 'Extended Mag (Uzi)'],
-  ['att_mag_extended_ak', 'Extended Mag (AK)'],
   ['att_mag_extended_ar', 'Extended Mag (AR)'],
   ['att_mag_drum', 'Drum Magazine'],
   ['att_scope_2x', '2x Scope'],
@@ -217,36 +210,17 @@ const ITEM_ALIASES = new Map<string, string>([
   ['att_grip', 'Foregrip'],
 
   // Food & drink
-  ['energy drink', 'Energy Drink'],
-  ['energy drink2', 'Energy Drink'],
-  ['energydrink', 'Energy Drink'],
-  ['energydrink2', 'Energy Drink'],
   ['porkn beans', 'Pork & Beans'],
-  ['porknbeans', 'Pork & Beans'],
   ['pork n beans', 'Pork & Beans'],
-  ['dogfood', 'Dog Food'],
-  ['dog food', 'Dog Food'],
   ['catfood', 'Cat Food'],
   ['water tabs', 'Water Purification Tablets'],
-  ['watertabs', 'Water Purification Tablets'],
 
   // Medical
   ['med kit', 'Medical Kit'],
-  ['medkit', 'Medical Kit'],
-  ['repair kit', 'Repair Kit'],
-  ['repairkit', 'Repair Kit'],
   ['first aid', 'First Aid Kit'],
   ['firstaid', 'First Aid Kit'],
 
-  // Clothing
-  ['police vest', 'Police Vest'],
-  ['policevest', 'Police Vest'],
-
   // Tools & misc
-  ['pocket watch', 'Pocket Watch'],
-  ['pocketwatch', 'Pocket Watch'],
-  ['stone knife', 'Stone Knife'],
-  ['stoneknife', 'Stone Knife'],
   ['cb radio', 'CB Radio'],
   ['cbradio', 'CB Radio'],
 ]);

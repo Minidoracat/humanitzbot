@@ -18,7 +18,10 @@ interface ItemListPageOptions {
   limit?: number;
   offset?: number;
   search?: string;
-  /** Raw item ids resolved from localized display names (searchItemIds). */
+  /**
+   * Raw item ids resolved from localized display names (searchItemIds).
+   * Compared case-insensitively; only consulted when `search` is also set.
+   */
   matchedIds?: string[];
   locationType?: string;
   locationId?: string;

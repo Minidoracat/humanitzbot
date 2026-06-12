@@ -388,32 +388,30 @@ class ActivityLog {
 
       // Player attribution: prefer cross-referenced data from diff-engine,
       // fall back to log-based container access tracking
-      let playerTag = '';
+      let playerName = '';
       const crossRefPlayer = e.attributedPlayer ?? batch.items.find((i) => i.attributedPlayer)?.attributedPlayer;
       if (crossRefPlayer) {
-        playerTag = ` — **${crossRefPlayer}**`;
+        playerName = crossRefPlayer;
       } else if (category === 'container' && this._logWatcher) {
         const access = this._logWatcher.getRecentContainerAccess(e.actorName ?? e.actor ?? '');
-        if (access) playerTag = ` — **${access.player}**`;
+        if (access) playerName = access.player;
       }
 
       const ts = timeStr ? `\`${timeStr}\` ` : '';
+      const vars = { player: playerName, items: itemList, actor: actorLabel };
       if (e.type.includes('removed')) {
         // Item taken FROM container/vehicle — "Player took items from Container [C4]"
-        if (playerTag) {
-          lines.push(`${ts}${emoji}${playerTag} took ${itemList} from **${actorLabel}**${loc}`);
-        } else {
-          lines.push(`${ts}${emoji} ${itemList} removed from **${actorLabel}**${loc}`);
-        }
+        const key = playerName ? 'event_item_taken' : 'event_item_removed';
+        lines.push(`${ts}${emoji}${t(`discord:activity_log.${key}`, _activityLocale(), vars)}${loc}`);
       } else if (e.type.includes('added')) {
         // Item stored IN container/vehicle — "Player stored items in Container [C4]"
-        if (playerTag) {
-          lines.push(`${ts}${emoji}${playerTag} stored ${itemList} in **${actorLabel}**${loc}`);
-        } else {
-          lines.push(`${ts}${emoji} ${itemList} added to **${actorLabel}**${loc}`);
-        }
+        const key = playerName ? 'event_item_stored' : 'event_item_added';
+        lines.push(`${ts}${emoji}${t(`discord:activity_log.${key}`, _activityLocale(), vars)}${loc}`);
       } else {
-        lines.push(`${ts}${emoji} **${actorLabel}**${playerTag}: ${itemList}${loc}`);
+        const playerTag = playerName ? ` — **${playerName}**` : '';
+        lines.push(
+          `${ts}${emoji}${t('discord:activity_log.event_item_generic', _activityLocale(), { ...vars, playerTag })}${loc}`,
+        );
       }
     }
 
@@ -494,11 +492,14 @@ function _formatEvent(event: DiffEvent, timeStr: string): string {
   const ts = timeStr ? `\`${timeStr}\` ` : '';
   const loc = _formatLocation(event);
 
+  const tr = (key: string, vars: Record<string, unknown> = {}) =>
+    t(`discord:activity_log.${key}`, _activityLocale(), { name, ...vars });
+
   switch (event.type) {
     case 'container_locked':
-      return `${ts}${emoji} **${name}** was locked${loc}`;
+      return `${ts}${emoji}${tr('event_container_locked')}${loc}`;
     case 'container_unlocked':
-      return `${ts}${emoji} **${name}** was unlocked${loc}`;
+      return `${ts}${emoji}${tr('event_container_unlocked')}${loc}`;
     case 'container_destroyed': {
       // Show what items were lost (details.items is already captured by diff-engine)
       const items = event.details?.items;
@@ -510,57 +511,73 @@ function _formatEvent(event: DiffEvent, timeStr: string): string {
             resolveItemName(typeof i === 'string' ? i.replace(/ x\d+$/, '') : String(i), _activityLocale()),
           );
         lostList = `: ${cleaned.join(', ')}`;
-        if (items.length > 5) lostList += ` +${items.length - 5} more`;
+        if (items.length > 5) lostList += tr('event_items_more', { count: items.length - 5 });
       }
-      const amountLabel = event.amount === 1 ? 'item' : 'items';
-      return `${ts}${emoji} **${name}** destroyed (${fmtNumber(event.amount ?? 0, _activityLocale())} ${amountLabel} lost${lostList})${loc}`;
+      // count drives the plural form; countLabel carries the formatted number
+      return `${ts}${emoji}${tr('event_container_destroyed', {
+        count: event.amount ?? 0,
+        countLabel: fmtNumber(event.amount ?? 0, _activityLocale()),
+        itemList: lostList,
+      })}${loc}`;
     }
     case 'horse_appeared':
-      return `${ts}${emoji} **${name}** appeared${loc}`;
+      return `${ts}${emoji}${tr('event_horse_appeared')}${loc}`;
     case 'horse_disappeared':
-      return `${ts}${emoji} **${name}** disappeared (health: ${event.details?.lastHealth != null ? `${event.details.lastHealth as number}` : '?'})${loc}`;
+      return `${ts}${emoji}${tr('event_horse_disappeared', {
+        health: event.details?.lastHealth != null ? `${event.details.lastHealth as number}` : '?',
+      })}${loc}`;
     case 'horse_health_changed': {
       const delta = event.amount ?? 0;
-      return `${ts}${emoji} **${name}** ${delta > 0 ? 'healed' : 'took damage'} (${delta > 0 ? '+' : ''}${delta} HP)${loc}`;
+      const key = delta > 0 ? 'event_horse_healed' : 'event_horse_damaged';
+      // Absolute value — the template already says healed/damaged
+      return `${ts}${emoji}${tr(key, { delta: Math.abs(delta) })}${loc}`;
     }
     case 'horse_owner_changed':
-      return `${ts}${emoji} **${name}** ownership changed${loc}`;
+      return `${ts}${emoji}${tr('event_horse_owner_changed')}${loc}`;
     case 'airdrop_spawned':
-      return `${ts}${emoji} **Airdrop** has been spotted!${loc}`;
+      return `${ts}${emoji}${tr('event_airdrop_spawned')}${loc}`;
     case 'airdrop_despawned':
-      return `${ts}${emoji} **Airdrop** has expired`;
+      return `${ts}${emoji}${tr('event_airdrop_despawned')}`;
     case 'world_day_advanced':
-      return `${ts}${emoji} Day **${String(event.details?.newDay)}** has dawned (+${event.amount ?? 0})`;
+      return `${ts}${emoji}${tr('event_world_day_advanced', {
+        day: String(event.details?.newDay),
+        delta: event.amount ?? 0,
+      })}`;
     case 'world_season_changed':
-      return `${ts}${emoji} Season changed to **${String(event.item)}**`;
+      return `${ts}${emoji}${tr('event_world_season_changed', { season: String(event.item) })}`;
     // ── New diff-engine event types ──
     case 'structure_damaged': {
       const pct =
         event.details?.healthPercent != null ? ` (${Math.round(Number(event.details.healthPercent))}% HP)` : '';
-      return `${ts}🏚️ **${name}** took damage${pct}${loc}`;
+      return `${ts}🏚️${tr('event_structure_damaged', { pct })}${loc}`;
     }
     case 'structure_destroyed':
-      return `${ts}💥 **${name}** was destroyed${loc}`;
+      return `${ts}💥${tr('event_structure_destroyed')}${loc}`;
     case 'structure_upgraded':
-      return `${ts}🔨 **${name}** upgraded to level ${event.details?.newLevel != null ? `${event.details.newLevel as number}` : '?'}${loc}`;
+      return `${ts}🔨${tr('event_structure_upgraded', {
+        level: event.details?.newLevel != null ? `${event.details.newLevel as number}` : '?',
+      })}${loc}`;
     case 'structure_built':
-      return `${ts}🏗️ **${name}** was built${loc}`;
+      return `${ts}🏗️${tr('event_structure_built')}${loc}`;
     case 'vehicle_health_changed': {
       const delta = event.amount ?? 0;
       const pct =
         event.details?.healthPercent != null ? ` (${Math.round(Number(event.details.healthPercent))}% HP)` : '';
-      return `${ts}🚗 **${name}** ${delta > 0 ? 'repaired' : 'damaged'}${pct}${loc}`;
+      const key = delta > 0 ? 'event_vehicle_repaired' : 'event_vehicle_damaged';
+      return `${ts}🚗${tr(key, { pct })}${loc}`;
     }
     case 'vehicle_fuel_changed': {
       const delta = event.amount ?? 0;
-      return `${ts}⛽ **${name}** ${delta > 0 ? 'refueled' : 'fuel consumed'} (${delta > 0 ? '+' : ''}${Math.round(delta)})${loc}`;
+      const key = delta > 0 ? 'event_vehicle_refueled' : 'event_vehicle_fuel_consumed';
+      // Absolute value — the template already says refueled/consumed
+      return `${ts}⛽${tr(key, { delta: Math.abs(Math.round(delta)) })}${loc}`;
     }
     case 'vehicle_appeared':
-      return `${ts}🚗 **${name}** appeared${loc}`;
+      return `${ts}🚗${tr('event_vehicle_appeared')}${loc}`;
     case 'vehicle_destroyed':
-      return `${ts}💥 **${name}** was destroyed${loc}`;
+      return `${ts}💥${tr('event_vehicle_destroyed')}${loc}`;
     default:
-      return `${ts}${emoji} ${event.type}: ${name}`;
+      return `${ts}${emoji}${tr('event_generic', { type: event.type })}`;
   }
 }
 
@@ -600,6 +617,7 @@ const _test = {
   _filterEvents: ActivityLog.prototype._filterEvents.bind(ActivityLog.prototype),
   _formatTime,
   _categoryTitle,
+  _formatEvent,
 };
 
 export { _cleanActorName, _formatLocation, _test };

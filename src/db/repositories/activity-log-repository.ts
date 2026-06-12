@@ -37,7 +37,13 @@ type NormalizedActivityEntry = {
 };
 
 type ActivityDateRangeOptions = { dateFrom?: string; dateTo?: string; bucketOffsetMinutes?: number };
-type ActivitySearchOptions = ActivityDateRangeOptions & { category?: string; limit?: number; offset?: number };
+type ActivitySearchOptions = ActivityDateRangeOptions & {
+  category?: string;
+  limit?: number;
+  offset?: number;
+  /** Raw item ids resolved from localized display names (searchItemIds); NOCASE-compared. */
+  matchedIds?: string[];
+};
 
 type ActivityPage = {
   categories: string[];
@@ -603,6 +609,9 @@ export class ActivityLogRepository extends BaseRepository {
     const categoryClause = _categoryClause(categories);
     const range = { dateFrom, dateTo };
     const dateClause = _dateClause(range);
+    // Localized display-name matches ('繃帶' → 'Bandage') resolved by the
+    // caller via searchItemIds; compared NOCASE like the items-tab search.
+    const idsJson = JSON.stringify(options.matchedIds ?? []);
 
     return this._handle
       .prepare(
@@ -611,11 +620,12 @@ export class ActivityLogRepository extends BaseRepository {
            (
              item LIKE ? ESCAPE '\\'
              OR details LIKE ? ESCAPE '\\'
+             OR item COLLATE NOCASE IN (SELECT value FROM json_each(?))
            )
          ORDER BY created_at DESC, id DESC
          LIMIT ? OFFSET ?`,
       )
-      .all(..._dateParams(range), ...categories, likeTerm, likeTerm, limit, offset)
+      .all(..._dateParams(range), ...categories, likeTerm, likeTerm, idsJson, limit, offset)
       .map(_parseActivityRow);
   }
 
