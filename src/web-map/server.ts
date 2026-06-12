@@ -2101,7 +2101,14 @@ class WebMapServer {
             ...rangeOptions,
           });
         } else if (mode === 'item') {
-          events = srv.db.activityLog.searchActivityByItem(q, { category: type, limit, offset, ...rangeOptions });
+          events = srv.db.activityLog.searchActivityByItem(q, {
+            category: type,
+            limit,
+            offset,
+            // '繃帶'/'antiseptic' reach raw-id rows the LIKE match never hits
+            matchedIds: searchItemIds(q),
+            ...rangeOptions,
+          });
         } else if (mode === 'container') {
           events = srv.db.activityLog.searchActivityByContainer(q, { category: type, limit, offset, ...rangeOptions });
         } else if (mode === 'text') {

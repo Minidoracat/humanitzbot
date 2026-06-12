@@ -163,3 +163,35 @@ describe('item page search with matchedIds', () => {
     assert.equal(rows[0]?.item, 'Bandage');
   });
 });
+
+describe('activity search with matchedIds', () => {
+  let db: HumanitZDB;
+
+  beforeEach(() => {
+    db = new HumanitZDB({ memory: true, label: 'ActivitySearchTest' });
+    db.init();
+    db.activityLog.insertActivities([
+      { type: 'container_item_removed', category: 'container', actor: 'BuildContainer_1', item: 'Bandage', amount: 2 },
+      { type: 'container_item_removed', category: 'container', actor: 'BuildContainer_1', item: 'AR15', amount: 1 },
+    ]);
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('finds raw-id activity rows via localized display names', () => {
+    // '繃帶' never matches the raw item column — only matchedIds reaches it
+    const rows = db.activityLog.searchActivityByItem('繃帶', {
+      matchedIds: searchItemIds('繃帶'),
+    }) as Array<{ item: string }>;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.item, 'Bandage');
+  });
+
+  it('keeps plain raw-id activity search working without matchedIds', () => {
+    const raw = db.activityLog.searchActivityByItem('AR15', {}) as Array<{ item: string }>;
+    assert.equal(raw.length, 1);
+    assert.equal(raw[0]?.item, 'AR15');
+  });
+});
