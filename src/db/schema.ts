@@ -9,7 +9,7 @@
  * Schema is applied via database.js on first run and auto-migrated on updates.
  */
 
-const SCHEMA_VERSION = 23;
+const SCHEMA_VERSION = 24;
 
 // ─── Player data ────────────────────────────────────────────────────────────
 
@@ -201,6 +201,7 @@ CREATE TABLE IF NOT EXISTS players (
   -- Save snapshot source marker
   has_save_snapshot   INTEGER DEFAULT 0,       -- 1 = row has been backed by parsed save data
   last_save_snapshot_at TEXT,                  -- ISO timestamp of latest save-backed upsert
+  save_last_login     TEXT,                    -- LastLogin from the game save (authoritative, UTC)
 
   -- Metadata
   updated_at      TEXT DEFAULT (datetime('now'))
@@ -539,6 +540,11 @@ CREATE TABLE IF NOT EXISTS quests (
   type       TEXT DEFAULT '',
   state      TEXT DEFAULT '',                  -- completed, active, etc.
   data       TEXT DEFAULT '{}',                -- full quest JSON
+  time       TEXT DEFAULT '{}',                -- JSON map: { questName: ISO timestamp }
+  items      TEXT DEFAULT '[]',                -- JSON array of quest/trader items
+  pos_x      REAL,
+  pos_y      REAL,
+  pos_z      REAL,
   updated_at TEXT DEFAULT (datetime('now'))
 );
 `;

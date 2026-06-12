@@ -17,7 +17,7 @@ import fs from 'fs';
 import config, { getConfigValue, setConfigValue, _tzOffsetMs } from '../config/index.js';
 import { resolveReloadStrategy, summarizeConfigReloadApplyAsync } from '../config/reload-strategy.js';
 import type { RuntimeConfigApplier } from '../config/runtime-config-applier.js';
-import { parseSave, PERK_MAP } from '../parsers/save-parser.js';
+import { parseSave, normalizePlayerHorses, PERK_MAP } from '../parsers/save-parser.js';
 import { AFFLICTION_MAP } from '../parsers/game-data.js';
 import { cleanName as cleanActorName, cleanNameCached, cleanItemName } from '../parsers/ue4-names.js';
 import { resolveItemName, resolveItemArray, resolveItemId, normalizeItemLocale } from '../i18n/item-names.js';
@@ -190,6 +190,18 @@ interface DeadBodyRow {
   pos_x: number;
   pos_y: number;
   pos_z: number;
+}
+
+interface QuestRow {
+  id: string;
+  type: string;
+  state: string;
+  time: string;
+  items: string;
+  pos_x: number;
+  pos_y: number;
+  pos_z: number;
+  updated_at: string;
 }
 
 interface ActivityRow {
@@ -1555,7 +1567,7 @@ class WebMapServer {
                 ? { ...c, type: cleanItemName((c.type as string | undefined) ?? '') }
                 : cleanItemName(c as string),
           ),
-          horses: (data.horses as unknown[] | undefined) ?? [],
+          horses: normalizePlayerHorses(data.horses),
 
           // Log-derived stats
           deaths: logStats?.deaths || 0,
@@ -1574,6 +1586,8 @@ class WebMapServer {
           // Playtime
           totalPlaytime: ptData ? Math.floor(ptData.totalMs / 60000) : 0,
           lastSeen: ptData?.lastSeen || null,
+          // Save-authoritative last login (game save LastLogin, UTC ISO)
+          saveLastLogin: (data.lastLogin as string | null | undefined) ?? null,
         });
       }
 
@@ -1647,6 +1661,10 @@ class WebMapServer {
         ...data,
         // Override raw enum values with resolved names
         startingPerk: professionName,
+        // Normalize agent-v4 raw GVAS horse arrays from older snapshots
+        horses: normalizePlayerHorses(data.horses),
+        // Save-authoritative last login (game save LastLogin, UTC ISO)
+        saveLastLogin: (data.lastLogin as string | null | undefined) ?? null,
         // Log-derived
         deaths: logStats?.deaths || 0,
         pvpKills: logStats?.pvpKills || 0,
@@ -2468,6 +2486,38 @@ class WebMapServer {
           result.deadBodies = rows.map((r: DeadBodyRow) => {
             const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
             return { name: r.actor_name, lat, lng };
+          });
+        }
+
+        if (showAll || layers.includes('quests')) {
+          const rows = srv.db.quest.getPositionedQuests() as unknown as QuestRow[];
+          result.quests = rows.map((r: QuestRow) => {
+            const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
+            // The quest's readable name and timestamp live in the time map:
+            // { questName: ISO timestamp } — GUID ids carry no display value.
+            let questName = '';
+            let questTime: string | null = null;
+            try {
+              const timeMap = JSON.parse(r.time || '{}') as Record<string, string>;
+              const keys = Object.keys(timeMap);
+              if (keys.length) {
+                questName = keys[0] ?? '';
+                questTime = timeMap[questName] ?? null;
+              }
+            } catch {}
+            let itemCount = 0;
+            try {
+              const items = JSON.parse(r.items || '[]') as unknown[];
+              itemCount = items.filter(
+                (i: unknown) =>
+                  i &&
+                  typeof i === 'object' &&
+                  (i as Record<string, unknown>).item &&
+                  (i as Record<string, unknown>).item !== 'None' &&
+                  (i as Record<string, unknown>).item !== 'Empty',
+              ).length;
+            } catch {}
+            return { id: r.id, name: questName || r.id, time: questTime, lat, lng, itemCount };
           });
         }
 

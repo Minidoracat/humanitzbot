@@ -1379,6 +1379,27 @@ class HumanitZDB {
         this._log.info(`Migration v22→v23: normalized ${String(normalized)} legacy ISO playtime timestamps`);
       }
 
+      // v23 → v24: structured world-quest columns (agent v4 cache provides
+      // time/items/position) and the save-authoritative LastLogin on players.
+      if (fromVersion < 24) {
+        const v24Columns = [
+          "ALTER TABLE quests ADD COLUMN time TEXT DEFAULT '{}'",
+          "ALTER TABLE quests ADD COLUMN items TEXT DEFAULT '[]'",
+          'ALTER TABLE quests ADD COLUMN pos_x REAL',
+          'ALTER TABLE quests ADD COLUMN pos_y REAL',
+          'ALTER TABLE quests ADD COLUMN pos_z REAL',
+          'ALTER TABLE players ADD COLUMN save_last_login TEXT',
+        ];
+        for (const ddl of v24Columns) {
+          try {
+            this._handle.exec(ddl);
+          } catch {
+            /* column already exists */
+          }
+        }
+        this._log.info('Migration v23→v24: quests time/items/position columns + players.save_last_login');
+      }
+
       this._ensureItemMovementsInstanceIdNullable();
       this._setMeta('schema_version', String(SCHEMA_VERSION));
       this._handle.exec('COMMIT');

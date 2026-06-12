@@ -198,7 +198,7 @@ export class PlayerRepository extends BaseRepository {
         challenge_craft_melee_weapon, challenge_craft_rain_collector, challenge_craft_tablesaw,
         challenge_craft_treatment, challenge_craft_weapons_bench, challenge_craft_workbench,
         challenge_find_dog, challenge_find_heli, challenge_lockpick_suv, challenge_repair_radio,
-        custom_data, has_save_snapshot, last_save_snapshot_at, first_seen, last_seen, updated_at
+        custom_data, save_last_login, has_save_snapshot, last_save_snapshot_at, first_seen, last_seen, updated_at
       ) VALUES (
         @steam_id, @name, @male, @starting_perk, @affliction, @char_profile,
         @zeeks_killed, @headshots, @melee_kills, @gun_kills, @blast_kills,
@@ -228,7 +228,7 @@ export class PlayerRepository extends BaseRepository {
         @challenge_craft_melee_weapon, @challenge_craft_rain_collector, @challenge_craft_tablesaw,
         @challenge_craft_treatment, @challenge_craft_weapons_bench, @challenge_craft_workbench,
         @challenge_find_dog, @challenge_find_heli, @challenge_lockpick_suv, @challenge_repair_radio,
-        @custom_data, 1, datetime('now'), datetime('now'), datetime('now'), datetime('now')
+        @custom_data, @save_last_login, 1, datetime('now'), datetime('now'), datetime('now'), datetime('now')
       )
       ON CONFLICT(steam_id) DO UPDATE SET
         name = CASE WHEN excluded.name != '' THEN excluded.name ELSE players.name END,
@@ -334,6 +334,7 @@ export class PlayerRepository extends BaseRepository {
         challenge_lockpick_suv = excluded.challenge_lockpick_suv,
         challenge_repair_radio = excluded.challenge_repair_radio,
         custom_data = excluded.custom_data,
+        save_last_login = COALESCE(excluded.save_last_login, players.save_last_login),
         has_save_snapshot = 1,
         last_save_snapshot_at = datetime('now'),
         last_seen = datetime('now'),
@@ -663,6 +664,7 @@ export class PlayerRepository extends BaseRepository {
       challenge_lockpick_suv: data.challengeLockpickSUV || 0,
       challenge_repair_radio: data.challengeRepairRadio || 0,
       custom_data: _json(data.customData),
+      save_last_login: normalizeDbTimestampUtc(data.lastLogin) ?? null,
     };
 
     this._stmts.upsertPlayer.run(params);
