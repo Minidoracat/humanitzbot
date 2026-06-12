@@ -10,7 +10,7 @@ import { cleanOwnMessages, embedContentKey } from './discord-utils.js';
 import _defaultPlaytime from '../tracking/playtime-tracker.js';
 import _defaultPlayerStats from '../tracking/player-stats.js';
 import { KillTracker } from '../tracking/kill-tracker.js';
-import { parseSave, parseClanData, PERK_MAP, PERK_INDEX_MAP } from '../parsers/save-parser.js';
+import { parseSave, parseClanData, normalizePlayerHorses, PERK_MAP, PERK_INDEX_MAP } from '../parsers/save-parser.js';
 import * as gameData from '../parsers/game-data.js';
 import { resolveItemName } from '../i18n/item-names.js';
 import * as playerStatsEmbeds from './player-stats-embeds.js';
@@ -253,7 +253,8 @@ function _dbRowToSave(row: DbPlayerRow | null): Record<string, unknown> | null {
     challenges: row.challenges,
     questSpawnerDone: row.quest_spawner_done,
     companionData: row.companion_data || [],
-    horses: row.horses || [],
+    // Rows written before the agent-v5 upgrade may still hold raw GVAS arrays
+    horses: normalizePlayerHorses(row.horses),
     extendedStats: row.extended_stats,
     challengeKillZombies: row.challenge_kill_zombies,
     challengeKill50: row.challenge_kill_50,

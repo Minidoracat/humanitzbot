@@ -9,7 +9,7 @@
  * Schema is applied via database.js on first run and auto-migrated on updates.
  */
 
-const SCHEMA_VERSION = 23;
+const SCHEMA_VERSION = 24;
 
 // ─── Player data ────────────────────────────────────────────────────────────
 
@@ -201,6 +201,7 @@ CREATE TABLE IF NOT EXISTS players (
   -- Save snapshot source marker
   has_save_snapshot   INTEGER DEFAULT 0,       -- 1 = row has been backed by parsed save data
   last_save_snapshot_at TEXT,                  -- ISO timestamp of latest save-backed upsert
+  save_last_login     TEXT,                    -- LastLogin from the game save (authoritative, UTC)
 
   -- Metadata
   updated_at      TEXT DEFAULT (datetime('now'))
@@ -539,6 +540,11 @@ CREATE TABLE IF NOT EXISTS quests (
   type       TEXT DEFAULT '',
   state      TEXT DEFAULT '',                  -- completed, active, etc.
   data       TEXT DEFAULT '{}',                -- full quest JSON
+  time       TEXT DEFAULT '{}',                -- JSON map: { questName: ISO timestamp }
+  items      TEXT DEFAULT '[]',                -- JSON array of quest/trader items
+  pos_x      REAL,
+  pos_y      REAL,
+  pos_z      REAL,
   updated_at TEXT DEFAULT (datetime('now'))
 );
 `;
@@ -1517,6 +1523,7 @@ CREATE INDEX IF NOT EXISTS idx_vehicles_pos ON vehicles(pos_x) WHERE pos_x IS NO
 CREATE INDEX IF NOT EXISTS idx_companions_pos ON companions(pos_x) WHERE pos_x IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_dead_bodies_pos ON dead_bodies(pos_x) WHERE pos_x IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_containers_pos ON containers(pos_x) WHERE pos_x IS NOT NULL AND pos_x != 0;
+CREATE INDEX IF NOT EXISTS idx_quests_pos ON quests(pos_x) WHERE pos_x IS NOT NULL AND NOT (pos_x = 0 AND pos_y = 0);
 `;
 
 // ─── All tables in creation order ───────────────────────────────────────────

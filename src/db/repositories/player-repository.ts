@@ -149,6 +149,7 @@ export class PlayerRepository extends BaseRepository {
     getAllPlayerLogStats: Database.Statement;
     upsertPlayerPlaytime: Database.Statement;
     getAllPlayerPlaytime: Database.Statement;
+    getSaveLastLogins: Database.Statement;
     countAllPlayers: Database.Statement;
     listNamedPlayers: Database.Statement;
     listAllPlayerNames: Database.Statement;
@@ -198,7 +199,7 @@ export class PlayerRepository extends BaseRepository {
         challenge_craft_melee_weapon, challenge_craft_rain_collector, challenge_craft_tablesaw,
         challenge_craft_treatment, challenge_craft_weapons_bench, challenge_craft_workbench,
         challenge_find_dog, challenge_find_heli, challenge_lockpick_suv, challenge_repair_radio,
-        custom_data, has_save_snapshot, last_save_snapshot_at, first_seen, last_seen, updated_at
+        custom_data, save_last_login, has_save_snapshot, last_save_snapshot_at, first_seen, last_seen, updated_at
       ) VALUES (
         @steam_id, @name, @male, @starting_perk, @affliction, @char_profile,
         @zeeks_killed, @headshots, @melee_kills, @gun_kills, @blast_kills,
@@ -228,7 +229,7 @@ export class PlayerRepository extends BaseRepository {
         @challenge_craft_melee_weapon, @challenge_craft_rain_collector, @challenge_craft_tablesaw,
         @challenge_craft_treatment, @challenge_craft_weapons_bench, @challenge_craft_workbench,
         @challenge_find_dog, @challenge_find_heli, @challenge_lockpick_suv, @challenge_repair_radio,
-        @custom_data, 1, datetime('now'), datetime('now'), datetime('now'), datetime('now')
+        @custom_data, @save_last_login, 1, datetime('now'), datetime('now'), datetime('now'), datetime('now')
       )
       ON CONFLICT(steam_id) DO UPDATE SET
         name = CASE WHEN excluded.name != '' THEN excluded.name ELSE players.name END,
@@ -334,6 +335,7 @@ export class PlayerRepository extends BaseRepository {
         challenge_lockpick_suv = excluded.challenge_lockpick_suv,
         challenge_repair_radio = excluded.challenge_repair_radio,
         custom_data = excluded.custom_data,
+        save_last_login = COALESCE(excluded.save_last_login, players.save_last_login),
         has_save_snapshot = 1,
         last_save_snapshot_at = datetime('now'),
         last_seen = datetime('now'),
@@ -365,12 +367,16 @@ export class PlayerRepository extends BaseRepository {
         SELECT
           pd.*,
           p.has_save_snapshot AS has_save_snapshot,
-          p.last_save_snapshot_at AS last_save_snapshot_at
+          p.last_save_snapshot_at AS last_save_snapshot_at,
+          p.save_last_login AS save_last_login
         FROM player_details pd
         LEFT JOIN players p ON p.steam_id = pd.steam_id
         WHERE pd.steam_id = ?
       `),
       getAllPlayers: this._handle.prepare('SELECT * FROM players ORDER BY lifetime_kills DESC'),
+      getSaveLastLogins: this._handle.prepare(
+        'SELECT steam_id, save_last_login FROM players WHERE save_last_login IS NOT NULL',
+      ),
       getOnlinePlayers: this._handle.prepare('SELECT * FROM players WHERE online = 1'),
       getOnlinePlayersForDiff: this._handle.prepare(
         'SELECT steam_id, name, online, inventory, equipment, quick_slots, backpack_items, pos_x, pos_y, pos_z FROM players WHERE online = 1',
@@ -663,6 +669,7 @@ export class PlayerRepository extends BaseRepository {
       challenge_lockpick_suv: data.challengeLockpickSUV || 0,
       challenge_repair_radio: data.challengeRepairRadio || 0,
       custom_data: _json(data.customData),
+      save_last_login: normalizeDbTimestampUtc(data.lastLogin) ?? null,
     };
 
     this._stmts.upsertPlayer.run(params);
@@ -852,6 +859,13 @@ export class PlayerRepository extends BaseRepository {
       playtime_last_login: normalizeDbTimestampUtc(data.lastLogin) ?? null,
       playtime_last_seen: normalizeDbTimestampUtc(data.lastSeen) ?? null,
     });
+  }
+
+  /**
+   * All save-authoritative LastLogin values, for API fallback lookups.
+   */
+  getSaveLastLogins(): DbRow[] {
+    return this._stmts.getSaveLastLogins.all() as DbRow[];
   }
 
   /**

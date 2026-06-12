@@ -690,6 +690,17 @@ Panel.tabs = Panel.tabs || {};
       ':</span> <span class="text-white">' +
       (p.lastSeen ? new Date(p.lastSeen).toLocaleDateString() : '-') +
       '</span></div>';
+    // Save-authoritative LastLogin (game save) — runtime lastSeen only covers
+    // sessions observed while the bot was online.
+    const saveLogin = p.saveLastLogin || p.lastLogin;
+    if (saveLogin) {
+      html +=
+        '<div><span class="text-muted">' +
+        i18next.t('web:players.last_login', { defaultValue: 'Last login' }) +
+        ':</span> <span class="text-white">' +
+        new Date(saveLogin).toLocaleDateString() +
+        '</span></div>';
+    }
     html += '</div></div>';
 
     if (S.toggles.showVitals !== false) {
@@ -787,6 +798,41 @@ Panel.tabs = Panel.tabs || {};
           esc(bc[bci]) +
           '</span>';
       html += '</div></div>';
+    }
+
+    if (p.horses && p.horses.length) {
+      html +=
+        '<div class="mb-4"><h3 class="text-xs font-medium text-muted uppercase tracking-wider mb-2">' +
+        i18next.t('web:player_detail.sections.horses', {
+          count: p.horses.length,
+          defaultValue: 'Horses ({{count}})',
+        }) +
+        '</h3>';
+      for (let hi = 0; hi < p.horses.length; hi++) {
+        const h = p.horses[hi];
+        // Skip invalid/raw GVAS entries from old un-normalized snapshots
+        if (!h || typeof h !== 'object' || Array.isArray(h)) continue;
+        const horseName =
+          h.name || h.displayName || i18next.t('web:player_detail.horse.unnamed', { defaultValue: 'Horse' });
+        html += '<div class="bg-surface-50 border border-border rounded px-2.5 py-1.5 mb-1.5">';
+        html += '<div class="flex items-center justify-between">';
+        html += '<span class="text-xs font-semibold text-white">🐎 ' + esc(horseName) + '</span>';
+        if (h.displayName && h.name) html += '<span class="text-[10px] text-muted">' + esc(h.displayName) + '</span>';
+        html += '</div>';
+        html += '<div class="flex items-center gap-3 mt-1 text-[10px] text-muted">';
+        if (h.health != null) html += '<span>❤️ ' + Math.round(h.health) + '</span>';
+        if (h.energy != null) html += '<span>⚡ ' + Math.round(h.energy) + '</span>';
+        if (h.stamina != null) html += '<span>🏃 ' + Math.round(h.stamina) + '</span>';
+        if (h.saddle)
+          html +=
+            '<span>💺 ' +
+            i18next.t('web:player_detail.horse.saddle', { defaultValue: 'Saddle' }) +
+            ' ' +
+            (Number(h.saddle) || 0) +
+            '</span>';
+        html += '</div></div>';
+      }
+      html += '</div>';
     }
 
     if (S.toggles.showInventory !== false) {

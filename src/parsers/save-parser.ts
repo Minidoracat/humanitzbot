@@ -190,7 +190,7 @@ interface PlayerData {
   challenges: unknown[];
   questSpawnerDone: unknown[];
   companionData: unknown[];
-  horses: unknown[];
+  horses: Horse[];
   extendedStats: unknown[];
   challengeKillZombies: number;
   challengeKill50: number;
@@ -457,7 +457,7 @@ interface Quest {
   z: number | null;
 }
 
-interface Horse {
+export interface Horse {
   class: string;
   displayName: string;
   x: number | null;
@@ -1572,7 +1572,11 @@ function parseSave(buf: Buffer): ParseResult {
         });
       }
     }
-    if (n === 'Horses' && Array.isArray(prop.value)) p.horses = prop.value as unknown[];
+    if (n === 'Horses' && Array.isArray(prop.value)) {
+      const playerHorses: Horse[] = [];
+      _extractHorses(prop.value as GvasProperty[][], playerHorses);
+      p.horses = playerHorses;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1842,6 +1846,25 @@ function _extractContainers(prop: GvasProperty, containerList: Container[]): voi
     }
     if (container.actorName) containerList.push(container);
   }
+}
+
+/**
+ * Normalize a player's horses value to the structured Horse shape.
+ * Agent v4 caches carry the raw GVAS property arrays (one GvasProperty[] per
+ * horse); agent v5+ and local parses already produce structured objects.
+ * Raw entries are converted via _extractHorses; structured input passes through.
+ */
+function normalizePlayerHorses(value: unknown): Horse[] {
+  if (!Array.isArray(value) || value.length === 0) return [];
+  if (!value.some((entry) => Array.isArray(entry))) return value as Horse[];
+  // Mixed input (raw GVAS arrays alongside structured horses) keeps both:
+  // structured entries pass through, raw entries are extracted.
+  const structured = value.filter(
+    (entry): entry is Horse => !!entry && typeof entry === 'object' && !Array.isArray(entry),
+  );
+  const horses: Horse[] = [...structured];
+  _extractHorses(value.filter((entry) => Array.isArray(entry)) as GvasProperty[][], horses);
+  return horses;
 }
 
 function _extractHorses(horseArray: GvasProperty[][], horseList: Horse[]): void {
@@ -2125,6 +2148,7 @@ export {
   parseSave,
   parseClanData,
   createPlayerData,
+  normalizePlayerHorses,
   simplifyBlueprint,
   PERK_MAP,
   PERK_INDEX_MAP,

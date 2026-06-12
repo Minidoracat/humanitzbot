@@ -23,6 +23,7 @@ import path from 'path';
 import fs from 'fs';
 import { SCHEMA_VERSION, ALL_TABLES } from './schema.js';
 import { createLogger, type Logger } from '../utils/log.js';
+import { errMsg } from '../utils/error.js';
 import { getDirname } from '../utils/paths.js';
 import { PlayerRepository } from './repositories/player-repository.js';
 import { ClanRepository } from './repositories/clan-repository.js';
@@ -1377,6 +1378,32 @@ class HumanitZDB {
           normalized += result.changes;
         }
         this._log.info(`Migration v22→v23: normalized ${String(normalized)} legacy ISO playtime timestamps`);
+      }
+
+      // v23 → v24: structured world-quest columns (agent v4 cache provides
+      // time/items/position) and the save-authoritative LastLogin on players.
+      if (fromVersion < 24) {
+        const v24Columns = [
+          "ALTER TABLE quests ADD COLUMN time TEXT DEFAULT '{}'",
+          "ALTER TABLE quests ADD COLUMN items TEXT DEFAULT '[]'",
+          'ALTER TABLE quests ADD COLUMN pos_x REAL',
+          'ALTER TABLE quests ADD COLUMN pos_y REAL',
+          'ALTER TABLE quests ADD COLUMN pos_z REAL',
+          'ALTER TABLE players ADD COLUMN save_last_login TEXT',
+        ];
+        for (const ddl of v24Columns) {
+          try {
+            this._handle.exec(ddl);
+          } catch (err) {
+            // Only swallow re-runs; anything else must roll the migration back
+            // rather than committing version=24 with columns missing.
+            if (!/duplicate column/i.test(errMsg(err))) throw err;
+          }
+        }
+        this._handle.exec(
+          'CREATE INDEX IF NOT EXISTS idx_quests_pos ON quests(pos_x) WHERE pos_x IS NOT NULL AND NOT (pos_x = 0 AND pos_y = 0)',
+        );
+        this._log.info('Migration v23→v24: quests time/items/position columns + players.save_last_login');
       }
 
       this._ensureItemMovementsInstanceIdNullable();

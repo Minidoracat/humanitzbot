@@ -1463,7 +1463,9 @@ function buildFullPlayerEmbed(this: PSCThis, steamId: string, { isAdmin = false 
     if (Array.isArray(horses) && horses.length > 0) {
       for (const h of horses as Record<string, unknown>[]) {
         const hClass = h['class'];
-        const name = _clean(h['displayName'] ?? h['name'] ?? (hClass != null ? hClass : _tp(locale, 'horse_fallback')));
+        // Player-given name first (empty string for unnamed horses, so ||);
+        // displayName is the blueprint-derived breed and is almost never empty.
+        const name = _clean(h['name'] || h['displayName'] || (hClass != null ? hClass : _tp(locale, 'horse_fallback')));
         const hHealth = typeof h['health'] === 'number' ? h['health'] : null;
         const hMaxHealth = typeof h['maxHealth'] === 'number' ? h['maxHealth'] : 0;
         const hp =

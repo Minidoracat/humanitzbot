@@ -17,7 +17,7 @@ import fs from 'fs';
 import config, { getConfigValue, setConfigValue, _tzOffsetMs } from '../config/index.js';
 import { resolveReloadStrategy, summarizeConfigReloadApplyAsync } from '../config/reload-strategy.js';
 import type { RuntimeConfigApplier } from '../config/runtime-config-applier.js';
-import { parseSave, PERK_MAP } from '../parsers/save-parser.js';
+import { parseSave, normalizePlayerHorses, PERK_MAP } from '../parsers/save-parser.js';
 import { AFFLICTION_MAP } from '../parsers/game-data.js';
 import { cleanName as cleanActorName, cleanNameCached, cleanItemName } from '../parsers/ue4-names.js';
 import { resolveItemName, resolveItemArray, resolveItemId, normalizeItemLocale } from '../i18n/item-names.js';
@@ -38,6 +38,7 @@ import type { PanelApi } from '../server/panel-api.js';
 import serverResources, { formatBytes, formatUptime } from '../server/server-resources.js';
 import { ENV_CATEGORIES, ENV_CATEGORY_GROUPS, GAME_SETTINGS_CATEGORIES } from '../modules/panel-constants.js';
 import { buildMigrationMap, SERVER_SCOPED_KEYS, BOOTSTRAP_KEYS, _coerce } from '../db/config-migration.js';
+import { parseDbTimestampUtc } from '../db/timestamp.js';
 import { ENV_KEY_VALIDATORS, validateField } from '../db/config-validation.js';
 import { readPrivateKey } from '../utils/security.js';
 import {
@@ -190,6 +191,18 @@ interface DeadBodyRow {
   pos_x: number;
   pos_y: number;
   pos_z: number;
+}
+
+interface QuestRow {
+  id: string;
+  type: string;
+  state: string;
+  time: string;
+  items: string;
+  pos_x: number;
+  pos_y: number;
+  pos_z: number;
+  updated_at: string;
 }
 
 interface ActivityRow {
@@ -446,6 +459,19 @@ function _queryString(value: unknown): string {
   if (typeof value === 'string') return value;
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : '';
   return '';
+}
+
+/**
+ * Resolve the first parseable timestamp to an ISO UTC string. Accepts both the
+ * cache's ISO form and the DB's canonical 'YYYY-MM-DD HH:MM:SS' (UTC) form, so
+ * browser-side `new Date()` never parses a zone-less string as local time.
+ */
+function _isoTimestamp(...candidates: unknown[]): string | null {
+  for (const candidate of candidates) {
+    const parsed = parseDbTimestampUtc(candidate);
+    if (parsed) return parsed.toISOString();
+  }
+  return null;
 }
 
 function _parseBoundedPositiveInt(value: unknown, defaultValue: number, max: number): number {
@@ -1431,6 +1457,18 @@ class WebMapServer {
         }
       }
 
+      // save_last_login fallback (covers caches that omit lastLogin)
+      const saveLoginMap = new Map<string, string>();
+      if (srv.db) {
+        try {
+          for (const r of srv.db.player.getSaveLastLogins()) {
+            saveLoginMap.set(r.steam_id as string, r.save_last_login as string);
+          }
+        } catch {
+          /* pre-v24 DB */
+        }
+      }
+
       const result = [];
 
       for (const [steamId, rawData] of players) {
@@ -1555,7 +1593,7 @@ class WebMapServer {
                 ? { ...c, type: cleanItemName((c.type as string | undefined) ?? '') }
                 : cleanItemName(c as string),
           ),
-          horses: (data.horses as unknown[] | undefined) ?? [],
+          horses: normalizePlayerHorses(data.horses),
 
           // Log-derived stats
           deaths: logStats?.deaths || 0,
@@ -1574,6 +1612,8 @@ class WebMapServer {
           // Playtime
           totalPlaytime: ptData ? Math.floor(ptData.totalMs / 60000) : 0,
           lastSeen: ptData?.lastSeen || null,
+          // Save-authoritative last login (game save LastLogin, UTC ISO)
+          saveLastLogin: _isoTimestamp(data.lastLogin, saveLoginMap.get(steamId)),
         });
       }
 
@@ -1647,6 +1687,11 @@ class WebMapServer {
         ...data,
         // Override raw enum values with resolved names
         startingPerk: professionName,
+        // Normalize agent-v4 raw GVAS horse arrays from older snapshots
+        horses: normalizePlayerHorses(data.horses),
+        // Save-authoritative last login: cache value first, then the players
+        // column (which survives syncs that omit lastLogin via COALESCE)
+        saveLastLogin: _isoTimestamp(data.lastLogin, storedDetail?.['save_last_login']),
         // Log-derived
         deaths: logStats?.deaths || 0,
         pvpKills: logStats?.pvpKills || 0,
@@ -2468,6 +2513,35 @@ class WebMapServer {
           result.deadBodies = rows.map((r: DeadBodyRow) => {
             const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
             return { name: r.actor_name, lat, lng };
+          });
+        }
+
+        if (showAll || layers.includes('quests')) {
+          const rows = srv.db.quest.getPositionedQuests() as unknown as QuestRow[];
+          result.quests = rows.map((r: QuestRow) => {
+            const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
+            // The quests' readable names and timestamps live in the time map:
+            // { questName: ISO timestamp } — GUID ids carry no display value.
+            // One row can hold several quests sharing a transform.
+            let entries: Array<{ name: string; time: string | null }> = [];
+            try {
+              const timeMap = JSON.parse(r.time || '{}') as Record<string, string | null>;
+              entries = Object.entries(timeMap).map(([name, time]) => ({ name, time: time ?? null }));
+            } catch {}
+            let itemCount = 0;
+            try {
+              const items = JSON.parse(r.items || '[]') as unknown[];
+              itemCount = items.filter(
+                (i: unknown) =>
+                  i &&
+                  typeof i === 'object' &&
+                  (i as Record<string, unknown>).item &&
+                  (i as Record<string, unknown>).item !== 'None' &&
+                  (i as Record<string, unknown>).item !== 'Empty',
+              ).length;
+            } catch {}
+            const first = entries[0];
+            return { id: r.id, name: first?.name ?? '', time: first?.time ?? null, entries, lat, lng, itemCount };
           });
         }
 
