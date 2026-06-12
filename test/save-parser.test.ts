@@ -254,3 +254,149 @@ describe('parseSave — player coordinates', () => {
     assert.equal(p.rotationYaw, null);
   });
 });
+
+// ── parseSave: per-player tamed horses (agent v5 structured extraction) ──
+//
+// A per-player .sav goes through the same parseSave() entry the remote agent
+// bundles (_parsePlayerSaveFile), so this synthetic fixture covers the full
+// binary path: GVAS → ArrayProperty(StructProperty) → _extractHorses.
+
+function writeI32(val: number): Buffer {
+  const b = Buffer.alloc(4);
+  b.writeInt32LE(val);
+  return b;
+}
+
+/** GVAS UTF-16LE FString (negative length) — used for player-given CJK names. */
+function writeFStringUtf16(str: string): Buffer {
+  const chars = str.length + 1; // + null terminator
+  const lenBuf = Buffer.alloc(4);
+  lenBuf.writeInt32LE(-chars);
+  return Buffer.concat([lenBuf, Buffer.from(str + '\0', 'utf16le')]);
+}
+
+function buildStrPropertyUtf16(name: string, value: string): Buffer {
+  const valBuf = writeFStringUtf16(value);
+  return Buffer.concat([writeFString(name), writeFString('StrProperty'), writeI64(valBuf.length), writeU8(0), valBuf]);
+}
+
+function buildObjectProperty(name: string, value: string): Buffer {
+  const valBuf = writeFString(value);
+  return Buffer.concat([
+    writeFString(name),
+    writeFString('ObjectProperty'),
+    writeI64(valBuf.length),
+    writeU8(0),
+    valBuf,
+  ]);
+}
+
+function buildFloatProperty(name: string, value: number): Buffer {
+  return Buffer.concat([writeFString(name), writeFString('FloatProperty'), writeI64(4), writeU8(0), writeF32(value)]);
+}
+
+function buildIntProperty(name: string, value: number): Buffer {
+  return Buffer.concat([writeFString(name), writeFString('IntProperty'), writeI64(4), writeU8(0), writeI32(value)]);
+}
+
+function buildSoftObjectProperty(name: string, assetPath: string): Buffer {
+  // FSoftObjectPath payload: assetPath FString + empty subPath FString
+  const payload = Buffer.concat([writeFString(assetPath), writeFString('')]);
+  return Buffer.concat([
+    writeFString(name),
+    writeFString('SoftObjectProperty'),
+    writeI64(payload.length),
+    writeU8(0),
+    payload,
+  ]);
+}
+
+/** ArrayProperty(StructProperty) with property-list elements (generic path). */
+function buildStructArrayProperty(name: string, structType: string, elements: Buffer[][]): Buffer {
+  const noneTerm = writeFString('None');
+  const body = Buffer.concat(elements.map((parts) => Buffer.concat([...parts, noneTerm])));
+  const payload = Buffer.concat([
+    writeI32(elements.length),
+    writeFString(name), // arrName
+    writeFString('StructProperty'), // arrType
+    writeI64(body.length), // arrSize
+    writeFString(structType),
+    Buffer.alloc(16), // GUID
+    writeU8(0),
+    body,
+  ]);
+  return Buffer.concat([
+    writeFString(name),
+    writeFString('ArrayProperty'),
+    writeI64(payload.length),
+    writeFString('StructProperty'), // innerType
+    writeU8(0),
+    payload,
+  ]);
+}
+
+describe('parseSave — per-player tamed horses', () => {
+  const HORSE_CLASS = '/Game/TSS_Game/KaiWorldEffects/Horse/BP_Horse_Child3.BP_Horse_Child3_C';
+
+  function buildPlayerSaveWithHorses(): Buffer {
+    const tamedHorse = [
+      buildObjectProperty('Class', 'None'),
+      buildSoftObjectProperty('SoftClass', HORSE_CLASS),
+      buildTransformStruct('Transform', 70235.7, -356085.3, 5685.5, 0, 0, -0.62, 0.79),
+      buildFloatProperty('Health', 800),
+      buildFloatProperty('Energy', 90.5),
+      buildFloatProperty('Stamina', 1),
+      buildStrProperty('Owner', '76561197962470657_+_|0002320d6d3a4a4ebec27796d1e72f2e'),
+      buildIntProperty('Saddle', 4),
+      buildStrPropertyUtf16('HorseName', '殺戮戰神'),
+    ];
+    const unnamedHorse = [
+      buildObjectProperty('Class', 'None'),
+      buildSoftObjectProperty('SoftClass', HORSE_CLASS),
+      buildFloatProperty('Health', 500),
+    ];
+    return Buffer.concat([
+      buildGvasHeader(),
+      buildStrProperty('SteamID', 'P_76561197962470657'),
+      buildStructArrayProperty('Horses', 'S_HorseSaveData', [tamedHorse, unnamedHorse]),
+      // Trailing property proves the array left the stream aligned
+      buildIntProperty('DayzSurvived', 42),
+      writeFString('None'),
+    ]);
+  }
+
+  it('extracts structured horses with a UTF-16 player-given name', () => {
+    const { players } = parseSave(buildPlayerSaveWithHorses());
+    const p = players.get('76561197962470657');
+    assert.ok(p);
+    assert.equal(p.horses.length, 2);
+
+    const h = p.horses[0];
+    assert.ok(h && !Array.isArray(h), 'horses must be structured objects, not raw GVAS arrays');
+    assert.equal(h.name, '殺戮戰神');
+    assert.equal(h.health, 800);
+    assert.ok(Math.abs(h.energy - 90.5) < 0.01);
+    assert.equal(h.stamina, 1);
+    assert.equal(h.saddle, 4);
+    assert.equal(h.ownerSteamId, '76561197962470657');
+    assert.equal(h.class, HORSE_CLASS, 'SoftClass should backfill class when Class is None');
+    assert.ok(h.displayName.length > 0);
+    assert.ok(Math.abs(h.x - 70235.7) < 0.1);
+    assert.ok(Math.abs(h.y - -356085.3) < 0.5);
+  });
+
+  it('keeps unnamed horses with empty name and parses the trailing property', () => {
+    const { players } = parseSave(buildPlayerSaveWithHorses());
+    const p = players.get('76561197962470657');
+    assert.ok(p);
+
+    const h2 = p.horses[1];
+    assert.ok(h2 && !Array.isArray(h2));
+    assert.equal(h2.name, '');
+    assert.equal(h2.health, 500);
+    assert.equal(h2.x, null);
+
+    // Stream alignment: the property after the Horses array still parses
+    assert.equal(p.daysSurvived, 42);
+  });
+});

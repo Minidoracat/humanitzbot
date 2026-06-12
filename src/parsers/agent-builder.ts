@@ -23,13 +23,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { transformSync } from 'esbuild';
 import { getDirname } from '../utils/paths.js';
+import { AGENT_VERSION } from './agent-version.js';
 
 const __dirname = getDirname(import.meta.url);
 
 const GVAS_READER_PATH = path.join(__dirname, 'gvas-reader.ts');
 const SAVE_PARSER_PATH = path.join(__dirname, 'save-parser.ts');
-
-const AGENT_VERSION = 5;
 
 // ─── Agent CLI template (prepended) ────────────────────────────────────────
 
