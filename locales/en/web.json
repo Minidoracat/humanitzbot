@@ -239,6 +239,10 @@
     "zombies": "Zombies",
     "animals": "Animals",
     "bandits": "Bandits",
+    "quests": "Quests",
+    "quest": "Quest",
+    "quest_time": "Time",
+    "quest_items": "items",
     "refresh": "Refresh",
     "syncing": "Syncing...",
     "refresh_timed_out": "Timed out",
@@ -382,6 +386,7 @@
     "kills": "Kills",
     "playtime": "Playtime",
     "last_seen": "Last Seen",
+    "last_login": "Last Login",
     "days_survived": "Days Survived",
     "table_view": "Table view",
     "card_view": "Card view",
@@ -1271,8 +1276,13 @@
       "survival": "SURVIVAL",
       "vitals": "VITALS",
       "status_effects": "STATUS EFFECTS",
+      "horses": "HORSES ({{count}})",
       "crafting_recipes": "CRAFTING RECIPES",
       "unlocked_skills": "UNLOCKED SKILLS"
+    },
+    "horse": {
+      "unnamed": "Horse",
+      "saddle": "Saddle"
     },
     "stats": {
       "zombies": "Zombies",

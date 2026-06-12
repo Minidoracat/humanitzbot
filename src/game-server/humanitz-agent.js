@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * HumanitZ Save Parser Agent v4
+ * HumanitZ Save Parser Agent v5
  * Auto-generated — do not edit manually.
  * Regenerate via: node -e "require('./src/parsers/agent-builder').writeAgent()"
  *
@@ -1810,7 +1810,11 @@ function parseSave(buf) {
         });
       }
     }
-    if (n === 'Horses' && Array.isArray(prop.value)) p.horses = prop.value;
+    if (n === 'Horses' && Array.isArray(prop.value)) {
+      const playerHorses = [];
+      _extractHorses(prop.value, playerHorses);
+      p.horses = playerHorses;
+    }
   }
   while (r.remaining() > 4) {
     try {
@@ -2049,6 +2053,16 @@ function _extractContainers(prop, containerList) {
     }
     if (container.actorName) containerList.push(container);
   }
+}
+function normalizePlayerHorses(value) {
+  if (!Array.isArray(value) || value.length === 0) return [];
+  if (!value.some((entry) => Array.isArray(entry))) return value;
+  const horses = [];
+  _extractHorses(
+    value.filter((entry) => Array.isArray(entry)),
+    horses,
+  );
+  return horses;
 }
 function _extractHorses(horseArray, horseList) {
   for (const horseProps of horseArray) {
@@ -2306,7 +2320,7 @@ const CACHE_FILENAME = 'humanitz-cache.json';
 const SAVE_FILENAME = 'Save_DedicatedSaveMP.sav';
 const CLAN_FILENAME = 'Save_ClanData.sav';
 const ID_MAP_FILENAME = 'PlayerIDMapped.txt';
-const AGENT_VERSION_VALUE = 4;
+const AGENT_VERSION_VALUE = 5;
 const PARSER_SIGNATURE = 'agent-v' + AGENT_VERSION_VALUE;
 
 // ── Argument parsing ──
@@ -2833,7 +2847,7 @@ function parseAndWrite(savePath, outputPath, pretty, idMapPath, playerDirPath) {
   }
 
   const cache = {
-    v: 4,
+    v: 5,
     ts: new Date().toISOString(),
     mtime: _fs.statSync(savePath).mtimeMs,
     idMap: idMapInfo.idMap,

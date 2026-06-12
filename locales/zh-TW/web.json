@@ -239,6 +239,10 @@
     "zombies": "殭屍",
     "animals": "動物",
     "bandits": "土匪",
+    "quests": "任務",
+    "quest": "任務",
+    "quest_time": "時間",
+    "quest_items": "項物品",
     "refresh": "重新整理",
     "syncing": "同步中...",
     "refresh_timed_out": "逾時",
@@ -382,6 +386,7 @@
     "kills": "擊殺",
     "playtime": "遊玩時間",
     "last_seen": "最後上線",
+    "last_login": "最後登入",
     "days_survived": "存活天數",
     "table_view": "列表檢視",
     "card_view": "卡片檢視",
@@ -1271,8 +1276,13 @@
       "survival": "生存",
       "vitals": "生命值",
       "status_effects": "狀態效果",
+      "horses": "馬匹（{{count}}）",
       "crafting_recipes": "製作配方",
       "unlocked_skills": "已解鎖技能"
+    },
+    "horse": {
+      "unnamed": "馬匹",
+      "saddle": "馬鞍"
     },
     "stats": {
       "zombies": "殭屍",

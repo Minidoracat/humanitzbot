@@ -60,7 +60,7 @@ describe('Schema v23 — normalize legacy ISO playtime timestamps', () => {
       assert.equal(untouched.playtime_last_login, null);
       assert.equal(untouched.playtime_last_seen, 'not-a-timestamp');
 
-      assert.equal(db._getMeta('schema_version'), '23');
+      assert.equal(db._getMeta('schema_version'), '24');
     } finally {
       db.close();
     }

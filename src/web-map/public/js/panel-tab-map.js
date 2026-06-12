@@ -93,10 +93,12 @@ Panel.tabs = Panel.tabs || {};
       updateMapSidebar();
 
       const wantLayers = [];
-      ['structures', 'vehicles', 'containers', 'companions', 'zombies', 'animals', 'bandits'].forEach(function (l) {
-        const cb = $('#map-layer-' + l);
-        if (cb && cb.checked) wantLayers.push(l);
-      });
+      ['structures', 'vehicles', 'containers', 'companions', 'zombies', 'animals', 'bandits', 'quests'].forEach(
+        function (l) {
+          const cb = $('#map-layer-' + l);
+          if (cb && cb.checked) wantLayers.push(l);
+        },
+      );
       if (wantLayers.length > 0) {
         try {
           const lr = await apiFetch('/api/panel/mapdata?layers=' + wantLayers.join(','));
@@ -355,6 +357,42 @@ Panel.tabs = Panel.tabs || {};
         m.addTo(mapWorldLayers.bandits);
       });
       mapWorldLayers.bandits.addTo(S.map);
+    }
+
+    if (layers.indexOf('quests') !== -1 && data.quests) {
+      mapWorldLayers.quests = L.layerGroup();
+      data.quests.forEach(function (q) {
+        if (q.lat == null) return;
+        const icon = L.divIcon({
+          className: '',
+          html:
+            '<div style="width:8px;height:8px;background:#22d3ee;border-radius:50%;border:1.5px solid ' +
+            palette.surface300 +
+            ';box-shadow:0 0 4px #22d3ee60"></div>',
+          iconSize: [8, 8],
+          iconAnchor: [4, 4],
+        });
+        const m = L.marker([q.lat, q.lng], { icon: icon });
+        const questName = _entityName(q.name, i18next.t('web:map.quest'));
+        m.bindTooltip(esc(questName), { direction: 'top', offset: [0, -5] });
+        let popupHtml = '<div class="tl-popup" style="min-width:160px"><b>' + esc(questName) + '</b>';
+        if (q.time) {
+          popupHtml +=
+            '<br><span style="color:' +
+            palette.muted +
+            '">' +
+            i18next.t('web:map.quest_time') +
+            ':</span> ' +
+            esc(new Date(q.time).toLocaleString());
+        }
+        if (q.itemCount) {
+          popupHtml += '<br>📦 ' + q.itemCount + ' ' + i18next.t('web:map.quest_items');
+        }
+        popupHtml += '</div>';
+        m.bindPopup(popupHtml);
+        m.addTo(mapWorldLayers.quests);
+      });
+      mapWorldLayers.quests.addTo(S.map);
     }
   }
 
