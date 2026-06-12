@@ -167,14 +167,14 @@ export class ItemRepository extends BaseRepository {
       searchItemInstancesPage: this._handle.prepare(`
         SELECT ${ITEM_INSTANCE_LIST_COLUMNS}
         FROM item_instances
-        WHERE (item LIKE ? OR fingerprint LIKE ? OR item IN (SELECT value FROM json_each(?))) AND lost = 0
+        WHERE (item LIKE ? OR fingerprint LIKE ? OR item COLLATE NOCASE IN (SELECT value FROM json_each(?))) AND lost = 0
         ORDER BY item, location_type, id
         LIMIT ? OFFSET ?
       `),
       searchItemInstancesPageByLocation: this._handle.prepare(`
         SELECT ${ITEM_INSTANCE_LIST_COLUMNS}
         FROM item_instances
-        WHERE (item LIKE ? OR fingerprint LIKE ? OR item IN (SELECT value FROM json_each(?)))
+        WHERE (item LIKE ? OR fingerprint LIKE ? OR item COLLATE NOCASE IN (SELECT value FROM json_each(?)))
           AND location_type = ? AND location_id = ? AND lost = 0
         ORDER BY item, location_type, id
         LIMIT ? OFFSET ?
@@ -247,14 +247,14 @@ export class ItemRepository extends BaseRepository {
       searchItemGroupsPage: this._handle.prepare(`
         SELECT ${ITEM_GROUP_LIST_COLUMNS}
         FROM item_groups
-        WHERE (item LIKE ? OR fingerprint LIKE ? OR item IN (SELECT value FROM json_each(?))) AND lost = 0
+        WHERE (item LIKE ? OR fingerprint LIKE ? OR item COLLATE NOCASE IN (SELECT value FROM json_each(?))) AND lost = 0
         ORDER BY item, location_type, id
         LIMIT ? OFFSET ?
       `),
       searchItemGroupsPageByLocation: this._handle.prepare(`
         SELECT ${ITEM_GROUP_LIST_COLUMNS}
         FROM item_groups
-        WHERE (item LIKE ? OR fingerprint LIKE ? OR item IN (SELECT value FROM json_each(?)))
+        WHERE (item LIKE ? OR fingerprint LIKE ? OR item COLLATE NOCASE IN (SELECT value FROM json_each(?)))
           AND location_type = ? AND location_id = ? AND lost = 0
         ORDER BY item, location_type, id
         LIMIT ? OFFSET ?
