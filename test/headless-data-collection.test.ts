@@ -7,8 +7,10 @@ const LogWatcher = cjsRequire('../src/modules/log-watcher').default;
 const ChatRelay = cjsRequire('../src/modules/chat-relay').default;
 
 // Track instances so we always clear any polling timers a test creates.
-const timers = new Set<any>();
-function track<T extends { interval?: unknown; _midnightCheckInterval?: unknown; _pollTimer?: unknown }>(m: T): T {
+type Timer = ReturnType<typeof setInterval>;
+type Timed = { interval?: Timer | null; _midnightCheckInterval?: Timer | null; _pollTimer?: Timer | null };
+const timers = new Set<Timed>();
+function track<T extends Timed>(m: T): T {
   timers.add(m);
   return m;
 }
@@ -73,7 +75,7 @@ describe('LogWatcher headless mode (no log/admin channel)', () => {
 
     await lw.start();
 
-    assert.strictEqual(lw.isHeadless(), true, 'should run headless when no channel configured');
+    assert.strictEqual(lw.isHeadless, true, 'should run headless when no channel configured');
     assert.strictEqual(fetchCalls, 0, 'headless must not fetch a Discord channel');
     assert.ok(lw.interval, 'polling interval should still run so log_*/death_causes data is collected');
   });
@@ -93,7 +95,24 @@ describe('LogWatcher headless mode (no log/admin channel)', () => {
 
     await lw.start();
 
-    assert.strictEqual(lw.isHeadless(), false, 'should not be headless when a channel is set');
+    assert.strictEqual(lw.isHeadless, false, 'should not be headless when a channel is set');
+  });
+
+  it('non-headless when only an admin channel is configured (the module falls back to it)', async () => {
+    const channel = { id: '456', name: 'admin', send: async () => ({}) };
+    const lw = track(
+      new LogWatcher(
+        mockClient(() => channel),
+        { config: logConfig({ logChannelId: '', adminChannelId: '456' }) },
+      ),
+    );
+    lw._initSize = async () => {};
+    lw._poll = async () => {};
+    lw._getOrCreateDailyThread = async () => null;
+
+    await lw.start();
+
+    assert.strictEqual(lw.isHeadless, false, 'admin-channel-only config should run non-headless');
   });
 
   it('headless _getOrCreateDailyThread returns null and never fires the day-rollover callback', async () => {
@@ -124,6 +143,22 @@ describe('LogWatcher headless mode (no log/admin channel)', () => {
 //  ChatRelay headless mode (deployments without CHAT_CHANNEL_ID — DB-only)
 // ─────────────────────────────────────────────────────────────────────────────
 describe('ChatRelay headless mode (no chat/admin channel)', () => {
+  it('start() selects headless, never fetches a channel, but still polls RCON for DB writes', async () => {
+    let fetchCalls = 0;
+    const client = mockClient(() => {
+      fetchCalls++;
+      return null;
+    });
+    const cr = track(new ChatRelay(client, { config: chatConfig({ chatChannelId: '', adminChannelId: '' }) }));
+    cr._pollChat = async () => {}; // avoid real RCON/network in the poll loop
+
+    await cr.start();
+
+    assert.strictEqual(cr.isHeadless, true, 'should run headless when no channel configured');
+    assert.strictEqual(fetchCalls, 0, 'headless must not fetch a Discord channel');
+    assert.ok(cr._pollTimer, 'polling timer should still run so chat_log data is collected');
+  });
+
   it('isHeadless reflects the headless flag', () => {
     const cr = track(new ChatRelay(mockClient(), { config: chatConfig() }));
     assert.strictEqual(cr.isHeadless, false);
@@ -145,10 +180,11 @@ describe('ChatRelay headless mode (no chat/admin channel)', () => {
     cr._headless = true;
 
     cr._logChat({
-      steamId: '76561190000000000',
-      name: 'Tester',
+      type: 'chat',
+      playerName: 'Tester',
       message: 'hello',
-      timestamp: '2026-01-01T00:00:00.000Z',
+      direction: 'inbound',
+      isAdmin: false,
     });
 
     assert.strictEqual(inserted.length, 1, 'chat entry should be written to chat_log even with no Discord channel');

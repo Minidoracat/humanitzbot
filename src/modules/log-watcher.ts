@@ -519,7 +519,7 @@ class LogWatcher {
    * Authoritative only after `start()` has run — it decides headless when no
    * LOG_CHANNEL_ID / ADMIN_CHANNEL_ID is configured.
    */
-  isHeadless(): boolean {
+  get isHeadless(): boolean {
     return this._headless;
   }
 

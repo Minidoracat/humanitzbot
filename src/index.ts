@@ -1063,7 +1063,7 @@ client.once(Events.ClientReady, (readyClient) => {
         runtimeConfigApplier.registerModuleReconfigure('DEATH_LOOP_WINDOW', ({ value }) => {
           _logWatcher.reconfigure({ deathLoopWindow: value });
         });
-        setStatus('Log Watcher', logWatcher.isHeadless() ? '🟢 Active (headless, DB-only)' : '🟢 Active');
+        setStatus('Log Watcher', logWatcher.isHeadless ? '🟢 Active (headless, DB-only)' : '🟢 Active');
       }
     } else {
       setStatus('Log Watcher', '⚫ Disabled');
@@ -1294,7 +1294,7 @@ client.once(Events.ClientReady, (readyClient) => {
         // Only hand ActivityLog the LogWatcher when it can actually post to a
         // daily thread. A headless LogWatcher would no-op sendToThread, so pass
         // null to let ActivityLog fall back to ACTIVITY_LOG_CHANNEL_ID/ADMIN.
-        const activityLogWatcher = logWatcher && !logWatcher.isHeadless() ? logWatcher : null;
+        const activityLogWatcher = logWatcher && !logWatcher.isHeadless ? logWatcher : null;
         activityLog = new ActivityLog(readyClient, { db, saveService, logWatcher: activityLogWatcher });
         await activityLog.start();
         setStatus('Activity Log', '🟢 Active');
