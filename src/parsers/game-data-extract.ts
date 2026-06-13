@@ -56,7 +56,11 @@ try {
  */
 const HASH_RE = /^(.+?)_\d+_[A-F0-9]{20,}$/i;
 
-/** Strip UE4 hash suffix from a single key. */
+/**
+ * Strip the UE4 `_<index>_<hash>` suffix from a single key. A trailing `?` on
+ * boolean field names (e.g. `ExcludeFromVendor?`) is part of the name and is
+ * preserved — downstream reads must use the exact raw key shape (`c['Name?']`).
+ */
 function cleanKey(key: string): string {
   const m = key.match(HASH_RE);
   return m?.[1] ?? key;
