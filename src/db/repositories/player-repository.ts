@@ -795,7 +795,7 @@ export class PlayerRepository extends BaseRepository {
   }
 
   /**
-   * @deprecated The live kill tracker is stored in bot_state['kill_tracker']
+   * Deprecated: the live kill tracker is stored in bot_state['kill_tracker']
    * (see tracking/kill-tracker.ts). This writes the dead players.kill_tracker
    * column and has no callers — kept only for the schema's historical shape.
    */
@@ -806,7 +806,7 @@ export class PlayerRepository extends BaseRepository {
   }
 
   /**
-   * @deprecated Name history is superseded by the player_aliases table
+   * Deprecated: name history is superseded by the player_aliases table
    * (upsertPlayer auto-registers aliases). This writes the dead
    * players.name_history column and has no production callers.
    */
