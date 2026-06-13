@@ -146,6 +146,19 @@ describe('LogWatcher headless mode (no log/admin channel)', () => {
     assert.strictEqual(callbackFired, 0, 'day-rollover callback (recap/chat) must not fire in headless');
   });
 
+  it('postsDailyThread is true only for a started, non-headless watcher', () => {
+    const lw = track(new LogWatcher(mockClient(), { config: logConfig() }));
+
+    // Fresh instance: start() not run, so no poll interval yet.
+    assert.strictEqual(lw.postsDailyThread, false, 'not started → does not manage a daily thread');
+
+    lw.interval = setInterval(() => {}, 999_999); // simulate a successful start
+    assert.strictEqual(lw.postsDailyThread, true, 'started + non-headless → posts a daily thread');
+
+    lw._headless = true;
+    assert.strictEqual(lw.postsDailyThread, false, 'headless → never posts a daily thread, even if started');
+  });
+
   it('headless _sendToThread is a no-op and does not throw', async () => {
     const lw = track(new LogWatcher(mockClient(), { config: logConfig() }));
     lw._headless = true;

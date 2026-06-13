@@ -1103,11 +1103,12 @@ client.once(Events.ClientReady, (readyClient) => {
       chatRelay = new ChatRelay(readyClient, { db });
       const _chatRelay = chatRelay;
       if (config.nukeBot) _chatRelay.setNukeActive(true);
-      // Coordinate day-rollover ordering only with a NON-headless LogWatcher.
-      // A headless watcher never creates a daily thread or fires the rollover
-      // callback, so making ChatRelay await it would strand its own daily-thread
-      // rollover (it would post to the parent channel after midnight instead).
-      if (logWatcher && !logWatcher.isHeadless) {
+      // Coordinate day-rollover ordering only with a LogWatcher that actually
+      // posts a daily thread (started + non-headless). A headless OR bailed-start
+      // watcher never creates a daily thread or fires the rollover callback, so
+      // making ChatRelay await it would strand its own daily-thread rollover
+      // (it would post to the parent channel after midnight instead).
+      if (logWatcher?.postsDailyThread) {
         _chatRelay.setAwaitActivityThread(true);
         logWatcher.setDayRolloverCallback(async () => {
           try {
@@ -1366,8 +1367,9 @@ client.once(Events.ClientReady, (readyClient) => {
       recapService = new RecapService(readyClient, { db, logWatcher, config, playtime });
       const _recap = recapService;
       // Chain into the LogWatcher day-rollover callback — only meaningful for a
-      // non-headless watcher (a headless one never fires the rollover).
-      if (logWatcher && !logWatcher.isHeadless) {
+      // watcher that posts a daily thread (started + non-headless); a headless
+      // or bailed-start watcher never fires the rollover.
+      if (logWatcher?.postsDailyThread) {
         const prevCb = logWatcher.getDayRolloverCallback();
         logWatcher.setDayRolloverCallback(async () => {
           if (typeof prevCb === 'function') await prevCb();

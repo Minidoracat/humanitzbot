@@ -781,11 +781,13 @@ class ServerInstance {
       try {
         const mod = new ChatRelay(this.client, deps as ConstructorParameters<typeof ChatRelay>[1]);
         if (_defaultConfig.nukeBot) mod.setNukeActive(true);
-        // Coordinate thread ordering only with a NON-headless LogWatcher — a
-        // headless watcher never creates a daily thread or fires the rollover
-        // callback, so making ChatRelay await it would strand its own rollover.
+        // Coordinate thread ordering only with a LogWatcher that posts a daily
+        // thread (started + non-headless). A headless OR bailed-start watcher
+        // (e.g. placeholder SFTP host) never creates a daily thread or fires the
+        // rollover callback, so making ChatRelay await it would strand its own
+        // rollover.
         const logWatcher = this._modules.logWatcher;
-        if (logWatcher && !logWatcher.isHeadless) {
+        if (logWatcher?.postsDailyThread) {
           mod.setAwaitActivityThread(true);
           logWatcher.setDayRolloverCallback(async () => {
             try {

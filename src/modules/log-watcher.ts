@@ -523,6 +523,18 @@ class LogWatcher {
     return this._headless;
   }
 
+  /**
+   * Whether this watcher actually manages a daily Discord thread — i.e. it
+   * started successfully (has a poll interval) AND is non-headless. Only such a
+   * watcher creates daily threads and fires the day-rollover callback, so other
+   * modules must gate their thread coordination (await/rollover wiring) on this
+   * instead of `!isHeadless` alone (a bailed start leaves isHeadless false but
+   * interval null, which would strand a coordinated ChatRelay/recap callback).
+   */
+  get postsDailyThread(): boolean {
+    return !this._headless && !!this.interval;
+  }
+
   /** @internal Get or create the current daily thread (public wrapper over the mixin). */
   getOrCreateDailyThread(): Promise<{ send(options: unknown): Promise<unknown> } | null> {
     return this._getOrCreateDailyThread();
