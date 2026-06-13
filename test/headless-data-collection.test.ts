@@ -239,7 +239,7 @@ describe('ChatRelay headless mode (no chat/admin channel)', () => {
     assert.strictEqual(inserted.length, 1, 'chat entry should be written to chat_log even with no Discord channel');
   });
 
-  it('_pollChat always polls fetchchat so the RCON transport can auto-connect, even headless', async () => {
+  it('_pollChat polls fetchchat when an RCON host is configured (lets the transport auto-connect), even headless', async () => {
     const sent: string[] = [];
     const rcon = {
       send: async (cmd: string) => {
@@ -247,14 +247,30 @@ describe('ChatRelay headless mode (no chat/admin channel)', () => {
         return '';
       },
     };
-    const cr = track(new ChatRelay(mockClient(), { config: chatConfig(), rcon }));
+    const cr = track(new ChatRelay(mockClient(), { config: chatConfig({ rconHost: 'host' }), rcon }));
     cr._headless = true;
 
     await cr._pollChat();
 
-    // No pre-gate on connection state: send() drives RconManager's lazy
-    // auto-connect (works for TCP and panel RCON); failures are caught quietly.
-    assert.ok(sent.includes('fetchchat'), 'should poll fetchchat unconditionally so RCON can lazily connect');
+    // Host-only gate (no password/connection check): send() drives RconManager's
+    // lazy auto-connect (works for TCP and panel RCON); failures are caught quietly.
+    assert.ok(sent.includes('fetchchat'), 'should poll fetchchat once an RCON host is configured');
+  });
+
+  it('_pollChat skips quietly when no RCON host is configured (first-run setup, no localhost spam)', async () => {
+    const sent: string[] = [];
+    const rcon = {
+      send: async (cmd: string) => {
+        sent.push(cmd);
+        return '';
+      },
+    };
+    const cr = track(new ChatRelay(mockClient(), { config: chatConfig(), rcon })); // no rconHost
+    cr._headless = true;
+
+    await cr._pollChat();
+
+    assert.strictEqual(sent.length, 0, 'must not poll until an RCON host is configured (avoid localhost error spam)');
   });
 });
 

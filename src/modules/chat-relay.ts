@@ -408,6 +408,15 @@ class ChatRelay {
   async _pollChat() {
     if (this._polling) return;
 
+    // Don't poll until an RCON host is configured — otherwise the transport
+    // falls back to localhost and spams connection errors during first-run
+    // setup. Host-only check (not password/connection): panel/WebSocket RCON
+    // has no TCP password, multi-server only creates the relay once rconHost is
+    // set, and send() still drives lazy auto-connect once a host is present
+    // (so RCON configured later via the dashboard starts polling, no restart).
+    const rconHost = this._config.rconHost || '';
+    if (!rconHost || rconHost.startsWith('your_')) return;
+
     this._polling = true;
     try {
       const raw = await this._rcon.send('fetchchat');

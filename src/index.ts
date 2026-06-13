@@ -1006,6 +1006,7 @@ client.once(Events.ClientReady, (readyClient) => {
         if (sd.channels?.['status']) channelsToClean.add(sd.channels['status']);
         if (sd.channels?.['stats']) channelsToClean.add(sd.channels['stats']);
         if (sd.channels?.['panel']) channelsToClean.add(sd.channels['panel']);
+        if (sd.channels?.['activityLog']) channelsToClean.add(sd.channels['activityLog']);
       }
 
       const botId = readyClient.user.id;

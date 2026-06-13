@@ -167,7 +167,8 @@ describe('module timer reconfigure', () => {
     const relay = new ChatRelay(
       { on: () => {}, removeListener: () => {} } as any,
       {
-        config: baseConfig(),
+        // rconHost set so _pollChat proceeds past the "no RCON host" skip guard.
+        config: baseConfig({ rconHost: 'host' }),
         rcon: {
           send: async () => {
             sendCalls += 1;

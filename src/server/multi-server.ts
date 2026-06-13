@@ -441,10 +441,11 @@ function createServerConfig(serverDef: ServerDef): ConfigType {
     merged.chatChannelId = serverDef.channels.chat || '';
     merged.logChannelId = serverDef.channels.log || '';
     merged.adminChannelId = serverDef.channels.admin || '';
-    // Per-server activity channel — must be set/cleared explicitly so a managed
-    // server never inherits the primary's ACTIVITY_LOG_CHANNEL_ID.
-    merged.activityLogChannelId = serverDef.channels.activityLog || '';
   }
+  // Per-server activity channel — set unconditionally (own property) so a managed
+  // server never inherits the primary's ACTIVITY_LOG_CHANNEL_ID, even when the
+  // serverDef omits a channels block entirely.
+  merged.activityLogChannelId = serverDef.channels?.activityLog || '';
 
   // Public host for connect address in embeds (don't inherit primary's host)
   merged.publicHost = serverDef.publicHost || serverDef.rcon?.host || '';

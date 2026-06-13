@@ -522,6 +522,12 @@ describe('createServerConfig()', () => {
     // A server can configure its own activity channel.
     const cfg2 = createServerConfig({ channels: { activityLog: 'act-9' } });
     assert.equal(cfg2.activityLogChannelId, 'act-9', 'honors a per-server activityLog channel');
+
+    // Even with NO channels block at all, it must be cleared (own property), not
+    // inherited through the prototype from the primary config.
+    const cfg3 = createServerConfig({ id: 'srv_no_channels' });
+    assert.ok(Object.hasOwn(cfg3, 'activityLogChannelId'), 'must be set even when serverDef has no channels block');
+    assert.equal(cfg3.activityLogChannelId, '', 'no channels block → cleared, never inherited');
   });
 
   it('sets publicHost from serverDef or RCON host', () => {
