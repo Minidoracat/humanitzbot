@@ -513,6 +513,17 @@ describe('createServerConfig()', () => {
     assert.equal(cfg.playerStatsChannelId, 'ch5');
   });
 
+  it('sets activityLogChannelId per-server so it never inherits the primary', () => {
+    // No activityLog channel → own empty value (not the primary's, inherited via prototype).
+    const cfg = createServerConfig({ channels: { admin: 'ch4' } });
+    assert.ok(Object.hasOwn(cfg, 'activityLogChannelId'), 'activity channel must be set per-server, not inherited');
+    assert.equal(cfg.activityLogChannelId, '', 'cleared when the managed server has no activityLog channel');
+
+    // A server can configure its own activity channel.
+    const cfg2 = createServerConfig({ channels: { activityLog: 'act-9' } });
+    assert.equal(cfg2.activityLogChannelId, 'act-9', 'honors a per-server activityLog channel');
+  });
+
   it('sets publicHost from serverDef or RCON host', () => {
     const cfg1 = createServerConfig({ publicHost: 'public.example.com' });
     assert.equal(cfg1.publicHost, 'public.example.com');

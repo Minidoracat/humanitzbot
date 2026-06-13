@@ -239,10 +239,9 @@ describe('ChatRelay headless mode (no chat/admin channel)', () => {
     assert.strictEqual(inserted.length, 1, 'chat entry should be written to chat_log even with no Discord channel');
   });
 
-  it('_pollChat pauses quietly while the RCON transport is not connected (first-run / disconnect)', async () => {
+  it('_pollChat always polls fetchchat so the RCON transport can auto-connect, even headless', async () => {
     const sent: string[] = [];
     const rcon = {
-      connected: false, // transport not up yet (e.g. first-run before setup)
       send: async (cmd: string) => {
         sent.push(cmd);
         return '';
@@ -253,24 +252,9 @@ describe('ChatRelay headless mode (no chat/admin channel)', () => {
 
     await cr._pollChat();
 
-    assert.strictEqual(sent.length, 0, 'must not hit RCON until the transport connects');
-  });
-
-  it('_pollChat polls fetchchat once the RCON transport connects (no restart needed)', async () => {
-    const sent: string[] = [];
-    const rcon = {
-      connected: true, // works regardless of TCP host/password (e.g. panel/WebSocket RCON)
-      send: async (cmd: string) => {
-        sent.push(cmd);
-        return '';
-      },
-    };
-    const cr = track(new ChatRelay(mockClient(), { config: chatConfig(), rcon }));
-    cr._headless = true;
-
-    await cr._pollChat();
-
-    assert.ok(sent.includes('fetchchat'), 'should poll fetchchat once the transport is connected');
+    // No pre-gate on connection state: send() drives RconManager's lazy
+    // auto-connect (works for TCP and panel RCON); failures are caught quietly.
+    assert.ok(sent.includes('fetchchat'), 'should poll fetchchat unconditionally so RCON can lazily connect');
   });
 });
 

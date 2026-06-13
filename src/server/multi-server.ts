@@ -82,6 +82,7 @@ interface ServerDef {
     chat?: string;
     log?: string;
     admin?: string;
+    activityLog?: string;
   };
   autoMessages?: {
     enableWelcomeMsg?: boolean;
@@ -440,6 +441,9 @@ function createServerConfig(serverDef: ServerDef): ConfigType {
     merged.chatChannelId = serverDef.channels.chat || '';
     merged.logChannelId = serverDef.channels.log || '';
     merged.adminChannelId = serverDef.channels.admin || '';
+    // Per-server activity channel — must be set/cleared explicitly so a managed
+    // server never inherits the primary's ACTIVITY_LOG_CHANNEL_ID.
+    merged.activityLogChannelId = serverDef.channels.activityLog || '';
   }
 
   // Public host for connect address in embeds (don't inherit primary's host)
@@ -777,9 +781,11 @@ class ServerInstance {
       try {
         const mod = new ChatRelay(this.client, deps as ConstructorParameters<typeof ChatRelay>[1]);
         if (_defaultConfig.nukeBot) mod.setNukeActive(true);
-        // Coordinate thread ordering with LogWatcher if both are active
+        // Coordinate thread ordering only with a NON-headless LogWatcher — a
+        // headless watcher never creates a daily thread or fires the rollover
+        // callback, so making ChatRelay await it would strand its own rollover.
         const logWatcher = this._modules.logWatcher;
-        if (logWatcher) {
+        if (logWatcher && !logWatcher.isHeadless) {
           mod.setAwaitActivityThread(true);
           logWatcher.setDayRolloverCallback(async () => {
             try {

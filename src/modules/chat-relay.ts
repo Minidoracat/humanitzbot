@@ -74,7 +74,6 @@ class ChatRelay {
   private _locale: string;
   private _logChatWarned: boolean;
   private _polling: boolean;
-  private _rconUnavailableWarned: boolean;
   _awaitActivityThread: boolean;
 
   // Mixed-in from chat-relay-parser.ts via Object.assign
@@ -104,23 +103,12 @@ class ChatRelay {
     this._locale = getLocale({ serverConfig: this._config });
     this._logChatWarned = false;
     this._polling = false;
-    this._rconUnavailableWarned = false;
     this._awaitActivityThread = false;
   }
 
   /** Whether the chat relay started successfully. */
   get healthy() {
     return this._healthy;
-  }
-
-  /**
-   * Whether the RCON transport is connected and ready to poll. Transport-
-   * agnostic: covers first-run (TCP not yet connected), panel/WebSocket RCON
-   * (which has no TCP host/password), and transient disconnects (pause this
-   * cycle, resume automatically once the transport reconnects).
-   */
-  private _isRconReady(): boolean {
-    return this._rcon.connected;
   }
 
   /**
@@ -419,18 +407,6 @@ class ChatRelay {
 
   async _pollChat() {
     if (this._polling) return;
-
-    // Pause polling quietly while the RCON transport isn't connected (first-run
-    // before setup, or a transient disconnect). The timer keeps running, so chat
-    // collection resumes automatically once RCON connects — no restart needed.
-    if (!this._isRconReady()) {
-      if (!this._rconUnavailableWarned) {
-        this._log.info('RCON not connected — chat polling paused until it connects');
-        this._rconUnavailableWarned = true;
-      }
-      return;
-    }
-    this._rconUnavailableWarned = false;
 
     this._polling = true;
     try {

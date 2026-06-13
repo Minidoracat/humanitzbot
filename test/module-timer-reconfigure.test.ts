@@ -169,7 +169,6 @@ describe('module timer reconfigure', () => {
       {
         config: baseConfig(),
         rcon: {
-          connected: true, // transport up so _pollChat proceeds past the readiness pause
           send: async () => {
             sendCalls += 1;
             if (sendCalls === 1) return firstPoll.promise;
