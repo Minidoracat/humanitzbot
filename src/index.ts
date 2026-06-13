@@ -209,8 +209,12 @@ async function loadOptionalModules(): Promise<void> {
 // ── Create Discord client ───────────────────────────────────
 const intents: GatewayIntentBits[] = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages];
 // Privileged intents — only request when needed (must be enabled in Developer Portal)
-if (config.enableChatRelay) {
-  intents.push(GatewayIntentBits.MessageContent); // needed for Discord → game chat bridge
+// MessageContent (privileged) is only needed to READ Discord messages for the
+// outbound Discord → game bridge, which runs only when a chat/admin channel is
+// set. Headless (DB-only) chat collection polls RCON and needs no such intent,
+// so don't force users into a privileged intent they don't need.
+if (config.enableChatRelay && (config.chatChannelId || config.adminChannelId)) {
+  intents.push(GatewayIntentBits.MessageContent);
 }
 if (config.adminRoleIds.length > 0) {
   intents.push(GatewayIntentBits.GuildMembers); // needed for ADMIN_ROLE_IDS resolution
@@ -1072,13 +1076,15 @@ client.once(Events.ClientReady, (readyClient) => {
 
     // Chat Relay — bidirectional chat bridge
     if (config.enableChatRelay) {
-      if (config.needsSetup) {
-        setStatus('Chat Relay', '🟡 Skipped (RCON not configured)');
-        console.log('[BOT] Chat relay skipped — RCON_HOST/RCON_PASSWORD not configured');
+      // Skip only when the relay can do nothing at all — no Discord bridge
+      // channel AND no RCON to poll. With a channel set it is created even
+      // without RCON (it reconnects, so RCON configured later via the dashboard
+      // starts working without a restart). With RCON available it runs headless,
+      // collecting chat_log with no Discord channel.
+      if (!config.chatChannelId && !config.adminChannelId && config.needsSetup) {
+        setStatus('Chat Relay', '🟡 Skipped (no chat channel and RCON not configured)');
+        console.log('[BOT] Chat relay skipped — no CHAT_CHANNEL_ID/ADMIN_CHANNEL_ID and RCON not configured');
       } else {
-        // Start even without CHAT_CHANNEL_ID/ADMIN_CHANNEL_ID — the module
-        // self-selects headless mode (RCON polling → chat_log DB writes only, no
-        // Discord posting). Gated on RCON availability since it polls fetchchat.
         chatRelay = new ChatRelay(readyClient, { db });
         const _chatRelay = chatRelay;
         if (config.nukeBot) _chatRelay.setNukeActive(true);
