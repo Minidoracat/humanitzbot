@@ -80,6 +80,21 @@ describe('LogWatcher headless mode (no log/admin channel)', () => {
     assert.ok(lw.interval, 'polling interval should still run so log_*/death_causes data is collected');
   });
 
+  it('start() skips entirely for a placeholder SFTP host (no poll against a sample host)', async () => {
+    const lw = track(
+      new LogWatcher(mockClient(), {
+        config: logConfig({ sftpHost: 'your.game.server.ip', logChannelId: '', adminChannelId: '' }),
+      }),
+    );
+    lw._initSize = async () => {};
+    lw._poll = async () => {};
+
+    await lw.start();
+
+    assert.ok(!lw.interval, 'must not start a poll interval for a placeholder SFTP host');
+    assert.strictEqual(lw.isHeadless, false, 'should bail before the headless decision');
+  });
+
   it('non-headless when a log channel is configured', async () => {
     const channel = { id: '123', name: 'log', send: async () => ({}) };
     const lw = track(

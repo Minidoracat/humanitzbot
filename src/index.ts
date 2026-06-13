@@ -391,7 +391,12 @@ function setStatus(name: string, status: string): void {
 }
 
 function hasSftp(): boolean {
-  return !!(config.sftpHost && config.sftpUser && (config.sftpPassword || config.sftpPrivateKeyPath));
+  const host = config.sftpHost || '';
+  // Reject the documented setup placeholders (.env.example `your.game.server.ip`
+  // / `PASTE_…`) so a setup-mode bot doesn't treat them as configured and start
+  // a headless LogWatcher that polls a sample host every interval.
+  if (!host || host.startsWith('PASTE_') || /^your[._]/i.test(host)) return false;
+  return !!(config.sftpUser && (config.sftpPassword || config.sftpPrivateKeyPath));
 }
 
 const STATUS_CHANNELS_RUNTIME_OWNER = 'module:status-channels';

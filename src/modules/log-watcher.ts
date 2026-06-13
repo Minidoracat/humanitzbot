@@ -543,8 +543,11 @@ class LogWatcher {
   }
 
   async start() {
-    // Validate required SFTP config
-    if (!this._config.sftpHost || this._config.sftpHost.startsWith('PASTE_')) {
+    // Validate required SFTP config — reject empty and the documented setup
+    // placeholders (`PASTE_…` / `.env.example` `your.game.server.ip`) so a
+    // setup-mode bot doesn't poll a sample host every interval.
+    const sftpHost = this._config.sftpHost || '';
+    if (!sftpHost || sftpHost.startsWith('PASTE_') || /^your[._]/i.test(sftpHost)) {
       this._log.info('SFTP not configured, skipping log watcher.');
       return;
     }
