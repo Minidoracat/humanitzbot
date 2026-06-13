@@ -126,12 +126,23 @@ describe('ITEM_DATABASE', () => {
     assert.equal(db['FireHelmet'].wearPosition, 'Head');
     assert.ok(db['FireHelmet'].armorProtection > 0, 'FireHelmet should have armor protection');
     assert.equal(db['PonchoBlack'].name, 'Black Poncho');
-    assert.equal(db['PonchoBlack'].wearPosition, 'Body');
+    assert.equal(db['PonchoBlack'].wearPosition, 'UpperBody');
     assert.equal(db['NailGun'].name, 'Nail Gun');
     assert.equal(db['NailGun'].type, 'Pistol');
     assert.equal(db['Winchester'].type, 'Ranged');
     // Canonical-cased ids now resolve their localized names directly
     assert.equal(gameData.ITEM_NAMES['Winchester'], 'Winchester');
+  });
+
+  // Guards the E_ClothingPosition map against regressing to the old
+  // hand-mapped (wrong) labels — these come from the pak's DisplayNameMap.
+  it('maps clothing slots to the pak enum labels', () => {
+    const db = gameData.ITEM_DATABASE;
+    assert.equal(db['FireFighterBoots'].wearPosition, 'Boots');
+    assert.equal(db['MilitaryBoots'].wearPosition, 'Boots');
+    assert.equal(db['GreyPants'].wearPosition, 'Pants');
+    // ExcludeFromVendor? (the raw key carries a '?') is now read, not dropped
+    assert.equal(db['PonchoBlack'].excludeFromVendor, true);
   });
 });
 

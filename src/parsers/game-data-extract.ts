@@ -160,15 +160,18 @@ const ENUM_MAPS: Record<string, Record<string, string>> = {
     NewEnumerator14: 'Meat',
   },
 
+  // Labels are the slot names from the pak's E_ClothingPosition UserDefinedEnum
+  // (DisplayNameMap), not guesses — the earlier hand-mapped values had 0/3/4/5/6/8
+  // wrong (e.g. boots(6) showed as "Hands", gloves(5) as "Feet").
   E_ClothingPosition: {
-    NewEnumerator0: 'None',
+    NewEnumerator0: 'Body',
     NewEnumerator1: 'Head',
-    NewEnumerator3: 'Body',
-    NewEnumerator4: 'Legs',
-    NewEnumerator5: 'Feet',
-    NewEnumerator6: 'Hands',
+    NewEnumerator3: 'UpperBody',
+    NewEnumerator4: 'Pants',
+    NewEnumerator5: 'Gloves',
+    NewEnumerator6: 'Boots',
     NewEnumerator7: 'Face',
-    NewEnumerator8: 'Back',
+    NewEnumerator8: 'Eye',
   },
 
   E_BuildCategory: {
@@ -414,9 +417,9 @@ function extractItems(): Record<string, RawObject> {
       summerCoolValue: c['SummerCoolValue'] ?? 0,
       isSkillBook: c['IsSkillBook'] ?? false,
       noPocket: c['NoPocket'] ?? false,
-      excludeFromVendor: c['ExcludeFromVendor'] ?? false,
+      excludeFromVendor: c['ExcludeFromVendor?'] ?? c['ExcludeFromVendor'] ?? false,
       excludeFromAI: c['ExcludeFromAI'] ?? false,
-      useAsFertilizer: c['UseAsFertilizer'] ?? false,
+      useAsFertilizer: c['UseAsFertilizer?'] ?? c['UseAsFertilizer'] ?? false,
       closeBackpackOnUse: c['CloseBackpackOnUse'] ?? false,
       state: c['State'] ?? '',
       randCapacity: c['RandCapacity'] ?? 0,
