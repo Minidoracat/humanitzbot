@@ -514,6 +514,15 @@ class LogWatcher {
     return this._dayRolloverCb;
   }
 
+  /**
+   * Whether the watcher is running headless (DB writes only, no Discord posting).
+   * Authoritative only after `start()` has run — it decides headless when no
+   * LOG_CHANNEL_ID / ADMIN_CHANNEL_ID is configured.
+   */
+  isHeadless(): boolean {
+    return this._headless;
+  }
+
   /** @internal Get or create the current daily thread (public wrapper over the mixin). */
   getOrCreateDailyThread(): Promise<{ send(options: unknown): Promise<unknown> } | null> {
     return this._getOrCreateDailyThread();

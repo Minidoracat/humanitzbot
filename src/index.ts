@@ -1032,10 +1032,10 @@ client.once(Events.ClientReady, (readyClient) => {
       if (!hasSftp()) {
         setStatus('Log Watcher', '🟡 Skipped (SFTP credentials not set)');
         console.log('[BOT] Log watcher skipped — SFTP_HOST/SFTP_USER/SFTP_PASSWORD not configured');
-      } else if (!config.logChannelId) {
-        setStatus('Log Watcher', '🟡 Skipped (LOG_CHANNEL_ID not set)');
-        console.log('[BOT] Log watcher skipped — LOG_CHANNEL_ID not configured');
       } else {
+        // Start even without LOG_CHANNEL_ID — the module self-selects headless
+        // mode (DB writes only, no Discord posting) so log_*/death_causes data is
+        // still collected for the web panel. Mirrors the multi-server path.
         logWatcher = new LogWatcher(readyClient, {
           db,
           dataDir: path.resolve(__dirname, '..'),
@@ -1063,7 +1063,7 @@ client.once(Events.ClientReady, (readyClient) => {
         runtimeConfigApplier.registerModuleReconfigure('DEATH_LOOP_WINDOW', ({ value }) => {
           _logWatcher.reconfigure({ deathLoopWindow: value });
         });
-        setStatus('Log Watcher', '🟢 Active');
+        setStatus('Log Watcher', logWatcher.isHeadless() ? '🟢 Active (headless, DB-only)' : '🟢 Active');
       }
     } else {
       setStatus('Log Watcher', '⚫ Disabled');
@@ -1072,10 +1072,13 @@ client.once(Events.ClientReady, (readyClient) => {
 
     // Chat Relay — bidirectional chat bridge
     if (config.enableChatRelay) {
-      if (!config.adminChannelId && !config.chatChannelId) {
-        setStatus('Chat Relay', '🟡 Skipped (CHAT_CHANNEL_ID / ADMIN_CHANNEL_ID not set)');
-        console.log('[BOT] Chat relay skipped — neither CHAT_CHANNEL_ID nor ADMIN_CHANNEL_ID configured');
+      if (config.needsSetup) {
+        setStatus('Chat Relay', '🟡 Skipped (RCON not configured)');
+        console.log('[BOT] Chat relay skipped — RCON_HOST/RCON_PASSWORD not configured');
       } else {
+        // Start even without CHAT_CHANNEL_ID/ADMIN_CHANNEL_ID — the module
+        // self-selects headless mode (RCON polling → chat_log DB writes only, no
+        // Discord posting). Gated on RCON availability since it polls fetchchat.
         chatRelay = new ChatRelay(readyClient, { db });
         const _chatRelay = chatRelay;
         if (config.nukeBot) _chatRelay.setNukeActive(true);
@@ -1096,7 +1099,7 @@ client.once(Events.ClientReady, (readyClient) => {
             _chatRelay.reconfigure({ chatPollInterval: value });
           });
         }
-        setStatus('Chat Relay', '🟢 Active');
+        setStatus('Chat Relay', _chatRelay.isHeadless ? '🟢 Active (headless, DB-only)' : '🟢 Active');
       }
     } else {
       setStatus('Chat Relay', '⚫ Disabled');
@@ -1288,7 +1291,11 @@ client.once(Events.ClientReady, (readyClient) => {
       if (!saveService) {
         setStatus('Activity Log', '🟡 Skipped (requires Save Service)');
       } else {
-        activityLog = new ActivityLog(readyClient, { db, saveService, logWatcher });
+        // Only hand ActivityLog the LogWatcher when it can actually post to a
+        // daily thread. A headless LogWatcher would no-op sendToThread, so pass
+        // null to let ActivityLog fall back to ACTIVITY_LOG_CHANNEL_ID/ADMIN.
+        const activityLogWatcher = logWatcher && !logWatcher.isHeadless() ? logWatcher : null;
+        activityLog = new ActivityLog(readyClient, { db, saveService, logWatcher: activityLogWatcher });
         await activityLog.start();
         setStatus('Activity Log', '🟢 Active');
       }

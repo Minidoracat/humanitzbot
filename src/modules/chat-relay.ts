@@ -111,6 +111,15 @@ class ChatRelay {
     return this._healthy;
   }
 
+  /**
+   * Whether the relay is running headless (RCON polling + DB writes only, no
+   * Discord posting). Authoritative only after `start()` has run — it decides
+   * headless when no CHAT_CHANNEL_ID / ADMIN_CHANNEL_ID is configured.
+   */
+  get isHeadless(): boolean {
+    return this._headless;
+  }
+
   async start() {
     try {
       // ── Admin channel (home for threads + outbound bridge) ──
