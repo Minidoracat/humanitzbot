@@ -192,7 +192,6 @@ class ActivityLog {
 
   async start(): Promise<void> {
     if (this._started) return;
-    this._started = true;
 
     // Route embeds to the LogWatcher's daily thread only when it can post; a
     // headless watcher (or none) means we must resolve our own fallback channel.
@@ -223,6 +222,9 @@ class ActivityLog {
       this._saveService.on('sync', this._syncHandler);
     }
 
+    // Latch as started only after a posting target and/or sync listener is in
+    // place, so a failed early-return above leaves a retry possible.
+    this._started = true;
     const channelName = this._channel?.name ?? 'unknown';
     const target = this._canPostViaLogWatcher() ? 'daily thread (via LogWatcher)' : `#${channelName}`;
     this._log.info(`Started \u2014 posting to ${target}`);

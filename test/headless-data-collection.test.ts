@@ -324,4 +324,13 @@ describe('ActivityLog headless LogWatcher handling', () => {
 
     assert.strictEqual(fetchedId, 'srv2-chan', 'must resolve the per-server activity channel, not a global one');
   });
+
+  it('does not latch _started when startup fails, so a later retry can still come up', async () => {
+    // No watcher and no fallback channel → start() bails before doing anything.
+    const al = new ActivityLog(mockClient(), { config: { activityLogChannelId: '', adminChannelId: '' } });
+
+    await al.start();
+
+    assert.strictEqual(al._started, false, 'a failed start must not latch _started true');
+  });
 });

@@ -1070,7 +1070,17 @@ client.once(Events.ClientReady, (readyClient) => {
         runtimeConfigApplier.registerModuleReconfigure('DEATH_LOOP_WINDOW', ({ value }) => {
           _logWatcher.reconfigure({ deathLoopWindow: value });
         });
-        setStatus('Log Watcher', logWatcher.isHeadless ? '🟢 Active (headless, DB-only)' : '🟢 Active');
+        // interval is only set once start() got past validation/connection, so
+        // a missing interval means start() bailed (no SFTP, placeholder host,
+        // channel not found, …) and the collector isn't actually running.
+        setStatus(
+          'Log Watcher',
+          logWatcher.interval
+            ? logWatcher.isHeadless
+              ? '🟢 Active (headless, DB-only)'
+              : '🟢 Active'
+            : '⚠️ Failed to start',
+        );
       }
     } else {
       setStatus('Log Watcher', '⚫ Disabled');
@@ -1107,7 +1117,16 @@ client.once(Events.ClientReady, (readyClient) => {
           _chatRelay.reconfigure({ chatPollInterval: value });
         });
       }
-      setStatus('Chat Relay', _chatRelay.isHeadless ? '🟢 Active (headless, DB-only)' : '🟢 Active');
+      // healthy goes false if start() failed (e.g. channel fetch threw); don't
+      // show green for a relay that isn't actually running.
+      setStatus(
+        'Chat Relay',
+        _chatRelay.healthy
+          ? _chatRelay.isHeadless
+            ? '🟢 Active (headless, DB-only)'
+            : '🟢 Active'
+          : '⚠️ Failed to start',
+      );
     } else {
       setStatus('Chat Relay', '⚫ Disabled');
       console.log('[BOT] Chat relay disabled via ENABLE_CHAT_RELAY=false');
