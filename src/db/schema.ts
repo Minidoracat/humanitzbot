@@ -17,7 +17,7 @@ const PLAYERS = `
 CREATE TABLE IF NOT EXISTS players (
   steam_id        TEXT PRIMARY KEY,
   name            TEXT NOT NULL DEFAULT '',
-  name_history    TEXT DEFAULT '[]',           -- JSON array of { name, until }
+  name_history    TEXT DEFAULT '[]',           -- DEPRECATED: superseded by the player_aliases table; live rows all default '[]'
   first_seen      TEXT,                        -- ISO timestamp
   last_seen       TEXT,                        -- ISO timestamp
   online          INTEGER DEFAULT 0,           -- 1 = currently online
@@ -169,7 +169,7 @@ CREATE TABLE IF NOT EXISTS players (
   custom_data     TEXT DEFAULT '{}',
 
   -- Kill tracking (for delta/accumulation across deaths)
-  kill_tracker    TEXT DEFAULT '{}',           -- JSON: cumulative banks, snapshots, checkpoints
+  kill_tracker    TEXT DEFAULT '{}',           -- DEPRECATED: the live tracker is bot_state['kill_tracker']; this column stays default '{}'
 
   -- Log-based stats (from LogWatcher / PlayerStats)
   log_deaths      INTEGER DEFAULT 0,
@@ -462,7 +462,7 @@ CREATE TABLE IF NOT EXISTS item_instances (
   pos_y           REAL,
   pos_z           REAL,
   amount          INTEGER DEFAULT 1,           -- stack size at this location
-  group_id        INTEGER DEFAULT NULL,        -- FK to item_groups (set for fungible items in a group)
+  group_id        INTEGER DEFAULT NULL,        -- DEPRECATED for instances (always null); fungible grouping uses item_groups + item_movements.group_id
   first_seen      TEXT DEFAULT (datetime('now')),
   last_seen       TEXT DEFAULT (datetime('now')),
   lost            INTEGER DEFAULT 0,           -- 1 = not found in latest snapshot (despawned/consumed)
@@ -864,7 +864,7 @@ CREATE TABLE IF NOT EXISTS game_server_setting_defs (
 );
 `;
 
-// ─── Snapshots (for weekly/periodic leaderboard deltas) ─────────────────────
+// ─── Snapshots (DEPRECATED — superseded by timeline_snapshots; 0 rows, no production caller) ─
 
 const SNAPSHOTS = `
 CREATE TABLE IF NOT EXISTS snapshots (
