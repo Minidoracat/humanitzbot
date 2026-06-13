@@ -148,6 +148,7 @@ const EVENT_EMOJI: Record<string, string> = {
 
 class ActivityLog {
   private _client: Client;
+  private _config: typeof config;
   private _saveService: ActivitySaveService | null;
   private _logWatcher: ActivityLogWatcher | null;
   private _log: Logger;
@@ -165,10 +166,13 @@ class ActivityLog {
       db?: unknown;
       saveService?: ActivitySaveService | null;
       logWatcher?: unknown;
+      config?: typeof config;
       label?: string;
     } = {},
   ) {
     this._client = client;
+    // Per-server config in multi-server; falls back to the global singleton.
+    this._config = options.config ?? config;
     this._saveService = options.saveService ?? null;
     this._logWatcher = (options.logWatcher as ActivityLogWatcher | null) ?? null;
     this._log = createLogger(options.label, 'ActivityLog');
@@ -193,7 +197,7 @@ class ActivityLog {
     // Route embeds to the LogWatcher's daily thread only when it can post; a
     // headless watcher (or none) means we must resolve our own fallback channel.
     if (!this._canPostViaLogWatcher()) {
-      const channelId = config.activityLogChannelId || config.adminChannelId;
+      const channelId = this._config.activityLogChannelId || this._config.adminChannelId;
       if (!channelId) {
         this._log.info('No logWatcher or channel configured \u2014 activity log disabled');
         return;

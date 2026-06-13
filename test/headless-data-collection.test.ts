@@ -302,4 +302,26 @@ describe('ActivityLog headless LogWatcher handling', () => {
     // The watcher is retained (not nulled) so getRecentContainerAccess stays available.
     assert.strictEqual(al._logWatcher, lw, 'headless watcher is kept for attribution');
   });
+
+  it('resolves the fallback channel from injected per-server config, not the global singleton', async () => {
+    let fetchedId: string | null = null;
+    const client = {
+      on: () => {},
+      user: { id: '1' },
+      channels: {
+        fetch: async (id: string) => {
+          fetchedId = id;
+          return { id, name: 'srv2-activity', send: async () => {} };
+        },
+      },
+    };
+    const al = new ActivityLog(client, {
+      logWatcher: watcher({ isHeadless: true }), // headless → must use own channel
+      config: { activityLogChannelId: 'srv2-chan', adminChannelId: '' },
+    });
+
+    await al.start();
+
+    assert.strictEqual(fetchedId, 'srv2-chan', 'must resolve the per-server activity channel, not a global one');
+  });
 });

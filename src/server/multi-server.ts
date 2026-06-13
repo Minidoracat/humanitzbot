@@ -898,6 +898,7 @@ class ServerInstance {
           db: this.db,
           saveService: this.saveService,
           logWatcher: this._modules.logWatcher || null,
+          config: this.config,
           label: 'ActivityLog:' + this._log.label,
         });
         await mod.start();
