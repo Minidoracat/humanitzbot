@@ -39,8 +39,8 @@ import { t, getLocale, fmtNumber } from '../i18n/index.js';
 import { errMsg } from '../utils/error.js';
 import { logRejection } from '../utils/log-rejection.js';
 
-function _activityLocale(): string {
-  return getLocale();
+function _activityLocale(cfg: typeof config = config): string {
+  return getLocale({ serverConfig: cfg });
 }
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -301,7 +301,7 @@ class ActivityLog {
     if (filtered.length === 0) return embeds;
 
     // Format sync timestamp for per-event display
-    const timeStr = _formatTime(syncTime);
+    const timeStr = _formatTime(syncTime, this._config);
 
     // Group by category
     const groups = new Map<string, DiffEvent[]>();
@@ -345,7 +345,7 @@ class ActivityLog {
    */
   _buildCategoryEmbed(category: string, events: DiffEvent[], timeStr: string): EmbedBuilder | null {
     const clr = CATEGORY_COLORS[category] ?? 0x95a5a6;
-    const title = _categoryTitle(category);
+    const title = _categoryTitle(category, this._config);
 
     const lines: string[] = [];
     const batchedItems = new Map<string, EventBatch>();
@@ -384,7 +384,7 @@ class ActivityLog {
     // Format collapsed non-item events
     for (const [, batch] of batchedItems) {
       if (!('isCollapsed' in batch)) continue;
-      const formatted = _formatEvent(batch.event, timeStr);
+      const formatted = _formatEvent(batch.event, timeStr, this._config);
       if (batch.count > 1) {
         lines.push(formatted + ` ×${batch.count}`);
       } else {
@@ -399,7 +399,7 @@ class ActivityLog {
       const emoji = EVENT_EMOJI[e.type] ?? '•';
       const itemList = batch.items
         .map((i) => {
-          const cleaned = resolveItemName(i.item, _activityLocale());
+          const cleaned = resolveItemName(i.item, _activityLocale(this._config));
           let label = (i.amount ?? 0) > 1 ? `${cleaned} x${i.amount}` : cleaned;
           if (i.durability != null && i.durability < 100) label += ` (${Math.round(i.durability)}%)`;
           return label;
@@ -425,15 +425,15 @@ class ActivityLog {
       if (e.type.includes('removed')) {
         // Item taken FROM container/vehicle — "Player took items from Container [C4]"
         const key = playerName ? 'event_item_taken' : 'event_item_removed';
-        lines.push(`${ts}${emoji}${t(`discord:activity_log.${key}`, _activityLocale(), vars)}${loc}`);
+        lines.push(`${ts}${emoji}${t(`discord:activity_log.${key}`, _activityLocale(this._config), vars)}${loc}`);
       } else if (e.type.includes('added')) {
         // Item stored IN container/vehicle — "Player stored items in Container [C4]"
         const key = playerName ? 'event_item_stored' : 'event_item_added';
-        lines.push(`${ts}${emoji}${t(`discord:activity_log.${key}`, _activityLocale(), vars)}${loc}`);
+        lines.push(`${ts}${emoji}${t(`discord:activity_log.${key}`, _activityLocale(this._config), vars)}${loc}`);
       } else {
         const playerTag = playerName ? ` — **${playerName}**` : '';
         lines.push(
-          `${ts}${emoji}${t('discord:activity_log.event_item_generic', _activityLocale(), { ...vars, playerTag })}${loc}`,
+          `${ts}${emoji}${t('discord:activity_log.event_item_generic', _activityLocale(this._config), { ...vars, playerTag })}${loc}`,
         );
       }
     }
@@ -444,7 +444,7 @@ class ActivityLog {
     const maxLines = 25;
     let description = lines.slice(0, maxLines).join('\n');
     if (lines.length > maxLines) {
-      description += `\n${t('discord:activity_log.and_more_events', _activityLocale(), { count: lines.length - maxLines })}`;
+      description += `\n${t('discord:activity_log.and_more_events', _activityLocale(this._config), { count: lines.length - maxLines })}`;
     }
 
     return new EmbedBuilder()
@@ -453,7 +453,7 @@ class ActivityLog {
       .setColor(clr)
       .setTimestamp()
       .setFooter({
-        text: t('discord:activity_log.events_footer', _activityLocale(), {
+        text: t('discord:activity_log.events_footer', _activityLocale(this._config), {
           count: events.length,
           plural_suffix: events.length === 1 ? '' : 's',
         }),
@@ -475,48 +475,48 @@ function _cleanActorName(raw: unknown): string {
  * Format a Date or ISO string into a short HH:MM timestamp string.
  * Uses the bot's configured timezone.
  */
-function _formatTime(dateOrIso: Date | string | null | undefined): string {
+function _formatTime(dateOrIso: Date | string | null | undefined, cfg: typeof config = config): string {
   if (!dateOrIso) return '';
   const d = dateOrIso instanceof Date ? dateOrIso : new Date(dateOrIso);
   if (isNaN(d.getTime())) return '';
   try {
-    return new Intl.DateTimeFormat(_activityLocale(), {
+    return new Intl.DateTimeFormat(_activityLocale(cfg), {
       hour: '2-digit',
       minute: '2-digit',
-      timeZone: config.botTimezone || 'UTC',
+      timeZone: cfg.botTimezone || 'UTC',
     }).format(d);
   } catch {
     return d.toISOString().slice(11, 16);
   }
 }
 
-function _categoryTitle(category: string): string {
+function _categoryTitle(category: string, cfg: typeof config = config): string {
   switch (category) {
     case 'container':
-      return t('discord:activity_log.container_activity', _activityLocale());
+      return t('discord:activity_log.container_activity', _activityLocale(cfg));
     case 'inventory':
-      return t('discord:activity_log.inventory_changes', _activityLocale());
+      return t('discord:activity_log.inventory_changes', _activityLocale(cfg));
     case 'horse':
-      return t('discord:activity_log.horse_activity', _activityLocale());
+      return t('discord:activity_log.horse_activity', _activityLocale(cfg));
     case 'vehicle':
-      return t('discord:activity_log.vehicle_activity', _activityLocale());
+      return t('discord:activity_log.vehicle_activity', _activityLocale(cfg));
     case 'world':
-      return t('discord:activity_log.world_events', _activityLocale());
+      return t('discord:activity_log.world_events', _activityLocale(cfg));
     case 'structure':
-      return t('discord:activity_log.structure_activity', _activityLocale());
+      return t('discord:activity_log.structure_activity', _activityLocale(cfg));
     default:
-      return t('discord:activity_log.activity', _activityLocale());
+      return t('discord:activity_log.activity', _activityLocale(cfg));
   }
 }
 
-function _formatEvent(event: DiffEvent, timeStr: string): string {
+function _formatEvent(event: DiffEvent, timeStr: string, cfg: typeof config = config): string {
   const emoji = EVENT_EMOJI[event.type] ?? '•';
   const name = _cleanActorName(event.actorName ?? event.actor ?? '');
   const ts = timeStr ? `\`${timeStr}\` ` : '';
   const loc = _formatLocation(event);
 
   const tr = (key: string, vars: Record<string, unknown> = {}) =>
-    t(`discord:activity_log.${key}`, _activityLocale(), { name, ...vars });
+    t(`discord:activity_log.${key}`, _activityLocale(cfg), { name, ...vars });
 
   switch (event.type) {
     case 'container_locked':
@@ -531,7 +531,7 @@ function _formatEvent(event: DiffEvent, timeStr: string): string {
         const cleaned = items
           .slice(0, 5)
           .map((i: unknown) =>
-            resolveItemName(typeof i === 'string' ? i.replace(/ x\d+$/, '') : String(i), _activityLocale()),
+            resolveItemName(typeof i === 'string' ? i.replace(/ x\d+$/, '') : String(i), _activityLocale(cfg)),
           );
         lostList = `: ${cleaned.join(', ')}`;
         if (items.length > 5) lostList += tr('event_items_more', { count: items.length - 5 });
@@ -539,7 +539,7 @@ function _formatEvent(event: DiffEvent, timeStr: string): string {
       // count drives the plural form; countLabel carries the formatted number
       return `${ts}${emoji}${tr('event_container_destroyed', {
         count: event.amount ?? 0,
-        countLabel: fmtNumber(event.amount ?? 0, _activityLocale()),
+        countLabel: fmtNumber(event.amount ?? 0, _activityLocale(cfg)),
         itemList: lostList,
       })}${loc}`;
     }

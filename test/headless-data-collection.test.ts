@@ -272,6 +272,24 @@ describe('ChatRelay headless mode (no chat/admin channel)', () => {
 
     assert.strictEqual(sent.length, 0, 'must not poll until an RCON host is configured (avoid localhost error spam)');
   });
+
+  it('_pollChat skips the documented placeholder hosts (your_… and your.game.server.ip)', async () => {
+    for (const placeholder of ['your.game.server.ip', 'your_rcon_host']) {
+      const sent: string[] = [];
+      const rcon = {
+        send: async (cmd: string) => {
+          sent.push(cmd);
+          return '';
+        },
+      };
+      const cr = track(new ChatRelay(mockClient(), { config: chatConfig({ rconHost: placeholder }), rcon }));
+      cr._headless = true;
+
+      await cr._pollChat();
+
+      assert.strictEqual(sent.length, 0, `must not poll against placeholder host "${placeholder}"`);
+    }
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

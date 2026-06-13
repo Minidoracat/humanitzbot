@@ -434,17 +434,16 @@ function createServerConfig(serverDef: ServerDef): ConfigType {
     if (serverDef.paths.welcomePath) merged.sftpWelcomePath = serverDef.paths.welcomePath;
   }
 
-  // Channel overrides
-  if (serverDef.channels) {
-    merged.serverStatusChannelId = serverDef.channels.serverStatus || '';
-    merged.playerStatsChannelId = serverDef.channels.playerStats || '';
-    merged.chatChannelId = serverDef.channels.chat || '';
-    merged.logChannelId = serverDef.channels.log || '';
-    merged.adminChannelId = serverDef.channels.admin || '';
-  }
-  // Per-server activity channel — set unconditionally (own property) so a managed
-  // server never inherits the primary's ACTIVITY_LOG_CHANNEL_ID, even when the
-  // serverDef omits a channels block entirely.
+  // Channel overrides — set EVERY per-server channel unconditionally (own
+  // property) so a managed server never inherits the primary's through the
+  // prototype, even when serverDef omits a channels block entirely. A
+  // channel-less managed server therefore runs headless instead of posting into
+  // the primary server's Discord channels.
+  merged.serverStatusChannelId = serverDef.channels?.serverStatus || '';
+  merged.playerStatsChannelId = serverDef.channels?.playerStats || '';
+  merged.chatChannelId = serverDef.channels?.chat || '';
+  merged.logChannelId = serverDef.channels?.log || '';
+  merged.adminChannelId = serverDef.channels?.admin || '';
   merged.activityLogChannelId = serverDef.channels?.activityLog || '';
 
   // Public host for connect address in embeds (don't inherit primary's host)

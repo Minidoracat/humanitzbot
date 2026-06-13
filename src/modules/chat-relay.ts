@@ -415,7 +415,9 @@ class ChatRelay {
     // set, and send() still drives lazy auto-connect once a host is present
     // (so RCON configured later via the dashboard starts polling, no restart).
     const rconHost = this._config.rconHost || '';
-    if (!rconHost || rconHost.startsWith('your_')) return;
+    // Covers the documented .env.example placeholders: `your_...` and the
+    // RCON/SFTP `your.game.server.ip` form.
+    if (!rconHost || /^your[._]/i.test(rconHost)) return;
 
     this._polling = true;
     try {

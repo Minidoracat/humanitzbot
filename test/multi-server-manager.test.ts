@@ -530,6 +530,23 @@ describe('createServerConfig()', () => {
     assert.equal(cfg3.activityLogChannelId, '', 'no channels block → cleared, never inherited');
   });
 
+  it('clears ALL per-server channels (not just activity) when serverDef omits channels', () => {
+    // A channel-less managed server must run headless, never inherit the primary's
+    // log/admin/chat/status/stats channels through the prototype.
+    const cfg = createServerConfig({ id: 'srv_headless' });
+    for (const key of [
+      'serverStatusChannelId',
+      'playerStatsChannelId',
+      'chatChannelId',
+      'logChannelId',
+      'adminChannelId',
+      'activityLogChannelId',
+    ] as const) {
+      assert.ok(Object.hasOwn(cfg, key), `${key} must be an own per-server property`);
+      assert.equal(cfg[key], '', `${key} must be cleared, never inherited from primary`);
+    }
+  });
+
   it('sets publicHost from serverDef or RCON host', () => {
     const cfg1 = createServerConfig({ publicHost: 'public.example.com' });
     assert.equal(cfg1.publicHost, 'public.example.com');
