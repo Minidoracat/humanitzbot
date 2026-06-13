@@ -491,6 +491,7 @@
   "Mushrooms": "Mushrooms",
   "MushroomSoup": "Mushroom Soup",
   "NailBomb": "Nail Bomb",
+  "NailGun": "Nail Gun",
   "NailedBat": "Nailed Bat",
   "Nails": "Nails",
   "NailWoodWeapon": "Nailed Wooden Weapon",
@@ -716,6 +717,7 @@
   "WhiteSkullMask": "White Skull Mask",
   "WhiteTrainers": "White Trainers",
   "WhiteWinterJacket": "White Winter Jacket",
+  "Winchester": "Winchester",
   "WolfPeltCoatHoodie": "Wolf Pelt Hooded Coat",
   "Wood": "Wood",
   "WoodBow": "Wooden Bow",
@@ -734,7 +736,5 @@
   "YellowSportsPants": "Yellow Track Pants",
   "YellowSportsShorts": "Yellow Sports Shorts",
   "Zinc": "Zinc",
-  "ZM7": "ZM7 Rifle",
-  "NailGun": "Nail Gun",
-  "Winchester": "Winchester"
+  "ZM7": "ZM7 Rifle"
 }

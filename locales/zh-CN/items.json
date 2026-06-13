@@ -491,6 +491,7 @@
   "Mushrooms": "蘑菇",
   "MushroomSoup": "蘑菇汤",
   "NailBomb": "铁钉炸弹",
+  "NailGun": "钉枪",
   "NailedBat": "带钉球棒",
   "Nails": "钉子",
   "NailWoodWeapon": "带钉木制武器",
@@ -716,6 +717,7 @@
   "WhiteSkullMask": "白色骷髅面具",
   "WhiteTrainers": "白色运动鞋",
   "WhiteWinterJacket": "白色冬季夹克",
+  "Winchester": "温彻斯特",
   "WolfPeltCoatHoodie": "狼皮连帽大衣",
   "Wood": "木材",
   "WoodBow": "木弓",
@@ -734,7 +736,5 @@
   "YellowSportsPants": "黄色运动裤",
   "YellowSportsShorts": "黄色运动短裤",
   "Zinc": "锌",
-  "ZM7": "ZM7 步枪",
-  "NailGun": "钉枪",
-  "Winchester": "温彻斯特"
+  "ZM7": "ZM7 步枪"
 }
