@@ -19,6 +19,12 @@ interface StatusChannelsDeps {
   config?: ConfigType;
   getPlayerList?: typeof getPlayerList;
   categoryName?: string;
+  /**
+   * Multi-server: restrict channel discovery to this server's own category so an
+   * extra server never grabs (and renames) another server's status voice channel
+   * via the guild-wide fallback. Single-server leaves this false.
+   */
+  scoped?: boolean;
 }
 
 class StatusChannels {
@@ -29,6 +35,7 @@ class StatusChannels {
   private _config: ConfigType;
   private _getPlayerList: typeof getPlayerList;
   private _categoryHint: string;
+  private _scoped: boolean;
   private updateIntervalMs: number;
 
   constructor(client: Client, deps: StatusChannelsDeps = {}) {
@@ -39,6 +46,7 @@ class StatusChannels {
     this._config = deps.config ?? _defaultConfig;
     this._getPlayerList = deps.getPlayerList ?? getPlayerList;
     this._categoryHint = deps.categoryName ?? '';
+    this._scoped = deps.scoped ?? false;
     this.updateIntervalMs = this._resolveUpdateIntervalMs(this._config.statusChannelInterval);
   }
 
@@ -142,7 +150,10 @@ class StatusChannels {
       }
     }
 
-    // Fallback: search across all categories
+    // Fallback: search across all categories. Skipped for scoped (multi-server)
+    // instances — a managed server must not grab a voice channel outside its own
+    // category, or it would rename another server's status channel.
+    if (this._scoped) return;
     const found = allChannels.find(
       (c: GuildBasedChannel) => c.type === ChannelType.GuildVoice && c.name.startsWith(prefix),
     );

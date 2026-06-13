@@ -209,8 +209,15 @@ async function loadOptionalModules(): Promise<void> {
 // ── Create Discord client ───────────────────────────────────
 const intents: GatewayIntentBits[] = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages];
 // Privileged intents — only request when needed (must be enabled in Developer Portal)
+// MessageContent (privileged) is fixed at the IDENTIFY handshake (Client
+// construction), but a chat/admin channel may only arrive later via DB-backed
+// config hydration in ClientReady — so we can't reliably tell here whether the
+// outbound Discord → game bridge will run. Request it whenever ChatRelay is
+// enabled. (A headless, DB-only deployment that never bridges still needs the
+// intent enabled in the Developer Portal — a cost of the single ENABLE_CHAT_RELAY
+// toggle covering both RCON chat polling and the Discord bridge.)
 if (config.enableChatRelay) {
-  intents.push(GatewayIntentBits.MessageContent); // needed for Discord → game chat bridge
+  intents.push(GatewayIntentBits.MessageContent);
 }
 if (config.adminRoleIds.length > 0) {
   intents.push(GatewayIntentBits.GuildMembers); // needed for ADMIN_ROLE_IDS resolution
@@ -384,7 +391,12 @@ function setStatus(name: string, status: string): void {
 }
 
 function hasSftp(): boolean {
-  return !!(config.sftpHost && config.sftpUser && (config.sftpPassword || config.sftpPrivateKeyPath));
+  const host = config.sftpHost || '';
+  // Reject the documented setup placeholders (.env.example `your.game.server.ip`
+  // / `PASTE_…`) so a setup-mode bot doesn't treat them as configured and start
+  // a headless LogWatcher that polls a sample host every interval.
+  if (!host || host.startsWith('PASTE_') || /^your[._]/i.test(host)) return false;
+  return !!(config.sftpUser && (config.sftpPassword || config.sftpPrivateKeyPath));
 }
 
 const STATUS_CHANNELS_RUNTIME_OWNER = 'module:status-channels';
@@ -999,6 +1011,7 @@ client.once(Events.ClientReady, (readyClient) => {
         if (sd.channels?.['status']) channelsToClean.add(sd.channels['status']);
         if (sd.channels?.['stats']) channelsToClean.add(sd.channels['stats']);
         if (sd.channels?.['panel']) channelsToClean.add(sd.channels['panel']);
+        if (sd.channels?.['activityLog']) channelsToClean.add(sd.channels['activityLog']);
       }
 
       const botId = readyClient.user.id;
@@ -1032,10 +1045,10 @@ client.once(Events.ClientReady, (readyClient) => {
       if (!hasSftp()) {
         setStatus('Log Watcher', '🟡 Skipped (SFTP credentials not set)');
         console.log('[BOT] Log watcher skipped — SFTP_HOST/SFTP_USER/SFTP_PASSWORD not configured');
-      } else if (!config.logChannelId) {
-        setStatus('Log Watcher', '🟡 Skipped (LOG_CHANNEL_ID not set)');
-        console.log('[BOT] Log watcher skipped — LOG_CHANNEL_ID not configured');
       } else {
+        // Start even without LOG_CHANNEL_ID — the module self-selects headless
+        // mode (DB writes only, no Discord posting) so log_*/death_causes data is
+        // still collected for the web panel. Mirrors the multi-server path.
         logWatcher = new LogWatcher(readyClient, {
           db,
           dataDir: path.resolve(__dirname, '..'),
@@ -1063,7 +1076,17 @@ client.once(Events.ClientReady, (readyClient) => {
         runtimeConfigApplier.registerModuleReconfigure('DEATH_LOOP_WINDOW', ({ value }) => {
           _logWatcher.reconfigure({ deathLoopWindow: value });
         });
-        setStatus('Log Watcher', '🟢 Active');
+        // interval is only set once start() got past validation/connection, so
+        // a missing interval means start() bailed (no SFTP, placeholder host,
+        // channel not found, …) and the collector isn't actually running.
+        setStatus(
+          'Log Watcher',
+          logWatcher.interval
+            ? logWatcher.isHeadless
+              ? '🟢 Active (headless, DB-only)'
+              : '🟢 Active'
+            : '⚠️ Failed to start',
+        );
       }
     } else {
       setStatus('Log Watcher', '⚫ Disabled');
@@ -1072,32 +1095,45 @@ client.once(Events.ClientReady, (readyClient) => {
 
     // Chat Relay — bidirectional chat bridge
     if (config.enableChatRelay) {
-      if (!config.adminChannelId && !config.chatChannelId) {
-        setStatus('Chat Relay', '🟡 Skipped (CHAT_CHANNEL_ID / ADMIN_CHANNEL_ID not set)');
-        console.log('[BOT] Chat relay skipped — neither CHAT_CHANNEL_ID nor ADMIN_CHANNEL_ID configured');
-      } else {
-        chatRelay = new ChatRelay(readyClient, { db });
-        const _chatRelay = chatRelay;
-        if (config.nukeBot) _chatRelay.setNukeActive(true);
-        // If LogWatcher handles activity threads, coordinate day-rollover ordering
-        if (logWatcher) {
-          _chatRelay.setAwaitActivityThread(true);
-          logWatcher.setDayRolloverCallback(async () => {
-            try {
-              await _chatRelay.createDailyThread();
-            } catch (e: unknown) {
-              console.warn('[BOT] Day-rollover chat thread error:', errMsg(e));
-            }
-          });
-        }
-        await chatRelay.start();
-        if (_chatRelay.healthy) {
-          runtimeConfigApplier.registerModuleReconfigure('CHAT_POLL_INTERVAL', ({ value }) => {
-            _chatRelay.reconfigure({ chatPollInterval: value });
-          });
-        }
-        setStatus('Chat Relay', '🟢 Active');
+      // Always create the relay when enabled. It polls RCON for chat — writing
+      // chat_log even headless (no Discord channel) — and pauses polling quietly
+      // until RCON is configured, so RCON set up later via the dashboard starts
+      // working without a restart. The module self-selects headless when no
+      // CHAT_CHANNEL_ID/ADMIN_CHANNEL_ID is set.
+      chatRelay = new ChatRelay(readyClient, { db });
+      const _chatRelay = chatRelay;
+      if (config.nukeBot) _chatRelay.setNukeActive(true);
+      // Coordinate day-rollover ordering only with a LogWatcher that actually
+      // posts a daily thread (started + non-headless). A headless OR bailed-start
+      // watcher never creates a daily thread or fires the rollover callback, so
+      // making ChatRelay await it would strand its own daily-thread rollover
+      // (it would post to the parent channel after midnight instead).
+      if (logWatcher?.postsDailyThread) {
+        _chatRelay.setAwaitActivityThread(true);
+        logWatcher.setDayRolloverCallback(async () => {
+          try {
+            await _chatRelay.createDailyThread();
+          } catch (e: unknown) {
+            console.warn('[BOT] Day-rollover chat thread error:', errMsg(e));
+          }
+        });
       }
+      await chatRelay.start();
+      if (_chatRelay.healthy) {
+        runtimeConfigApplier.registerModuleReconfigure('CHAT_POLL_INTERVAL', ({ value }) => {
+          _chatRelay.reconfigure({ chatPollInterval: value });
+        });
+      }
+      // healthy goes false if start() failed (e.g. channel fetch threw); don't
+      // show green for a relay that isn't actually running.
+      setStatus(
+        'Chat Relay',
+        _chatRelay.healthy
+          ? _chatRelay.isHeadless
+            ? '🟢 Active (headless, DB-only)'
+            : '🟢 Active'
+          : '⚠️ Failed to start',
+      );
     } else {
       setStatus('Chat Relay', '⚫ Disabled');
       console.log('[BOT] Chat relay disabled via ENABLE_CHAT_RELAY=false');
@@ -1288,6 +1324,10 @@ client.once(Events.ClientReady, (readyClient) => {
       if (!saveService) {
         setStatus('Activity Log', '🟡 Skipped (requires Save Service)');
       } else {
+        // Always hand ActivityLog the LogWatcher so it can attribute container
+        // access (getRecentContainerAccess) even when the watcher is headless.
+        // ActivityLog decides its own posting target: the daily thread when the
+        // watcher is non-headless, otherwise its ACTIVITY_LOG_CHANNEL_ID/ADMIN.
         activityLog = new ActivityLog(readyClient, { db, saveService, logWatcher });
         await activityLog.start();
         setStatus('Activity Log', '🟢 Active');
@@ -1326,8 +1366,10 @@ client.once(Events.ClientReady, (readyClient) => {
     if (config.enableRecaps) {
       recapService = new RecapService(readyClient, { db, logWatcher, config, playtime });
       const _recap = recapService;
-      // Chain into LogWatcher day-rollover callback
-      if (logWatcher) {
+      // Chain into the LogWatcher day-rollover callback — only meaningful for a
+      // watcher that posts a daily thread (started + non-headless); a headless
+      // or bailed-start watcher never fires the rollover.
+      if (logWatcher?.postsDailyThread) {
         const prevCb = logWatcher.getDayRolloverCallback();
         logWatcher.setDayRolloverCallback(async () => {
           if (typeof prevCb === 'function') await prevCb();

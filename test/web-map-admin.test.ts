@@ -1134,6 +1134,9 @@ describe('Web Map Admin — POST endpoints', () => {
       assert.equal(keys.get('PVP_END_TIME')?.control, 'time');
       assert.equal(keys.get('PVP_SETTINGS_OVERRIDES')?.control, 'textarea');
       assert.equal(keys.get('PVP_SETTINGS_OVERRIDES')?.singleLine, true);
+      // Per-server activity channel must round-trip through the managed-server
+      // dashboard config, or a headless ActivityLog has no fallback channel.
+      assert.ok(keys.has('ACTIVITY_LOG_CHANNEL_ID'), 'managed-server config exposes the activity channel');
     });
 
     it('returns lightweight control metadata for legacy .env bot-config fallback', () => {

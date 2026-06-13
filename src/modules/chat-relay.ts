@@ -111,6 +111,15 @@ class ChatRelay {
     return this._healthy;
   }
 
+  /**
+   * Whether the relay is running headless (RCON polling + DB writes only, no
+   * Discord posting). Authoritative only after `start()` has run — it decides
+   * headless when no CHAT_CHANNEL_ID / ADMIN_CHANNEL_ID is configured.
+   */
+  get isHeadless(): boolean {
+    return this._headless;
+  }
+
   async start() {
     try {
       // ── Admin channel (home for threads + outbound bridge) ──
@@ -398,6 +407,17 @@ class ChatRelay {
 
   async _pollChat() {
     if (this._polling) return;
+
+    // Don't poll until an RCON host is configured — otherwise the transport
+    // falls back to localhost and spams connection errors during first-run
+    // setup. Host-only check (not password/connection): panel/WebSocket RCON
+    // has no TCP password, multi-server only creates the relay once rconHost is
+    // set, and send() still drives lazy auto-connect once a host is present
+    // (so RCON configured later via the dashboard starts polling, no restart).
+    const rconHost = this._config.rconHost || '';
+    // Covers the documented .env.example placeholders: `your_...` and the
+    // RCON/SFTP `your.game.server.ip` form.
+    if (!rconHost || /^your[._]/i.test(rconHost)) return;
 
     this._polling = true;
     try {

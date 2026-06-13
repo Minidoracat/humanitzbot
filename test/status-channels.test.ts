@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { ChannelType } from 'discord.js';
 
 import _status_channels from '../src/modules/status-channels.js';
 const StatusChannels = _status_channels as any;
@@ -68,5 +69,37 @@ describe('StatusChannels runtime reconfigure', () => {
     const statusChannels = new StatusChannels(mockClient(), { config: config({ statusChannelInterval: 1_000 }) });
 
     assert.equal(statusChannels.updateIntervalMs, 60_000);
+  });
+});
+
+describe('StatusChannels scoped channel discovery (multi-server)', () => {
+  const spec = { key: 'players', template: '\u{1F465} Players: {value}' };
+
+  // A guild whose ONLY "👥 Players:" voice channel lives in a DIFFERENT server's
+  // category (cat-other), while this server's own category (cat-mine) is empty.
+  function guildWithOutsideVoiceOnly() {
+    const channels = [
+      { type: ChannelType.GuildCategory, id: 'cat-mine', name: '\u{1F4CA} srv2' },
+      { type: ChannelType.GuildVoice, id: 'voice-primary', name: '\u{1F465} Players: 5', parentId: 'cat-other' },
+    ];
+    return { channels: { cache: { find: (fn: (c: unknown) => boolean) => channels.find(fn) } } };
+  }
+
+  it('scoped instance does NOT grab a voice channel outside its own category', () => {
+    const sc = new StatusChannels(mockClient(), { config: config(), categoryName: '\u{1F4CA} srv2', scoped: true });
+    sc.guild = guildWithOutsideVoiceOnly();
+
+    sc._findChannel(spec);
+
+    assert.strictEqual(sc.channels.size, 0, "scoped server must not borrow another server's status channel");
+  });
+
+  it('non-scoped (single-server) still falls back to a guild-wide match', () => {
+    const sc = new StatusChannels(mockClient(), { config: config(), categoryName: '\u{1F4CA} srv2', scoped: false });
+    sc.guild = guildWithOutsideVoiceOnly();
+
+    sc._findChannel(spec);
+
+    assert.strictEqual(sc.channels.size, 1, 'single-server fallback should still resolve the channel');
   });
 });

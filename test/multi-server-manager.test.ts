@@ -513,6 +513,40 @@ describe('createServerConfig()', () => {
     assert.equal(cfg.playerStatsChannelId, 'ch5');
   });
 
+  it('sets activityLogChannelId per-server so it never inherits the primary', () => {
+    // No activityLog channel → own empty value (not the primary's, inherited via prototype).
+    const cfg = createServerConfig({ channels: { admin: 'ch4' } });
+    assert.ok(Object.hasOwn(cfg, 'activityLogChannelId'), 'activity channel must be set per-server, not inherited');
+    assert.equal(cfg.activityLogChannelId, '', 'cleared when the managed server has no activityLog channel');
+
+    // A server can configure its own activity channel.
+    const cfg2 = createServerConfig({ channels: { activityLog: 'act-9' } });
+    assert.equal(cfg2.activityLogChannelId, 'act-9', 'honors a per-server activityLog channel');
+
+    // Even with NO channels block at all, it must be cleared (own property), not
+    // inherited through the prototype from the primary config.
+    const cfg3 = createServerConfig({ id: 'srv_no_channels' });
+    assert.ok(Object.hasOwn(cfg3, 'activityLogChannelId'), 'must be set even when serverDef has no channels block');
+    assert.equal(cfg3.activityLogChannelId, '', 'no channels block → cleared, never inherited');
+  });
+
+  it('clears ALL per-server channels (not just activity) when serverDef omits channels', () => {
+    // A channel-less managed server must run headless, never inherit the primary's
+    // log/admin/chat/status/stats channels through the prototype.
+    const cfg = createServerConfig({ id: 'srv_headless' });
+    for (const key of [
+      'serverStatusChannelId',
+      'playerStatsChannelId',
+      'chatChannelId',
+      'logChannelId',
+      'adminChannelId',
+      'activityLogChannelId',
+    ] as const) {
+      assert.ok(Object.hasOwn(cfg, key), `${key} must be an own per-server property`);
+      assert.equal(cfg[key], '', `${key} must be cleared, never inherited from primary`);
+    }
+  });
+
   it('sets publicHost from serverDef or RCON host', () => {
     const cfg1 = createServerConfig({ publicHost: 'public.example.com' });
     assert.equal(cfg1.publicHost, 'public.example.com');
