@@ -56,7 +56,11 @@ try {
  */
 const HASH_RE = /^(.+?)_\d+_[A-F0-9]{20,}$/i;
 
-/** Strip UE4 hash suffix from a single key. */
+/**
+ * Strip the UE4 `_<index>_<hash>` suffix from a single key. A trailing `?` on
+ * boolean field names (e.g. `ExcludeFromVendor?`) is part of the name and is
+ * preserved — downstream reads must use the exact raw key shape (`c['Name?']`).
+ */
 function cleanKey(key: string): string {
   const m = key.match(HASH_RE);
   return m?.[1] ?? key;
@@ -160,15 +164,18 @@ const ENUM_MAPS: Record<string, Record<string, string>> = {
     NewEnumerator14: 'Meat',
   },
 
+  // Labels are the slot names from the pak's E_ClothingPosition UserDefinedEnum
+  // (DisplayNameMap), not guesses — the earlier hand-mapped values had 0/3/4/5/6/8
+  // wrong (e.g. boots(6) showed as "Hands", gloves(5) as "Feet").
   E_ClothingPosition: {
-    NewEnumerator0: 'None',
+    NewEnumerator0: 'Body',
     NewEnumerator1: 'Head',
-    NewEnumerator3: 'Body',
-    NewEnumerator4: 'Legs',
-    NewEnumerator5: 'Feet',
-    NewEnumerator6: 'Hands',
+    NewEnumerator3: 'UpperBody',
+    NewEnumerator4: 'Pants',
+    NewEnumerator5: 'Gloves',
+    NewEnumerator6: 'Boots',
     NewEnumerator7: 'Face',
-    NewEnumerator8: 'Back',
+    NewEnumerator8: 'Eye',
   },
 
   E_BuildCategory: {
@@ -382,15 +389,19 @@ function extractItems(): Record<string, RawObject> {
     const itemsInside = c['ItemsInside'] ? deepClean(c['ItemsInside']) : null;
     const skillBookData = c['SkillBookData'] ? deepClean(c['SkillBookData']) : null;
     const customImage = c['CustomImage'] ? deepClean(c['CustomImage']) : null;
+    const itemType = resolveEnum(c['Type']);
 
     items[id] = {
       id,
       name: c['Name'] || id,
       description: c['Desc'] || '',
-      type: resolveEnum(c['Type']),
+      type: itemType,
       typeRaw: c['Type'] || '',
       specificType: resolveEnum(c['SpecificType']),
-      wearPosition: resolveEnum(c['WearOnCharacter']),
+      // WearOnCharacter defaults to slot 0 ('Body') for non-clothing rows, so
+      // only resolve it for armor — otherwise weapons/resources/etc. would all
+      // report wear_position='Body'. Every clothing slot is type Armor.
+      wearPosition: itemType === 'Armor' ? resolveEnum(c['WearOnCharacter']) : 'None',
       buildResource: resolveEnum(c['BuildResource']),
       chanceToSpawn: c['ChanceToSpawn'] ?? 0,
       durabilityLoss: c['DurabilityLoss'] ?? 0,
@@ -414,9 +425,9 @@ function extractItems(): Record<string, RawObject> {
       summerCoolValue: c['SummerCoolValue'] ?? 0,
       isSkillBook: c['IsSkillBook'] ?? false,
       noPocket: c['NoPocket'] ?? false,
-      excludeFromVendor: c['ExcludeFromVendor'] ?? false,
+      excludeFromVendor: c['ExcludeFromVendor?'] ?? c['ExcludeFromVendor'] ?? false,
       excludeFromAI: c['ExcludeFromAI'] ?? false,
-      useAsFertilizer: c['UseAsFertilizer'] ?? false,
+      useAsFertilizer: c['UseAsFertilizer?'] ?? c['UseAsFertilizer'] ?? false,
       closeBackpackOnUse: c['CloseBackpackOnUse'] ?? false,
       state: c['State'] ?? '',
       randCapacity: c['RandCapacity'] ?? 0,

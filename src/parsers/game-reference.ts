@@ -64,7 +64,9 @@ const SPRAYS = _gameData['SPRAYS'];
 
 // Current version — bump this whenever ENUM_MAPS, extractors, or curated data change
 // v3: game-tables-raw.json refreshed from the current pak (+20 item rows, 718 → 738)
-const GAME_REF_VERSION = 3;
+// v4: fixed E_ClothingPosition labels (pak ground-truth) + ExcludeFromVendor?/UseAsFertilizer? extraction
+// v5: gate wear_position to armor rows so non-clothing items don't report 'Body'
+const GAME_REF_VERSION = 5;
 
 /**
  * Seed all game reference data into the database.
