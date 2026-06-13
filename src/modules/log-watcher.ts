@@ -514,6 +514,27 @@ class LogWatcher {
     return this._dayRolloverCb;
   }
 
+  /**
+   * Whether the watcher is running headless (DB writes only, no Discord posting).
+   * Authoritative only after `start()` has run — it decides headless when no
+   * LOG_CHANNEL_ID / ADMIN_CHANNEL_ID is configured.
+   */
+  get isHeadless(): boolean {
+    return this._headless;
+  }
+
+  /**
+   * Whether this watcher actually manages a daily Discord thread — i.e. it
+   * started successfully (has a poll interval) AND is non-headless. Only such a
+   * watcher creates daily threads and fires the day-rollover callback, so other
+   * modules must gate their thread coordination (await/rollover wiring) on this
+   * instead of `!isHeadless` alone (a bailed start leaves isHeadless false but
+   * interval null, which would strand a coordinated ChatRelay/recap callback).
+   */
+  get postsDailyThread(): boolean {
+    return !this._headless && !!this.interval;
+  }
+
   /** @internal Get or create the current daily thread (public wrapper over the mixin). */
   getOrCreateDailyThread(): Promise<{ send(options: unknown): Promise<unknown> } | null> {
     return this._getOrCreateDailyThread();
@@ -534,8 +555,11 @@ class LogWatcher {
   }
 
   async start() {
-    // Validate required SFTP config
-    if (!this._config.sftpHost || this._config.sftpHost.startsWith('PASTE_')) {
+    // Validate required SFTP config — reject empty and the documented setup
+    // placeholders (`PASTE_…` / `.env.example` `your.game.server.ip`) so a
+    // setup-mode bot doesn't poll a sample host every interval.
+    const sftpHost = this._config.sftpHost || '';
+    if (!sftpHost || sftpHost.startsWith('PASTE_') || /^your[._]/i.test(sftpHost)) {
       this._log.info('SFTP not configured, skipping log watcher.');
       return;
     }
@@ -578,6 +602,12 @@ class LogWatcher {
     // Initialise today's thread (skip during nuke — phase 2 rebuilds them)
     if (!this._nukeActive && !this._headless) {
       await this._getOrCreateDailyThread();
+    } else if (this._headless && !this._dailyDate) {
+      // Headless: establish the day-counts baseline date so the midnight check
+      // can detect rollovers and reset counts (no thread/summary is produced).
+      this._dailyDate = this._config.getToday();
+      this._dayCountsDirty = true;
+      this._saveDayCounts();
     }
 
     // Start polling
@@ -585,13 +615,11 @@ class LogWatcher {
       logRejection(this._poll(), this._log, `${this._log.label}:poll`);
     }, this._config.logPollInterval);
 
-    // Proactive midnight rollover check — ensures the daily summary posts
-    // even if no log events happen around midnight in the configured timezone.
-    if (!this._headless) {
-      this._midnightCheckInterval = setInterval(() => {
-        logRejection(this._checkDayRollover(), this._log, `${this._log.label}:day-rollover`);
-      }, 60000);
-    }
+    // Proactive midnight rollover check — posts the daily summary (non-headless)
+    // or resets day counts (headless) even if no log events happen near midnight.
+    this._midnightCheckInterval = setInterval(() => {
+      logRejection(this._checkDayRollover(), this._log, `${this._log.label}:day-rollover`);
+    }, 60000);
 
     // Send startup notification (skip during nuke and headless — would appear out of order)
     if (!this._nukeActive && !this._headless) {

@@ -3982,6 +3982,7 @@ class WebMapServer {
       CHAT_CHANNEL_ID: { jsonPath: 'channels.chat' },
       LOG_CHANNEL_ID: { jsonPath: 'channels.log' },
       ADMIN_CHANNEL_ID: { jsonPath: 'channels.admin' },
+      ACTIVITY_LOG_CHANNEL_ID: { jsonPath: 'channels.activityLog' },
       // SFTP paths
       SFTP_LOG_PATH: { jsonPath: 'paths.logPath' },
       SFTP_CONNECT_LOG_PATH: { jsonPath: 'paths.connectLogPath' },
@@ -4073,6 +4074,7 @@ class WebMapServer {
             'CHAT_CHANNEL_ID',
             'LOG_CHANNEL_ID',
             'ADMIN_CHANNEL_ID',
+            'ACTIVITY_LOG_CHANNEL_ID',
           ],
         },
         {

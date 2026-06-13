@@ -105,12 +105,42 @@ interface LogWatcherThis {
 // ═════════════════════════════════════════════════════════════════════
 //  Day rollover detection
 // ═════════════════════════════════════════════════════════════════════
+
+/** A fresh, all-zero day-counts object. */
+function _emptyDayCounts(): DayCounts {
+  return {
+    connects: 0,
+    disconnects: 0,
+    deaths: 0,
+    builds: 0,
+    damage: 0,
+    loots: 0,
+    raidHits: 0,
+    destroyed: 0,
+    admin: 0,
+    cheat: 0,
+    pvpKills: 0,
+  };
+}
+
+/** Reset day counts for a new day and persist — no summary, no thread creation. */
+function _resetDayCountsForDate(this: LogWatcherThis, today: string): void {
+  this._dayCounts = _emptyDayCounts();
+  this._dayCountsDirty = true;
+  this._dailyThread = null; // clear stale thread so a new one is created on demand
+  this._dailyDate = today;
+  this._saveDayCounts();
+}
+
 async function _checkDayRollover(this: LogWatcherThis) {
-  if (!this._dailyDate) return; // not initialised yet
   const today = this._config.getToday();
+  if (!this._dailyDate) {
+    this._dailyDate = today; // establish baseline (e.g. headless boot before any event)
+    return;
+  }
   if (this._dailyDate !== today) {
     this._log.info(`Day rollover detected: ${this._dailyDate} → ${today}`);
-    await this._getOrCreateDailyThread(); // triggers summary + new thread
+    await this._getOrCreateDailyThread(); // posts summary + new thread, or headless reset-only
   }
 }
 
@@ -118,38 +148,33 @@ async function _checkDayRollover(this: LogWatcherThis) {
 //  Daily thread creation / lookup
 // ═════════════════════════════════════════════════════════════════════
 async function _getOrCreateDailyThread(this: LogWatcherThis): Promise<ThreadLike | null> {
-  // Headless mode — no Discord channel, return null
-  if (this._headless) return null;
+  const today = this._config.getToday(); // timezone-aware 'YYYY-MM-DD'
+
+  // Headless mode — no Discord channel. Still track the day boundary so day
+  // counts reset (and the persisted day_counts date stays current) across
+  // midnight, without posting a summary or creating a thread.
+  if (this._headless) {
+    if (!this._dailyDate) {
+      this._dailyDate = today;
+      this._dayCountsDirty = true;
+      this._saveDayCounts();
+    } else if (this._dailyDate !== today) {
+      _resetDayCountsForDate.call(this, today);
+    }
+    return null;
+  }
 
   // During nuke phase 1→2, suppress thread creation so rebuildThreads controls ordering
   if (this._nukeActive) {
     this._dailyThread = this.logChannel;
-    this._dailyDate = this._config.getToday();
+    this._dailyDate = today;
     return this._dailyThread;
   }
-
-  const today = this._config.getToday(); // timezone-aware 'YYYY-MM-DD'
 
   // Day rollover — post summary and reset counters (even in no-thread mode)
   if (this._dailyDate && this._dailyDate !== today) {
     await this._postDailySummary();
-    this._dayCounts = {
-      connects: 0,
-      disconnects: 0,
-      deaths: 0,
-      builds: 0,
-      damage: 0,
-      loots: 0,
-      raidHits: 0,
-      destroyed: 0,
-      admin: 0,
-      cheat: 0,
-      pvpKills: 0,
-    };
-    this._dayCountsDirty = true;
-    this._saveDayCounts();
-    this._dailyThread = null; // clear stale thread so a new one is created below
-    this._dailyDate = today;
+    _resetDayCountsForDate.call(this, today);
   }
 
   // First startup — check for stale day-counts from a previous session on a different day
@@ -166,19 +191,7 @@ async function _getOrCreateDailyThread(this: LogWatcherThis): Promise<ThreadLike
           this._dailyDate = raw.date;
           this._dayCounts = { ...this._dayCounts, ...raw.counts };
           await this._postDailySummary();
-          this._dayCounts = {
-            connects: 0,
-            disconnects: 0,
-            deaths: 0,
-            builds: 0,
-            damage: 0,
-            loots: 0,
-            raidHits: 0,
-            destroyed: 0,
-            admin: 0,
-            cheat: 0,
-            pvpKills: 0,
-          };
+          this._dayCounts = _emptyDayCounts();
           this._dayCountsDirty = true;
           this._saveDayCounts();
           this._dailyDate = null; // reset so normal flow continues

@@ -82,6 +82,7 @@ interface ServerDef {
     chat?: string;
     log?: string;
     admin?: string;
+    activityLog?: string;
   };
   autoMessages?: {
     enableWelcomeMsg?: boolean;
@@ -433,14 +434,17 @@ function createServerConfig(serverDef: ServerDef): ConfigType {
     if (serverDef.paths.welcomePath) merged.sftpWelcomePath = serverDef.paths.welcomePath;
   }
 
-  // Channel overrides
-  if (serverDef.channels) {
-    merged.serverStatusChannelId = serverDef.channels.serverStatus || '';
-    merged.playerStatsChannelId = serverDef.channels.playerStats || '';
-    merged.chatChannelId = serverDef.channels.chat || '';
-    merged.logChannelId = serverDef.channels.log || '';
-    merged.adminChannelId = serverDef.channels.admin || '';
-  }
+  // Channel overrides — set EVERY per-server channel id unconditionally (own
+  // property) so a managed server never inherits the primary's text channels
+  // through the prototype, even when serverDef omits a channels block entirely.
+  // (StatusChannels resolves voice channels by category, not these ids — it is
+  // kept in-category via the `scoped` flag in ServerInstance.start().)
+  merged.serverStatusChannelId = serverDef.channels?.serverStatus || '';
+  merged.playerStatsChannelId = serverDef.channels?.playerStats || '';
+  merged.chatChannelId = serverDef.channels?.chat || '';
+  merged.logChannelId = serverDef.channels?.log || '';
+  merged.adminChannelId = serverDef.channels?.admin || '';
+  merged.activityLogChannelId = serverDef.channels?.activityLog || '';
 
   // Public host for connect address in embeds (don't inherit primary's host)
   merged.publicHost = serverDef.publicHost || serverDef.rcon?.host || '';
@@ -777,9 +781,13 @@ class ServerInstance {
       try {
         const mod = new ChatRelay(this.client, deps as ConstructorParameters<typeof ChatRelay>[1]);
         if (_defaultConfig.nukeBot) mod.setNukeActive(true);
-        // Coordinate thread ordering with LogWatcher if both are active
+        // Coordinate thread ordering only with a LogWatcher that posts a daily
+        // thread (started + non-headless). A headless OR bailed-start watcher
+        // (e.g. placeholder SFTP host) never creates a daily thread or fires the
+        // rollover callback, so making ChatRelay await it would strand its own
+        // rollover.
         const logWatcher = this._modules.logWatcher;
-        if (logWatcher) {
+        if (logWatcher?.postsDailyThread) {
           mod.setAwaitActivityThread(true);
           logWatcher.setDayRolloverCallback(async () => {
             try {
@@ -813,7 +821,9 @@ class ServerInstance {
     if (this.config.guildId) {
       try {
         const categoryName = `\u{1F4CA} ${this.name || this.id}`;
-        const mod = new StatusChannels(this.client, { ...deps, categoryName });
+        // scoped: keep discovery inside this server's category so it can't grab
+        // (and rename) another server's status voice channel via the fallback.
+        const mod = new StatusChannels(this.client, { ...deps, categoryName, scoped: true });
         await mod.start();
         this._modules.statusChannels = mod;
         this._log.info('StatusChannels active');
@@ -898,6 +908,7 @@ class ServerInstance {
           db: this.db,
           saveService: this.saveService,
           logWatcher: this._modules.logWatcher || null,
+          config: this.config,
           label: 'ActivityLog:' + this._log.label,
         });
         await mod.start();
