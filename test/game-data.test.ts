@@ -93,8 +93,8 @@ describe('LOADING_TIPS', () => {
 // ─── New maps from DT files ────────────────────────────────────────────────
 
 describe('ITEM_DATABASE', () => {
-  it('has 718 items', () => {
-    assert.equal(Object.keys(gameData.ITEM_DATABASE).length, 718);
+  it('has 738 items', () => {
+    assert.equal(Object.keys(gameData.ITEM_DATABASE).length, 738);
   });
 
   it('each item has name and type', () => {
@@ -115,6 +115,23 @@ describe('ITEM_DATABASE', () => {
 
   it('Bandage is Medical', () => {
     assert.equal(gameData.ITEM_DATABASE['Bandage'].type, 'Medical');
+  });
+
+  // Newly extracted rows (current-build pak): guards the field flattening so a
+  // future re-extract regressing FText/enum/scalar handling is caught.
+  it('extracts the new clothing and weapon rows correctly', () => {
+    const db = gameData.ITEM_DATABASE;
+    assert.equal(db['FireHelmet'].name, 'Fire Fighter Helmet');
+    assert.equal(db['FireHelmet'].type, 'Armor');
+    assert.equal(db['FireHelmet'].wearPosition, 'Head');
+    assert.ok(db['FireHelmet'].armorProtection > 0, 'FireHelmet should have armor protection');
+    assert.equal(db['PonchoBlack'].name, 'Black Poncho');
+    assert.equal(db['PonchoBlack'].wearPosition, 'Body');
+    assert.equal(db['NailGun'].name, 'Nail Gun');
+    assert.equal(db['NailGun'].type, 'Pistol');
+    assert.equal(db['Winchester'].type, 'Ranged');
+    // Canonical-cased ids now resolve their localized names directly
+    assert.equal(gameData.ITEM_NAMES['Winchester'], 'Winchester');
   });
 });
 
