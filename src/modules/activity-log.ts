@@ -75,6 +75,8 @@ interface SyncResult {
 interface ActivityLogWatcher {
   /** True when the watcher has no Discord channel — it can attribute but not post. */
   isHeadless?: boolean;
+  /** Set only once start() succeeded; absent/null means the watcher never came up. */
+  interval?: unknown;
   sendToThread(embed: EmbedBuilder): Promise<void>;
   getRecentContainerAccess(actor: string): { player: string } | null;
 }
@@ -187,7 +189,10 @@ class ActivityLog {
    * to, so ActivityLog must fall back to its own channel for posting.
    */
   private _canPostViaLogWatcher(): boolean {
-    return !!this._logWatcher && this._logWatcher.isHeadless !== true;
+    // Needs a watcher that started successfully (has a poll interval) AND is
+    // non-headless (has a daily thread). A bailed start leaves isHeadless false
+    // but no interval — treat that as "can't post" and use our own channel.
+    return !!this._logWatcher && this._logWatcher.isHeadless !== true && !!this._logWatcher.interval;
   }
 
   async start(): Promise<void> {

@@ -239,38 +239,38 @@ describe('ChatRelay headless mode (no chat/admin channel)', () => {
     assert.strictEqual(inserted.length, 1, 'chat entry should be written to chat_log even with no Discord channel');
   });
 
-  it('_pollChat pauses quietly when RCON is not configured (first-run before dashboard setup)', async () => {
+  it('_pollChat pauses quietly while the RCON transport is not connected (first-run / disconnect)', async () => {
     const sent: string[] = [];
     const rcon = {
+      connected: false, // transport not up yet (e.g. first-run before setup)
       send: async (cmd: string) => {
         sent.push(cmd);
         return '';
       },
     };
-    const cr = track(new ChatRelay(mockClient(), { config: chatConfig(), rcon })); // no rconHost/rconPassword
+    const cr = track(new ChatRelay(mockClient(), { config: chatConfig(), rcon }));
     cr._headless = true;
 
     await cr._pollChat();
 
-    assert.strictEqual(sent.length, 0, 'must not hit RCON until it is configured');
+    assert.strictEqual(sent.length, 0, 'must not hit RCON until the transport connects');
   });
 
-  it('_pollChat polls fetchchat once RCON becomes configured (no restart needed)', async () => {
+  it('_pollChat polls fetchchat once the RCON transport connects (no restart needed)', async () => {
     const sent: string[] = [];
     const rcon = {
+      connected: true, // works regardless of TCP host/password (e.g. panel/WebSocket RCON)
       send: async (cmd: string) => {
         sent.push(cmd);
         return '';
       },
     };
-    const cr = track(
-      new ChatRelay(mockClient(), { config: chatConfig({ rconHost: 'host', rconPassword: 'pw' }), rcon }),
-    );
+    const cr = track(new ChatRelay(mockClient(), { config: chatConfig(), rcon }));
     cr._headless = true;
 
     await cr._pollChat();
 
-    assert.ok(sent.includes('fetchchat'), 'should poll fetchchat once RCON is configured');
+    assert.ok(sent.includes('fetchchat'), 'should poll fetchchat once the transport is connected');
   });
 });
 
@@ -281,18 +281,21 @@ describe('ActivityLog headless LogWatcher handling', () => {
   const ActivityLog = cjsRequire('../src/modules/activity-log').default;
   const watcher = (over: Record<string, unknown> = {}) => ({
     isHeadless: false,
+    interval: 1, // started successfully (truthy poll-interval handle)
     sendToThread: async () => {},
     getRecentContainerAccess: () => null,
     ...over,
   });
 
-  it('_canPostViaLogWatcher is false for a headless watcher and true for a live one', () => {
+  it('_canPostViaLogWatcher requires a started, non-headless watcher', () => {
     const headless = new ActivityLog(mockClient(), { logWatcher: watcher({ isHeadless: true }) });
     const live = new ActivityLog(mockClient(), { logWatcher: watcher({ isHeadless: false }) });
+    const failedStart = new ActivityLog(mockClient(), { logWatcher: watcher({ isHeadless: false, interval: null }) });
     const none = new ActivityLog(mockClient(), {});
 
     assert.strictEqual(headless._canPostViaLogWatcher(), false, 'headless watcher cannot post to a thread');
-    assert.strictEqual(live._canPostViaLogWatcher(), true, 'live watcher posts to its daily thread');
+    assert.strictEqual(live._canPostViaLogWatcher(), true, 'started non-headless watcher posts to its daily thread');
+    assert.strictEqual(failedStart._canPostViaLogWatcher(), false, 'a watcher whose start() bailed cannot post');
     assert.strictEqual(none._canPostViaLogWatcher(), false, 'no watcher → use own channel');
   });
 

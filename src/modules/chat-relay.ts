@@ -113,11 +113,14 @@ class ChatRelay {
     return this._healthy;
   }
 
-  /** Whether RCON is configured (host + password, not setup placeholders). */
-  private _hasRconConfig(): boolean {
-    const host = this._config.rconHost || '';
-    const password = this._config.rconPassword || '';
-    return !!host && !!password && !host.startsWith('your_') && !password.startsWith('your_');
+  /**
+   * Whether the RCON transport is connected and ready to poll. Transport-
+   * agnostic: covers first-run (TCP not yet connected), panel/WebSocket RCON
+   * (which has no TCP host/password), and transient disconnects (pause this
+   * cycle, resume automatically once the transport reconnects).
+   */
+  private _isRconReady(): boolean {
+    return this._rcon.connected;
   }
 
   /**
@@ -417,12 +420,12 @@ class ChatRelay {
   async _pollChat() {
     if (this._polling) return;
 
-    // RCON not configured yet (e.g. first-run before dashboard setup). Pause
-    // polling quietly — the timer keeps running, so chat collection begins
-    // automatically once RCON credentials are applied, no restart needed.
-    if (!this._hasRconConfig()) {
+    // Pause polling quietly while the RCON transport isn't connected (first-run
+    // before setup, or a transient disconnect). The timer keeps running, so chat
+    // collection resumes automatically once RCON connects — no restart needed.
+    if (!this._isRconReady()) {
       if (!this._rconUnavailableWarned) {
-        this._log.info('RCON not configured — chat polling paused until setup completes');
+        this._log.info('RCON not connected — chat polling paused until it connects');
         this._rconUnavailableWarned = true;
       }
       return;
