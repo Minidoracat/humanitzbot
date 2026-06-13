@@ -1265,7 +1265,7 @@ describe('game-reference seed', () => {
     // The reseed gate compares this against GAME_REF_VERSION; a data refresh
     // that forgets to bump the version leaves existing installs stuck.
     const version = db.meta.getMeta('game_ref_version');
-    assert.equal(version, '4', `Expected game_ref_version 4, got ${version}`);
+    assert.equal(version, '5', `Expected game_ref_version 5, got ${version}`);
   });
 
   it('re-seeds an existing DB when game_ref_version is behind', () => {

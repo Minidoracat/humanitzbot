@@ -385,15 +385,19 @@ function extractItems(): Record<string, RawObject> {
     const itemsInside = c['ItemsInside'] ? deepClean(c['ItemsInside']) : null;
     const skillBookData = c['SkillBookData'] ? deepClean(c['SkillBookData']) : null;
     const customImage = c['CustomImage'] ? deepClean(c['CustomImage']) : null;
+    const itemType = resolveEnum(c['Type']);
 
     items[id] = {
       id,
       name: c['Name'] || id,
       description: c['Desc'] || '',
-      type: resolveEnum(c['Type']),
+      type: itemType,
       typeRaw: c['Type'] || '',
       specificType: resolveEnum(c['SpecificType']),
-      wearPosition: resolveEnum(c['WearOnCharacter']),
+      // WearOnCharacter defaults to slot 0 ('Body') for non-clothing rows, so
+      // only resolve it for armor — otherwise weapons/resources/etc. would all
+      // report wear_position='Body'. Every clothing slot is type Armor.
+      wearPosition: itemType === 'Armor' ? resolveEnum(c['WearOnCharacter']) : 'None',
       buildResource: resolveEnum(c['BuildResource']),
       chanceToSpawn: c['ChanceToSpawn'] ?? 0,
       durabilityLoss: c['DurabilityLoss'] ?? 0,

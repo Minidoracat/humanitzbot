@@ -141,6 +141,11 @@ describe('ITEM_DATABASE', () => {
     assert.equal(db['FireFighterBoots'].wearPosition, 'Boots');
     assert.equal(db['MilitaryBoots'].wearPosition, 'Boots');
     assert.equal(db['GreyPants'].wearPosition, 'Pants');
+    // Armor body slot (enum 0) is kept...
+    assert.equal(db['MilitaryVest'].wearPosition, 'Body');
+    // ...but non-clothing rows (also enum 0) are gated to 'None', not 'Body'
+    assert.equal(db['NailGun'].wearPosition, 'None');
+    assert.equal(db['Winchester'].wearPosition, 'None');
     // ExcludeFromVendor? (the raw key carries a '?') is now read, not dropped
     assert.equal(db['PonchoBlack'].excludeFromVendor, true);
   });
