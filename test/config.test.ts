@@ -592,6 +592,7 @@ describe('config.hydrate', () => {
       pvpStartMinutes: config.pvpStartMinutes,
       pvpEndMinutes: config.pvpEndMinutes,
       pvpSettingsOverrides: config.pvpSettingsOverrides,
+      pvpDays: config.pvpDays,
       _configRepo: config._configRepo,
     };
     delete config._configRepo;
@@ -605,6 +606,7 @@ describe('config.hydrate', () => {
     config.pvpStartMinutes = saved.pvpStartMinutes as number;
     config.pvpEndMinutes = saved.pvpEndMinutes as number;
     config.pvpSettingsOverrides = saved.pvpSettingsOverrides as Record<string, string> | null;
+    config.pvpDays = saved.pvpDays as Set<number> | null;
     config._configRepo = saved._configRepo;
   });
 
@@ -717,6 +719,27 @@ describe('config.hydrate', () => {
     assert.equal(config.pvpStartMinutes, 1080);
     assert.equal(config.pvpEndMinutes, 1410);
     assert.deepEqual(config.pvpSettingsOverrides, { OnDeath: '0', VitalDrain: '1' });
+  });
+
+  it('parses a DB-backed PVP_DAYS string into a weekday Set so pvpDays.has() never sees a raw string', () => {
+    const repo = mockRepo({ app: { pvpDays: 'Mon,Wed,Fri' } });
+    config.pvpDays = null;
+
+    config.hydrate(repo);
+
+    assert.ok(config.pvpDays instanceof Set, 'pvpDays must hydrate as a Set, not a raw string');
+    assert.deepEqual(config.pvpDays, new Set([1, 3, 5]));
+    // The runtime contract callers rely on:
+    assert.equal(config.pvpDays.has(1), true);
+  });
+
+  it('treats an empty/blank DB-backed PVP_DAYS as null (every day)', () => {
+    const repo = mockRepo({ app: { pvpDays: '' } });
+    config.pvpDays = new Set([2]);
+
+    config.hydrate(repo);
+
+    assert.equal(config.pvpDays, null);
   });
 
   it('normalizes invalid DB-backed PvP times to NaN so the scheduler guard can skip safely', () => {

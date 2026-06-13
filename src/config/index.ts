@@ -3,7 +3,7 @@ import path from 'node:path';
 import dotenv from 'dotenv';
 import { createLogger } from '../utils/log.js';
 import { getDirname } from '../utils/paths.js';
-import { envBool, envTime, tzOffsetMs } from './helpers.js';
+import { envBool, envTime, parsePvpDays, tzOffsetMs } from './helpers.js';
 import { resolveSaveServicePollInterval } from './save-service-runtime.js';
 import { normalizeDisplayRuntimeValue } from './display-runtime.js';
 import {
@@ -212,6 +212,7 @@ interface Config {
   enableContainerLog: boolean;
   enableHorseLog: boolean;
   enableVehicleLog: boolean;
+  enableStructureLog: boolean;
   showInventoryLog: boolean;
   showInventoryLogAdminOnly: boolean;
 
@@ -597,39 +598,14 @@ const config = {
   enableContainerLog: envBool('ENABLE_CONTAINER_LOG', true), // container item add/remove
   enableHorseLog: envBool('ENABLE_HORSE_LOG', true), // horse appeared/disappeared/health
   enableVehicleLog: envBool('ENABLE_VEHICLE_LOG', true), // vehicle trunk changes
+  enableStructureLog: envBool('ENABLE_STRUCTURE_LOG', true), // structure built/damaged/destroyed/upgraded
   showInventoryLog: envBool('SHOW_INVENTORY_LOG', false), // player inventory changes (off by default — sensitive)
   showInventoryLogAdminOnly: envBool('SHOW_INVENTORY_LOG_ADMIN_ONLY', true), // restrict inventory log to admins
   pvpStartMinutes: envTime('PVP_START_TIME'), // total minutes from midnight (supports "HH" or "HH:MM")
   pvpEndMinutes: envTime('PVP_END_TIME'), // total minutes from midnight (supports "HH" or "HH:MM")
   pvpRestartDelay: parseInt(process.env.PVP_RESTART_DELAY ?? '', 10) || 10,
   pvpUpdateServerName: envBool('PVP_UPDATE_SERVER_NAME', false),
-  pvpDays: ((): Set<number> | null => {
-    const val = process.env.PVP_DAYS;
-    if (!val || val.trim() === '') return null; // null = every day
-    const dayNames: Record<string, number> = {
-      sun: 0,
-      mon: 1,
-      tue: 2,
-      wed: 3,
-      thu: 4,
-      fri: 5,
-      sat: 6,
-      sunday: 0,
-      monday: 1,
-      tuesday: 2,
-      wednesday: 3,
-      thursday: 4,
-      friday: 5,
-      saturday: 6,
-    };
-    const days = new Set<number>();
-    for (const part of val.split(',')) {
-      const t = part.trim().toLowerCase();
-      if (t in dayNames) days.add(dayNames[t] as number);
-      else if (/^[0-6]$/.test(t)) days.add(parseInt(t, 10));
-    }
-    return days.size > 0 ? days : null;
-  })(),
+  pvpDays: parsePvpDays(process.env.PVP_DAYS),
 
   // Settings overrides when PvP is ON — JSON object of GameServerSettings.ini keys.
   // These values are applied when PvP enables and reverted when PvP disables.
@@ -1030,6 +1006,13 @@ function _parseHydratedPvpOverrides(value: unknown): unknown {
 function _normalizeHydratedConfigValue(key: string, value: unknown): unknown {
   if (key === 'pvpStartMinutes' || key === 'pvpEndMinutes') return _parseHydratedPvpTime(value);
   if (key === 'pvpSettingsOverrides') return _parseHydratedPvpOverrides(value);
+  // PVP_DAYS is stored as a day-spec string in the DB/dashboard but the runtime
+  // contract is Set<number>|null; parse it on hydration so pvpDays.has(...) never
+  // sees a raw string. An already-parsed Set (defensive) passes through.
+  if (key === 'pvpDays') {
+    if (value instanceof Set) return value;
+    return typeof value === 'string' ? parsePvpDays(value) : null;
+  }
   return value;
 }
 

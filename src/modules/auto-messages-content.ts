@@ -190,14 +190,16 @@ function _getWeekdayInTz(date: Date, timeZone: string) {
 /**
  * Static PvP schedule label (no live countdown).
  * Returns e.g. "PvP Schedule: Mon, Wed, Fri 18:00-22:00 UTC" or ''.
+ * Reads from the passed (per-server) config so a managed server shows its own
+ * schedule; falls back to the global singleton for the primary server.
  */
-function pvpScheduleLabel() {
-  if (!_defaultConfig.enablePvpScheduler) return '';
-  const startMin = _defaultConfig.pvpStartMinutes;
-  const endMin = _defaultConfig.pvpEndMinutes;
+function pvpScheduleLabel(cfg: ConfigType = _defaultConfig) {
+  if (!cfg.enablePvpScheduler) return '';
+  const startMin = cfg.pvpStartMinutes;
+  const endMin = cfg.pvpEndMinutes;
   if (isNaN(startMin) || isNaN(endMin)) return '';
   const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-  const pvpDays = _defaultConfig.pvpDays;
+  const pvpDays = cfg.pvpDays;
   const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const daysLabel = pvpDays
     ? [...pvpDays]
@@ -205,7 +207,7 @@ function pvpScheduleLabel() {
         .map((d: number) => DAY_NAMES[d])
         .join(', ') + ' '
     : '';
-  return `PvP Schedule: ${daysLabel}${fmt(startMin)}\u2013${fmt(endMin)} ${_defaultConfig.botTimezone}`;
+  return `PvP Schedule: ${daysLabel}${fmt(startMin)}\u2013${fmt(endMin)} ${cfg.botTimezone}`;
 }
 
 /**
@@ -330,7 +332,7 @@ async function buildWelcomeContent(deps: WelcomeContentDeps = {}) {
   }
 
   // ── PvP schedule ──
-  const pvpLabel = pvpScheduleLabel();
+  const pvpLabel = pvpScheduleLabel(cfg);
   if (pvpLabel) parts.push(fileColor('ember', pvpLabel));
 
   // ── Dynamic difficulty schedule ──

@@ -564,6 +564,7 @@ const ENV_CATEGORIES = [
       { env: 'ENABLE_CONTAINER_LOG', label: 'Container Log (true/false)', cfg: 'enableContainerLog', type: 'bool' },
       { env: 'ENABLE_HORSE_LOG', label: 'Horse Log (true/false)', cfg: 'enableHorseLog', type: 'bool' },
       { env: 'ENABLE_VEHICLE_LOG', label: 'Vehicle Log (true/false)', cfg: 'enableVehicleLog', type: 'bool' },
+      { env: 'ENABLE_STRUCTURE_LOG', label: 'Structure Log (true/false)', cfg: 'enableStructureLog', type: 'bool' },
       { env: 'SHOW_INVENTORY_LOG', label: 'Inventory Log (true/false)', cfg: 'showInventoryLog', type: 'bool' },
     ],
   },
