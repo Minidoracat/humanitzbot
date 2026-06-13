@@ -794,14 +794,22 @@ export class PlayerRepository extends BaseRepository {
     this._stmts.setAllOffline.run();
   }
 
-  /** Update kill tracker JSON for a player. */
+  /**
+   * Deprecated: the live kill tracker is stored in bot_state['kill_tracker']
+   * (see tracking/kill-tracker.ts). This writes the dead players.kill_tracker
+   * column and has no callers — kept only for the schema's historical shape.
+   */
   updateKillTracker(steamId: string, killData: Record<string, unknown>) {
     this._handle
       .prepare("UPDATE players SET kill_tracker = ?, updated_at = datetime('now') WHERE steam_id = ?")
       .run(JSON.stringify(killData), steamId);
   }
 
-  /** Update name and name history. */
+  /**
+   * Deprecated: name history is superseded by the player_aliases table
+   * (upsertPlayer auto-registers aliases). This writes the dead
+   * players.name_history column and has no production callers.
+   */
   updatePlayerName(steamId: string, name: string, nameHistory: unknown) {
     this._handle
       .prepare("UPDATE players SET name = ?, name_history = ?, updated_at = datetime('now') WHERE steam_id = ?")

@@ -103,8 +103,12 @@ export class WorldStateRepository extends BaseRepository {
     return result;
   }
 
-  // ── Snapshots ──
+  // ── Snapshots (DEPRECATED) ──
+  // The `snapshots` table is superseded by `timeline_snapshots`
+  // (tracking/snapshot-service.ts → timeline-repository.ts). These methods have
+  // no production callers (only a unit test) and the live table has 0 rows.
 
+  /** Deprecated: use the timeline_snapshots flow; this writes the dead snapshots table. */
   createSnapshot(type: string, steamId: string, data: Record<string, unknown>): void {
     this._stmts.insertSnapshot.run(type, steamId, JSON.stringify(data));
   }
