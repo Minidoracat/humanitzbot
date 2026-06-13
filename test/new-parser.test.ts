@@ -1258,4 +1258,31 @@ describe('game-reference seed', () => {
     const rows = db.db.prepare('SELECT * FROM game_server_setting_defs').all();
     assert.ok(rows.length >= 10, `Expected >= 10 settings, got ${rows.length}`);
   });
+
+  it('seeds the current item count and stamps game_ref_version', () => {
+    const count = db.db.prepare('SELECT COUNT(*) AS c FROM game_items').get().c;
+    assert.equal(count, 738, `Expected 738 game_items, got ${count}`);
+    // The reseed gate compares this against GAME_REF_VERSION; a data refresh
+    // that forgets to bump the version leaves existing installs stuck.
+    const version = db.meta.getMeta('game_ref_version');
+    assert.equal(version, '3', `Expected game_ref_version 3, got ${version}`);
+  });
+
+  it('re-seeds an existing DB when game_ref_version is behind', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- dynamic module shape
+    const { seed } = _game_reference as any;
+    const stale = new HumanitZDB({ memory: true, label: 'StaleRefTest' });
+    stale.init();
+    seed(stale);
+    // Simulate an install seeded by an older build, then drop a row to prove
+    // the next seed() actually re-runs instead of early-returning.
+    stale.meta.setMeta('game_ref_version', '2');
+    stale.db.prepare("DELETE FROM game_items WHERE id = 'NailGun'").run();
+    seed(stale);
+    const count = stale.db.prepare('SELECT COUNT(*) AS c FROM game_items').get().c;
+    const restored = stale.db.prepare("SELECT id FROM game_items WHERE id = 'NailGun'").get();
+    stale.close();
+    assert.equal(count, 738, 'stale DB should be re-seeded to 738 items');
+    assert.ok(restored, 'NailGun should be restored by the version-triggered reseed');
+  });
 });
