@@ -587,6 +587,12 @@ class LogWatcher {
     // Initialise today's thread (skip during nuke — phase 2 rebuilds them)
     if (!this._nukeActive && !this._headless) {
       await this._getOrCreateDailyThread();
+    } else if (this._headless && !this._dailyDate) {
+      // Headless: establish the day-counts baseline date so the midnight check
+      // can detect rollovers and reset counts (no thread/summary is produced).
+      this._dailyDate = this._config.getToday();
+      this._dayCountsDirty = true;
+      this._saveDayCounts();
     }
 
     // Start polling
@@ -594,13 +600,11 @@ class LogWatcher {
       logRejection(this._poll(), this._log, `${this._log.label}:poll`);
     }, this._config.logPollInterval);
 
-    // Proactive midnight rollover check — ensures the daily summary posts
-    // even if no log events happen around midnight in the configured timezone.
-    if (!this._headless) {
-      this._midnightCheckInterval = setInterval(() => {
-        logRejection(this._checkDayRollover(), this._log, `${this._log.label}:day-rollover`);
-      }, 60000);
-    }
+    // Proactive midnight rollover check — posts the daily summary (non-headless)
+    // or resets day counts (headless) even if no log events happen near midnight.
+    this._midnightCheckInterval = setInterval(() => {
+      logRejection(this._checkDayRollover(), this._log, `${this._log.label}:day-rollover`);
+    }, 60000);
 
     // Send startup notification (skip during nuke and headless — would appear out of order)
     if (!this._nukeActive && !this._headless) {

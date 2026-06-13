@@ -73,6 +73,8 @@ interface SyncResult {
 }
 
 interface ActivityLogWatcher {
+  /** True when the watcher has no Discord channel — it can attribute but not post. */
+  isHeadless?: boolean;
   sendToThread(embed: EmbedBuilder): Promise<void>;
   getRecentContainerAccess(actor: string): { player: string } | null;
 }
@@ -175,12 +177,22 @@ class ActivityLog {
     this._syncHandler = null;
   }
 
+  /**
+   * Whether embeds can be routed through the LogWatcher's daily thread. A
+   * headless LogWatcher attributes container access but has no thread to post
+   * to, so ActivityLog must fall back to its own channel for posting.
+   */
+  private _canPostViaLogWatcher(): boolean {
+    return !!this._logWatcher && this._logWatcher.isHeadless !== true;
+  }
+
   async start(): Promise<void> {
     if (this._started) return;
     this._started = true;
 
-    // If we have a LogWatcher, we route embeds to its daily thread — no channel needed
-    if (!this._logWatcher) {
+    // Route embeds to the LogWatcher's daily thread only when it can post; a
+    // headless watcher (or none) means we must resolve our own fallback channel.
+    if (!this._canPostViaLogWatcher()) {
       const channelId = config.activityLogChannelId || config.adminChannelId;
       if (!channelId) {
         this._log.info('No logWatcher or channel configured \u2014 activity log disabled');
@@ -208,7 +220,7 @@ class ActivityLog {
     }
 
     const channelName = this._channel?.name ?? 'unknown';
-    const target = this._logWatcher ? 'daily thread (via LogWatcher)' : `#${channelName}`;
+    const target = this._canPostViaLogWatcher() ? 'daily thread (via LogWatcher)' : `#${channelName}`;
     this._log.info(`Started \u2014 posting to ${target}`);
   }
 
@@ -226,7 +238,7 @@ class ActivityLog {
 
   async _onSync(result: SyncResult): Promise<void> {
     if (!result.diffEvents || result.diffEvents.length === 0) return;
-    if (!this._logWatcher && !this._channel) return;
+    if (!this._canPostViaLogWatcher() && !this._channel) return;
 
     try {
       const syncTime = result.syncTime ?? new Date();
@@ -240,8 +252,8 @@ class ActivityLog {
       // Send embeds with a small delay between each to avoid Discord rate limits
       for (const embed of embeds) {
         try {
-          if (this._logWatcher) {
-            await this._logWatcher.sendToThread(embed);
+          if (this._canPostViaLogWatcher()) {
+            await this._logWatcher?.sendToThread(embed);
           } else if (this._channel) {
             await this._channel.send({ embeds: [embed] });
           }

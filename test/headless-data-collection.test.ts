@@ -137,6 +137,55 @@ describe('LogWatcher headless mode (no log/admin channel)', () => {
     const result = await lw._sendToThread({});
     assert.strictEqual(result, undefined, 'headless sendToThread should post nothing');
   });
+
+  it('headless start() sets a day baseline and schedules the midnight rollover check', async () => {
+    const saved: Array<{ k: string; v: unknown }> = [];
+    const db = {
+      botState: { setStateJSON: (k: string, v: unknown) => saved.push({ k, v }), getStateJSON: () => null },
+    };
+    const lw = track(new LogWatcher(mockClient(), { config: logConfig({ logChannelId: '', adminChannelId: '' }), db }));
+    lw._initSize = async () => {};
+    lw._poll = async () => {};
+
+    await lw.start();
+
+    assert.strictEqual(lw.isHeadless, true);
+    assert.ok(lw._dailyDate, 'headless start should establish a baseline _dailyDate');
+    assert.ok(lw._midnightCheckInterval, 'headless should schedule the midnight rollover check');
+  });
+
+  it('headless day rollover resets counts without posting a summary or firing the callback', async () => {
+    const saved: Array<{ k: string; v: unknown }> = [];
+    const db = {
+      botState: { setStateJSON: (k: string, v: unknown) => saved.push({ k, v }), getStateJSON: () => null },
+    };
+    const lw = track(new LogWatcher(mockClient(), { config: logConfig(), db }));
+    lw._headless = true;
+    lw._dailyDate = '2025-12-31'; // stale vs getToday() → 2026-01-01
+    lw._dayCounts = { ...lw._dayCounts, deaths: 5, connects: 3 };
+    lw._dayCountsDirty = true;
+
+    let summaryPosted = 0;
+    let callbackFired = 0;
+    lw._postDailySummary = async () => {
+      summaryPosted++;
+    };
+    lw.setDayRolloverCallback(async () => {
+      callbackFired++;
+    });
+
+    await lw._checkDayRollover();
+
+    assert.strictEqual(lw._dailyDate, '2026-01-01', 'date advances to today');
+    assert.strictEqual(lw._dayCounts.deaths, 0, 'counts reset on rollover');
+    assert.strictEqual(lw._dayCounts.connects, 0, 'counts reset on rollover');
+    assert.strictEqual(summaryPosted, 0, 'no daily summary is posted in headless');
+    assert.strictEqual(callbackFired, 0, 'rollover callback must not fire in headless');
+    assert.ok(
+      saved.some((s) => s.k === 'day_counts'),
+      'reset counts are persisted',
+    );
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -188,5 +237,69 @@ describe('ChatRelay headless mode (no chat/admin channel)', () => {
     });
 
     assert.strictEqual(inserted.length, 1, 'chat entry should be written to chat_log even with no Discord channel');
+  });
+
+  it('_pollChat pauses quietly when RCON is not configured (first-run before dashboard setup)', async () => {
+    const sent: string[] = [];
+    const rcon = {
+      send: async (cmd: string) => {
+        sent.push(cmd);
+        return '';
+      },
+    };
+    const cr = track(new ChatRelay(mockClient(), { config: chatConfig(), rcon })); // no rconHost/rconPassword
+    cr._headless = true;
+
+    await cr._pollChat();
+
+    assert.strictEqual(sent.length, 0, 'must not hit RCON until it is configured');
+  });
+
+  it('_pollChat polls fetchchat once RCON becomes configured (no restart needed)', async () => {
+    const sent: string[] = [];
+    const rcon = {
+      send: async (cmd: string) => {
+        sent.push(cmd);
+        return '';
+      },
+    };
+    const cr = track(
+      new ChatRelay(mockClient(), { config: chatConfig({ rconHost: 'host', rconPassword: 'pw' }), rcon }),
+    );
+    cr._headless = true;
+
+    await cr._pollChat();
+
+    assert.ok(sent.includes('fetchchat'), 'should poll fetchchat once RCON is configured');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ActivityLog with a headless LogWatcher (attribution kept, posting falls back)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('ActivityLog headless LogWatcher handling', () => {
+  const ActivityLog = cjsRequire('../src/modules/activity-log').default;
+  const watcher = (over: Record<string, unknown> = {}) => ({
+    isHeadless: false,
+    sendToThread: async () => {},
+    getRecentContainerAccess: () => null,
+    ...over,
+  });
+
+  it('_canPostViaLogWatcher is false for a headless watcher and true for a live one', () => {
+    const headless = new ActivityLog(mockClient(), { logWatcher: watcher({ isHeadless: true }) });
+    const live = new ActivityLog(mockClient(), { logWatcher: watcher({ isHeadless: false }) });
+    const none = new ActivityLog(mockClient(), {});
+
+    assert.strictEqual(headless._canPostViaLogWatcher(), false, 'headless watcher cannot post to a thread');
+    assert.strictEqual(live._canPostViaLogWatcher(), true, 'live watcher posts to its daily thread');
+    assert.strictEqual(none._canPostViaLogWatcher(), false, 'no watcher → use own channel');
+  });
+
+  it('still holds the headless watcher reference for container attribution', () => {
+    const lw = watcher({ isHeadless: true });
+    const al = new ActivityLog(mockClient(), { logWatcher: lw });
+    // The watcher is retained (not nulled) so getRecentContainerAccess stays available.
+    assert.strictEqual(al._logWatcher, lw, 'headless watcher is kept for attribution');
   });
 });

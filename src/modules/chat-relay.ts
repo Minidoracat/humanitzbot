@@ -74,6 +74,7 @@ class ChatRelay {
   private _locale: string;
   private _logChatWarned: boolean;
   private _polling: boolean;
+  private _rconUnavailableWarned: boolean;
   _awaitActivityThread: boolean;
 
   // Mixed-in from chat-relay-parser.ts via Object.assign
@@ -103,12 +104,20 @@ class ChatRelay {
     this._locale = getLocale({ serverConfig: this._config });
     this._logChatWarned = false;
     this._polling = false;
+    this._rconUnavailableWarned = false;
     this._awaitActivityThread = false;
   }
 
   /** Whether the chat relay started successfully. */
   get healthy() {
     return this._healthy;
+  }
+
+  /** Whether RCON is configured (host + password, not setup placeholders). */
+  private _hasRconConfig(): boolean {
+    const host = this._config.rconHost || '';
+    const password = this._config.rconPassword || '';
+    return !!host && !!password && !host.startsWith('your_') && !password.startsWith('your_');
   }
 
   /**
@@ -407,6 +416,18 @@ class ChatRelay {
 
   async _pollChat() {
     if (this._polling) return;
+
+    // RCON not configured yet (e.g. first-run before dashboard setup). Pause
+    // polling quietly — the timer keeps running, so chat collection begins
+    // automatically once RCON credentials are applied, no restart needed.
+    if (!this._hasRconConfig()) {
+      if (!this._rconUnavailableWarned) {
+        this._log.info('RCON not configured — chat polling paused until setup completes');
+        this._rconUnavailableWarned = true;
+      }
+      return;
+    }
+    this._rconUnavailableWarned = false;
 
     this._polling = true;
     try {

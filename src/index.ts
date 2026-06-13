@@ -209,11 +209,14 @@ async function loadOptionalModules(): Promise<void> {
 // ── Create Discord client ───────────────────────────────────
 const intents: GatewayIntentBits[] = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages];
 // Privileged intents — only request when needed (must be enabled in Developer Portal)
-// MessageContent (privileged) is only needed to READ Discord messages for the
-// outbound Discord → game bridge, which runs only when a chat/admin channel is
-// set. Headless (DB-only) chat collection polls RCON and needs no such intent,
-// so don't force users into a privileged intent they don't need.
-if (config.enableChatRelay && (config.chatChannelId || config.adminChannelId)) {
+// MessageContent (privileged) is fixed at the IDENTIFY handshake (Client
+// construction), but a chat/admin channel may only arrive later via DB-backed
+// config hydration in ClientReady — so we can't reliably tell here whether the
+// outbound Discord → game bridge will run. Request it whenever ChatRelay is
+// enabled. (A headless, DB-only deployment that never bridges still needs the
+// intent enabled in the Developer Portal — a cost of the single ENABLE_CHAT_RELAY
+// toggle covering both RCON chat polling and the Discord bridge.)
+if (config.enableChatRelay) {
   intents.push(GatewayIntentBits.MessageContent);
 }
 if (config.adminRoleIds.length > 0) {
@@ -1076,40 +1079,35 @@ client.once(Events.ClientReady, (readyClient) => {
 
     // Chat Relay — bidirectional chat bridge
     if (config.enableChatRelay) {
-      // Skip only when the relay can do nothing at all — no Discord bridge
-      // channel AND no RCON to poll. With a channel set it is created even
-      // without RCON (it reconnects, so RCON configured later via the dashboard
-      // starts working without a restart). With RCON available it runs headless,
-      // collecting chat_log with no Discord channel.
-      if (!config.chatChannelId && !config.adminChannelId && config.needsSetup) {
-        setStatus('Chat Relay', '🟡 Skipped (no chat channel and RCON not configured)');
-        console.log('[BOT] Chat relay skipped — no CHAT_CHANNEL_ID/ADMIN_CHANNEL_ID and RCON not configured');
-      } else {
-        chatRelay = new ChatRelay(readyClient, { db });
-        const _chatRelay = chatRelay;
-        if (config.nukeBot) _chatRelay.setNukeActive(true);
-        // Coordinate day-rollover ordering only with a NON-headless LogWatcher.
-        // A headless watcher never creates a daily thread or fires the rollover
-        // callback, so making ChatRelay await it would strand its own daily-thread
-        // rollover (it would post to the parent channel after midnight instead).
-        if (logWatcher && !logWatcher.isHeadless) {
-          _chatRelay.setAwaitActivityThread(true);
-          logWatcher.setDayRolloverCallback(async () => {
-            try {
-              await _chatRelay.createDailyThread();
-            } catch (e: unknown) {
-              console.warn('[BOT] Day-rollover chat thread error:', errMsg(e));
-            }
-          });
-        }
-        await chatRelay.start();
-        if (_chatRelay.healthy) {
-          runtimeConfigApplier.registerModuleReconfigure('CHAT_POLL_INTERVAL', ({ value }) => {
-            _chatRelay.reconfigure({ chatPollInterval: value });
-          });
-        }
-        setStatus('Chat Relay', _chatRelay.isHeadless ? '🟢 Active (headless, DB-only)' : '🟢 Active');
+      // Always create the relay when enabled. It polls RCON for chat — writing
+      // chat_log even headless (no Discord channel) — and pauses polling quietly
+      // until RCON is configured, so RCON set up later via the dashboard starts
+      // working without a restart. The module self-selects headless when no
+      // CHAT_CHANNEL_ID/ADMIN_CHANNEL_ID is set.
+      chatRelay = new ChatRelay(readyClient, { db });
+      const _chatRelay = chatRelay;
+      if (config.nukeBot) _chatRelay.setNukeActive(true);
+      // Coordinate day-rollover ordering only with a NON-headless LogWatcher.
+      // A headless watcher never creates a daily thread or fires the rollover
+      // callback, so making ChatRelay await it would strand its own daily-thread
+      // rollover (it would post to the parent channel after midnight instead).
+      if (logWatcher && !logWatcher.isHeadless) {
+        _chatRelay.setAwaitActivityThread(true);
+        logWatcher.setDayRolloverCallback(async () => {
+          try {
+            await _chatRelay.createDailyThread();
+          } catch (e: unknown) {
+            console.warn('[BOT] Day-rollover chat thread error:', errMsg(e));
+          }
+        });
       }
+      await chatRelay.start();
+      if (_chatRelay.healthy) {
+        runtimeConfigApplier.registerModuleReconfigure('CHAT_POLL_INTERVAL', ({ value }) => {
+          _chatRelay.reconfigure({ chatPollInterval: value });
+        });
+      }
+      setStatus('Chat Relay', _chatRelay.isHeadless ? '🟢 Active (headless, DB-only)' : '🟢 Active');
     } else {
       setStatus('Chat Relay', '⚫ Disabled');
       console.log('[BOT] Chat relay disabled via ENABLE_CHAT_RELAY=false');
@@ -1300,11 +1298,11 @@ client.once(Events.ClientReady, (readyClient) => {
       if (!saveService) {
         setStatus('Activity Log', '🟡 Skipped (requires Save Service)');
       } else {
-        // Only hand ActivityLog the LogWatcher when it can actually post to a
-        // daily thread. A headless LogWatcher would no-op sendToThread, so pass
-        // null to let ActivityLog fall back to ACTIVITY_LOG_CHANNEL_ID/ADMIN.
-        const activityLogWatcher = logWatcher && !logWatcher.isHeadless ? logWatcher : null;
-        activityLog = new ActivityLog(readyClient, { db, saveService, logWatcher: activityLogWatcher });
+        // Always hand ActivityLog the LogWatcher so it can attribute container
+        // access (getRecentContainerAccess) even when the watcher is headless.
+        // ActivityLog decides its own posting target: the daily thread when the
+        // watcher is non-headless, otherwise its ACTIVITY_LOG_CHANNEL_ID/ADMIN.
+        activityLog = new ActivityLog(readyClient, { db, saveService, logWatcher });
         await activityLog.start();
         setStatus('Activity Log', '🟢 Active');
       }

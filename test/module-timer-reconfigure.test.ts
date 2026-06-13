@@ -167,7 +167,8 @@ describe('module timer reconfigure', () => {
     const relay = new ChatRelay(
       { on: () => {}, removeListener: () => {} } as any,
       {
-        config: baseConfig(),
+        // RCON configured so _pollChat proceeds past the "RCON not configured" pause.
+        config: baseConfig({ rconHost: 'host', rconPassword: 'pw' }),
         rcon: {
           send: async () => {
             sendCalls += 1;
