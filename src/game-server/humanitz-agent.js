@@ -2057,7 +2057,8 @@ function _extractContainers(prop, containerList) {
 function normalizePlayerHorses(value) {
   if (!Array.isArray(value) || value.length === 0) return [];
   if (!value.some((entry) => Array.isArray(entry))) return value;
-  const horses = [];
+  const structured = value.filter((entry) => !!entry && typeof entry === 'object' && !Array.isArray(entry));
+  const horses = [...structured];
   _extractHorses(
     value.filter((entry) => Array.isArray(entry)),
     horses,
