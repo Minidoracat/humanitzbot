@@ -434,11 +434,11 @@ function createServerConfig(serverDef: ServerDef): ConfigType {
     if (serverDef.paths.welcomePath) merged.sftpWelcomePath = serverDef.paths.welcomePath;
   }
 
-  // Channel overrides — set EVERY per-server channel unconditionally (own
-  // property) so a managed server never inherits the primary's through the
-  // prototype, even when serverDef omits a channels block entirely. A
-  // channel-less managed server therefore runs headless instead of posting into
-  // the primary server's Discord channels.
+  // Channel overrides — set EVERY per-server channel id unconditionally (own
+  // property) so a managed server never inherits the primary's text channels
+  // through the prototype, even when serverDef omits a channels block entirely.
+  // (StatusChannels resolves voice channels by category, not these ids — it is
+  // kept in-category via the `scoped` flag in ServerInstance.start().)
   merged.serverStatusChannelId = serverDef.channels?.serverStatus || '';
   merged.playerStatsChannelId = serverDef.channels?.playerStats || '';
   merged.chatChannelId = serverDef.channels?.chat || '';
@@ -819,7 +819,9 @@ class ServerInstance {
     if (this.config.guildId) {
       try {
         const categoryName = `\u{1F4CA} ${this.name || this.id}`;
-        const mod = new StatusChannels(this.client, { ...deps, categoryName });
+        // scoped: keep discovery inside this server's category so it can't grab
+        // (and rename) another server's status voice channel via the fallback.
+        const mod = new StatusChannels(this.client, { ...deps, categoryName, scoped: true });
         await mod.start();
         this._modules.statusChannels = mod;
         this._log.info('StatusChannels active');
