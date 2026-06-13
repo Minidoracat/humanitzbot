@@ -93,8 +93,8 @@ describe('LOADING_TIPS', () => {
 // ─── New maps from DT files ────────────────────────────────────────────────
 
 describe('ITEM_DATABASE', () => {
-  it('has 718 items', () => {
-    assert.equal(Object.keys(gameData.ITEM_DATABASE).length, 718);
+  it('has 738 items', () => {
+    assert.equal(Object.keys(gameData.ITEM_DATABASE).length, 738);
   });
 
   it('each item has name and type', () => {
