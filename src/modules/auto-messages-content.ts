@@ -31,6 +31,8 @@ interface DbLike {
   clan?: { getAllClans(): unknown[] };
 }
 
+/** DB-row shape: the `db.player.getAllPlayers()` path (has `steam_id`). Distinct from the
+ *  in-memory `PlayerStats.getAllPlayers()` (PlayerStatEntry, no steam_id) used by the footer. */
 interface PlayerRow {
   steam_id: string;
   name: string;
@@ -39,7 +41,7 @@ interface PlayerRow {
   containersLooted: number;
 }
 
-/** Subset of stat fields the welcome-footer aggregates; satisfied by PlayerStatEntry (no steam_id). */
+/** Subset of stat fields the welcome-footer aggregates; satisfied by the in-memory PlayerStatEntry (no steam_id). */
 type FooterStatRow = Pick<PlayerRow, 'deaths' | 'builds' | 'containersLooted'>;
 
 interface LeaderboardEntry {
