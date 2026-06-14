@@ -11,6 +11,7 @@
 import { _tzOffsetMs } from '../config/index.js';
 import { resolveItemName, normalizeItemLocale } from '../i18n/item-names.js';
 import { parseDbTimestampUtc } from '../db/timestamp.js';
+import { generateFingerprint } from '../db/item-fingerprint.js';
 import { errMsg } from '../utils/error.js';
 import { sendError } from './api-errors.js';
 import type { ActivityRange, ActivityRangePreset, ItemListView } from './types/db-rows.js';
@@ -303,4 +304,34 @@ export function _extractLandingSettings(ss: Record<string, string | undefined> |
     worldCompanions: i('hmz_totalCompanions', 0) || undefined,
     totalKills: i('hmz_totalKills', 0) || undefined,
   };
+}
+
+/**
+ * Clean inventory slot items — applies locale-aware resolveItemName to each
+ * item object. Filters out empty/None items, cleans names, preserves
+ * durability/ammo. Also generates item fingerprints for tracking integration.
+ * @param {Array} slots - Array of { item, amount, durability, ammo } or strings
+ * @param {string} [locale] - Display locale resolved via _requestLocale(req)
+ * @returns {Array}
+ */
+export function _cleanInventorySlots(slots: unknown[], locale?: string): unknown[] {
+  if (!Array.isArray(slots)) return [];
+  return slots.map((slot) => {
+    if (!slot) return slot;
+    if (typeof slot === 'string') {
+      if (slot === 'Empty' || slot === 'None') return slot;
+      return resolveItemName(slot, locale);
+    }
+    if (typeof slot === 'object' && (slot as Record<string, unknown>).item) {
+      const s = slot as Record<string, unknown>;
+      const cleaned: Record<string, unknown> = { ...s, item: resolveItemName(s.item, locale) };
+      // Generate fingerprint for item tracking integration
+      // Uses the RAW item name for fingerprint (before cleaning) since
+      // that's what the item tracker uses
+      const fp = generateFingerprint(slot as Parameters<typeof generateFingerprint>[0]);
+      if (fp) cleaned.fingerprint = fp;
+      return cleaned;
+    }
+    return slot;
+  });
 }
