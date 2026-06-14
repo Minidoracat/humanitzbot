@@ -10,6 +10,9 @@ const ConfigRepository = _config_repository as any;
 import * as _multi_server from '../src/server/multi-server.js';
 const { ServerInstance, createServerConfig, _extractSaveName, SAVE_FILE_PATTERN } = _multi_server as any;
 
+import _config from '../src/config/index.js';
+const config = _config as any;
+
 function makeServerDef(overrides: Record<string, any> = {}) {
   return {
     id: 'srv_test1',
@@ -627,6 +630,110 @@ describe('createServerConfig()', () => {
     assert.equal(cfg.pvpStartMinutes, 360);
     assert.equal(cfg.pvpEndMinutes, 1080);
     assert.equal(cfg.pvpSettingsOverrides, null);
+  });
+
+  it('applies per-server activity-log filter overrides', () => {
+    const cfg = createServerConfig({
+      enableActivityLog: false,
+      enableContainerLog: false,
+      enableHorseLog: false,
+      enableVehicleLog: false,
+      enableStructureLog: false,
+      enableWorldEventFeed: false,
+      showInventoryLog: true,
+    });
+    assert.equal(cfg.enableActivityLog, false);
+    assert.equal(cfg.enableContainerLog, false);
+    assert.equal(cfg.enableHorseLog, false);
+    assert.equal(cfg.enableVehicleLog, false);
+    assert.equal(cfg.enableStructureLog, false);
+    assert.equal(cfg.enableWorldEventFeed, false);
+    assert.equal(cfg.showInventoryLog, true);
+  });
+
+  it('inherits the primary log filters when a managed server omits them', () => {
+    // Unset toggles must NOT be own properties — they fall through to the
+    // primary config via the prototype chain, so an unconfigured managed server
+    // keeps the primary's defaults instead of being forced off.
+    const cfg = createServerConfig({ id: 'srv_no_filters' });
+    for (const key of [
+      'enableActivityLog',
+      'enableContainerLog',
+      'enableHorseLog',
+      'enableVehicleLog',
+      'enableStructureLog',
+      'enableWorldEventFeed',
+      'showInventoryLog',
+    ] as const) {
+      assert.ok(!Object.hasOwn(cfg, key), `${key} must inherit (not own) when unset`);
+      assert.equal(cfg[key], config[key], `${key} must resolve to the primary value when unset`);
+    }
+  });
+
+  it('overrides only the filters a managed server sets, inheriting the rest', () => {
+    const cfg = createServerConfig({ enableHorseLog: false });
+    assert.ok(Object.hasOwn(cfg, 'enableHorseLog'), 'set filter becomes an own property');
+    assert.equal(cfg.enableHorseLog, false, 'honours the per-server override');
+    assert.ok(!Object.hasOwn(cfg, 'enableContainerLog'), 'unset filter still inherits');
+    assert.equal(cfg.enableContainerLog, config.enableContainerLog);
+  });
+
+  it('applies per-server PvP scheduler enable + active days', () => {
+    const cfg = createServerConfig({ enablePvpScheduler: true, pvpDays: 'Mon,Wed,Fri' });
+    assert.equal(cfg.enablePvpScheduler, true);
+    assert.deepEqual(cfg.pvpDays, new Set([1, 3, 5]));
+
+    // Numeric day specs parse identically to the global config.
+    assert.deepEqual(createServerConfig({ pvpDays: '0,6' }).pvpDays, new Set([0, 6]));
+
+    // Inherited Object keys must not be treated as day names (own-property lookup).
+    assert.equal(createServerConfig({ pvpDays: 'constructor,toString' }).pvpDays, null);
+  });
+
+  it('inherits the primary PvP enable/days when a managed server omits them', () => {
+    const cfg = createServerConfig({ id: 'srv_no_pvp' });
+    assert.ok(!Object.hasOwn(cfg, 'enablePvpScheduler'), 'enablePvpScheduler inherits when unset');
+    assert.ok(!Object.hasOwn(cfg, 'pvpDays'), 'pvpDays inherits when unset');
+    assert.equal(cfg.enablePvpScheduler, config.enablePvpScheduler);
+    assert.equal(cfg.pvpDays, config.pvpDays);
+  });
+});
+
+describe('ServerInstance._shouldStartPvpScheduler()', () => {
+  // Object.create skips the heavy constructor (DB/RCON/SaveService); the gate
+  // only reads this.config + this.hasSftp, so a config stub is enough.
+  const gateWith = (overrides: Record<string, unknown>) => {
+    const instance = Object.create(ServerInstance.prototype) as {
+      config: Record<string, unknown>;
+      _shouldStartPvpScheduler: () => boolean;
+    };
+    instance.config = {
+      enablePvpScheduler: true,
+      rconHost: 'rcon.example.com',
+      pvpStartMinutes: 360,
+      sftpHost: 'sftp.example.com',
+      sftpUser: 'user',
+      sftpPassword: 'pw-not-real',
+      ...overrides,
+    };
+    return instance._shouldStartPvpScheduler();
+  };
+
+  it('starts when enable flag, RCON, SFTP and a positive start time are all present', () => {
+    assert.equal(gateWith({}), true);
+  });
+
+  it('does NOT start when enablePvpScheduler is false, even with a start time', () => {
+    assert.equal(gateWith({ enablePvpScheduler: false }), false);
+  });
+
+  it('does NOT start without a positive start time', () => {
+    assert.equal(gateWith({ pvpStartMinutes: 0 }), false);
+  });
+
+  it('does NOT start without RCON or SFTP', () => {
+    assert.equal(gateWith({ rconHost: '' }), false);
+    assert.equal(gateWith({ sftpHost: '' }), false);
   });
 });
 

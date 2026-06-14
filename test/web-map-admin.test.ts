@@ -1139,6 +1139,38 @@ describe('Web Map Admin — POST endpoints', () => {
       assert.ok(keys.has('ACTIVITY_LOG_CHANNEL_ID'), 'managed-server config exposes the activity channel');
     });
 
+    it('exposes per-server activity-log filter + PvP enable/days toggles for managed servers', () => {
+      const repo = mockConfigRepo({ 'server:alpha': { name: 'Alpha' } });
+      const server = new WebMapServer(client, { db: mockDb(), configRepo: repo });
+      const getBotConfigHandler = getHandlerFromServer(server, 'GET', '/api/panel/bot-config');
+      const req = mockReq({ srv: mockSrv({ isPrimary: false, serverId: 'alpha' }) });
+      const res = mockRes();
+
+      getBotConfigHandler(req, res);
+
+      const payload = res._json as {
+        sections: Array<{ label: string; keys: Array<Record<string, unknown>> }>;
+      };
+      assert.ok(
+        payload.sections.some((section) => section.label === 'Activity Log Filters'),
+        'managed-server config exposes the Activity Log Filters section',
+      );
+      const keys = new Map(payload.sections.flatMap((section) => section.keys).map((entry) => [entry.key, entry]));
+      for (const envKey of [
+        'ENABLE_ACTIVITY_LOG',
+        'ENABLE_CONTAINER_LOG',
+        'ENABLE_HORSE_LOG',
+        'ENABLE_VEHICLE_LOG',
+        'ENABLE_STRUCTURE_LOG',
+        'ENABLE_WORLD_EVENT_FEED',
+        'SHOW_INVENTORY_LOG',
+        'ENABLE_PVP_SCHEDULER',
+        'PVP_DAYS',
+      ]) {
+        assert.ok(keys.has(envKey), `managed-server config exposes ${envKey}`);
+      }
+    });
+
     it('returns lightweight control metadata for legacy .env bot-config fallback', () => {
       const server = new WebMapServer(client, { db: mockDb() });
       const getBotConfigHandler = getHandlerFromServer(server, 'GET', '/api/panel/bot-config');
@@ -1322,6 +1354,34 @@ describe('Web Map Admin — POST endpoints', () => {
       assert.deepEqual(alpha.pvpSettingsOverrides, { VitalDrain: '1' });
       assert.equal(alpha.pvpStartTime, undefined);
       assert.equal(alpha.pvpEndTime, undefined);
+    });
+
+    it('stores non-primary activity-log filter + PvP enable/days overrides in serverDef', async () => {
+      const repo = mockConfigRepo({ 'server:alpha': { name: 'Alpha' } });
+      const server = new WebMapServer(client, { db: mockDb(), configRepo: repo });
+      const postHandler = getHandlerFromServer(server, 'POST', '/api/panel/bot-config');
+      const req = mockReq({
+        srv: mockSrv({ isPrimary: false, serverId: 'alpha' }),
+        body: {
+          changes: {
+            ENABLE_CONTAINER_LOG: 'false',
+            SHOW_INVENTORY_LOG: 'true',
+            ENABLE_PVP_SCHEDULER: 'true',
+            PVP_DAYS: 'Mon,Wed,Fri',
+          },
+        },
+      });
+      const res = mockRes();
+
+      await postHandler(req, res);
+
+      assert.equal(res._status, 200);
+      const alpha = repo.docs['server:alpha'];
+      assert.ok(alpha);
+      assert.equal(alpha.enableContainerLog, false, 'boolean "false" is coerced and stored per-server');
+      assert.equal(alpha.showInventoryLog, true, 'boolean "true" is coerced and stored per-server');
+      assert.equal(alpha.enablePvpScheduler, true);
+      assert.equal(alpha.pvpDays, 'Mon,Wed,Fri', 'PVP_DAYS is stored as a day-spec string, never coerced to a number');
     });
 
     it('applies explicit live settings to config memory and DB without restartRequired', async () => {

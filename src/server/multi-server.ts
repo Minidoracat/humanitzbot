@@ -17,6 +17,7 @@ import path from 'path';
 import type { Client } from 'discord.js';
 import SftpClient from 'ssh2-sftp-client';
 import _defaultConfig from '../config/index.js';
+import { parsePvpDays } from '../config/helpers.js';
 import { RconManager } from '../rcon/rcon.js';
 import { PanelRcon } from '../rcon/panel-rcon.js';
 import { createPanelApi, type PanelApi } from './panel-api.js';
@@ -61,6 +62,14 @@ interface ServerDef {
   locale?: string;
   enableAnticheat?: boolean;
   enableServerScheduler?: boolean;
+  // Activity-log feature toggles — per-server override (inherit primary when unset)
+  enableActivityLog?: boolean;
+  enableContainerLog?: boolean;
+  enableHorseLog?: boolean;
+  enableVehicleLog?: boolean;
+  enableStructureLog?: boolean;
+  enableWorldEventFeed?: boolean;
+  showInventoryLog?: boolean;
   agentMode?: string;
   agentTrigger?: string;
   agentNodePath?: string;
@@ -101,6 +110,8 @@ interface ServerDef {
   pvpStartMinutes?: number | null;
   pvpEndMinutes?: number | null;
   pvpDayHours?: Map<number, { start: number; end: number }> | null;
+  enablePvpScheduler?: boolean;
+  pvpDays?: string;
 }
 
 interface SftpDiscoverConfig {
@@ -479,6 +490,22 @@ function createServerConfig(serverDef: ServerDef): ConfigType {
   merged.pvpStartMinutes = serverDef.pvpStartMinutes ?? 0;
   merged.pvpEndMinutes = serverDef.pvpEndMinutes ?? 0;
   merged.pvpDayHours = serverDef.pvpDayHours ?? null;
+  // PvP scheduler enable + active days — per-server override; inherit primary
+  // when unset (unlike the per-server times above). pvpDays is stored as a raw
+  // string in the server definition and parsed to a weekday Set here.
+  if (serverDef.enablePvpScheduler !== undefined) merged.enablePvpScheduler = serverDef.enablePvpScheduler;
+  if (serverDef.pvpDays !== undefined) merged.pvpDays = parsePvpDays(serverDef.pvpDays);
+
+  // Activity-log feature toggles — per-server override; inherit the primary's
+  // value when unset (merged prototype-inherits from _defaultConfig, so an
+  // omitted toggle transparently falls back to the primary config).
+  if (serverDef.enableActivityLog !== undefined) merged.enableActivityLog = serverDef.enableActivityLog;
+  if (serverDef.enableContainerLog !== undefined) merged.enableContainerLog = serverDef.enableContainerLog;
+  if (serverDef.enableHorseLog !== undefined) merged.enableHorseLog = serverDef.enableHorseLog;
+  if (serverDef.enableVehicleLog !== undefined) merged.enableVehicleLog = serverDef.enableVehicleLog;
+  if (serverDef.enableStructureLog !== undefined) merged.enableStructureLog = serverDef.enableStructureLog;
+  if (serverDef.enableWorldEventFeed !== undefined) merged.enableWorldEventFeed = serverDef.enableWorldEventFeed;
+  if (serverDef.showInventoryLog !== undefined) merged.showInventoryLog = serverDef.showInventoryLog;
 
   // Auto-message overrides (per-server welcome + broadcast config)
   const am = serverDef.autoMessages;
@@ -635,6 +662,30 @@ class ServerInstance {
       this.config.sftpHost &&
       this.config.sftpUser &&
       (this.config.sftpPassword || this.config.sftpPrivateKeyPath)
+    );
+  }
+
+  /**
+   * Whether the PvP scheduler should run for this server.
+   *
+   * The change this gate adds is the per-server `enablePvpScheduler` flag
+   * (inherited from the primary when unset): like the primary (index.ts), the
+   * scheduler only runs when PvP is enabled, so the plumbed flag controls the
+   * runtime rather than only the welcome-message label.
+   *
+   * The remaining conditions keep the pre-existing managed convention and are
+   * NOT identical to the primary: a managed server's pvpStartMinutes defaults to
+   * 0 (createServerConfig uses `?? 0`), so `> 0` means "a start time is set" —
+   * whereas the primary uses NaN as its "unset" sentinel. A midnight (00:00)
+   * start is therefore not expressible for a managed server; this matches the
+   * behaviour before this change and is intentionally left untouched here.
+   */
+  _shouldStartPvpScheduler(): boolean {
+    return !!(
+      this.config.enablePvpScheduler &&
+      this.config.rconHost &&
+      this.hasSftp &&
+      this.config.pvpStartMinutes > 0
     );
   }
 
@@ -869,8 +920,9 @@ class ServerInstance {
       this._log.info('AutoMessages skipped — all message features disabled');
     }
 
-    // PvP Scheduler (needs SFTP + RCON)
-    if (this.config.rconHost && this.hasSftp && this.config.pvpStartMinutes > 0) {
+    // PvP Scheduler — now also gated on the per-server enablePvpScheduler flag so
+    // the plumbed flag controls the runtime, not just the welcome label.
+    if (this._shouldStartPvpScheduler()) {
       try {
         const mod = new PvpScheduler(
           this.client,

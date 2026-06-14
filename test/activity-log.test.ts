@@ -1,4 +1,4 @@
-import { describe, it, beforeEach, afterEach } from 'node:test';
+import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import _config from '../src/config/index.js';
@@ -92,85 +92,87 @@ describe('_filterEvents', () => {
     { category: 'structure', type: 'structure_built' },
   ];
 
-  // Save original config values and restore after each test
-  let saved: Record<string, unknown>;
-  beforeEach(() => {
-    saved = {
-      showInventoryLog: config.showInventoryLog,
-      enableContainerLog: config.enableContainerLog,
-      enableHorseLog: config.enableHorseLog,
-      enableVehicleLog: config.enableVehicleLog,
-      enableWorldEventFeed: config.enableWorldEventFeed,
-      enableStructureLog: config.enableStructureLog,
-    };
-    // Enable all by default
-    config.showInventoryLog = true;
-    config.enableContainerLog = true;
-    config.enableHorseLog = true;
-    config.enableVehicleLog = true;
-    config.enableWorldEventFeed = true;
-    config.enableStructureLog = true;
-  });
-
-  afterEach(() => {
-    Object.assign(config, saved);
-  });
+  // Per-server config with every log toggle on. Tests pass this (with per-test
+  // overrides) so they exercise the injected this._config path rather than
+  // mutating the global config singleton — the multi-server behaviour ActivityLog
+  // actually runs in production.
+  const allEnabled = {
+    showInventoryLog: true,
+    enableContainerLog: true,
+    enableHorseLog: true,
+    enableVehicleLog: true,
+    enableWorldEventFeed: true,
+    enableStructureLog: true,
+  };
+  const serverCfg = (overrides: Record<string, unknown> = {}) => ({ ...allEnabled, ...overrides }) as typeof config;
 
   it('passes all events when all toggles are enabled', () => {
-    const result = _filterEvents.call({}, allEvents);
+    const result = _filterEvents(allEvents, serverCfg());
     assert.equal(result.length, allEvents.length);
   });
 
   it('filters inventory when showInventoryLog is false', () => {
-    config.showInventoryLog = false;
-    const result = _filterEvents.call({}, allEvents);
+    const result = _filterEvents(allEvents, serverCfg({ showInventoryLog: false }));
     assert.equal(result.length, allEvents.length - 1);
     assert.ok(!result.some((e: { category?: string }) => e.category === 'inventory'));
   });
 
   it('filters container when enableContainerLog is false', () => {
-    config.enableContainerLog = false;
-    const result = _filterEvents.call({}, allEvents);
+    const result = _filterEvents(allEvents, serverCfg({ enableContainerLog: false }));
     assert.equal(result.length, allEvents.length - 1);
     assert.ok(!result.some((e: { category?: string }) => e.category === 'container'));
   });
 
   it('filters horse when enableHorseLog is false', () => {
-    config.enableHorseLog = false;
-    const result = _filterEvents.call({}, allEvents);
+    const result = _filterEvents(allEvents, serverCfg({ enableHorseLog: false }));
     assert.equal(result.length, allEvents.length - 1);
     assert.ok(!result.some((e: { category?: string }) => e.category === 'horse'));
   });
 
   it('filters vehicle when enableVehicleLog is false', () => {
-    config.enableVehicleLog = false;
-    const result = _filterEvents.call({}, allEvents);
+    const result = _filterEvents(allEvents, serverCfg({ enableVehicleLog: false }));
     assert.equal(result.length, allEvents.length - 1);
     assert.ok(!result.some((e: { category?: string }) => e.category === 'vehicle'));
   });
 
   it('filters world when enableWorldEventFeed is false', () => {
-    config.enableWorldEventFeed = false;
-    const result = _filterEvents.call({}, allEvents);
+    const result = _filterEvents(allEvents, serverCfg({ enableWorldEventFeed: false }));
     assert.equal(result.length, allEvents.length - 1);
     assert.ok(!result.some((e: { category?: string }) => e.category === 'world'));
   });
 
   it('filters structure when enableStructureLog is false', () => {
-    config.enableStructureLog = false;
-    const result = _filterEvents.call({}, allEvents);
+    const result = _filterEvents(allEvents, serverCfg({ enableStructureLog: false }));
     assert.equal(result.length, allEvents.length - 1);
     assert.ok(!result.some((e: { category?: string }) => e.category === 'structure'));
   });
 
+  it('uses the passed per-server config, not the global singleton', () => {
+    // Regression for the multi-server bug: a managed server must honour its own
+    // toggles. Flip the global singleton off but pass a per-server config with
+    // inventory on — the inventory event must survive, proving _filterEvents
+    // reads this._config and never reaches for the global config.
+    const savedGlobal = config.showInventoryLog;
+    config.showInventoryLog = false;
+    try {
+      const result = _filterEvents(allEvents, serverCfg({ showInventoryLog: true }));
+      assert.ok(
+        result.some((e: { category?: string }) => e.category === 'inventory'),
+        'per-server showInventoryLog=true must keep inventory events even when the global toggle is false',
+      );
+    } finally {
+      config.showInventoryLog = savedGlobal;
+    }
+  });
+
   it('passes unknown categories through', () => {
     const events = [{ category: 'custom_thing', type: 'custom_event' }];
-    const result = _filterEvents.call({}, events);
+    const result = _filterEvents(events, serverCfg());
     assert.equal(result.length, 1);
   });
 
   it('returns empty array for empty input', () => {
-    const result = _filterEvents.call({}, []);
+    const result = _filterEvents([], serverCfg());
     assert.deepEqual(result, []);
   });
 });
