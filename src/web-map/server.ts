@@ -92,6 +92,7 @@ import { registerMapdataRoutes } from './routes/mapdata.routes.js';
 import { registerPlayersRoutes } from './routes/players.routes.js';
 import { registerAdminActionsRoutes } from './routes/admin-actions.routes.js';
 import { registerCalibrationRoutes } from './routes/calibration.routes.js';
+import { registerStatusRoutes } from './routes/status.routes.js';
 
 const __dirname = getDirname(import.meta.url);
 
@@ -807,58 +808,8 @@ class WebMapServer {
       next();
     });
 
-    // ── API: List available servers (multi-server support) ──
-    app.get('/api/servers', requireTier('survivor'), (_req, res) => {
-      const servers = [{ id: 'primary', name: config.serverName || 'Primary Server' }];
-      const additional = this._loadServerList();
-      for (const s of additional) {
-        const dir = this._getServerDataDir(s.id);
-        if (dir) servers.push({ id: s.id, name: s.name || s.id });
-      }
-      res.json({ servers, multiServer: additional.length > 0 });
-    });
-
+    registerStatusRoutes(app, this);
     registerCalibrationRoutes(app, this);
-
-    // ═══════════════════════════════════════════════════════
-    // Public Landing API — no auth required
-    // ═══════════════════════════════════════════════════════
-
-    /**
-     * Returns server status, connect info, and multi-server data for the
-     * public landing page. No authentication needed.
-     */
-    app.get('/api/landing', rateLimit(30000, 20), async (_req, res) => {
-      // Serve from background-polled cache — instant response
-      const cached = this._getCached('landing', 'global', 30000) as Record<string, unknown> | null;
-      if (cached) return res.json(cached);
-      // First request before background poller has run — build on demand
-      try {
-        const rconTimeout = (promise: Promise<unknown>) =>
-          Promise.race([
-            promise,
-            new Promise((_, rej) =>
-              setTimeout(() => {
-                rej(new Error('RCON timeout'));
-              }, 5000),
-            ),
-          ]);
-        await this._buildLandingData(rconTimeout);
-        const built = this._getCached('landing', 'global', 30000) as Record<string, unknown> | null;
-        if (built) return res.json(built);
-      } catch {
-        /* build failed */
-      }
-      res.json({
-        primary: {
-          name: config.serverName || 'HumanitZ Server',
-          status: 'unknown',
-          onlineCount: 0,
-          totalPlayers: 0,
-        },
-        servers: [],
-      });
-    });
 
     // Plugin-registered routes
     for (const plugin of this._plugins) {
@@ -875,107 +826,6 @@ class WebMapServer {
         }
       }
     }
-
-    // ═══════════════════════════════════════════════════════
-    // Panel API routes — server management, activity, chat, RCON console, settings
-    // ═══════════════════════════════════════════════════════
-
-    // ── Status: Module status ──
-    app.get('/api/status/modules', requireTier('admin'), (_req, res) => {
-      res.json({ modules: this._moduleStatus || {} });
-    });
-
-    // ── Panel: Server status (RCON info + resources) — served from background cache ──
-    app.get('/api/panel/status', requireTier('survivor'), async (req, res) => {
-      const srv = req.srv;
-      // Serve from background-polled cache — instant response
-      const cached = this._getCached('status', srv.serverId, 30000) as Record<string, unknown> | null;
-      if (cached) return res.json(cached);
-      // Fallback: build on demand if background poller hasn't run yet
-      try {
-        const rconTimeout = (promise: Promise<unknown>) =>
-          Promise.race([
-            promise,
-            new Promise((_, rej) =>
-              setTimeout(() => {
-                rej(new Error('RCON timeout'));
-              }, 5000),
-            ),
-          ]);
-        await this._buildStatusCache(srv, rconTimeout);
-        const built = this._getCached('status', srv.serverId, 30000) as Record<string, unknown> | null;
-        if (built) return res.json(built);
-      } catch {
-        /* build failed */
-      }
-      res.json({ serverState: 'unknown', onlineCount: 0, timezone: srv.config.botTimezone || 'UTC' });
-    });
-
-    // ── Panel: Quick stats — served from background cache ──
-    app.get('/api/panel/stats', requireTier('survivor'), async (req, res) => {
-      const srv = req.srv;
-      // Serve from background-polled cache — instant response
-      const cached = this._getCached('stats', srv.serverId, 30000) as Record<string, unknown> | null;
-      if (cached) return res.json(cached);
-      // Fallback: build on demand if background poller hasn't run yet
-      try {
-        const rconTimeout = (promise: Promise<unknown>) =>
-          Promise.race([
-            promise,
-            new Promise((_, rej) =>
-              setTimeout(() => {
-                rej(new Error('RCON timeout'));
-              }, 5000),
-            ),
-          ]);
-        await this._buildStatsCache(srv, rconTimeout);
-        const built = this._getCached('stats', srv.serverId, 30000) as Record<string, unknown> | null;
-        if (built) return res.json(built);
-      } catch {
-        /* build failed */
-      }
-      res.json({ totalPlayers: 0, onlinePlayers: 0, eventsToday: 0, chatsToday: 0 });
-    });
-
-    // ── Panel: Server capabilities — tells the client what this server has ──
-    app.get('/api/panel/capabilities', requireTier('survivor'), (req, res) => {
-      const srv = req.srv;
-      const cached = this._getCached('caps', srv.serverId, 30000) as Record<string, unknown> | null;
-      if (cached) return res.json(cached);
-
-      const caps: Record<string, unknown> = {
-        db: !!srv.db,
-        rcon: !!srv.rcon,
-        scheduler: !!srv.scheduler?.isActive(),
-        saveService: srv.isPrimary ? !!this._saveService : !!srv.db,
-        resources: srv.isPrimary && !!serverResources,
-        hasPlugin: this._plugins.some((p: Record<string, unknown>) => {
-          // Check if this plugin is associated with this server
-          if (srv.isPrimary) return false; // plugins are typically non-primary
-          return !!p.name;
-        }),
-        isPrimary: srv.isPrimary,
-        serverId: srv.serverId,
-        serverName: srv.config.serverName || '',
-      };
-      // Check if this is the hzmod-enabled server
-      for (const plugin of this._plugins) {
-        if (plugin.name === 'hzmod') {
-          // hzmod is registered with a serverId — only show on that server's dashboard
-          const pluginSrv = plugin.serverId;
-          if (!pluginSrv) {
-            caps.hzmod = true;
-            break;
-          } // no serverId set → show everywhere
-          if (pluginSrv === srv.serverId) {
-            caps.hzmod = true;
-          } // matches this server
-          break;
-        }
-      }
-      this._setCache('caps', srv.serverId, caps);
-      res.json(caps);
-    });
 
     registerPlayersRoutes(app, this);
     registerActivityRoutes(app, this);
