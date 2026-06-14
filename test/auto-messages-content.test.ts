@@ -19,12 +19,14 @@ describe('pvpScheduleLabel', () => {
 
   it('renders a window for an enabled schedule with distinct start/end', () => {
     const out = pvpScheduleLabel(cfg({ ...base }));
-    assert.match(out, /PvP Schedule: 18:00.22:00 UTC/);
+    // Match the en-dash separator literally, not the `.` wildcard.
+    assert.equal(out, 'PvP Schedule: 18:00–22:00 UTC');
   });
 
   it('prefixes the active day labels when pvpDays is set', () => {
     const out = pvpScheduleLabel(cfg({ ...base, pvpDays: new Set([1, 3, 5]) }));
-    assert.match(out, /Mon, Wed, Fri/);
+    // Verify the full window, not just the day labels.
+    assert.equal(out, 'PvP Schedule: Mon, Wed, Fri 18:00–22:00 UTC');
   });
 
   it('returns empty when PvP scheduling is disabled', () => {
