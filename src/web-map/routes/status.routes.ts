@@ -1,6 +1,10 @@
 /**
- * Status / landing routes: server list, public landing data, module status,
- * and panel status/stats/capabilities (all served from the background cache).
+ * Panel status routes: module status and panel status/stats/capabilities (all
+ * served from the background cache). These register AFTER the plugin route loop
+ * in _setupRoutes, matching main (where /api/status/modules and the panel
+ * status/stats/capabilities routes followed the plugin registration boundary).
+ * The public /api/servers + /api/landing routes live in public.routes.ts and
+ * register before the plugin loop.
  *
  * Behavior-preserving extraction from web-map/server.ts (P1-1 god-file split).
  * Handlers are verbatim; only `this.` -> `ctx.` was applied.
@@ -8,60 +12,9 @@
 import type { Express } from 'express';
 import type { WebMapRouteContext } from '../types/route-context.js';
 import { requireTier } from '../auth.js';
-import { rateLimit } from '../rate-limit.js';
-import config from '../../config/index.js';
 import serverResources from '../../server/server-resources.js';
 
 export function registerStatusRoutes(app: Express, ctx: WebMapRouteContext): void {
-  // ── API: List available servers (multi-server support) ──
-  app.get('/api/servers', requireTier('survivor'), (_req, res) => {
-    const servers = [{ id: 'primary', name: config.serverName || 'Primary Server' }];
-    const additional = ctx._loadServerList();
-    for (const s of additional) {
-      const dir = ctx._getServerDataDir(s.id);
-      if (dir) servers.push({ id: s.id, name: s.name || s.id });
-    }
-    res.json({ servers, multiServer: additional.length > 0 });
-  });
-  // ═══════════════════════════════════════════════════════
-  // Public Landing API — no auth required
-  // ═══════════════════════════════════════════════════════
-
-  /**
-   * Returns server status, connect info, and multi-server data for the
-   * public landing page. No authentication needed.
-   */
-  app.get('/api/landing', rateLimit(30000, 20), async (_req, res) => {
-    // Serve from background-polled cache — instant response
-    const cached = ctx._getCached('landing', 'global', 30000) as Record<string, unknown> | null;
-    if (cached) return res.json(cached);
-    // First request before background poller has run — build on demand
-    try {
-      const rconTimeout = (promise: Promise<unknown>) =>
-        Promise.race([
-          promise,
-          new Promise((_, rej) =>
-            setTimeout(() => {
-              rej(new Error('RCON timeout'));
-            }, 5000),
-          ),
-        ]);
-      await ctx._buildLandingData(rconTimeout);
-      const built = ctx._getCached('landing', 'global', 30000) as Record<string, unknown> | null;
-      if (built) return res.json(built);
-    } catch {
-      /* build failed */
-    }
-    res.json({
-      primary: {
-        name: config.serverName || 'HumanitZ Server',
-        status: 'unknown',
-        onlineCount: 0,
-        totalPlayers: 0,
-      },
-      servers: [],
-    });
-  });
   // ═══════════════════════════════════════════════════════
   // Panel API routes — server management, activity, chat, RCON console, settings
   // ═══════════════════════════════════════════════════════

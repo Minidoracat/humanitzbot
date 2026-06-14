@@ -93,6 +93,7 @@ import { registerPlayersRoutes } from './routes/players.routes.js';
 import { registerAdminActionsRoutes } from './routes/admin-actions.routes.js';
 import { registerCalibrationRoutes } from './routes/calibration.routes.js';
 import { registerStatusRoutes } from './routes/status.routes.js';
+import { registerPublicRoutes } from './routes/public.routes.js';
 
 const __dirname = getDirname(import.meta.url);
 
@@ -808,10 +809,20 @@ class WebMapServer {
       next();
     });
 
-    registerStatusRoutes(app, this);
+    // ── Pre-plugin core routes ──
+    // These register BEFORE the plugin loop, exactly as on main (where
+    // /api/servers, /api/landing, the player + calibration + admin routes all
+    // preceded the plugin registration boundary). Order among them is
+    // behavior-neutral (no overlapping paths); the plugin boundary is what
+    // determines Express first-match precedence for plugin-registered routes.
+    registerPublicRoutes(app, this);
     registerCalibrationRoutes(app, this);
+    registerPlayersRoutes(app, this);
+    registerAdminActionsRoutes(app, this);
 
-    // Plugin-registered routes
+    // Plugin-registered routes — boundary preserved from main: plugins register
+    // after the pre-plugin core routes above and before /api/status/modules and
+    // the panel status/activity/... routes below.
     for (const plugin of this._plugins) {
       if (typeof plugin.registerRoutes === 'function') {
         try {
@@ -827,7 +838,8 @@ class WebMapServer {
       }
     }
 
-    registerPlayersRoutes(app, this);
+    // ── Post-plugin routes ──
+    registerStatusRoutes(app, this);
     registerActivityRoutes(app, this);
     registerDbRoutes(app, this);
     registerMapdataRoutes(app, this);
@@ -850,7 +862,6 @@ class WebMapServer {
 
     registerServersActionsRoutes(app, this);
     registerTimelineRoutes(app, this);
-    registerAdminActionsRoutes(app, this);
   }
 
   _addErrorHandler(): void {
