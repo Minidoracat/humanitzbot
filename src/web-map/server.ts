@@ -20,13 +20,7 @@ import type { RuntimeConfigApplier } from '../config/runtime-config-applier.js';
 import { parseSave, normalizePlayerHorses, PERK_MAP } from '../parsers/save-parser.js';
 import { AFFLICTION_MAP } from '../parsers/game-data.js';
 import { cleanName as cleanActorName, cleanNameCached, cleanItemName } from '../parsers/ue4-names.js';
-import {
-  resolveItemName,
-  resolveItemArray,
-  resolveItemId,
-  searchItemIds,
-  normalizeItemLocale,
-} from '../i18n/item-names.js';
+import { resolveItemName, resolveItemArray, resolveItemId, searchItemIds } from '../i18n/item-names.js';
 import playerStats from '../tracking/player-stats.js';
 import playtime from '../tracking/playtime-tracker.js';
 import rcon from '../rcon/rcon.js';
@@ -44,7 +38,6 @@ import type { PanelApi } from '../server/panel-api.js';
 import serverResources, { formatBytes, formatUptime } from '../server/server-resources.js';
 import { ENV_CATEGORIES, ENV_CATEGORY_GROUPS, GAME_SETTINGS_CATEGORIES } from '../modules/panel-constants.js';
 import { buildMigrationMap, SERVER_SCOPED_KEYS, BOOTSTRAP_KEYS, _coerce } from '../db/config-migration.js';
-import { parseDbTimestampUtc } from '../db/timestamp.js';
 import { ENV_KEY_VALIDATORS, validateField } from '../db/config-validation.js';
 import { readPrivateKey } from '../utils/security.js';
 import {
@@ -56,6 +49,43 @@ import _panelApiInstance from '../server/panel-api.js';
 import { discoverPaths as _discoverPaths } from '../server/multi-server.js';
 import { errMsg } from '../utils/error.js';
 import { getDirname } from '../utils/paths.js';
+import type {
+  DbRow,
+  StructureRow,
+  VehicleRow,
+  ContainerRow,
+  CompanionRow,
+  DeadBodyRow,
+  QuestRow,
+  ActivityRow,
+  ItemInstanceRow,
+  ItemGroupRow,
+  ItemMovementRow,
+  ItemLocationSummaryRow,
+  DeathCauseRow,
+  ChatRow,
+  EnvEntry,
+} from './types/db-rows.js';
+import { DATA_DIR, SERVERS_DIR, SERVERS_FILE, PUBLIC_DIR, CALIBRATION_FILE } from './paths.js';
+import { rateLimit } from './rate-limit.js';
+import { _discoveryJobs } from './discovery-tracker.js';
+import {
+  _hasEntityActor,
+  _withItemDisplayName,
+  _requestLocale,
+  _resolveActivityRange,
+  _queryString,
+  _isoTimestamp,
+  _parseBoundedPositiveInt,
+  _parseNonNegativeInt,
+  _parseItemListView,
+  _activityBucketOffsetMinutes,
+  safeError,
+  stripControlChars,
+  safeUnknownString,
+  sendErrorWithData,
+  _extractLandingSettings,
+} from './route-helpers.js';
 
 const __dirname = getDirname(import.meta.url);
 
@@ -127,551 +157,6 @@ interface ConfigRepo {
   update(doc: string, data: Record<string, unknown>): void;
   delete(doc: string): void;
   loadAll(): Iterable<[string, { data: Record<string, unknown> }]>;
-}
-
-/** Row shape returned by better-sqlite3 .get() / .all() */
-type DbRow = Record<string, unknown>;
-
-// ── Typed DB row interfaces (match CREATE TABLE schemas in db/schema.ts) ──
-
-interface StructureRow {
-  id: number;
-  actor_class: string;
-  display_name: string;
-  owner_steam_id: string;
-  pos_x: number;
-  pos_y: number;
-  pos_z: number;
-  current_health: number;
-  max_health: number;
-  upgrade_level: number;
-  inventory: string;
-  attached_to_trailer: number;
-  no_spawn: number;
-  extra_data: string;
-}
-
-interface VehicleRow {
-  id: number;
-  class: string;
-  display_name: string;
-  pos_x: number;
-  pos_y: number;
-  pos_z: number;
-  health: number;
-  max_health: number;
-  fuel: number;
-  inventory: string;
-  upgrades: string;
-  extra: string;
-}
-
-interface ContainerRow {
-  actor_name: string;
-  items: string;
-  quick_slots: string;
-  locked: number;
-  does_spawn_loot: number;
-  alarm_off: number;
-  crafting_content: string;
-  pos_x: number;
-  pos_y: number;
-  pos_z: number;
-  extra: string;
-}
-
-interface CompanionRow {
-  id: number;
-  type: string;
-  actor_name: string;
-  owner_steam_id: string;
-  pos_x: number;
-  pos_y: number;
-  pos_z: number;
-  health: number;
-  extra: string;
-}
-
-interface DeadBodyRow {
-  actor_name: string;
-  pos_x: number;
-  pos_y: number;
-  pos_z: number;
-}
-
-interface QuestRow {
-  id: string;
-  type: string;
-  state: string;
-  time: string;
-  items: string;
-  pos_x: number;
-  pos_y: number;
-  pos_z: number;
-  updated_at: string;
-}
-
-interface ActivityRow {
-  id: number;
-  type: string;
-  category: string;
-  actor: string;
-  actor_name: string;
-  item: string;
-  amount: number;
-  details: string;
-  pos_x: number;
-  pos_y: number;
-  pos_z: number;
-  created_at: string;
-  steam_id?: string;
-  attributed_name?: string;
-  target_steam_id?: string;
-  target_name?: string;
-}
-
-type ActivityRangePreset = 'today' | 'yesterday' | '7d' | '30d' | 'all' | 'custom';
-
-type ActivityRange = {
-  preset: ActivityRangePreset;
-  timezone: string;
-  from: string;
-  to: string;
-  dateFrom: string;
-  dateTo: string;
-};
-
-function _activityDateKey(date: Date, timezone: string): string {
-  try {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: timezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).formatToParts(date);
-    const y = parts.find((p) => p.type === 'year')?.value ?? '';
-    const m = parts.find((p) => p.type === 'month')?.value ?? '';
-    const d = parts.find((p) => p.type === 'day')?.value ?? '';
-    if (y && m && d) return `${y}-${m}-${d}`;
-  } catch {
-    /* invalid timezone fallback below */
-  }
-  return date.toISOString().slice(0, 10);
-}
-
-function _addActivityDays(dateKey: string, days: number): string {
-  const date = new Date(`${dateKey}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
-function _activitySqlUtcStart(dateKey: string, timezone: string): string {
-  const asUtc = new Date(`${dateKey}T00:00:00Z`);
-  if (Number.isNaN(asUtc.getTime())) return '';
-  try {
-    const offset1 = _tzOffsetMs(asUtc, timezone);
-    const corrected = new Date(asUtc.getTime() - offset1);
-    const offset2 = _tzOffsetMs(corrected, timezone);
-    const utc = offset2 === offset1 ? corrected : new Date(asUtc.getTime() - offset2);
-    return utc.toISOString().slice(0, 19).replace('T', ' ');
-  } catch {
-    return asUtc.toISOString().slice(0, 19).replace('T', ' ');
-  }
-}
-
-function _activityBucketOffsetMinutes(timezone: string): number {
-  try {
-    return Math.round(_tzOffsetMs(new Date(), timezone || 'UTC') / 60000);
-  } catch {
-    return 0;
-  }
-}
-
-// Event types whose `actor`/`actor_name` columns hold raw UE4 entity names
-// (containers, structures, vehicles, horses…) rather than player names.
-// Historical activity_log rows store those raw names — they are cleaned at the
-// API boundary instead of rewriting millions of DB rows.
-const ENTITY_ACTOR_EVENT_PREFIXES = [
-  'container_',
-  'structure_',
-  'vehicle_',
-  'horse_',
-  'building_',
-  'raid_',
-  'clan_building_',
-  'airdrop_',
-  'world_',
-];
-
-function _hasEntityActor(eventType: string): boolean {
-  for (const prefix of ENTITY_ACTOR_EVENT_PREFIXES) {
-    if (eventType.startsWith(prefix)) return true;
-  }
-  return false;
-}
-
-/**
- * Attach a human-readable `displayName` next to the raw `item` id on item
- * tracking rows. The raw id stays untouched — the frontend uses it for
- * tooltips, fingerprint tracking, and LIKE-based search. The label is
- * locale-aware: pass the locale resolved by _requestLocale(req).
- */
-function _withItemDisplayName<T extends { item?: string | null }>(
-  row: T,
-  locale?: string,
-): T & { displayName?: string } {
-  if (!row.item) return row;
-  return { ...row, displayName: resolveItemName(row.item, locale) };
-}
-
-/**
- * Resolve the display locale for an API request. The panel frontend appends
- * `lang=<i18next language>` to API calls (see apiUrl in panel-core.js and
- * fetchPlayersQuick in app.js); direct API consumers can use the
- * Accept-Language header instead. Falls back to English.
- */
-function _requestLocale(req: { query?: Record<string, unknown>; headers?: Record<string, unknown> }): string {
-  const q = req.query?.lang;
-  if (typeof q === 'string' && q.trim()) return normalizeItemLocale(q);
-  const acceptLanguage = req.headers?.['accept-language'];
-  if (typeof acceptLanguage === 'string' && acceptLanguage) {
-    for (const part of acceptLanguage.split(',')) {
-      const tag = (part.split(';')[0] || '').trim().toLowerCase();
-      if (!tag) continue;
-      if (tag === 'zh-tw' || tag.startsWith('zh-hant')) return 'zh-TW';
-      if (tag === 'zh-cn' || tag.startsWith('zh-hans') || tag === 'zh') return 'zh-CN';
-      if (tag === 'en' || tag.startsWith('en-')) return 'en';
-    }
-  }
-  return 'en';
-}
-
-function _activityQueryString(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function _resolveActivityRange(query: Record<string, unknown>, timezone: string): ActivityRange {
-  const safeTz = timezone || 'UTC';
-  const today = _activityDateKey(new Date(), safeTz);
-  const requested = _activityQueryString(query.range).toLowerCase();
-  const rawFrom = _activityQueryString(query.from);
-  const rawTo = _activityQueryString(query.to);
-  const hasCustomDate = /^\d{4}-\d{2}-\d{2}$/.test(rawFrom) || /^\d{4}-\d{2}-\d{2}$/.test(rawTo);
-  const preset: ActivityRangePreset = ['today', 'yesterday', '7d', '30d', 'all', 'custom'].includes(requested)
-    ? (requested as ActivityRangePreset)
-    : hasCustomDate
-      ? 'custom'
-      : 'today';
-
-  if (preset === 'all') return { preset, timezone: safeTz, from: '', to: '', dateFrom: '', dateTo: '' };
-
-  let from = today;
-  let to = today;
-  if (preset === 'yesterday') {
-    from = _addActivityDays(today, -1);
-    to = from;
-  } else if (preset === '7d') {
-    from = _addActivityDays(today, -6);
-  } else if (preset === '30d') {
-    from = _addActivityDays(today, -29);
-  } else if (preset === 'custom') {
-    from = /^\d{4}-\d{2}-\d{2}$/.test(rawFrom) ? rawFrom : /^\d{4}-\d{2}-\d{2}$/.test(rawTo) ? rawTo : today;
-    to = /^\d{4}-\d{2}-\d{2}$/.test(rawTo) ? rawTo : from;
-    if (to < from) to = from;
-  }
-
-  return {
-    preset,
-    timezone: safeTz,
-    from,
-    to,
-    dateFrom: _activitySqlUtcStart(from, safeTz),
-    dateTo: _activitySqlUtcStart(_addActivityDays(to, 1), safeTz),
-  };
-}
-
-interface ItemInstanceRow {
-  id: number;
-  fingerprint: string;
-  item: string;
-  durability: number;
-  ammo: number;
-  attachments: string | string[];
-  cap: number;
-  max_dur: number;
-  location_type: string;
-  location_id: string;
-  location_slot: string;
-  pos_x: number;
-  pos_y: number;
-  pos_z: number;
-  amount: number;
-  active: number;
-  created_at: string;
-  updated_at: string;
-}
-
-interface ItemGroupRow {
-  id: number;
-  fingerprint: string;
-  item: string;
-  durability: number;
-  ammo: number;
-  attachments: string | string[];
-  cap: number;
-  max_dur: number;
-  location_type: string;
-  location_id: string;
-  location_slot: string;
-  pos_x: number;
-  pos_y: number;
-  pos_z: number;
-  quantity: number;
-  active: number;
-  created_at: string;
-  updated_at: string;
-}
-
-interface ItemMovementRow {
-  id: number;
-  instance_id: number;
-  item: string;
-  from_type: string;
-  from_id: string;
-  from_slot: string;
-  to_type: string;
-  to_id: string;
-  to_slot: string;
-  amount: number;
-  attributed_steam_id: string;
-  attributed_name: string;
-  pos_x: number;
-  pos_y: number;
-  pos_z: number;
-  created_at: string;
-}
-
-interface ItemLocationSummaryRow {
-  type: string;
-  id: string;
-  instanceCount: number;
-  groupCount: number;
-  totalItems: number;
-}
-
-type ItemListView = 'all' | 'instances' | 'groups';
-
-function _queryString(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : '';
-  return '';
-}
-
-/**
- * Resolve the first parseable timestamp to an ISO UTC string. Accepts both the
- * cache's ISO form and the DB's canonical 'YYYY-MM-DD HH:MM:SS' (UTC) form, so
- * browser-side `new Date()` never parses a zone-less string as local time.
- */
-function _isoTimestamp(...candidates: unknown[]): string | null {
-  for (const candidate of candidates) {
-    const parsed = parseDbTimestampUtc(candidate);
-    if (parsed) return parsed.toISOString();
-  }
-  return null;
-}
-
-function _parseBoundedPositiveInt(value: unknown, defaultValue: number, max: number): number {
-  const parsed = parseInt(_queryString(value), 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return defaultValue;
-  return Math.min(parsed, max);
-}
-
-function _parseNonNegativeInt(value: unknown): number {
-  const parsed = parseInt(_queryString(value), 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
-  return parsed;
-}
-
-function _parseItemListView(value: unknown): ItemListView {
-  const view = _queryString(value);
-  if (view === 'instances' || view === 'groups') return view;
-  return 'all';
-}
-
-interface DeathCauseRow {
-  id: number;
-  victim_name: string;
-  victim_steam_id: string;
-  cause_type: string;
-  cause_name: string;
-  cause_raw: string;
-  damage_total: number;
-  pos_x: number | null;
-  pos_y: number | null;
-  pos_z: number | null;
-  created_at: string;
-}
-
-interface ChatRow {
-  id: number;
-  type: string;
-  player_name: string;
-  steam_id: string;
-  message: string;
-  direction: string;
-  discord_user: string;
-  is_admin: number;
-  created_at: string;
-}
-
-interface EnvEntry {
-  type: 'section' | 'keyval' | 'commented' | 'empty';
-  label?: string;
-  key?: string;
-  value?: string;
-}
-
-// ── Rate limiter (express-rate-limit, per-IP + path) ──
-import expressRateLimit from 'express-rate-limit';
-function rateLimit(windowMs: number, maxReqs: number) {
-  return expressRateLimit({
-    windowMs,
-    max: maxReqs,
-    standardHeaders: false,
-    legacyHeaders: false,
-    keyGenerator: (req) => {
-      // Normalize IPv6-mapped IPv4 (::ffff:1.2.3.4 → 1.2.3.4) for consistent rate limiting
-      const raw = req.ip ?? 'unknown';
-      const ip = raw.startsWith('::ffff:') ? raw.slice(7) : raw;
-      return ip + ':' + req.path;
-    },
-    validate: { keyGeneratorIpFallback: false },
-    handler: (_req, res) => {
-      sendError(res, API_ERRORS.RATE_LIMITED, 429);
-    },
-  });
-}
-
-// ── Discovery job tracking (multi-server SFTP auto-discovery) ──
-const _discoveryJobs = new Map<
-  string,
-  { startTime: number; state?: string; result?: unknown; error?: string | null; currentStep?: string | null }
->();
-setInterval(() => {
-  const now = Date.now();
-  for (const [jid, job] of _discoveryJobs) {
-    if (now - job.startTime > 300000) _discoveryJobs.delete(jid);
-  }
-}, 300000).unref();
-
-/** Sanitize error messages for client responses — strip file paths and stack traces */
-function safeError(err: unknown): string {
-  const msg = err ? errMsg(err) : 'Internal server error';
-  // Strip absolute paths
-  return msg.replace(/\/[\w/.-]+/g, '[path]').substring(0, 200);
-}
-
-function stripControlChars(value: unknown): string {
-  const input = safeUnknownString(value);
-  let out = '';
-  for (let i = 0; i < input.length; i++) {
-    const code = input.charCodeAt(i);
-    if ((code >= 0 && code <= 8) || code === 11 || code === 12 || (code >= 14 && code <= 31) || code === 127) {
-      continue;
-    }
-    out += input[i] ?? '';
-  }
-  return out;
-}
-
-function safeUnknownString(value: unknown): string {
-  if (value == null) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
-  if (typeof value === 'symbol') return value.toString();
-  if (typeof value === 'function') return value.toString();
-  return JSON.stringify(value);
-}
-
-function sendErrorWithData(
-  res: import('express').Response,
-  code: string,
-  data: Record<string, unknown>,
-  status = 400,
-  details?: string,
-): void {
-  const originalJson = res.json.bind(res);
-  res.json = ((payload: unknown) => {
-    res.json = originalJson;
-    return originalJson({ ...(payload as Record<string, unknown>), ...data });
-  }) as typeof res.json;
-  sendError(res, code, status, details);
-}
-
-const DATA_DIR = path.join(__dirname, '..', '..', 'data');
-const SERVERS_DIR = path.join(DATA_DIR, 'servers');
-const SERVERS_FILE = path.join(DATA_DIR, 'servers.json');
-const PUBLIC_DIR = path.join(__dirname, 'public');
-const CALIBRATION_FILE = path.join(DATA_DIR, 'map-calibration.json');
-
-/**
- * Extract a curated subset of server settings for the landing page info panel.
- * Keeps the response small — only settings that make sense to display publicly.
- * @param {object} ss — Full server_settings object from bot_state
- * @returns {object} Curated settings for frontend rendering
- */
-function _extractLandingSettings(ss: Record<string, string | undefined> | null): Record<string, unknown> | null {
-  if (!ss) return null;
-  const n = (k: string, fb: number) => {
-    const v = parseFloat(ss[k] ?? '');
-    return isNaN(v) ? fb : v;
-  };
-  const i = (k: string, fb: number) => {
-    const v = parseInt(ss[k] ?? '', 10);
-    return isNaN(v) ? fb : v;
-  };
-  return {
-    // PvP & death
-    pvp: i('PVP', 0),
-    onDeath: i('OnDeath', 1),
-    friendlyFire: i('FriendlyFire', 0),
-    // Difficulty
-    zombieHealth: i('ZombieDiffHealth', 2),
-    zombieSpeed: i('ZombieDiffSpeed', 2),
-    zombieDamage: i('ZombieDiffDamage', 2),
-    zombieAmount: n('ZombieAmountMulti', 1),
-    banditHealth: i('HumanDiffHealth', 2),
-    banditDamage: i('HumanDiffDamage', 2),
-    banditAmount: n('HumanAmountMulti', 1),
-    aiEvents: i('AIEvent', 2),
-    // Loot
-    rarityFood: i('RarityFood', 2),
-    rarityDrink: i('RarityDrink', 2),
-    rarityMelee: i('RarityMelee', 2),
-    rarityRanged: i('RarityRanged', 2),
-    rarityAmmo: i('RarityAmmo', 2),
-    rarityArmor: i('RarityArmor', 2),
-    rarityResources: i('RarityResources', 2),
-    // World
-    xpMultiplier: n('XpMultiplier', 1),
-    dayLength: i('DayLength', 40),
-    nightLength: i('NightLength', 20),
-    daysPerSeason: i('DaysPerSeason', 28),
-    startSeason: i('StartSeason', 3),
-    // Features
-    lootRespawn: i('LootRespawn', 1),
-    airDrops: i('AirDrop', 1),
-    dogCompanion: i('DogEnabled', 1),
-    weaponBreak: i('WeaponBreak', 1),
-    foodDecay: n('FoodDecay', 1),
-    buildingDecay: i('BuildingDecay', 14),
-    maxVehicles: i('MaxVehiclePerPlayer', 2),
-    // Enriched world stats (injected by save-service)
-    worldStructures: i('hmz_totalStructures', 0) || undefined,
-    worldVehicles: i('hmz_totalVehicles', 0) || undefined,
-    worldCompanions: i('hmz_totalCompanions', 0) || undefined,
-    totalKills: i('hmz_totalKills', 0) || undefined,
-  };
 }
 
 class WebMapServer {
