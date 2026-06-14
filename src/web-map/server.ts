@@ -15,7 +15,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import config, { getConfigValue, setConfigValue, _tzOffsetMs } from '../config/index.js';
-import { resolveReloadStrategy, summarizeConfigReloadApplyAsync } from '../config/reload-strategy.js';
+import { summarizeConfigReloadApplyAsync } from '../config/reload-strategy.js';
 import type { RuntimeConfigApplier } from '../config/runtime-config-applier.js';
 import { parseSave, normalizePlayerHorses, PERK_MAP } from '../parsers/save-parser.js';
 import { AFFLICTION_MAP } from '../parsers/game-data.js';
@@ -86,6 +86,29 @@ import {
   sendErrorWithData,
   _extractLandingSettings,
 } from './route-helpers.js';
+import {
+  ENV_SENSITIVE_KEYS,
+  ENV_READONLY_KEYS,
+  ENV_FIELD_BY_KEY,
+  BOT_CONFIG_OPTION_SETS,
+  BOT_CONFIG_TYPED_RUNTIME_KEYS,
+  BOT_CONFIG_REQUIRED_RUNTIME_KEYS,
+  _botConfigItemMetadata,
+  _botConfigDisplayValue,
+  _serializeBotConfigInputValue,
+  _normalizeBotConfigTypedValue,
+  parseEnvFile,
+} from './bot-config-meta.js';
+import {
+  ENV_TO_SERVERDEF,
+  _setNestedValue,
+  _deleteNestedValue,
+  _buildServerDefSections,
+  _getServerDef,
+  _saveServerDef,
+  _maskServerDef,
+} from './serverdef-repo.js';
+import type { ConfigRepo } from './types/config-repo.js';
 
 const __dirname = getDirname(import.meta.url);
 
@@ -148,15 +171,6 @@ declare module 'express-session' {
     username?: string;
     discordId?: string;
   }
-}
-
-/** Minimal interface for ConfigRepository (get/set/update config documents). */
-interface ConfigRepo {
-  get(doc: string): Record<string, unknown> | undefined;
-  set(doc: string, data: Record<string, unknown>): void;
-  update(doc: string, data: Record<string, unknown>): void;
-  delete(doc: string): void;
-  loadAll(): Iterable<[string, { data: Record<string, unknown> }]>;
 }
 
 class WebMapServer {
@@ -3030,7 +3044,7 @@ class WebMapServer {
       if (!req.srv.isPrimary) {
         try {
           const serverId = req.srv.serverId;
-          const ok = _saveServerDef(serverId, (serverDef) => {
+          const ok = _saveServerDef(configRepo, serverId, (serverDef) => {
             serverDef.restartTimes = timesStr;
             serverDef.restartProfiles = profilesStr;
             serverDef.enableServerScheduler = restartTimes.length > 0;
@@ -3142,628 +3156,12 @@ class WebMapServer {
       }
     });
 
-    // ══════════════════════════════════════════════════════════════════
-    //  Bot Configuration API — read/write .env file (primary) or
-    //  servers.json entry (non-primary / multi-server)
-    // ══════════════════════════════════════════════════════════════════
-
-    // Keys that contain credentials — values are NEVER sent to the client.
-    // Write is allowed (masked placeholder is replaced only if user provides a real value).
-    const ENV_SENSITIVE_KEYS = new Set([
-      'DISCORD_TOKEN',
-      'DISCORD_OAUTH_SECRET',
-      'RCON_PASSWORD',
-      'SFTP_PASSWORD',
-      'SFTP_PRIVATE_KEY_PATH',
-      'PANEL_API_KEY',
-    ]);
-
-    // Keys that are read-only (managed by the bot/bootstrap .env, not user-editable via web)
-    const ENV_READONLY_KEYS = new Set(['ENV_SCHEMA_VERSION', ...BOOTSTRAP_KEYS]);
-
-    function _reloadStrategyReasonKey(envKey: string, reloadStrategy: string): string {
-      if (envKey === 'WEB_MAP_SESSION_SECRET') return 'settings.reload_reason.session_secret';
-      return `settings.reload_strategy_desc.${reloadStrategy.replace(/-/g, '_')}`;
-    }
-
-    function _botConfigRuntimeMetadata(envKey: string): { reloadStrategy: string; reloadStrategyReasonKey: string } {
-      const reloadStrategy = resolveReloadStrategy(envKey);
-      return {
-        reloadStrategy,
-        reloadStrategyReasonKey: _reloadStrategyReasonKey(envKey, reloadStrategy),
-      };
-    }
-
-    type BotConfigFieldMeta = {
-      env: string;
-      label?: string;
-      type?: string;
-      style?: string;
-      sensitive?: boolean;
-    };
-
-    const ENV_FIELD_BY_KEY = new Map<string, BotConfigFieldMeta>();
-    for (const cat of ENV_CATEGORIES as Array<{ fields: BotConfigFieldMeta[] }>) {
-      for (const field of cat.fields) {
-        ENV_FIELD_BY_KEY.set(field.env, field);
-      }
-    }
-
-    const ENUM_OPTION_LABELS: Record<string, Record<string, string>> = {
-      BOT_LOCALE: { en: 'English', 'zh-TW': '繁體中文', 'zh-CN': '简体中文' },
-      AGENT_MODE: {
-        auto: 'auto',
-        agent: 'agent',
-        direct: 'direct',
-        cache: 'cache (legacy)',
-      },
-      AGENT_TRIGGER: { auto: 'auto', rcon: 'rcon', panel: 'panel', ssh: 'ssh', none: 'none' },
-      SESSION_STORE: { memory: 'memory', sqlite: 'sqlite', redis: 'redis' },
-    };
-
-    const ENUM_OPTION_DESCRIPTIONS: Record<string, Record<string, string>> = {
-      AGENT_MODE: {
-        cache: 'Legacy/deprecated compatibility mode; keep existing cache values valid, prefer auto/agent/direct.',
-      },
-    };
-
-    function _buildTimezoneOptionSet(): string[] {
-      // SAFETY: the ES2022 lib types Intl.supportedValuesOf as always-present, but we model it as
-      // optional so the runtime feature-detection guard below stays meaningful on engines that
-      // predate it. Removing the cast makes the `if` provably-truthy (no-unnecessary-condition).
-      const supportedValuesOf = (Intl as unknown as { supportedValuesOf?: (key: 'timeZone') => string[] })
-        .supportedValuesOf;
-      const zones = new Set<string>(['UTC', 'Etc/UTC']);
-      if (supportedValuesOf) {
-        for (const zone of supportedValuesOf('timeZone')) {
-          zones.add(zone);
-        }
-      }
-      return [...zones].sort((a, b) => a.localeCompare(b));
-    }
-
-    const BOT_CONFIG_OPTION_SETS: Record<string, string[]> = {
-      timezones: _buildTimezoneOptionSet(),
-    };
-
-    function _enumControlOptions(envKey: string, options: string[]): Record<string, unknown>[] {
-      const labels = ENUM_OPTION_LABELS[envKey] ?? {};
-      const descriptions = ENUM_OPTION_DESCRIPTIONS[envKey] ?? {};
-      return options.map((value) => {
-        const option: Record<string, unknown> = {
-          value,
-          label: labels[value] ?? value,
-        };
-        if (descriptions[value]) option.description = descriptions[value];
-        if (envKey === 'AGENT_MODE' && value === 'cache') {
-          option.legacy = true;
-          option.deprecated = true;
-        }
-        return option;
-      });
-    }
-
-    function _botConfigControlMetadata(
-      envKey: string,
-      field: BotConfigFieldMeta | undefined,
-      flags: { sensitive?: boolean; readOnly?: boolean },
-    ): Record<string, unknown> {
-      if (flags.readOnly) return { control: 'readonly' };
-      if (flags.sensitive) return { control: 'password' };
-
-      const validator = ENV_KEY_VALIDATORS[envKey];
-      const fieldType = field?.type ?? (envKey === 'ENABLED' ? 'bool' : undefined);
-      if (fieldType === 'bool') return { control: 'toggle', valueType: 'boolean' };
-
-      if (validator) {
-        if (validator.type === 'enum') {
-          return {
-            control: 'select',
-            validator: validator.type,
-            valueType: 'string',
-            options: _enumControlOptions(envKey, validator.options),
-          };
-        }
-        if (validator.type === 'timezone') {
-          return {
-            control: 'combobox',
-            validator: validator.type,
-            valueType: 'string',
-            optionSet: 'timezones',
-            freeform: true,
-          };
-        }
-        if (validator.type === 'time') {
-          return {
-            control: 'time',
-            validator: validator.type,
-            valueType: 'string',
-            pattern: 'HH:MM',
-            required: BOT_CONFIG_REQUIRED_RUNTIME_KEYS.has(envKey),
-          };
-        }
-        if (validator.type === 'json') {
-          return {
-            control: 'textarea',
-            validator: validator.type,
-            valueType: 'json',
-            rows: 3,
-            singleLine: true,
-          };
-        }
-        if (validator.type === 'port') {
-          return {
-            control: 'number',
-            validator: validator.type,
-            valueType: 'integer',
-            inputMode: 'numeric',
-            min: 1,
-            max: 65535,
-          };
-        }
-        if (validator.type === 'interval') {
-          return {
-            control: 'number',
-            validator: validator.type,
-            valueType: 'integer',
-            inputMode: 'numeric',
-            min: validator.min,
-          };
-        }
-        if (validator.type === 'url') {
-          return { control: 'url', validator: validator.type, valueType: 'string' };
-        }
-        if (validator.type === 'snowflake') {
-          return {
-            control: 'text',
-            validator: validator.type,
-            valueType: 'string',
-            inputMode: 'numeric',
-            pattern: 'comma-separated Discord snowflake IDs',
-          };
-        }
-        return { control: 'text', validator: validator.type, valueType: 'string' };
-      }
-
-      if (field?.style === 'paragraph') {
-        return { control: 'textarea', valueType: 'string', rows: 3, singleLine: true };
-      }
-      if (fieldType === 'int') {
-        return { control: 'number', valueType: 'integer', inputMode: 'numeric' };
-      }
-      return { control: 'text', valueType: 'string' };
-    }
-
-    function _botConfigItemMetadata(
-      envKey: string,
-      field: BotConfigFieldMeta | undefined,
-      flags: { sensitive?: boolean; readOnly?: boolean },
-    ): Record<string, unknown> {
-      return {
-        ..._botConfigRuntimeMetadata(envKey),
-        ..._botConfigControlMetadata(envKey, field, flags),
-      };
-    }
-
-    function _formatMinutesAsTime(totalMinutes: number): string {
-      const normalized = ((Math.trunc(totalMinutes) % 1440) + 1440) % 1440;
-      const hours = Math.floor(normalized / 60);
-      const minutes = normalized % 60;
-      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-    }
-
-    function _botConfigDisplayValue(envKey: string, rawValue: unknown): string {
-      if ((envKey !== 'PVP_START_TIME' && envKey !== 'PVP_END_TIME') || rawValue == null || rawValue === '') {
-        return safeUnknownString(rawValue);
-      }
-      if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
-        return _formatMinutesAsTime(rawValue);
-      }
-      const value = safeUnknownString(rawValue).trim();
-      if (/^\d{2}:\d{2}$/.test(value)) return value;
-      if (/^\d+$/.test(value)) {
-        const n = parseInt(value, 10);
-        if (n >= 0 && n <= 23) return `${String(n).padStart(2, '0')}:00`;
-        if (n >= 0 && n < 1440) return _formatMinutesAsTime(n);
-      }
-      return value;
-    }
-
-    const BOT_CONFIG_TYPED_RUNTIME_KEYS = new Set(['PVP_START_TIME', 'PVP_END_TIME', 'PVP_SETTINGS_OVERRIDES']);
-    const BOT_CONFIG_REQUIRED_RUNTIME_KEYS = new Set(['PVP_START_TIME', 'PVP_END_TIME']);
-
-    function _serializeBotConfigInputValue(value: unknown): string | undefined {
-      switch (typeof value) {
-        case 'string':
-          return value;
-        case 'number':
-        case 'boolean':
-        case 'bigint':
-          return String(value);
-        case 'symbol':
-          return value.toString();
-        case 'object':
-          return JSON.stringify(value);
-        case 'function':
-        case 'undefined':
-          return undefined;
-      }
-    }
-
-    function _parseBotConfigTimeMinutes(value: unknown): number | undefined {
-      if (typeof value === 'number') {
-        if (Number.isFinite(value) && value >= 0 && value < 1440) return value;
-        throw new Error('Invalid time minutes value');
-      }
-      const raw = safeUnknownString(value).trim();
-      if (!raw) return undefined;
-      const match = raw.match(/^(\d{2}):(\d{2})$/);
-      if (!match) throw new Error('Time must be in HH:MM format');
-      const hours = parseInt(match[1] ?? '0', 10);
-      const minutes = parseInt(match[2] ?? '0', 10);
-      if (hours > 23 || minutes > 59) throw new Error('Time hours must be under 24 and minutes under 60');
-      return hours * 60 + minutes;
-    }
-
-    function _normalizeBotConfigJsonObject(value: Record<string, unknown>): Record<string, string> {
-      const normalized: Record<string, string> = {};
-      for (const [key, entryValue] of Object.entries(value)) {
-        if (typeof entryValue !== 'string' && typeof entryValue !== 'number' && typeof entryValue !== 'boolean') {
-          throw new Error('JSON object values must be strings, numbers, or booleans');
-        }
-        normalized[key] = String(entryValue);
-      }
-      return normalized;
-    }
-
-    function _parseBotConfigJsonObject(value: unknown): Record<string, string> | null {
-      if (value == null) return null;
-      if (typeof value === 'object' && !Array.isArray(value)) {
-        return _normalizeBotConfigJsonObject(value as Record<string, unknown>);
-      }
-      const raw = typeof value === 'string' ? value.trim() : safeUnknownString(value).trim();
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as unknown;
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('JSON value must be an object');
-      }
-      return _normalizeBotConfigJsonObject(parsed as Record<string, unknown>);
-    }
-
-    function _normalizeBotConfigTypedValue(envKey: string, value: unknown): unknown {
-      if (envKey === 'PVP_START_TIME' || envKey === 'PVP_END_TIME') {
-        return _parseBotConfigTimeMinutes(value);
-      }
-      if (envKey === 'PVP_SETTINGS_OVERRIDES') {
-        return _parseBotConfigJsonObject(value);
-      }
-      return value;
-    }
-
-    // ── Per-server bot config (servers.json) helpers ──────────────
-
-    /**
-     * Mapping from .env keys to servers.json nested paths.
-     * Each entry: { jsonPath, sensitive?, readOnly?, label? }
-     * jsonPath uses dot notation: 'rcon.host', 'channels.serverStatus', etc.
-     */
-    const ENV_TO_SERVERDEF: Record<
-      string,
-      { jsonPath: string; legacyJsonPath?: string; sensitive?: boolean; readOnly?: boolean; label?: string }
-    > = {
-      // Identity
-      SERVER_NAME: { jsonPath: 'name' },
-      PUBLIC_HOST: { jsonPath: 'publicHost' },
-      GAME_PORT: { jsonPath: 'gamePort' },
-      // RCON
-      RCON_HOST: { jsonPath: 'rcon.host' },
-      RCON_PORT: { jsonPath: 'rcon.port' },
-      RCON_PASSWORD: { jsonPath: 'rcon.password', sensitive: true },
-      // SFTP
-      SFTP_HOST: { jsonPath: 'sftp.host' },
-      SFTP_PORT: { jsonPath: 'sftp.port' },
-      SFTP_USER: { jsonPath: 'sftp.user' },
-      SFTP_PASSWORD: { jsonPath: 'sftp.password', sensitive: true },
-      SFTP_PRIVATE_KEY_PATH: { jsonPath: 'sftp.privateKeyPath', sensitive: true },
-      // Channels
-      SERVER_STATUS_CHANNEL_ID: { jsonPath: 'channels.serverStatus' },
-      PLAYER_STATS_CHANNEL_ID: { jsonPath: 'channels.playerStats' },
-      CHAT_CHANNEL_ID: { jsonPath: 'channels.chat' },
-      LOG_CHANNEL_ID: { jsonPath: 'channels.log' },
-      ADMIN_CHANNEL_ID: { jsonPath: 'channels.admin' },
-      ACTIVITY_LOG_CHANNEL_ID: { jsonPath: 'channels.activityLog' },
-      // SFTP paths
-      SFTP_LOG_PATH: { jsonPath: 'paths.logPath' },
-      SFTP_CONNECT_LOG_PATH: { jsonPath: 'paths.connectLogPath' },
-      SFTP_ID_MAP_PATH: { jsonPath: 'paths.idMapPath' },
-      SFTP_SAVE_PATH: { jsonPath: 'paths.savePath' },
-      SFTP_SETTINGS_PATH: { jsonPath: 'paths.settingsPath' },
-      SFTP_WELCOME_PATH: { jsonPath: 'paths.welcomePath' },
-      // Timezones
-      BOT_TIMEZONE: { jsonPath: 'botTimezone' },
-      LOG_TIMEZONE: { jsonPath: 'logTimezone' },
-      // Docker / restart
-      DOCKER_CONTAINER: { jsonPath: 'dockerContainer' },
-      ENABLE_SERVER_SCHEDULER: { jsonPath: 'enableServerScheduler' },
-      RESTART_TIMES: { jsonPath: 'restartTimes' },
-      RESTART_PROFILES: { jsonPath: 'restartProfiles' },
-      // PvP
-      PVP_START_TIME: { jsonPath: 'pvpStartMinutes', legacyJsonPath: 'pvpStartTime' },
-      PVP_END_TIME: { jsonPath: 'pvpEndMinutes', legacyJsonPath: 'pvpEndTime' },
-      PVP_SETTINGS_OVERRIDES: { jsonPath: 'pvpSettingsOverrides' },
-      ENABLE_PVP_SCHEDULER: { jsonPath: 'enablePvpScheduler' },
-      PVP_DAYS: { jsonPath: 'pvpDays' },
-      // Activity log filters (per-server overrides; inherit primary when unset)
-      ENABLE_ACTIVITY_LOG: { jsonPath: 'enableActivityLog' },
-      ENABLE_CONTAINER_LOG: { jsonPath: 'enableContainerLog' },
-      ENABLE_HORSE_LOG: { jsonPath: 'enableHorseLog' },
-      ENABLE_VEHICLE_LOG: { jsonPath: 'enableVehicleLog' },
-      ENABLE_STRUCTURE_LOG: { jsonPath: 'enableStructureLog' },
-      ENABLE_WORLD_EVENT_FEED: { jsonPath: 'enableWorldEventFeed' },
-      SHOW_INVENTORY_LOG: { jsonPath: 'showInventoryLog' },
-      // Auto messages
-      ENABLE_WELCOME_MSG: { jsonPath: 'autoMessages.enableWelcomeMsg' },
-      ENABLE_WELCOME_FILE: { jsonPath: 'autoMessages.enableWelcomeFile' },
-      ENABLE_AUTO_MSG_LINK: { jsonPath: 'autoMessages.enableAutoMsgLink' },
-      ENABLE_AUTO_MSG_PROMO: { jsonPath: 'autoMessages.enableAutoMsgPromo' },
-      AUTO_MSG_LINK_TEXT: { jsonPath: 'autoMessages.linkText' },
-      AUTO_MSG_PROMO_TEXT: { jsonPath: 'autoMessages.promoText' },
-      DISCORD_INVITE_LINK: { jsonPath: 'autoMessages.discordLink' },
-      // Panel API
-      PANEL_SERVER_URL: { jsonPath: 'panel.serverUrl' },
-      PANEL_API_KEY: { jsonPath: 'panel.apiKey', sensitive: true },
-      // Module toggles (stored in modules.* in servers.json)
-      ENABLE_SERVER_STATUS: { jsonPath: 'modules.serverStatus' },
-      ENABLE_CHAT_RELAY: { jsonPath: 'modules.chatRelay' },
-      ENABLE_LOG_WATCHER: { jsonPath: 'modules.logWatcher' },
-      ENABLE_PLAYER_STATS: { jsonPath: 'modules.playerStats' },
-      // Server enabled
-      ENABLED: { jsonPath: 'enabled' },
-    };
-
-    /** Read a nested value from an object using dot-path: 'rcon.host' → obj.rcon.host */
-    function _getNestedValue(obj: Record<string, unknown>, dotPath: string): unknown {
-      const parts = dotPath.split('.');
-      let cur: unknown = obj;
-      for (const pk of parts) {
-        if (cur == null || typeof cur !== 'object') return undefined;
-        cur = (cur as Record<string, unknown>)[pk];
-      }
-      return cur;
-    }
-
-    /** Set a nested value on an object using dot-path, creating intermediary objects. */
-    function _setNestedValue(obj: Record<string, unknown>, dotPath: string, value: unknown): void {
-      const parts = dotPath.split('.');
-      let cur: Record<string, unknown> = obj;
-      for (let i = 0; i < parts.length - 1; i++) {
-        const p = parts[i] as string;
-        if (cur[p] == null || typeof cur[p] !== 'object') cur[p] = {};
-        cur = cur[p] as Record<string, unknown>;
-      }
-      const lastKey = parts[parts.length - 1];
-      if (lastKey !== undefined) cur[lastKey] = value;
-    }
-
-    /** Delete a nested value on an object using dot-path. */
-    function _deleteNestedValue(obj: Record<string, unknown>, dotPath: string): void {
-      const parts = dotPath.split('.');
-      let cur: Record<string, unknown> = obj;
-      for (let i = 0; i < parts.length - 1; i++) {
-        const p = parts[i] as string;
-        const next = cur[p];
-        if (!next || typeof next !== 'object') return;
-        cur = next as Record<string, unknown>;
-      }
-      const lastKey = parts[parts.length - 1];
-      if (lastKey !== undefined) Reflect.deleteProperty(cur, lastKey);
-    }
-
-    /** Build categorized bot-config sections from a servers.json serverDef entry. */
-    function _buildServerDefSections(serverDef: Record<string, unknown>): Record<string, unknown>[] {
-      const categories = [
-        { label: 'Server Identity', keys: ['SERVER_NAME', 'PUBLIC_HOST', 'GAME_PORT', 'ENABLED'] },
-        { label: 'RCON', keys: ['RCON_HOST', 'RCON_PORT', 'RCON_PASSWORD'] },
-        { label: 'SFTP', keys: ['SFTP_HOST', 'SFTP_PORT', 'SFTP_USER', 'SFTP_PASSWORD', 'SFTP_PRIVATE_KEY_PATH'] },
-        {
-          label: 'Channel IDs',
-          keys: [
-            'SERVER_STATUS_CHANNEL_ID',
-            'PLAYER_STATS_CHANNEL_ID',
-            'CHAT_CHANNEL_ID',
-            'LOG_CHANNEL_ID',
-            'ADMIN_CHANNEL_ID',
-            'ACTIVITY_LOG_CHANNEL_ID',
-          ],
-        },
-        {
-          label: 'SFTP File Paths',
-          keys: [
-            'SFTP_LOG_PATH',
-            'SFTP_CONNECT_LOG_PATH',
-            'SFTP_ID_MAP_PATH',
-            'SFTP_SAVE_PATH',
-            'SFTP_SETTINGS_PATH',
-            'SFTP_WELCOME_PATH',
-          ],
-        },
-        { label: 'Timezones', keys: ['BOT_TIMEZONE', 'LOG_TIMEZONE'] },
-        {
-          label: 'Server Scheduler',
-          keys: ['ENABLE_SERVER_SCHEDULER', 'RESTART_TIMES', 'RESTART_PROFILES', 'DOCKER_CONTAINER'],
-        },
-        {
-          label: 'PvP Scheduler',
-          keys: ['ENABLE_PVP_SCHEDULER', 'PVP_START_TIME', 'PVP_END_TIME', 'PVP_DAYS', 'PVP_SETTINGS_OVERRIDES'],
-        },
-        {
-          label: 'Activity Log Filters',
-          keys: [
-            'ENABLE_ACTIVITY_LOG',
-            'ENABLE_CONTAINER_LOG',
-            'ENABLE_HORSE_LOG',
-            'ENABLE_VEHICLE_LOG',
-            'ENABLE_STRUCTURE_LOG',
-            'ENABLE_WORLD_EVENT_FEED',
-            'SHOW_INVENTORY_LOG',
-          ],
-        },
-        {
-          label: 'Auto Messages',
-          keys: [
-            'ENABLE_WELCOME_MSG',
-            'ENABLE_WELCOME_FILE',
-            'ENABLE_AUTO_MSG_LINK',
-            'ENABLE_AUTO_MSG_PROMO',
-            'AUTO_MSG_LINK_TEXT',
-            'AUTO_MSG_PROMO_TEXT',
-            'DISCORD_INVITE_LINK',
-          ],
-        },
-        {
-          label: 'Module Toggles',
-          keys: ['ENABLE_SERVER_STATUS', 'ENABLE_CHAT_RELAY', 'ENABLE_LOG_WATCHER', 'ENABLE_PLAYER_STATS'],
-        },
-        { label: 'Panel API', keys: ['PANEL_SERVER_URL', 'PANEL_API_KEY'] },
-      ];
-
-      const sections = [];
-      for (const cat of categories as { label: string; keys: string[] }[]) {
-        const keys: Record<string, unknown>[] = [];
-        for (const envKey of cat.keys) {
-          const mapping = ENV_TO_SERVERDEF[envKey];
-          if (!mapping) continue;
-          let raw = _getNestedValue(serverDef, mapping.jsonPath);
-          if ((raw == null || raw === '') && mapping.legacyJsonPath) {
-            raw = _getNestedValue(serverDef, mapping.legacyJsonPath);
-          }
-          const value = _botConfigDisplayValue(envKey, raw);
-          const isSensitive = Boolean(mapping.sensitive) || ENV_SENSITIVE_KEYS.has(envKey);
-          const isReadOnly = Boolean(mapping.readOnly) || ENV_READONLY_KEYS.has(envKey);
-          const field = ENV_FIELD_BY_KEY.get(envKey);
-          keys.push({
-            key: envKey,
-            value: isSensitive ? '' : value,
-            sensitive: isSensitive,
-            readOnly: isReadOnly,
-            ..._botConfigItemMetadata(envKey, field, { sensitive: isSensitive, readOnly: isReadOnly }),
-            hasValue: isSensitive ? value.length > 0 : undefined,
-            commented: !value && !isSensitive, // show as "not set" if empty
-          });
-        }
-        if (keys.length) sections.push({ label: cat.label, keys });
-      }
-      return sections;
-    }
-
-    /** Find a server definition by id. DB-first, fallback to servers.json. */
-    function _getServerDef(serverId: string): Record<string, unknown> | null {
-      // DB-backed: read from config_documents
-      if (configRepo) {
-        try {
-          const data = configRepo.get(`server:${serverId}`);
-          if (data) return { data, source: 'database' };
-        } catch (err: unknown) {
-          console.warn('[WEB MAP] DB read failed for server, falling back to servers.json:', serverId, errMsg(err));
-        }
-      }
-      // Legacy fallback: read from servers.json
-      try {
-        if (!fs.existsSync(SERVERS_FILE)) return null;
-        const servers = JSON.parse(fs.readFileSync(SERVERS_FILE, 'utf8')) as Array<Record<string, unknown>>;
-        const found = servers.find((s: Record<string, unknown>) => s.id === serverId) ?? null;
-        return found ? { data: found, source: 'servers.json' } : null;
-      } catch {
-        return null;
-      }
-    }
-
-    /** Write an updated server definition. DB-first, fallback to servers.json. */
-    function _saveServerDef(serverId: string, updater: (def: Record<string, unknown>) => void): boolean {
-      // DB-backed: read-update-write via configRepo
-      if (configRepo) {
-        try {
-          const scope = `server:${serverId}`;
-          const data = configRepo.get(scope);
-          if (!data) return false;
-          updater(data);
-          configRepo.set(scope, data);
-          return true;
-        } catch (err: unknown) {
-          console.error('[WEB MAP] Failed to save server def to DB:', serverId, errMsg(err));
-          return false;
-        }
-      }
-      // Legacy fallback: read/write servers.json
-      if (!fs.existsSync(SERVERS_FILE)) return false;
-      const servers = JSON.parse(fs.readFileSync(SERVERS_FILE, 'utf8')) as Array<Record<string, unknown>>;
-      const idx = servers.findIndex((s: Record<string, unknown>) => s.id === serverId);
-      if (idx < 0) return false;
-      updater(servers[idx] as Record<string, unknown>);
-      const tmpPath = SERVERS_FILE + '.tmp';
-      fs.writeFileSync(tmpPath, JSON.stringify(servers, null, 2));
-      fs.renameSync(tmpPath, SERVERS_FILE);
-      return true;
-    }
-
-    /** Parse a .env file into structured entries preserving comments and order */
-    function parseEnvFile(content: string): (EnvEntry | { type: string; raw?: string })[] {
-      const entries = [];
-      const lines = content.split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        const raw = lines[i];
-        const trimmed = (raw ?? '').trim();
-
-        // Blank line
-        if (!trimmed) {
-          entries.push({ type: 'blank', raw });
-          continue;
-        }
-
-        // Section header comment (e.g. "# ── Discord Bot ──")
-        if (/^#\s*[─═]/.test(trimmed)) {
-          entries.push({
-            type: 'section',
-            raw,
-            label: trimmed
-              .replace(/^#\s*[─═]+\s*/, '')
-              .replace(/\s*[─═]+\s*$/, '')
-              .trim(),
-          });
-          continue;
-        }
-
-        // Regular comment
-        if (trimmed.startsWith('#')) {
-          // Check if it's a commented-out key (e.g. #KEY=value)
-          const commentedMatch = trimmed.match(/^#\s*([A-Z][A-Z0-9_]*)=(.*)/);
-          if (commentedMatch) {
-            entries.push({ type: 'commented', raw, key: commentedMatch[1], value: commentedMatch[2] });
-          } else {
-            entries.push({ type: 'comment', raw });
-          }
-          continue;
-        }
-
-        // Key=value line
-        const eq = trimmed.indexOf('=');
-        if (eq > 0) {
-          const key = trimmed.substring(0, eq).trim();
-          const value = trimmed.substring(eq + 1).trim();
-          entries.push({ type: 'keyval', raw, key, value });
-        } else {
-          entries.push({ type: 'other', raw });
-        }
-      }
-      return entries;
-    }
-
     /** GET /api/panel/bot-config — read from DB (primary uses ENV_CATEGORIES, non-primary uses serverDef) */
     app.get('/api/panel/bot-config', requireTier('admin'), rateLimit(10000, 10), (req, res) => {
       try {
         // ── Non-primary: read from config_documents / servers.json ──
         if (!req.srv.isPrimary) {
-          const result = _getServerDef(req.srv.serverId);
+          const result = _getServerDef(configRepo, req.srv.serverId);
           if (!result) {
             sendError(res, API_ERRORS.SERVER_NOT_FOUND_IN_SERVERS_JSON, 404);
             return;
@@ -3970,7 +3368,7 @@ class WebMapServer {
         try {
           const serverId = req.srv.serverId;
           const updated = new Set<string>();
-          const ok = _saveServerDef(serverId, (serverDef) => {
+          const ok = _saveServerDef(configRepo, serverId, (serverDef) => {
             for (const [envKey, value] of Object.entries(normalizedChanges)) {
               const mapping = ENV_TO_SERVERDEF[envKey];
               if (!mapping) continue; // ignore keys not in the mapping
@@ -4475,16 +3873,6 @@ class WebMapServer {
     // ══════════════════════════════════════════════════════════════════
     //  Multi-Server Management API — fleet-wide CRUD, lifecycle, discovery
     // ══════════════════════════════════════════════════════════════════
-
-    /** Mask sensitive fields in a server definition for API responses. */
-    function _maskServerDef(def: Record<string, unknown>): Record<string, unknown> {
-      const masked = JSON.parse(JSON.stringify(def)) as Record<string, Record<string, unknown>>;
-      if (masked.rcon?.password != null) masked.rcon.password = { hasValue: !!masked.rcon.password };
-      if (masked.sftp?.password != null) masked.sftp.password = { hasValue: !!masked.sftp.password };
-      if (masked.sftp?.privateKeyPath != null) masked.sftp.privateKeyPath = { hasValue: !!masked.sftp.privateKeyPath };
-      if (masked.panel?.apiKey != null) masked.panel.apiKey = { hasValue: !!masked.panel.apiKey };
-      return masked;
-    }
 
     /** Test RCON auth via raw Source RCON protocol. Resolves { ok, error? }. */
     async function _testRconAuth(
