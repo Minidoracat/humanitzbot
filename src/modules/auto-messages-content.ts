@@ -197,7 +197,11 @@ function pvpScheduleLabel(cfg: ConfigType = _defaultConfig) {
   if (!cfg.enablePvpScheduler) return '';
   const startMin = cfg.pvpStartMinutes;
   const endMin = cfg.pvpEndMinutes;
-  if (isNaN(startMin) || isNaN(endMin)) return '';
+  // Suppress when there is no real window. A managed server that inherits the
+  // primary's enablePvpScheduler=true but sets no times of its own has
+  // pvpStartMinutes/End = 0 (createServerConfig uses `?? 0`); a zero-width
+  // start===end window means the scheduler never runs, so don't advertise it.
+  if (isNaN(startMin) || isNaN(endMin) || startMin === endMin) return '';
   const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
   const pvpDays = cfg.pvpDays;
   const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
