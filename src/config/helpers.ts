@@ -9,6 +9,41 @@ export function envBool(key: string, defaultValue: boolean): boolean {
   return val === 'true';
 }
 
+/**
+ * Parse a PVP_DAYS spec into a weekday Set (0=Sun … 6=Sat), or null for "every day".
+ * Accepts day names ("Mon,Wed,Fri" / "monday") and/or numeric days ("1,3,5").
+ * Shared by the global config (process.env.PVP_DAYS) and the per-server config
+ * factory (serverDef.pvpDays) so both parse PVP_DAYS identically.
+ */
+export function parsePvpDays(val: string | undefined): Set<number> | null {
+  if (!val || val.trim() === '') return null; // null = every day
+  const dayNames: Record<string, number> = {
+    sun: 0,
+    mon: 1,
+    tue: 2,
+    wed: 3,
+    thu: 4,
+    fri: 5,
+    sat: 6,
+    sunday: 0,
+    monday: 1,
+    tuesday: 2,
+    wednesday: 3,
+    thursday: 4,
+    friday: 5,
+    saturday: 6,
+  };
+  const days = new Set<number>();
+  for (const part of val.split(',')) {
+    const t = part.trim().toLowerCase();
+    // Own-property check: a bare `t in dayNames` would also match inherited
+    // Object keys ('constructor', 'toString', …) and push non-numbers into the Set.
+    if (Object.hasOwn(dayNames, t)) days.add(dayNames[t] as number);
+    else if (/^[0-6]$/.test(t)) days.add(parseInt(t, 10));
+  }
+  return days.size > 0 ? days : null;
+}
+
 /** Parse an HH:MM time string into total minutes from midnight. */
 export function envTime(key: string): number {
   const val = process.env[key];

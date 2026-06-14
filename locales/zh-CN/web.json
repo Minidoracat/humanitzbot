@@ -1005,6 +1005,7 @@
     "enable_container_log": "容器物品添加/移除追踪",
     "enable_horse_log": "马匹出现/消失/生命值追踪",
     "enable_vehicle_log": "载具后备箱变化追踪",
+    "enable_structure_log": "建筑建造/损坏/摧毁/升级追踪",
     "show_inventory_log": "玩家物品栏变化追踪 (敏感)",
     "show_inventory_log_admin_only": "限制只有管理员可看物品栏记录",
     "save_poll_interval": "存档轮询间隔 (毫秒，最小 60000)",

@@ -4002,6 +4002,16 @@ class WebMapServer {
       PVP_START_TIME: { jsonPath: 'pvpStartMinutes', legacyJsonPath: 'pvpStartTime' },
       PVP_END_TIME: { jsonPath: 'pvpEndMinutes', legacyJsonPath: 'pvpEndTime' },
       PVP_SETTINGS_OVERRIDES: { jsonPath: 'pvpSettingsOverrides' },
+      ENABLE_PVP_SCHEDULER: { jsonPath: 'enablePvpScheduler' },
+      PVP_DAYS: { jsonPath: 'pvpDays' },
+      // Activity log filters (per-server overrides; inherit primary when unset)
+      ENABLE_ACTIVITY_LOG: { jsonPath: 'enableActivityLog' },
+      ENABLE_CONTAINER_LOG: { jsonPath: 'enableContainerLog' },
+      ENABLE_HORSE_LOG: { jsonPath: 'enableHorseLog' },
+      ENABLE_VEHICLE_LOG: { jsonPath: 'enableVehicleLog' },
+      ENABLE_STRUCTURE_LOG: { jsonPath: 'enableStructureLog' },
+      ENABLE_WORLD_EVENT_FEED: { jsonPath: 'enableWorldEventFeed' },
+      SHOW_INVENTORY_LOG: { jsonPath: 'showInventoryLog' },
       // Auto messages
       ENABLE_WELCOME_MSG: { jsonPath: 'autoMessages.enableWelcomeMsg' },
       ENABLE_WELCOME_FILE: { jsonPath: 'autoMessages.enableWelcomeFile' },
@@ -4093,7 +4103,22 @@ class WebMapServer {
           label: 'Server Scheduler',
           keys: ['ENABLE_SERVER_SCHEDULER', 'RESTART_TIMES', 'RESTART_PROFILES', 'DOCKER_CONTAINER'],
         },
-        { label: 'PvP Scheduler', keys: ['PVP_START_TIME', 'PVP_END_TIME', 'PVP_SETTINGS_OVERRIDES'] },
+        {
+          label: 'PvP Scheduler',
+          keys: ['ENABLE_PVP_SCHEDULER', 'PVP_START_TIME', 'PVP_END_TIME', 'PVP_DAYS', 'PVP_SETTINGS_OVERRIDES'],
+        },
+        {
+          label: 'Activity Log Filters',
+          keys: [
+            'ENABLE_ACTIVITY_LOG',
+            'ENABLE_CONTAINER_LOG',
+            'ENABLE_HORSE_LOG',
+            'ENABLE_VEHICLE_LOG',
+            'ENABLE_STRUCTURE_LOG',
+            'ENABLE_WORLD_EVENT_FEED',
+            'SHOW_INVENTORY_LOG',
+          ],
+        },
         {
           label: 'Auto Messages',
           keys: [
@@ -4490,7 +4515,8 @@ class WebMapServer {
                   !envKey.includes('TIMEZONE') &&
                   !envKey.includes('OVERRIDES') &&
                   !envKey.includes('PROFILES') &&
-                  !envKey.includes('TIMES')
+                  !envKey.includes('TIMES') &&
+                  !envKey.includes('DAYS') // PVP_DAYS is a day-spec string, never a number
                 ) {
                   coerced = parseInt(val, 10);
                 }

@@ -327,14 +327,17 @@ class ActivityLog {
    * Filter events based on config toggles.
    */
   _filterEvents(events: DiffEvent[]): DiffEvent[] {
+    // Per-server config in multi-server (injected via constructor); falls back to
+    // the global singleton for the primary server. Must read this._config — not
+    // the global `config` — so a managed server respects its own log toggles.
+    const cfg = this._config;
     return events.filter((e) => {
-      if (e.category === 'inventory') return config.showInventoryLog;
-      if (e.category === 'container') return config.enableContainerLog;
-      if (e.category === 'horse') return config.enableHorseLog;
-      if (e.category === 'vehicle') return config.enableVehicleLog;
-      if (e.category === 'world') return config.enableWorldEventFeed;
-      if (e.category === 'structure')
-        return (config as typeof config & Record<string, unknown>).enableStructureLog !== false;
+      if (e.category === 'inventory') return cfg.showInventoryLog;
+      if (e.category === 'container') return cfg.enableContainerLog;
+      if (e.category === 'horse') return cfg.enableHorseLog;
+      if (e.category === 'vehicle') return cfg.enableVehicleLog;
+      if (e.category === 'world') return cfg.enableWorldEventFeed;
+      if (e.category === 'structure') return cfg.enableStructureLog;
       return true;
     });
   }
@@ -637,7 +640,11 @@ export default ActivityLog;
 export { ActivityLog };
 
 const _test = {
-  _filterEvents: ActivityLog.prototype._filterEvents.bind(ActivityLog.prototype),
+  // Invoke the per-instance filter with an explicit (possibly per-server) config,
+  // mirroring how _buildEmbeds calls this._filterEvents at runtime. Lets tests
+  // exercise per-server toggles without mutating the global config singleton.
+  _filterEvents: (events: DiffEvent[], cfg: typeof config = config): DiffEvent[] =>
+    ActivityLog.prototype._filterEvents.call({ _config: cfg } as unknown as ActivityLog, events),
   _formatTime,
   _categoryTitle,
   _formatEvent,

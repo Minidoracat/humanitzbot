@@ -1005,12 +1005,17 @@ client.once(Events.ClientReady, (readyClient) => {
       // Additional server channels (including any from removed servers still in servers.json)
       const servers = loadServers() as Array<{ channels?: Record<string, string | undefined> }>;
       for (const sd of servers) {
+        // Keys must match ServerDef.channels (server/multi-server.ts) and the
+        // dashboard's ENV_TO_SERVERDEF mapping (web-map/server.ts):
+        // serverStatus / playerStats / chat / log / admin / activityLog.
+        // The previous status/stats/panel keys never exist in servers.json, so a
+        // managed server's status-embed and player-stats channels were silently
+        // skipped on factory reset.
         if (sd.channels?.['log']) channelsToClean.add(sd.channels['log']);
         if (sd.channels?.['chat']) channelsToClean.add(sd.channels['chat']);
         if (sd.channels?.['admin']) channelsToClean.add(sd.channels['admin']);
-        if (sd.channels?.['status']) channelsToClean.add(sd.channels['status']);
-        if (sd.channels?.['stats']) channelsToClean.add(sd.channels['stats']);
-        if (sd.channels?.['panel']) channelsToClean.add(sd.channels['panel']);
+        if (sd.channels?.['serverStatus']) channelsToClean.add(sd.channels['serverStatus']);
+        if (sd.channels?.['playerStats']) channelsToClean.add(sd.channels['playerStats']);
         if (sd.channels?.['activityLog']) channelsToClean.add(sd.channels['activityLog']);
       }
 

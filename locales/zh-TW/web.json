@@ -1005,6 +1005,7 @@
     "enable_container_log": "容器物品新增/移除追蹤",
     "enable_horse_log": "馬匹出現/消失/生命值變化追蹤",
     "enable_vehicle_log": "載具後車廂變化追蹤",
+    "enable_structure_log": "建築建造/損壞/摧毀/升級追蹤",
     "show_inventory_log": "玩家物品欄變化追蹤 (敏感資料)",
     "show_inventory_log_admin_only": "限制僅管理員可查看物品欄記錄",
     "save_poll_interval": "存檔輪詢間隔 (毫秒，最小 60000)",

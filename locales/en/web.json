@@ -1005,6 +1005,7 @@
     "enable_container_log": "Container item add/remove tracking",
     "enable_horse_log": "Horse appeared/disappeared/health tracking",
     "enable_vehicle_log": "Vehicle trunk change tracking",
+    "enable_structure_log": "Structure built/damaged/destroyed/upgraded tracking",
     "show_inventory_log": "Player inventory change tracking (sensitive)",
     "show_inventory_log_admin_only": "Restrict inventory log to admins",
     "save_poll_interval": "Save file poll interval in ms (min 60000)",
