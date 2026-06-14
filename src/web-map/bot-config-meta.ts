@@ -359,3 +359,22 @@ export function parseEnvFile(content: string): (EnvEntry | { type: string; raw?:
   }
   return entries;
 }
+
+// Runtime keys that always go through field-level validation on bot-config POST,
+// even when ENV_KEY_VALIDATORS has no explicit entry for them.
+export const BOT_CONFIG_RUNTIME_VALIDATION_KEYS = new Set([
+  'BOT_LOCALE',
+  'BOT_TIMEZONE',
+  'LOG_TIMEZONE',
+  'RCON_HOST',
+  'RCON_PORT',
+  'SFTP_HOST',
+  'SFTP_PORT',
+  'SFTP_BASE_PATH',
+  'SFTP_LOG_PATH',
+  'SFTP_CONNECT_LOG_PATH',
+  'SFTP_ID_MAP_PATH',
+  'SFTP_SAVE_PATH',
+  'SFTP_SETTINGS_PATH',
+  'SFTP_PRIVATE_KEY_PATH',
+]);
