@@ -102,7 +102,7 @@ interface SaveServiceReconfigureOptions {
 }
 
 // Module-scope references to singletons (always available as internal modules)
-const _rconModule: RconModule | null = _rconDefault as unknown as RconModule; // SAFETY: module default import shape
+const _rconModule: RconModule | null = _rconDefault as unknown as RconModule; // SAFETY: RconManager.send returns Promise<string> but local RconModule shim declares Promise<void>; single `as` errors TS2352
 const _panelApiModule: PanelFileApi | null = _panelApiDefault;
 
 class SaveService extends EventEmitter {

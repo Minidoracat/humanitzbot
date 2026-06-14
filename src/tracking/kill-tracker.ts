@@ -445,14 +445,14 @@ export class KillTracker {
   //  Static helpers
   // ═══════════════════════════════════════════════════════════════════════════
 
-  static _emptyObj(keys: readonly string[]): Record<string, number> {
-    const obj: Record<string, number> = {};
+  static _emptyObj<K extends string>(keys: readonly K[]): Record<K, number> {
+    const obj = {} as Record<K, number>;
     for (const k of keys) obj[k] = 0;
     return obj;
   }
 
   static _emptyKills(): KillObj {
-    return KillTracker._emptyObj(KillTracker.KILL_KEYS) as unknown as KillObj; // SAFETY: _emptyObj returns Record<string,number> which satisfies KillObj shape
+    return KillTracker._emptyObj(KillTracker.KILL_KEYS);
   }
 
   static _emptySurvival(): SurvivalObj {

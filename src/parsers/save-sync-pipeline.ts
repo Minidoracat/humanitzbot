@@ -373,7 +373,8 @@ export class SaveSyncPipeline {
         return (p?.['name'] as string) || idMap[steamId] || steamId;
       };
       itemStats = await reconcileItems(
-        // SAFETY: HumanitZDBLike requires index signature not present on class
+        // SAFETY: ItemRepository methods return untyped sqlite rows (Statement.all() -> unknown[]),
+        // not the typed ItemInstance[]/ItemGroup[] that HumanitZDBLike's item.* require; single `as` fails TS2352
         this._deps.db as unknown as Parameters<typeof reconcileItems>[0],
         // Omitted fields stay undefined — reconcileItems() skips marking
         // instances/groups lost at locations whose source field was not in
@@ -419,6 +420,8 @@ export class SaveSyncPipeline {
   private _writeActivityEvents(diffEvents: SaveActivityEvent[]): void {
     if (diffEvents.length === 0) return;
     try {
+      // SAFETY: ActivityEvent (from diffSaveState) is a fixed interface with no index signature,
+      // so it's neither assignable nor comparable to Record<string, unknown>; single `as` errors TS2352
       this._deps.db.activityLog.insertActivities(diffEvents as unknown as Array<Record<string, unknown>>);
       this._deps.log.info(`Activity log: ${String(diffEvents.length)} events recorded`);
     } catch (err: unknown) {

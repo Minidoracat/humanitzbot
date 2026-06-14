@@ -2530,6 +2530,7 @@ class WebMapServer {
         }
 
         if (showAll || layers.includes('quests')) {
+          // SAFETY: getPositionedQuests() returns DbRow[] (Record<string, unknown>); single `as QuestRow[]` fails TS2352, runtime shape is SELECT * from quests
           const rows = srv.db.quest.getPositionedQuests() as unknown as QuestRow[];
           result.quests = rows.map((r: QuestRow) => {
             const [lat, lng] = this._worldToLeaflet(r.pos_x, r.pos_y);
@@ -3722,6 +3723,9 @@ class WebMapServer {
     };
 
     function _buildTimezoneOptionSet(): string[] {
+      // SAFETY: the ES2022 lib types Intl.supportedValuesOf as always-present, but we model it as
+      // optional so the runtime feature-detection guard below stays meaningful on engines that
+      // predate it. Removing the cast makes the `if` provably-truthy (no-unnecessary-condition).
       const supportedValuesOf = (Intl as unknown as { supportedValuesOf?: (key: 'timeZone') => string[] })
         .supportedValuesOf;
       const zones = new Set<string>(['UTC', 'Etc/UTC']);
