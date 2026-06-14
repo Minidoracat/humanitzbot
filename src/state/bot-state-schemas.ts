@@ -139,7 +139,7 @@ const KILL_FIELDS = [
 function validateSurvival(v: unknown, path: string): SurvivalObjShape {
   if (!isObj(v)) throw new Error(`${path}: expected object`);
   if (typeof v.daysSurvived !== 'number') throw new Error(`${path}.daysSurvived: expected number`);
-  return v as unknown as SurvivalObjShape;
+  return { daysSurvived: v.daysSurvived };
 }
 
 function softKillObj(v: unknown, issues: string[], path: string): KillObjShape {

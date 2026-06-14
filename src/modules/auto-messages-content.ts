@@ -39,6 +39,9 @@ interface PlayerRow {
   containersLooted: number;
 }
 
+/** Subset of stat fields the welcome-footer aggregates; satisfied by PlayerStatEntry (no steam_id). */
+type FooterStatRow = Pick<PlayerRow, 'deaths' | 'builds' | 'containersLooted'>;
+
 interface LeaderboardEntry {
   name: string;
   totalMs: number;
@@ -443,11 +446,13 @@ async function buildWelcomeContent(deps: WelcomeContentDeps = {}) {
   }
 
   // ── Footer ──
-  const allLog = ps.getAllPlayers() as unknown as PlayerRow[]; // SAFETY: DB row shape validated by schema
+  // ps.getAllPlayers() returns PlayerStatEntry[] (in-memory PlayerStats, not DB rows). Only the
+  // three aggregate fields below are needed, so narrow to a structural subset with no cast.
+  const allLog: FooterStatRow[] = ps.getAllPlayers();
   if (allLog.length > 0) {
-    const totalDeaths = allLog.reduce((s: number, p: PlayerRow) => s + p.deaths, 0);
-    const totalBuilds = allLog.reduce((s: number, p: PlayerRow) => s + p.builds, 0);
-    const totalLooted = allLog.reduce((s: number, p: PlayerRow) => s + p.containersLooted, 0);
+    const totalDeaths = allLog.reduce((s: number, p: FooterStatRow) => s + p.deaths, 0);
+    const totalBuilds = allLog.reduce((s: number, p: FooterStatRow) => s + p.builds, 0);
+    const totalLooted = allLog.reduce((s: number, p: FooterStatRow) => s + p.containersLooted, 0);
     const sp: string[] = [];
     if (totalDeaths > 0) sp.push(`${totalDeaths} Deaths`);
     if (totalBuilds > 0) sp.push(`${totalBuilds} Builds`);
