@@ -644,6 +644,8 @@ const _test = {
   // mirroring how _buildEmbeds calls this._filterEvents at runtime. Lets tests
   // exercise per-server toggles without mutating the global config singleton.
   _filterEvents: (events: DiffEvent[], cfg: typeof config = config): DiffEvent[] =>
+    // SAFETY: structural `this` stub — _filterEvents only reads this._config, so a partial
+    // { _config } object is sufficient at runtime; the full ActivityLog instance type is not needed.
     ActivityLog.prototype._filterEvents.call({ _config: cfg } as unknown as ActivityLog, events),
   _formatTime,
   _categoryTitle,

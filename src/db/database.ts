@@ -196,12 +196,7 @@ class HumanitZDB {
   transaction<T>(fn: () => T | PromiseLike<T>): T {
     return this._handle.transaction(() => {
       const result = fn();
-      if (
-        result !== null &&
-        typeof result === 'object' &&
-        'then' in result &&
-        typeof (result as unknown as Record<string, unknown>).then === 'function'
-      ) {
+      if (result !== null && typeof result === 'object' && 'then' in result && typeof result.then === 'function') {
         throw new TypeError('Database.transaction() callback must be synchronous and must not return a Promise');
       }
       return result as T;

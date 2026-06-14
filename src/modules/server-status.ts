@@ -300,7 +300,12 @@ class ServerStatus {
       if (data.onlineSince) this._onlineSince = new Date(data.onlineSince);
       if (data.offlineSince) this._offlineSince = new Date(data.offlineSince);
       if (data.lastOnline !== undefined && data.lastOnline !== null) this._lastOnline = data.lastOnline;
+      // SAFETY: normalizeServerStatusCache returns Record<string,unknown>; normalizeServerStatusInfo
+      // guarantees raw:string + fields:Record<string,string> at runtime, but the structural ServerInfo
+      // type is unreachable from the index-signature object via a single cast.
       if (data.lastInfo) this._lastInfo = data.lastInfo as unknown as ServerInfo;
+      // SAFETY: normalizeServerStatusPlayerList guarantees count/players/raw at runtime, but the
+      // structural PlayerList type is unreachable from the Record<string,unknown> shape via a single cast.
       if (data.lastPlayerList) this._lastPlayerList = data.lastPlayerList as unknown as PlayerList;
       this._log.info(`Loaded cached state (online since: ${String(data.onlineSince) || 'unknown'})`);
     } catch (err: unknown) {
