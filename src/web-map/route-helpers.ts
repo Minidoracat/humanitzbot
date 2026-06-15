@@ -247,6 +247,24 @@ export function sendErrorWithData(
 }
 
 /**
+ * Build a per-call RCON timeout wrapper: races the given promise against a
+ * rejection that fires after `timeoutMs`. Each invocation of the returned
+ * function starts its own timer, matching the original inline wrappers in the
+ * landing/status/stats handlers and the background poller.
+ */
+export function createRconTimeout(timeoutMs = 5000): (promise: Promise<unknown>) => Promise<unknown> {
+  return (promise) =>
+    Promise.race([
+      promise,
+      new Promise((_, rej) =>
+        setTimeout(() => {
+          rej(new Error('RCON timeout'));
+        }, timeoutMs),
+      ),
+    ]);
+}
+
+/**
  * Extract a curated subset of server settings for the landing page info panel.
  * Keeps the response small — only settings that make sense to display publicly.
  * @param {object} ss — Full server_settings object from bot_state

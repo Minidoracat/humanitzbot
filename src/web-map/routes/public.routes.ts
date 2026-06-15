@@ -13,6 +13,7 @@ import type { Express } from 'express';
 import type { WebMapRouteContext } from '../types/route-context.js';
 import { requireTier } from '../auth.js';
 import { rateLimit } from '../rate-limit.js';
+import { createRconTimeout } from '../route-helpers.js';
 import config from '../../config/index.js';
 
 export function registerPublicRoutes(app: Express, ctx: WebMapRouteContext): void {
@@ -40,15 +41,7 @@ export function registerPublicRoutes(app: Express, ctx: WebMapRouteContext): voi
     if (cached) return res.json(cached);
     // First request before background poller has run — build on demand
     try {
-      const rconTimeout = (promise: Promise<unknown>) =>
-        Promise.race([
-          promise,
-          new Promise((_, rej) =>
-            setTimeout(() => {
-              rej(new Error('RCON timeout'));
-            }, 5000),
-          ),
-        ]);
+      const rconTimeout = createRconTimeout();
       await ctx._buildLandingData(rconTimeout);
       const built = ctx._getCached('landing', 'global', 30000) as Record<string, unknown> | null;
       if (built) return res.json(built);

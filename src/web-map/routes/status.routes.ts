@@ -12,6 +12,7 @@
 import type { Express } from 'express';
 import type { WebMapRouteContext } from '../types/route-context.js';
 import { requireTier } from '../auth.js';
+import { createRconTimeout } from '../route-helpers.js';
 import serverResources from '../../server/server-resources.js';
 
 export function registerStatusRoutes(app: Express, ctx: WebMapRouteContext): void {
@@ -31,15 +32,7 @@ export function registerStatusRoutes(app: Express, ctx: WebMapRouteContext): voi
     if (cached) return res.json(cached);
     // Fallback: build on demand if background poller hasn't run yet
     try {
-      const rconTimeout = (promise: Promise<unknown>) =>
-        Promise.race([
-          promise,
-          new Promise((_, rej) =>
-            setTimeout(() => {
-              rej(new Error('RCON timeout'));
-            }, 5000),
-          ),
-        ]);
+      const rconTimeout = createRconTimeout();
       await ctx._buildStatusCache(srv, rconTimeout);
       const built = ctx._getCached('status', srv.serverId, 30000) as Record<string, unknown> | null;
       if (built) return res.json(built);
@@ -56,15 +49,7 @@ export function registerStatusRoutes(app: Express, ctx: WebMapRouteContext): voi
     if (cached) return res.json(cached);
     // Fallback: build on demand if background poller hasn't run yet
     try {
-      const rconTimeout = (promise: Promise<unknown>) =>
-        Promise.race([
-          promise,
-          new Promise((_, rej) =>
-            setTimeout(() => {
-              rej(new Error('RCON timeout'));
-            }, 5000),
-          ),
-        ]);
+      const rconTimeout = createRconTimeout();
       await ctx._buildStatsCache(srv, rconTimeout);
       const built = ctx._getCached('stats', srv.serverId, 30000) as Record<string, unknown> | null;
       if (built) return res.json(built);

@@ -59,6 +59,7 @@ import {
   safeUnknownString,
   _extractLandingSettings,
   _cleanInventorySlots,
+  createRconTimeout,
 } from './route-helpers.js';
 import {
   _botConfigItemMetadata,
@@ -890,15 +891,7 @@ class WebMapServer {
   _startBackgroundPolling(): void {
     const POLL_INTERVAL = 15000;
     const RCON_TIMEOUT = 5000;
-    const rconTimeout = (promise: Promise<unknown>) =>
-      Promise.race([
-        promise,
-        new Promise((_, rej) =>
-          setTimeout(() => {
-            rej(new Error('RCON timeout'));
-          }, RCON_TIMEOUT),
-        ),
-      ]);
+    const rconTimeout = createRconTimeout(RCON_TIMEOUT);
 
     const poll = async (): Promise<void> => {
       try {
