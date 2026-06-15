@@ -309,12 +309,12 @@ export function _normalizeBotConfigTypedValue(envKey: string, value: unknown): u
 }
 
 /** Parse a .env file into structured entries preserving comments and order */
-export function parseEnvFile(content: string): (EnvEntry | { type: string; raw?: string })[] {
-  const entries = [];
+export function parseEnvFile(content: string): EnvEntry[] {
+  const entries: EnvEntry[] = [];
   const lines = content.split('\n');
   for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i];
-    const trimmed = (raw ?? '').trim();
+    const raw = lines[i] ?? '';
+    const trimmed = raw.trim();
 
     // Blank line
     if (!trimmed) {
@@ -340,7 +340,7 @@ export function parseEnvFile(content: string): (EnvEntry | { type: string; raw?:
       // Check if it's a commented-out key (e.g. #KEY=value)
       const commentedMatch = trimmed.match(/^#\s*([A-Z][A-Z0-9_]*)=(.*)/);
       if (commentedMatch) {
-        entries.push({ type: 'commented', raw, key: commentedMatch[1], value: commentedMatch[2] });
+        entries.push({ type: 'commented', raw, key: commentedMatch[1] ?? '', value: commentedMatch[2] ?? '' });
       } else {
         entries.push({ type: 'comment', raw });
       }

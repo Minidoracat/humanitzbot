@@ -48,7 +48,6 @@ import {
   _getServerDef,
   _saveServerDef,
 } from '../serverdef-repo.js';
-import type { EnvEntry } from '../types/db-rows.js';
 
 const __dirname = path.join(getDirname(import.meta.url), '..');
 
@@ -143,12 +142,12 @@ export function registerBotConfigRoutes(app: Express, ctx: WebMapRouteContext): 
         if (entry.type === 'section') {
           // Start a new section if current has keys
           if (currentSection.keys.length > 0) sections.push(currentSection);
-          currentSection = { label: (entry as EnvEntry).label, keys: [] };
+          currentSection = { label: entry.label, keys: [] };
           continue;
         }
         if (entry.type === 'keyval') {
-          const entryKey = (entry as EnvEntry).key as string;
-          const entryValue = (entry as EnvEntry).value as string;
+          const entryKey = entry.key;
+          const entryValue = entry.value;
           const field = ENV_FIELD_BY_KEY.get(entryKey);
           const isSensitive = ENV_SENSITIVE_KEYS.has(entryKey) || Boolean(field?.sensitive);
           const isReadOnly = ENV_READONLY_KEYS.has(entryKey);
@@ -163,8 +162,8 @@ export function registerBotConfigRoutes(app: Express, ctx: WebMapRouteContext): 
             commented: false,
           });
         } else if (entry.type === 'commented') {
-          const entryKey = (entry as EnvEntry).key as string;
-          const entryValue = (entry as EnvEntry).value as string;
+          const entryKey = entry.key;
+          const entryValue = entry.value;
           const field = ENV_FIELD_BY_KEY.get(entryKey);
           const isSensitive = ENV_SENSITIVE_KEYS.has(entryKey) || Boolean(field?.sensitive);
           const isReadOnly = ENV_READONLY_KEYS.has(entryKey);

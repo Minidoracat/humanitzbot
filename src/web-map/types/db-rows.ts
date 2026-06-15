@@ -216,9 +216,15 @@ export interface ChatRow {
   created_at: string;
 }
 
-export interface EnvEntry {
-  type: 'section' | 'keyval' | 'commented' | 'empty';
-  label?: string;
-  key?: string;
-  value?: string;
-}
+/**
+ * One parsed line of a .env file (see parseEnvFile in bot-config-meta.ts).
+ * Discriminated union — the `type` tag determines which fields are present,
+ * so consumers narrow on `entry.type` instead of casting.
+ */
+export type EnvEntry =
+  | { type: 'section'; label: string; raw: string }
+  | { type: 'keyval'; key: string; value: string; raw: string }
+  | { type: 'commented'; key: string; value: string; raw: string }
+  | { type: 'blank'; raw: string }
+  | { type: 'comment'; raw: string }
+  | { type: 'other'; raw: string };
