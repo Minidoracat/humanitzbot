@@ -8,6 +8,10 @@
  */
 import type { AppContext } from '../runtime/app-context.js';
 
+function isMissingOptionalModule(err: unknown): boolean {
+  return (err as NodeJS.ErrnoException | null | undefined)?.code === 'ERR_MODULE_NOT_FOUND';
+}
+
 export async function loadOptionalModules(ctx: AppContext): Promise<void> {
   try {
     ctx.optional.AnticheatIntegration = (
@@ -15,8 +19,10 @@ export async function loadOptionalModules(ctx: AppContext): Promise<void> {
         default: typeof ctx.optional.AnticheatIntegration;
       }
     ).default; // SAFETY: optional private module dynamic import
-  } catch {
-    /* optional module */
+  } catch (err) {
+    if (!isMissingOptionalModule(err)) {
+      console.error('[BOOT] Failed loading optional module anticheat-integration:', err);
+    }
   }
   // howyagarn/* modules are optional private packages — path via variable bypasses static TSC resolution
   const _webPluginPath = '../modules/howyagarn/web-plugin.js';
@@ -26,21 +32,27 @@ export async function loadOptionalModules(ctx: AppContext): Promise<void> {
     ctx.optional.hzmodWebPlugin = (
       (await import(/* @vite-ignore */ _webPluginPath)) as { default: typeof ctx.optional.hzmodWebPlugin }
     ).default;
-  } catch {
-    /* optional module */
+  } catch (err) {
+    if (!isMissingOptionalModule(err)) {
+      console.error('[BOOT] Failed loading optional module howyagarn/web-plugin:', err);
+    }
   }
   try {
     ({ HowyagarnManager: ctx.optional.HowyagarnManager } = (await import(/* @vite-ignore */ _managerPath)) as {
       HowyagarnManager: typeof ctx.optional.HowyagarnManager;
     });
-  } catch {
-    /* optional module */
+  } catch (err) {
+    if (!isMissingOptionalModule(err)) {
+      console.error('[BOOT] Failed loading optional module howyagarn/howyagarn-manager:', err);
+    }
   }
   try {
     ctx.optional.HzmodIpcClient = (
       (await import(/* @vite-ignore */ _ipcClientPath)) as { default: typeof ctx.optional.HzmodIpcClient }
     ).default;
-  } catch {
-    /* optional module */
+  } catch (err) {
+    if (!isMissingOptionalModule(err)) {
+      console.error('[BOOT] Failed loading optional module howyagarn/ipc-client:', err);
+    }
   }
 }
