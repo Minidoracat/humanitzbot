@@ -18,7 +18,9 @@ import config from './config/index.js';
 import { setConfigValue } from './config/index.js';
 import { isAdminView, hasSftp, coerceRuntimeBoolean, _formatUptime } from './runtime/helpers.js';
 import { createAppContext } from './runtime/app-context.js';
-import type { SlashCommand, HowyagarnPlayer, ServerDef, SaveSyncResult } from './runtime/app-types.js';
+import { loadOptionalModules } from './bootstrap/optional-modules.js';
+import { loadCommands } from './bootstrap/load-commands.js';
+import type { HowyagarnPlayer, ServerDef, SaveSyncResult } from './runtime/app-types.js';
 import rcon from './rcon/rcon.js';
 import { getServerInfo, getPlayerList, sendAdminMessage } from './rcon/server-info.js';
 import ChatRelay from './modules/chat-relay.js';
@@ -74,46 +76,6 @@ import {
 } from './db/bot-state-backup.js';
 import { attachBotStateListeners } from './state/bot-state-listeners.js';
 
-// ── Optional modules (may not be installed) ────────────────
-// Loaded asynchronously in loadOptionalModules() before client.login()
-
-async function loadOptionalModules(): Promise<void> {
-  try {
-    ctx.optional.AnticheatIntegration = (
-      (await import('./modules/anticheat-integration.js')) as unknown as {
-        default: typeof ctx.optional.AnticheatIntegration;
-      }
-    ).default; // SAFETY: optional private module dynamic import
-  } catch {
-    /* optional module */
-  }
-  // howyagarn/* modules are optional private packages — path via variable bypasses static TSC resolution
-  const _webPluginPath = './modules/howyagarn/web-plugin.js';
-  const _managerPath = './modules/howyagarn/howyagarn-manager.js';
-  const _ipcClientPath = './modules/howyagarn/ipc-client.js';
-  try {
-    ctx.optional.hzmodWebPlugin = (
-      (await import(/* @vite-ignore */ _webPluginPath)) as { default: typeof ctx.optional.hzmodWebPlugin }
-    ).default;
-  } catch {
-    /* optional module */
-  }
-  try {
-    ({ HowyagarnManager: ctx.optional.HowyagarnManager } = (await import(/* @vite-ignore */ _managerPath)) as {
-      HowyagarnManager: typeof ctx.optional.HowyagarnManager;
-    });
-  } catch {
-    /* optional module */
-  }
-  try {
-    ctx.optional.HzmodIpcClient = (
-      (await import(/* @vite-ignore */ _ipcClientPath)) as { default: typeof ctx.optional.HzmodIpcClient }
-    ).default;
-  } catch {
-    /* optional module */
-  }
-}
-
 // ── Create Discord client ───────────────────────────────────
 const intents: GatewayIntentBits[] = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages];
 // Privileged intents — only request when needed (must be enabled in Developer Portal)
@@ -137,41 +99,6 @@ const client = new Client({ intents });
 // after the client so the privileged-intent handshake stays a top-level side
 // effect that runs before any state is touched.
 const ctx = createAppContext(client);
-
-// ── Load slash commands ─────────────────────────────────────
-
-async function loadCommands(): Promise<void> {
-  const commandsPath = path.join(__dirname, 'commands');
-  const commandFiles = fs.readdirSync(commandsPath).filter((f) => f.endsWith('.js'));
-
-  for (const file of commandFiles) {
-    const command = (await import(path.join(commandsPath, file))) as Partial<SlashCommand> & {
-      default?: Partial<SlashCommand>;
-    };
-    const cmd = command.default ?? command;
-    if (cmd.data && cmd.execute) {
-      ctx.slashCommands.set(cmd.data.name, cmd as SlashCommand);
-      console.log(`[BOT] Loaded command: /${cmd.data.name}`);
-    }
-  }
-
-  // Also load commands from subdirectories (e.g. src/commands/howyagarn/)
-  for (const entry of fs.readdirSync(commandsPath, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const subDir = path.join(commandsPath, entry.name);
-    const subFiles = fs.readdirSync(subDir).filter((f) => f.endsWith('.js'));
-    for (const file of subFiles) {
-      const command = (await import(path.join(subDir, file))) as Partial<SlashCommand> & {
-        default?: Partial<SlashCommand>;
-      };
-      const cmd = command.default ?? command;
-      if (cmd.data && cmd.execute) {
-        ctx.slashCommands.set(cmd.data.name, cmd as SlashCommand);
-        console.log(`[BOT] Loaded command: /${cmd.data.name} (${entry.name})`);
-      }
-    }
-  }
-}
 
 // ── Handle interactions ─────────────────────────────────────
 client.on(Events.InteractionCreate, (interaction) => {
@@ -1816,8 +1743,8 @@ async function _nukeChannel(discordClient: Client, channelId: string, botId: str
 
 void (async () => {
   // Load optional modules and slash commands (async import() requires async context)
-  await loadOptionalModules();
-  await loadCommands();
+  await loadOptionalModules(ctx);
+  await loadCommands(ctx);
 
   // NUKE_BOT implies FIRST_RUN — wipe local data files first, then re-import
   // Log raw .env value for debugging — track unexpected NUKE_BOT=true
