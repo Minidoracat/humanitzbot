@@ -8,8 +8,16 @@
  */
 import type { AppContext } from '../runtime/app-context.js';
 
-function isMissingOptionalModule(err: unknown): boolean {
-  return (err as NodeJS.ErrnoException | null | undefined)?.code === 'ERR_MODULE_NOT_FOUND';
+/**
+ * True only when the optional module FILE ITSELF is absent — not when a module
+ * that IS present fails to load a transitive dependency. Both throw
+ * ERR_MODULE_NOT_FOUND, so we disambiguate on the unresolved URL: a genuinely
+ * absent optional module reports its own path, whereas a broken dependency
+ * reports the nested specifier. Unknown error shapes fail toward logging.
+ */
+function isAbsentOptionalModule(err: unknown, moduleFile: string): boolean {
+  const e = err as (NodeJS.ErrnoException & { url?: string }) | null | undefined;
+  return e?.code === 'ERR_MODULE_NOT_FOUND' && (e.url?.endsWith(moduleFile) ?? false);
 }
 
 export async function loadOptionalModules(ctx: AppContext): Promise<void> {
@@ -20,7 +28,7 @@ export async function loadOptionalModules(ctx: AppContext): Promise<void> {
       }
     ).default; // SAFETY: optional private module dynamic import
   } catch (err) {
-    if (!isMissingOptionalModule(err)) {
+    if (!isAbsentOptionalModule(err, 'anticheat-integration.js')) {
       console.error('[BOOT] Failed loading optional module anticheat-integration:', err);
     }
   }
@@ -33,7 +41,7 @@ export async function loadOptionalModules(ctx: AppContext): Promise<void> {
       (await import(/* @vite-ignore */ _webPluginPath)) as { default: typeof ctx.optional.hzmodWebPlugin }
     ).default;
   } catch (err) {
-    if (!isMissingOptionalModule(err)) {
+    if (!isAbsentOptionalModule(err, 'web-plugin.js')) {
       console.error('[BOOT] Failed loading optional module howyagarn/web-plugin:', err);
     }
   }
@@ -42,7 +50,7 @@ export async function loadOptionalModules(ctx: AppContext): Promise<void> {
       HowyagarnManager: typeof ctx.optional.HowyagarnManager;
     });
   } catch (err) {
-    if (!isMissingOptionalModule(err)) {
+    if (!isAbsentOptionalModule(err, 'howyagarn-manager.js')) {
       console.error('[BOOT] Failed loading optional module howyagarn/howyagarn-manager:', err);
     }
   }
@@ -51,7 +59,7 @@ export async function loadOptionalModules(ctx: AppContext): Promise<void> {
       (await import(/* @vite-ignore */ _ipcClientPath)) as { default: typeof ctx.optional.HzmodIpcClient }
     ).default;
   } catch (err) {
-    if (!isMissingOptionalModule(err)) {
+    if (!isAbsentOptionalModule(err, 'ipc-client.js')) {
       console.error('[BOOT] Failed loading optional module howyagarn/ipc-client:', err);
     }
   }
