@@ -29,6 +29,7 @@ import {
   startPlayerStatsModule,
   registerFeatureToggleRestartHandlers,
 } from './lifecycle/module-restart.js';
+import { reconfigureHzmodRuntime } from './lifecycle/hzmod-runtime.js';
 import type { HowyagarnPlayer, ServerDef, SaveSyncResult } from './runtime/app-types.js';
 import rcon from './rcon/rcon.js';
 import { getServerInfo, getPlayerList, sendAdminMessage } from './rcon/server-info.js';
@@ -62,15 +63,8 @@ import { migrateEnvToDb, migrateServersJsonToDb, migrateDisplaySettings } from '
 import { registerSaveServiceRuntimeHandlers } from './config/save-service-runtime.js';
 import { registerCoreConnectionRuntimeHandlers } from './config/core-connection-runtime.js';
 import { registerDisplayRuntimeHandlers } from './config/display-runtime.js';
-import {
-  registerExternalSourceRuntimeHandlers,
-  type HzmodSourceRuntimeSnapshot,
-} from './config/external-source-runtime.js';
-import {
-  createHzmodIpc,
-  reconfigureHzmodRuntimeState,
-  type HzmodIpcClientInstance,
-} from './config/hzmod-source-runtime.js';
+import { registerExternalSourceRuntimeHandlers } from './config/external-source-runtime.js';
+import { createHzmodIpc } from './config/hzmod-source-runtime.js';
 import { loadServers, createServerConfig } from './server/multi-server.js';
 import BotControlService from './server/bot-control.js';
 import { rebuildThreads } from './commands/threads.js';
@@ -110,50 +104,6 @@ const ctx = createAppContext(client);
 client.on(Events.InteractionCreate, (interaction) => {
   void handleInteraction(ctx, interaction);
 });
-
-function rebindHowyagarnManagerIpc(
-  nextIpc: HzmodIpcClientInstance | null,
-  previousIpc: HzmodIpcClientInstance | null,
-): (() => void) | null {
-  const manager = ctx.howyagarnManager;
-  if (!manager) return null;
-
-  if (typeof manager.setIpc === 'function') {
-    manager.setIpc(nextIpc);
-    return () => {
-      manager.setIpc?.(previousIpc);
-    };
-  }
-
-  if (typeof manager.reconfigure === 'function') {
-    manager.reconfigure({ ipc: nextIpc });
-    return () => {
-      manager.reconfigure?.({ ipc: previousIpc });
-    };
-  }
-
-  throw new Error('HOWYAGARN manager does not support runtime IPC rebind; restart required for HZMod socket changes');
-}
-
-function reconfigureHzmodRuntime(next: HzmodSourceRuntimeSnapshot, previous: HzmodSourceRuntimeSnapshot): void {
-  reconfigureHzmodRuntimeState(
-    {
-      get ipc() {
-        return ctx.hzmodIpc;
-      },
-      set ipc(nextIpc) {
-        ctx.hzmodIpc = nextIpc;
-      },
-    },
-    next,
-    previous,
-    {
-      getIpcClientConstructor: () => ctx.optional.HzmodIpcClient,
-      getWebMapServer: () => ctx.webMapServer,
-      rebindManager: rebindHowyagarnManagerIpc,
-    },
-  );
-}
 
 client.once(Events.ClientReady, (readyClient) => {
   void (async () => {
@@ -286,7 +236,9 @@ client.once(Events.ClientReady, (readyClient) => {
       runtimeConfigApplier: ctx.runtimeConfigApplier,
       config,
       getSaveService: () => ctx.saveService,
-      reconfigureHzmod: reconfigureHzmodRuntime,
+      reconfigureHzmod: (next, previous) => {
+        reconfigureHzmodRuntime(ctx, next, previous);
+      },
     });
     registerFeatureToggleRestartHandlers(ctx, readyClient);
 
