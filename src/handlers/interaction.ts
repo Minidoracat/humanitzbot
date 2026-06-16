@@ -26,10 +26,13 @@ export async function handleInteraction(ctx: AppContext, interaction: Interactio
   if (interaction.isStringSelectMenu() && interaction.customId.startsWith('playerstats_player_select')) {
     try {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    } catch (_deferErr) {
-      // Interaction token expired (10062) or already acknowledged — skip silently
-      console.log('[BOT] Player select interaction expired, ignoring');
-      return;
+    } catch (err) {
+      const code = (err as { code?: number }).code;
+      if (code === 10062 || code === 40060) {
+        console.log('[BOT] Player select interaction expired, ignoring');
+        return;
+      }
+      throw err;
     }
 
     const serverId = interaction.customId.split(':')[1] ?? '';
@@ -54,10 +57,13 @@ export async function handleInteraction(ctx: AppContext, interaction: Interactio
   if (interaction.isStringSelectMenu() && interaction.customId.startsWith('playerstats_clan_select')) {
     try {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    } catch (_deferErr) {
-      // Interaction token expired (10062) or already acknowledged — skip silently
-      console.log('[BOT] Clan select interaction expired, ignoring');
-      return;
+    } catch (err) {
+      const code = (err as { code?: number }).code;
+      if (code === 10062 || code === 40060) {
+        console.log('[BOT] Clan select interaction expired, ignoring');
+        return;
+      }
+      throw err;
     }
 
     const serverId = interaction.customId.split(':')[1] ?? '';
