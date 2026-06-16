@@ -1,5 +1,5 @@
-import { Client, GatewayIntentBits, Events, REST, Routes, EmbedBuilder, MessageFlags } from 'discord.js';
-import type { GuildMember, ThreadChannel } from 'discord.js';
+import { Client, GatewayIntentBits, Events, REST, Routes, EmbedBuilder } from 'discord.js';
+import type { ThreadChannel } from 'discord.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getDirname } from './utils/paths.js';
@@ -16,10 +16,11 @@ initLogger();
 
 import config from './config/index.js';
 import { setConfigValue } from './config/index.js';
-import { isAdminView, hasSftp, coerceRuntimeBoolean, _formatUptime } from './runtime/helpers.js';
+import { hasSftp, coerceRuntimeBoolean, _formatUptime } from './runtime/helpers.js';
 import { createAppContext } from './runtime/app-context.js';
 import { loadOptionalModules } from './bootstrap/optional-modules.js';
 import { loadCommands } from './bootstrap/load-commands.js';
+import { handleInteraction } from './handlers/interaction.js';
 import type { HowyagarnPlayer, ServerDef, SaveSyncResult } from './runtime/app-types.js';
 import rcon from './rcon/rcon.js';
 import { getServerInfo, getPlayerList, sendAdminMessage } from './rcon/server-info.js';
@@ -102,84 +103,7 @@ const ctx = createAppContext(client);
 
 // ── Handle interactions ─────────────────────────────────────
 client.on(Events.InteractionCreate, (interaction) => {
-  void (async () => {
-    // ── Persistent select menu on the player-stats channel ──
-    if (interaction.isStringSelectMenu() && interaction.customId.startsWith('playerstats_player_select')) {
-      try {
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      } catch (_deferErr) {
-        // Interaction token expired (10062) or already acknowledged — skip silently
-        console.log('[BOT] Player select interaction expired, ignoring');
-        return;
-      }
-
-      const serverId = interaction.customId.split(':')[1] ?? '';
-      const psc = serverId ? _findMultiServerPlayerStatsChannelById(serverId) : ctx.playerStatsChannel;
-      if (!psc) {
-        await interaction.editReply({ content: 'Player stats module is currently disabled.' });
-        return;
-      }
-
-      const selectedId = interaction.values[0] ?? '';
-      const isAdmin = isAdminView(interaction.member as GuildMember | null);
-
-      const embed: EmbedBuilder = (
-        psc as unknown as { buildFullPlayerEmbed: (id: string, opts: { isAdmin: boolean }) => EmbedBuilder }
-      ) // SAFETY: buildFullPlayerEmbed injected via mixin at runtime
-        .buildFullPlayerEmbed(selectedId, { isAdmin });
-      await interaction.editReply({ embeds: [embed] });
-      return;
-    }
-
-    // ── Clan select menu on the player-stats channel ──
-    if (interaction.isStringSelectMenu() && interaction.customId.startsWith('playerstats_clan_select')) {
-      try {
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      } catch (_deferErr) {
-        // Interaction token expired (10062) or already acknowledged — skip silently
-        console.log('[BOT] Clan select interaction expired, ignoring');
-        return;
-      }
-
-      const serverId = interaction.customId.split(':')[1] ?? '';
-      const psc = serverId ? _findMultiServerPlayerStatsChannelById(serverId) : ctx.playerStatsChannel;
-      if (!psc) {
-        await interaction.editReply({ content: 'Player stats module is currently disabled.' });
-        return;
-      }
-
-      const clanName = (interaction.values[0] ?? '').replace(/^clan:/, '');
-      const isAdmin = isAdminView(interaction.member as GuildMember | null);
-
-      const embed: EmbedBuilder = (
-        psc as unknown as { buildClanEmbed: (name: string, opts: { isAdmin: boolean }) => EmbedBuilder }
-      ) // SAFETY: buildClanEmbed injected via mixin at runtime
-        .buildClanEmbed(clanName, { isAdmin });
-      await interaction.editReply({ embeds: [embed] });
-      return;
-    }
-
-    // ── Slash commands ──
-    if (!interaction.isChatInputCommand()) return;
-
-    const command = ctx.slashCommands.get(interaction.commandName);
-    if (!command) return;
-
-    try {
-      await command.execute(interaction);
-    } catch (err) {
-      console.error(`[BOT] Error in /${interaction.commandName}:`, err);
-      const replyOpts = {
-        content: '❌ Something went wrong running that command.',
-        flags: MessageFlags.Ephemeral,
-      } as const;
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp(replyOpts);
-      } else {
-        await interaction.reply(replyOpts);
-      }
-    }
-  })();
+  void handleInteraction(ctx, interaction);
 });
 
 function setStatus(name: string, status: string): void {
@@ -446,14 +370,6 @@ function reconfigureHzmodRuntime(next: HzmodSourceRuntimeSnapshot, previous: Hzm
       rebindManager: rebindHowyagarnManagerIpc,
     },
   );
-}
-
-/** Find a multi-server PlayerStatsChannel by server ID (used for select menu routing). */
-function _findMultiServerPlayerStatsChannelById(serverId: string): InstanceType<typeof PlayerStatsChannel> | null {
-  if (!ctx.multiServerManager) return null;
-  const instance = ctx.multiServerManager.getInstance(serverId);
-  if (!instance) return null;
-  return instance.getPlayerStatsChannel();
 }
 
 client.once(Events.ClientReady, (readyClient) => {
