@@ -1165,5 +1165,11 @@ export function runReady(ctx: AppContext, readyClient: Client<true>): void {
     }
 
     console.log('[BOT] Ready!');
-  })();
+  })().catch((err: unknown) => {
+    // Surface a boot-sequence failure with a distinct label instead of letting it
+    // fall through to the generic non-fatal unhandledRejection handler. Kept
+    // non-fatal on purpose: the process intentionally does not crash here (a
+    // partially-started bot still serves the web panel for diagnostics).
+    console.error('[BOT] FATAL: ClientReady boot sequence failed:', errMsg(err));
+  });
 }
