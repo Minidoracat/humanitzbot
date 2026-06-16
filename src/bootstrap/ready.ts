@@ -121,7 +121,7 @@ export function runReady(ctx: AppContext, readyClient: Client<true>): void {
     // Initialize SQLite database + seed game reference data
     ctx.db = new HumanitZDB();
     ctx.db.init();
-    // ctx.db.init() guarantees ctx.db.db is non-null, but the type includes null
+    // db.init() guarantees db.db is non-null, but the type includes null
     seedGameReference(ctx.db);
 
     // Stage 6: attach bot_state event listeners (before any bot_state reads)
@@ -328,7 +328,7 @@ export function runReady(ctx: AppContext, readyClient: Client<true>): void {
     //    Forces each module to re-create its embed from scratch.
     if (config.firstRun) {
       const dataDir = path.join(__dirname, '..', 'data');
-      // Clear bot_state keys that hold transient/session data (ctx.db is guaranteed set above)
+      // Clear bot_state keys that hold transient/session data (db is guaranteed set above)
       {
         // PR2: central contract lives in bot-state-backup.ts so tests can assert
         // that FIRST_RUN clears kill_tracker / weekly_baseline / recap_service
@@ -417,16 +417,16 @@ export function runReady(ctx: AppContext, readyClient: Client<true>): void {
       for (const sd of servers) {
         // Keys must match ServerDef.channels (server/multi-server.ts) and the
         // dashboard's ENV_TO_SERVERDEF mapping (web-map/server.ts):
-        // ctx.serverStatus / playerStats / chat / log / admin / ctx.activityLog.
+        // serverStatus / playerStats / chat / log / admin / activityLog.
         // The previous status/stats/panel keys never exist in servers.json, so a
         // managed server's status-embed and player-stats channels were silently
         // skipped on factory reset.
         if (sd.channels?.['log']) channelsToClean.add(sd.channels['log']);
         if (sd.channels?.['chat']) channelsToClean.add(sd.channels['chat']);
         if (sd.channels?.['admin']) channelsToClean.add(sd.channels['admin']);
-        if (sd.channels?.['ctx.serverStatus']) channelsToClean.add(sd.channels['ctx.serverStatus']);
+        if (sd.channels?.['serverStatus']) channelsToClean.add(sd.channels['serverStatus']);
         if (sd.channels?.['playerStats']) channelsToClean.add(sd.channels['playerStats']);
-        if (sd.channels?.['ctx.activityLog']) channelsToClean.add(sd.channels['ctx.activityLog']);
+        if (sd.channels?.['activityLog']) channelsToClean.add(sd.channels['activityLog']);
       }
 
       const botId = readyClient.user.id;
@@ -893,7 +893,7 @@ export function runReady(ctx: AppContext, readyClient: Client<true>): void {
               try {
                 _howyagarn.onLogEvent(entry.type, entry);
               } catch (err: unknown) {
-                console.error('[BOT] ctx.howyagarnManager.onLogEvent error:', errMsg(err));
+                console.error('[BOT] howyagarnManager.onLogEvent error:', errMsg(err));
               }
               if (
                 entry.type === 'player_connect' &&
@@ -903,7 +903,7 @@ export function runReady(ctx: AppContext, readyClient: Client<true>): void {
                 try {
                   _howyagarn.onPlayerConnect(entry.steamId, entry.actorName);
                 } catch (err: unknown) {
-                  console.error('[BOT] ctx.howyagarnManager.onPlayerConnect error:', errMsg(err));
+                  console.error('[BOT] howyagarnManager.onPlayerConnect error:', errMsg(err));
                 }
               }
             });
@@ -972,13 +972,13 @@ export function runReady(ctx: AppContext, readyClient: Client<true>): void {
     await ctx.multiServerManager.startAll();
     if (ctx.webMapServer) {
       ctx.webMapServer.setMultiServerManager(ctx.multiServerManager);
-      // Register hzmod web plugin now that ctx.multiServerManager is available
+      // Register hzmod web plugin now that multiServerManager is available
       if (ctx.optional.hzmodWebPlugin) {
         try {
           ctx.hzmodPlugin = ctx.optional.hzmodWebPlugin.register(ctx.webMapServer, config, {
             ipc: ctx.hzmodIpc ?? null,
           });
-          // Pass ctx.optional.HowyagarnManager to web plugin for MMO API endpoints
+          // Pass HowyagarnManager to web plugin for MMO API endpoints
           if (ctx.howyagarnManager) ctx.optional.hzmodWebPlugin.setManager(ctx.howyagarnManager);
         } catch (err: unknown) {
           console.error('[BOT] hzmod plugin registration failed:', errMsg(err));
