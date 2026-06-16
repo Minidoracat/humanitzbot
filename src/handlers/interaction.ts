@@ -8,7 +8,7 @@
  *   client.on(Events.InteractionCreate, (i) => { void handleInteraction(ctx, i); });
  */
 import { EmbedBuilder, MessageFlags } from 'discord.js';
-import type { Interaction, GuildMember } from 'discord.js';
+import type { Interaction } from 'discord.js';
 import { isAdminView } from '../runtime/helpers.js';
 import type { AppContext } from '../runtime/app-context.js';
 import type PlayerStatsChannel from '../modules/player-stats-channel.js';
@@ -43,7 +43,7 @@ export async function handleInteraction(ctx: AppContext, interaction: Interactio
     }
 
     const selectedId = interaction.values[0] ?? '';
-    const isAdmin = isAdminView(interaction.member as GuildMember | null);
+    const isAdmin = isAdminView(interaction.inCachedGuild() ? interaction.member : null);
 
     const embed: EmbedBuilder = (
       psc as unknown as { buildFullPlayerEmbed: (id: string, opts: { isAdmin: boolean }) => EmbedBuilder }
@@ -74,7 +74,7 @@ export async function handleInteraction(ctx: AppContext, interaction: Interactio
     }
 
     const clanName = (interaction.values[0] ?? '').replace(/^clan:/, '');
-    const isAdmin = isAdminView(interaction.member as GuildMember | null);
+    const isAdmin = isAdminView(interaction.inCachedGuild() ? interaction.member : null);
 
     const embed: EmbedBuilder = (
       psc as unknown as { buildClanEmbed: (name: string, opts: { isAdmin: boolean }) => EmbedBuilder }
