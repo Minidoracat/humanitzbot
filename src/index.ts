@@ -16,23 +16,28 @@ initLogger();
 
 import config from './config/index.js';
 import { setConfigValue } from './config/index.js';
-import { hasSftp, coerceRuntimeBoolean, _formatUptime } from './runtime/helpers.js';
+import { hasSftp, _formatUptime } from './runtime/helpers.js';
 import { createAppContext } from './runtime/app-context.js';
 import { loadOptionalModules } from './bootstrap/optional-modules.js';
 import { loadCommands } from './bootstrap/load-commands.js';
 import { handleInteraction } from './handlers/interaction.js';
+import {
+  setStatus,
+  scheduleDiscordDisplayRefresh,
+  startStatusChannelsModule,
+  startServerStatusModule,
+  startPlayerStatsModule,
+  registerFeatureToggleRestartHandlers,
+} from './lifecycle/module-restart.js';
 import type { HowyagarnPlayer, ServerDef, SaveSyncResult } from './runtime/app-types.js';
 import rcon from './rcon/rcon.js';
 import { getServerInfo, getPlayerList, sendAdminMessage } from './rcon/server-info.js';
 import ChatRelay from './modules/chat-relay.js';
-import StatusChannels from './modules/status-channels.js';
-import ServerStatus from './modules/server-status.js';
 import PlayerPresenceTracker from './modules/player-presence.js';
 import AutoMessages from './modules/auto-messages.js';
 import LogWatcher, { type LogEventEntry } from './modules/log-watcher.js';
 import playtime from './tracking/playtime-tracker.js';
 import playerStats from './tracking/player-stats.js';
-import PlayerStatsChannel from './modules/player-stats-channel.js';
 import PvpScheduler from './modules/pvp-scheduler.js';
 import ServerScheduler from './modules/server-scheduler.js';
 import panelApi from './server/panel-api.js';
@@ -105,228 +110,6 @@ const ctx = createAppContext(client);
 client.on(Events.InteractionCreate, (interaction) => {
   void handleInteraction(ctx, interaction);
 });
-
-function setStatus(name: string, status: string): void {
-  ctx.moduleStatus[name] = status;
-  if (ctx.botStatusManager) ctx.botStatusManager.refreshNow().catch(() => {});
-}
-
-const STATUS_CHANNELS_RUNTIME_OWNER = 'module:status-channels';
-const SERVER_STATUS_RUNTIME_OWNER = 'module:server-status';
-const PLAYER_STATS_RUNTIME_OWNER = 'module:player-stats';
-
-function enqueueStatusChannelsRestart(operation: () => Promise<void>): Promise<void> {
-  const next = ctx.statusChannelsRestartQueue.catch(() => undefined).then(operation);
-  ctx.statusChannelsRestartQueue = next.catch(() => undefined);
-  return next;
-}
-
-function enqueueServerStatusRestart(operation: () => Promise<void>): Promise<void> {
-  const next = ctx.serverStatusRestartQueue.catch(() => undefined).then(operation);
-  ctx.serverStatusRestartQueue = next.catch(() => undefined);
-  return next;
-}
-
-function enqueuePlayerStatsRestart(operation: () => Promise<void>): Promise<void> {
-  const next = ctx.playerStatsRestartQueue.catch(() => undefined).then(operation);
-  ctx.playerStatsRestartQueue = next.catch(() => undefined);
-  return next;
-}
-
-function scheduleDiscordDisplayRefresh(): void {
-  if (ctx.displayRefreshTimer) return;
-
-  ctx.displayRefreshTimer = setTimeout(() => {
-    ctx.displayRefreshTimer = undefined;
-    if (ctx.serverStatus) {
-      void ctx.serverStatus._update().catch((err: unknown) => {
-        console.warn('[BOT] Failed to refresh server status after display config change:', errMsg(err));
-      });
-    }
-    if (ctx.playerStatsChannel) {
-      void ctx.playerStatsChannel._updateEmbed().catch((err: unknown) => {
-        console.warn('[BOT] Failed to refresh player stats after display config change:', errMsg(err));
-      });
-    }
-  }, 0);
-}
-
-async function startStatusChannelsModule(readyClient: Client): Promise<void> {
-  if (ctx.statusChannelsStartPromise) return ctx.statusChannelsStartPromise;
-  if (ctx.statusChannels) return;
-
-  ctx.statusChannelsStartPromise = (async () => {
-    const categoryHint = config.serverName;
-    const nextStatusChannels = new StatusChannels(readyClient, { categoryName: categoryHint });
-    ctx.statusChannels = nextStatusChannels;
-    try {
-      await nextStatusChannels.start();
-    } catch (err) {
-      if (ctx.statusChannels === nextStatusChannels) ctx.statusChannels = undefined;
-      throw err;
-    }
-    ctx.runtimeConfigApplier.registerModuleReconfigure(
-      'STATUS_CHANNEL_INTERVAL',
-      ({ value }) => {
-        ctx.statusChannels?.reconfigure({ statusChannelInterval: value });
-      },
-      { ownerId: STATUS_CHANNELS_RUNTIME_OWNER },
-    );
-    setStatus('Status Channels', '🟢 Active');
-  })();
-
-  try {
-    await ctx.statusChannelsStartPromise;
-  } finally {
-    ctx.statusChannelsStartPromise = null;
-  }
-}
-
-async function stopStatusChannelsModule(): Promise<void> {
-  if (ctx.statusChannelsStartPromise) await ctx.statusChannelsStartPromise.catch(() => undefined);
-  await ctx.runtimeConfigApplier.cleanupOwner(STATUS_CHANNELS_RUNTIME_OWNER);
-  if (ctx.statusChannels) {
-    ctx.statusChannels.stop();
-    ctx.statusChannels = undefined;
-  }
-  setStatus('Status Channels', '⚫ Disabled');
-}
-
-async function startServerStatusModule(readyClient: Client): Promise<void> {
-  if (ctx.serverStatus) return;
-  if (ctx.serverStatusStartPromise) return ctx.serverStatusStartPromise;
-
-  ctx.serverStatusStartPromise = (async () => {
-    if (!config.serverStatusChannelId) {
-      setStatus('Server Status', '🟡 Skipped (SERVER_STATUS_CHANNEL_ID not set)');
-      console.log('[BOT] Server status skipped — SERVER_STATUS_CHANNEL_ID not configured');
-      return;
-    }
-
-    const nextServerStatus = new ServerStatus(readyClient, { db: ctx.db });
-    ctx.serverStatus = nextServerStatus;
-    try {
-      await nextServerStatus.start();
-    } catch (err) {
-      if (ctx.serverStatus === nextServerStatus) ctx.serverStatus = undefined;
-      throw err;
-    }
-    ctx.runtimeConfigApplier.registerModuleReconfigure(
-      'SERVER_STATUS_INTERVAL',
-      ({ value }) => {
-        ctx.serverStatus?.reconfigure({ serverStatusInterval: value });
-      },
-      { ownerId: SERVER_STATUS_RUNTIME_OWNER },
-    );
-    setStatus('Server Status', '🟢 Active');
-  })();
-
-  try {
-    await ctx.serverStatusStartPromise;
-  } finally {
-    ctx.serverStatusStartPromise = null;
-  }
-}
-
-async function stopServerStatusModule(): Promise<void> {
-  if (ctx.serverStatusStartPromise) await ctx.serverStatusStartPromise.catch(() => undefined);
-  await ctx.runtimeConfigApplier.cleanupOwner(SERVER_STATUS_RUNTIME_OWNER);
-  if (ctx.serverStatus) {
-    ctx.serverStatus.stop();
-    ctx.serverStatus = undefined;
-  }
-  setStatus('Server Status', '⚫ Disabled');
-}
-
-async function startPlayerStatsModule(readyClient: Client): Promise<void> {
-  if (ctx.playerStatsChannel) return;
-  if (ctx.playerStatsStartPromise) return ctx.playerStatsStartPromise;
-
-  ctx.playerStatsStartPromise = (async () => {
-    if (!hasSftp() && !panelApi.available) {
-      setStatus('Player Stats', '🟡 Skipped (no SFTP, Panel API, or database)');
-      console.log('[BOT] Player stats skipped — no SFTP, Panel API, or database available');
-      return;
-    }
-
-    if (!config.playerStatsChannelId) {
-      setStatus('Player Stats', '🟡 Skipped (PLAYER_STATS_CHANNEL_ID not set)');
-      console.log('[BOT] Player stats skipped — PLAYER_STATS_CHANNEL_ID not configured');
-      return;
-    }
-
-    const nextPlayerStatsChannel = new PlayerStatsChannel(readyClient, ctx.logWatcher, {
-      db: ctx.db,
-      panelApi: panelApi.available ? panelApi : null,
-    });
-    ctx.playerStatsChannel = nextPlayerStatsChannel;
-    try {
-      await nextPlayerStatsChannel.start();
-    } catch (err) {
-      if (ctx.playerStatsChannel === nextPlayerStatsChannel) ctx.playerStatsChannel = undefined;
-      throw err;
-    }
-    const mode = 'DB-first';
-    setStatus('Player Stats', `🟢 Active (${mode})`);
-    if (!ctx.logWatcher) {
-      setStatus('Player Stats', `🟢 Active (${mode}, kill/survival feed unavailable — Log Watcher off)`);
-    }
-  })();
-
-  try {
-    await ctx.playerStatsStartPromise;
-  } finally {
-    ctx.playerStatsStartPromise = null;
-  }
-}
-
-async function stopPlayerStatsModule(): Promise<void> {
-  if (ctx.playerStatsStartPromise) await ctx.playerStatsStartPromise.catch(() => undefined);
-  await ctx.runtimeConfigApplier.cleanupOwner(PLAYER_STATS_RUNTIME_OWNER);
-  if (ctx.playerStatsChannel) {
-    ctx.playerStatsChannel.stop();
-    ctx.playerStatsChannel = undefined;
-  }
-  setStatus('Player Stats', '⚫ Disabled');
-}
-
-function registerFeatureToggleRestartHandlers(readyClient: Client): void {
-  ctx.runtimeConfigApplier.registerModuleRestart('ENABLE_STATUS_CHANNELS', async ({ cfgKey, value }) => {
-    const enabled = coerceRuntimeBoolean(value);
-    await enqueueStatusChannelsRestart(async () => {
-      if (enabled) {
-        await startStatusChannelsModule(readyClient);
-      } else {
-        await stopStatusChannelsModule();
-      }
-      setConfigValue(config, cfgKey, enabled);
-    });
-  });
-
-  ctx.runtimeConfigApplier.registerModuleRestart('ENABLE_SERVER_STATUS', async ({ cfgKey, value }) => {
-    const enabled = coerceRuntimeBoolean(value);
-    await enqueueServerStatusRestart(async () => {
-      if (enabled) {
-        await startServerStatusModule(readyClient);
-      } else {
-        await stopServerStatusModule();
-      }
-      setConfigValue(config, cfgKey, enabled);
-    });
-  });
-
-  ctx.runtimeConfigApplier.registerModuleRestart('ENABLE_PLAYER_STATS', async ({ cfgKey, value }) => {
-    const enabled = coerceRuntimeBoolean(value);
-    await enqueuePlayerStatsRestart(async () => {
-      if (enabled) {
-        await startPlayerStatsModule(readyClient);
-      } else {
-        await stopPlayerStatsModule();
-      }
-      setConfigValue(config, cfgKey, enabled);
-    });
-  });
-}
 
 function rebindHowyagarnManagerIpc(
   nextIpc: HzmodIpcClientInstance | null,
@@ -495,7 +278,9 @@ client.once(Events.ClientReady, (readyClient) => {
     ctx.unregisterDisplayRuntimeHandlers = registerDisplayRuntimeHandlers({
       runtimeConfigApplier: ctx.runtimeConfigApplier,
       config,
-      onApplied: scheduleDiscordDisplayRefresh,
+      onApplied: () => {
+        scheduleDiscordDisplayRefresh(ctx);
+      },
     });
     ctx.unregisterExternalSourceRuntimeHandlers = registerExternalSourceRuntimeHandlers({
       runtimeConfigApplier: ctx.runtimeConfigApplier,
@@ -503,7 +288,7 @@ client.once(Events.ClientReady, (readyClient) => {
       getSaveService: () => ctx.saveService,
       reconfigureHzmod: reconfigureHzmodRuntime,
     });
-    registerFeatureToggleRestartHandlers(readyClient);
+    registerFeatureToggleRestartHandlers(ctx, readyClient);
 
     console.log('[BOT] SQLite database initialised');
 
@@ -584,7 +369,7 @@ client.once(Events.ClientReady, (readyClient) => {
     // ── Web panel — start EARLY so it's reachable while modules initialise ──
     const webPanelPlan = planWebPanelStartup(process.env, config);
     if (webPanelPlan.action === 'disabled') {
-      setStatus('WebMap', '⚫ Disabled (no WEB_MAP_PORT)');
+      setStatus(ctx, 'WebMap', '⚫ Disabled (no WEB_MAP_PORT)');
       console.log('[BOT] Web panel disabled — set WEB_MAP_PORT in .env to enable');
     } else {
       const { port, mode } = webPanelPlan;
@@ -603,10 +388,10 @@ client.once(Events.ClientReady, (readyClient) => {
         await server.start();
         ctx.webMapServer = server;
         const suffix = mode === 'oauth' ? '' : ' (no auth)';
-        setStatus('WebMap', `🟢 Running on http://localhost:${port}${suffix}`);
+        setStatus(ctx, 'WebMap', `🟢 Running on http://localhost:${port}${suffix}`);
         console.log(`[BOT] Web panel started: http://localhost:${port}`);
       } catch (err: unknown) {
-        setStatus('WebMap', `⚠️ Failed to start: ${errMsg(err)}`);
+        setStatus(ctx, 'WebMap', `⚠️ Failed to start: ${errMsg(err)}`);
         console.error('[BOT] Web panel failed to start:', errMsg(err));
       }
     }
@@ -727,17 +512,17 @@ client.once(Events.ClientReady, (readyClient) => {
 
     // Status Channels — voice channel dashboard
     if (config.enableStatusChannels) {
-      await startStatusChannelsModule(readyClient);
+      await startStatusChannelsModule(ctx, readyClient);
     } else {
-      setStatus('Status Channels', '⚫ Disabled');
+      setStatus(ctx, 'Status Channels', '⚫ Disabled');
       console.log('[BOT] Status channels disabled via ENABLE_STATUS_CHANNELS=false');
     }
 
     // Server Status — live embed in a text channel
     if (config.enableServerStatus) {
-      await startServerStatusModule(readyClient);
+      await startServerStatusModule(ctx, readyClient);
     } else {
-      setStatus('Server Status', '⚫ Disabled');
+      setStatus(ctx, 'Server Status', '⚫ Disabled');
       console.log('[BOT] Server status embed disabled via ENABLE_SERVER_STATUS=false');
     }
 
@@ -745,7 +530,7 @@ client.once(Events.ClientReady, (readyClient) => {
     // Started BEFORE Chat Relay so activity thread appears first in channel
     if (config.enableLogWatcher) {
       if (!hasSftp()) {
-        setStatus('Log Watcher', '🟡 Skipped (SFTP credentials not set)');
+        setStatus(ctx, 'Log Watcher', '🟡 Skipped (SFTP credentials not set)');
         console.log('[BOT] Log watcher skipped — SFTP_HOST/SFTP_USER/SFTP_PASSWORD not configured');
       } else {
         // Start even without LOG_CHANNEL_ID — the module self-selects headless
@@ -782,6 +567,7 @@ client.once(Events.ClientReady, (readyClient) => {
         // a missing interval means start() bailed (no SFTP, placeholder host,
         // channel not found, …) and the collector isn't actually running.
         setStatus(
+          ctx,
           'Log Watcher',
           ctx.logWatcher.interval
             ? ctx.logWatcher.isHeadless
@@ -791,7 +577,7 @@ client.once(Events.ClientReady, (readyClient) => {
         );
       }
     } else {
-      setStatus('Log Watcher', '⚫ Disabled');
+      setStatus(ctx, 'Log Watcher', '⚫ Disabled');
       console.log('[BOT] Log watcher disabled via ENABLE_LOG_WATCHER=false');
     }
 
@@ -829,6 +615,7 @@ client.once(Events.ClientReady, (readyClient) => {
       // healthy goes false if start() failed (e.g. channel fetch threw); don't
       // show green for a relay that isn't actually running.
       setStatus(
+        ctx,
         'Chat Relay',
         _chatRelay.healthy
           ? _chatRelay.isHeadless
@@ -837,7 +624,7 @@ client.once(Events.ClientReady, (readyClient) => {
           : '⚠️ Failed to start',
       );
     } else {
-      setStatus('Chat Relay', '⚫ Disabled');
+      setStatus(ctx, 'Chat Relay', '⚫ Disabled');
       console.log('[BOT] Chat relay disabled via ENABLE_CHAT_RELAY=false');
     }
 
@@ -898,32 +685,32 @@ client.once(Events.ClientReady, (readyClient) => {
       ctx.runtimeConfigApplier.registerModuleReconfigure('AUTO_MSG_PROMO_INTERVAL', ({ value }) => {
         _autoMessages.reconfigure({ autoMsgPromoInterval: value });
       });
-      setStatus('Auto-Messages', '🟢 Active');
+      setStatus(ctx, 'Auto-Messages', '🟢 Active');
     } else {
-      setStatus('Auto-Messages', '⚫ Disabled');
+      setStatus(ctx, 'Auto-Messages', '⚫ Disabled');
       console.log('[AUTO MSG] All message features disabled — skipping');
     }
 
     // Kill Feed — sub-feature of Log Watcher
     if (config.enableKillFeed) {
       if (!ctx.logWatcher) {
-        setStatus('Kill Feed', '🟡 Skipped (requires Log Watcher)');
+        setStatus(ctx, 'Kill Feed', '🟡 Skipped (requires Log Watcher)');
       } else {
-        setStatus('Kill Feed', '🟢 Active');
+        setStatus(ctx, 'Kill Feed', '🟢 Active');
       }
     } else {
-      setStatus('Kill Feed', '⚫ Disabled');
+      setStatus(ctx, 'Kill Feed', '⚫ Disabled');
     }
 
     // PvP Kill Feed — sub-feature of Log Watcher
     if (config.enablePvpKillFeed) {
       if (!ctx.logWatcher) {
-        setStatus('PvP Kill Feed', '🟡 Skipped (requires Log Watcher)');
+        setStatus(ctx, 'PvP Kill Feed', '🟡 Skipped (requires Log Watcher)');
       } else {
-        setStatus('PvP Kill Feed', '🟢 Active');
+        setStatus(ctx, 'PvP Kill Feed', '🟢 Active');
       }
     } else {
-      setStatus('PvP Kill Feed', '⚫ Disabled');
+      setStatus(ctx, 'PvP Kill Feed', '⚫ Disabled');
     }
 
     // Save Service — save-file polling → SQLite sync (SFTP, Panel API, or agent)
@@ -963,7 +750,7 @@ client.once(Events.ClientReady, (readyClient) => {
       if (ctx.webMapServer) ctx.webMapServer.setSaveService(ctx.saveService);
       const saveSource = hasSftp() ? '' : ' via Panel API';
 
-      setStatus('Save Service', `🟢 Active (${ctx.saveService.getSyncMode()} mode${saveSource})`);
+      setStatus(ctx, 'Save Service', `🟢 Active (${ctx.saveService.getSyncMode()} mode${saveSource})`);
 
       // ── Snapshot Service — timeline recording on every save sync ──
       ctx.snapshotService = new SnapshotService(ctx.db, {
@@ -1015,16 +802,16 @@ client.once(Events.ClientReady, (readyClient) => {
           }
         })();
       });
-      setStatus('Timeline', '🟢 Active');
+      setStatus(ctx, 'Timeline', '🟢 Active');
     } else {
-      setStatus('Save Service', '🟡 Skipped (no SFTP credentials or Panel API)');
-      setStatus('Timeline', '🟡 Skipped (requires Save Service)');
+      setStatus(ctx, 'Save Service', '🟡 Skipped (no SFTP credentials or Panel API)');
+      setStatus(ctx, 'Timeline', '🟡 Skipped (requires Save Service)');
     }
 
     // Activity Log — save-file change tracking feed
     if (config.enableActivityLog) {
       if (!ctx.saveService) {
-        setStatus('Activity Log', '🟡 Skipped (requires Save Service)');
+        setStatus(ctx, 'Activity Log', '🟡 Skipped (requires Save Service)');
       } else {
         // Always hand ActivityLog the LogWatcher so it can attribute container
         // access (getRecentContainerAccess) even when the watcher is headless.
@@ -1036,10 +823,10 @@ client.once(Events.ClientReady, (readyClient) => {
           logWatcher: ctx.logWatcher,
         });
         await ctx.activityLog.start();
-        setStatus('Activity Log', '🟢 Active');
+        setStatus(ctx, 'Activity Log', '🟢 Active');
       }
     } else {
-      setStatus('Activity Log', '⚫ Disabled');
+      setStatus(ctx, 'Activity Log', '⚫ Disabled');
     }
 
     // Milestone Tracker — player achievement announcements
@@ -1062,9 +849,9 @@ client.once(Events.ClientReady, (readyClient) => {
           if (steamId) _milestone.onPlayerDeath(steamId);
         });
       }
-      setStatus('Milestones', '🟢 Active');
+      setStatus(ctx, 'Milestones', '🟢 Active');
     } else {
-      setStatus('Milestones', '⚫ Disabled');
+      setStatus(ctx, 'Milestones', '⚫ Disabled');
       console.log('[BOT] Milestones disabled via ENABLE_MILESTONES=false');
     }
 
@@ -1083,9 +870,9 @@ client.once(Events.ClientReady, (readyClient) => {
           await _recap.onDayRollover(yesterday);
         });
       }
-      setStatus('Recaps', '🟢 Active');
+      setStatus(ctx, 'Recaps', '🟢 Active');
     } else {
-      setStatus('Recaps', '⚫ Disabled');
+      setStatus(ctx, 'Recaps', '⚫ Disabled');
       console.log('[BOT] Recaps disabled via ENABLE_RECAPS=false');
     }
 
@@ -1113,18 +900,18 @@ client.once(Events.ClientReady, (readyClient) => {
         ctx.runtimeConfigApplier.registerModuleReconfigure('ANTICHEAT_BASELINE_INTERVAL', ({ value }) => {
           _anticheat.reconfigure({ anticheatBaselineInterval: value });
         });
-        setStatus('Anticheat', '🟢 Active');
+        setStatus(ctx, 'Anticheat', '🟢 Active');
       } else {
-        setStatus('Anticheat', '🟡 Package not installed');
+        setStatus(ctx, 'Anticheat', '🟡 Package not installed');
       }
     } else {
-      setStatus('Anticheat', '⚫ Disabled');
+      setStatus(ctx, 'Anticheat', '⚫ Disabled');
     }
 
     // HOWYAGARN MMO — faction PvP / territory control system
     if (config.enableHowyagarn) {
       if (!ctx.optional.HowyagarnManager) {
-        setStatus('HOWYAGARN', '🟡 Skipped (module not installed)');
+        setStatus(ctx, 'HOWYAGARN', '🟡 Skipped (module not installed)');
       } else {
         try {
           // Create shared IPC client for engine communication
@@ -1194,50 +981,50 @@ client.once(Events.ClientReady, (readyClient) => {
             });
           }
 
-          setStatus('HOWYAGARN', '🟢 Active');
+          setStatus(ctx, 'HOWYAGARN', '🟢 Active');
           console.log('[BOT] HOWYAGARN MMO system active');
         } catch (err: unknown) {
-          setStatus('HOWYAGARN', `⚠️ Failed: ${errMsg(err)}`);
+          setStatus(ctx, 'HOWYAGARN', `⚠️ Failed: ${errMsg(err)}`);
           console.error('[BOT] HOWYAGARN init failed:', errMsg(err));
         }
       }
     } else {
-      setStatus('HOWYAGARN', '⚫ Disabled');
+      setStatus(ctx, 'HOWYAGARN', '⚫ Disabled');
     }
 
     // Player Stats — DB-first reads (SaveService populates DB, PSC reads it)
     if (config.enablePlayerStats) {
-      await startPlayerStatsModule(readyClient);
+      await startPlayerStatsModule(ctx, readyClient);
     } else {
-      setStatus('Player Stats', '⚫ Disabled');
+      setStatus(ctx, 'Player Stats', '⚫ Disabled');
       console.log('[BOT] Player stats disabled via ENABLE_PLAYER_STATS=false');
     }
 
     // PvP Scheduler — SFTP-based PvP toggling on a schedule
     if (config.enablePvpScheduler) {
       if (!hasSftp()) {
-        setStatus('PvP Scheduler', '🟡 Skipped (SFTP credentials not set)');
+        setStatus(ctx, 'PvP Scheduler', '🟡 Skipped (SFTP credentials not set)');
         console.log('[BOT] PvP scheduler skipped — SFTP_HOST/SFTP_USER/SFTP_PASSWORD not configured');
       } else if (isNaN(config.pvpStartMinutes) || isNaN(config.pvpEndMinutes)) {
-        setStatus('PvP Scheduler', '🟡 Skipped (PVP_START_TIME/PVP_END_TIME not set)');
+        setStatus(ctx, 'PvP Scheduler', '🟡 Skipped (PVP_START_TIME/PVP_END_TIME not set)');
         console.log('[BOT] PvP scheduler skipped — PVP_START_TIME/PVP_END_TIME not configured');
       } else {
         ctx.pvpScheduler = new PvpScheduler(readyClient, ctx.logWatcher ?? null);
         await ctx.pvpScheduler.start();
-        setStatus('PvP Scheduler', '🟢 Active');
+        setStatus(ctx, 'PvP Scheduler', '🟢 Active');
         if (!ctx.logWatcher) {
-          setStatus('PvP Scheduler', '🟢 Active (activity log announcements unavailable — Log Watcher off)');
+          setStatus(ctx, 'PvP Scheduler', '🟢 Active (activity log announcements unavailable — Log Watcher off)');
         }
       }
     } else {
-      setStatus('PvP Scheduler', '⚫ Disabled');
+      setStatus(ctx, 'PvP Scheduler', '⚫ Disabled');
       console.log('[BOT] PvP scheduler disabled via ENABLE_PVP_SCHEDULER=false');
     }
 
     // Server Scheduler — timed restarts with dynamic difficulty profiles
     if (config.enableServerScheduler) {
       if (!hasSftp()) {
-        setStatus('Server Scheduler', '🟡 Skipped (SFTP credentials not set)');
+        setStatus(ctx, 'Server Scheduler', '🟡 Skipped (SFTP credentials not set)');
         console.log('[BOT] Server scheduler skipped — SFTP_HOST/SFTP_USER/SFTP_PASSWORD not configured');
       } else {
         ctx.serverScheduler = new ServerScheduler(readyClient, ctx.logWatcher ?? null);
@@ -1245,10 +1032,10 @@ client.once(Events.ClientReady, (readyClient) => {
         if (ctx.webMapServer) ctx.webMapServer.setScheduler(ctx.serverScheduler);
         const status = ctx.serverScheduler.getStatus();
         const profileInfo = status.profiles.length > 1 ? ` (${status.profiles.join(' → ')})` : '';
-        setStatus('Server Scheduler', `🟢 Active — ${status.restartTimes.join(', ')}${profileInfo}`);
+        setStatus(ctx, 'Server Scheduler', `🟢 Active — ${status.restartTimes.join(', ')}${profileInfo}`);
       }
     } else {
-      setStatus('Server Scheduler', '⚫ Disabled');
+      setStatus(ctx, 'Server Scheduler', '⚫ Disabled');
       console.log('[BOT] Server scheduler disabled via ENABLE_SERVER_SCHEDULER=false');
     }
 
@@ -1278,17 +1065,17 @@ client.once(Events.ClientReady, (readyClient) => {
 
     // ── Panel API status (/qspanel command) ─────────────────────
     if (panelApi.available) {
-      setStatus('Panel', '🟢 Active (/qspanel command)');
+      setStatus(ctx, 'Panel', '🟢 Active (/qspanel command)');
       console.log('[BOT] Panel API available — /qspanel command active');
     } else {
-      setStatus('Panel', '🟡 Skipped (no PANEL_SERVER_URL/PANEL_API_KEY)');
+      setStatus(ctx, 'Panel', '🟡 Skipped (no PANEL_SERVER_URL/PANEL_API_KEY)');
     }
 
     // ── Stdin console (for headless hosts like Bisect) ──────────
     if (config.enableStdinConsole) {
       ctx.stdinConsole = new StdinConsole({ db: ctx.db, writable: config.stdinConsoleWritable });
       ctx.stdinConsole.start();
-      setStatus('Console', '🟢 Active (stdin)');
+      setStatus(ctx, 'Console', '🟢 Active (stdin)');
       console.log(`[BOT] Stdin console active${config.stdinConsoleWritable ? ' (writable)' : ' (read-only)'}`);
     }
 
