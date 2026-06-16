@@ -7,7 +7,7 @@
 import type { Client, ThreadChannel } from 'discord.js';
 import { errMsg } from '../utils/error.js';
 
-export async function _nukeChannel(discordClient: Client, channelId: string, botId: string | undefined): Promise<void> {
+export async function _nukeChannel(discordClient: Client, channelId: string, botId: string): Promise<void> {
   try {
     const ch = await discordClient.channels.fetch(channelId).catch(() => null);
     if (!ch) return;
