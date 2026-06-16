@@ -1,5 +1,4 @@
 import { Client, GatewayIntentBits, Events, REST, Routes, EmbedBuilder } from 'discord.js';
-import type { ThreadChannel } from 'discord.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getDirname } from './utils/paths.js';
@@ -9,7 +8,7 @@ const __dirname = getDirname(import.meta.url);
 // ── Structured logging system ──────────────────────────────
 // Initializes the global logger with console (human-readable) + file (JSON) transports.
 // All modules using createLogger() automatically write to both outputs.
-import { initLogger, shutdownLogger } from './logger/logger.js';
+import { initLogger } from './logger/logger.js';
 import { createLogger } from './utils/log.js';
 import { errMsg } from './utils/error.js';
 initLogger();
@@ -30,6 +29,8 @@ import {
   registerFeatureToggleRestartHandlers,
 } from './lifecycle/module-restart.js';
 import { reconfigureHzmodRuntime } from './lifecycle/hzmod-runtime.js';
+import { shutdown, _postErrorEmbed } from './lifecycle/shutdown.js';
+import { _nukeChannel } from './lifecycle/nuke-channel.js';
 import type { HowyagarnPlayer, ServerDef, SaveSyncResult } from './runtime/app-types.js';
 import rcon from './rcon/rcon.js';
 import { getServerInfo, getPlayerList, sendAdminMessage } from './rcon/server-info.js';
@@ -1195,105 +1196,12 @@ client.once(Events.ClientReady, (readyClient) => {
 // ── Lifecycle embed cleanup ─────────────────────────────────
 
 // ── Graceful shutdown ───────────────────────────────────────
-async function shutdown(reason = 'Manual shutdown'): Promise<void> {
-  if (ctx.shuttingDown) return; // prevent double-shutdown
-  ctx.shuttingDown = true;
-  console.log('\n[BOT] Shutting down...');
-
-  // Stop all modules FIRST (some need DB for final persist)
-  if (ctx.chatRelay) ctx.chatRelay.stop();
-  if (ctx.statusChannels) ctx.statusChannels.stop();
-  if (ctx.serverStatus) ctx.serverStatus.stop();
-  if (ctx.autoMessages) ctx.autoMessages.stop();
-  if (ctx.presenceTracker) ctx.presenceTracker.stop();
-  if (ctx.pvpScheduler) ctx.pvpScheduler.stop();
-  if (ctx.serverScheduler) ctx.serverScheduler.stop();
-  if (ctx.webMapServer) ctx.webMapServer.stop();
-  if (ctx.hzmodPlugin?.ipcClient) ctx.hzmodPlugin.ipcClient.destroy();
-  if (ctx.hzmodIpc) ctx.hzmodIpc.destroy();
-  if (ctx.logWatcher) ctx.logWatcher.stop();
-  if (ctx.playerStatsChannel) ctx.playerStatsChannel.stop();
-  if (ctx.activityLog) ctx.activityLog.stop();
-  if (ctx.anticheatIntegration) await ctx.anticheatIntegration.stop();
-  if (ctx.howyagarnManager) ctx.howyagarnManager.shutdown();
-  if (ctx.displayRefreshTimer) {
-    clearTimeout(ctx.displayRefreshTimer);
-    ctx.displayRefreshTimer = undefined;
-  }
-  if (ctx.unregisterCoreConnectionRuntimeHandlers) {
-    ctx.unregisterCoreConnectionRuntimeHandlers();
-    ctx.unregisterCoreConnectionRuntimeHandlers = undefined;
-  }
-  if (ctx.unregisterSaveServiceRuntimeHandlers) {
-    ctx.unregisterSaveServiceRuntimeHandlers();
-    ctx.unregisterSaveServiceRuntimeHandlers = undefined;
-  }
-  if (ctx.unregisterExternalSourceRuntimeHandlers) {
-    ctx.unregisterExternalSourceRuntimeHandlers();
-    ctx.unregisterExternalSourceRuntimeHandlers = undefined;
-  }
-  if (ctx.unregisterDisplayRuntimeHandlers) {
-    ctx.unregisterDisplayRuntimeHandlers();
-    ctx.unregisterDisplayRuntimeHandlers = undefined;
-  }
-  if (ctx.saveService) ctx.saveService.stop();
-  if (ctx.multiServerManager) await ctx.multiServerManager.stopAll();
-  if (ctx.stdinConsole) ctx.stdinConsole.stop();
-  if (ctx.botStatusManager) ctx.botStatusManager.stop();
-  playerStats.stop();
-  if (ctx.playtimeFlushTimer) clearInterval(ctx.playtimeFlushTimer);
-  playtime.stop();
-
-  // Close DB immediately after modules stop — before any async work.
-  // node --watch sends SIGTERM and may spawn a new process quickly;
-  // closing DB here ensures WAL is checkpointed before the new process opens it.
-  if (ctx.db) {
-    try {
-      ctx.db.botState.deleteState('bot_running');
-    } catch (err: unknown) {
-      console.warn('[BOT] Could not clear bot_running flag:', errMsg(err));
-    }
-    ctx.db.close();
-  }
-
-  // Post offline notification to admin alert channels (best-effort; DB is already closed above)
-  try {
-    const uptime = _formatUptime(Date.now() - ctx.startedAt.getTime());
-    const activeCount = Object.values(ctx.moduleStatus).filter((s) => s.startsWith('🟢')).length;
-    const totalCount = Object.keys(ctx.moduleStatus).length;
-
-    const embed = new EmbedBuilder()
-      .setTitle('🔴 Bot Offline')
-      .setDescription(reason)
-      .addFields(
-        { name: 'Uptime', value: uptime, inline: true },
-        { name: 'Modules', value: `${activeCount}/${totalCount} active`, inline: true },
-      )
-      .setColor(0xe74c3c)
-      .setTimestamp();
-
-    await Promise.race([
-      postAdminAlert(ctx.client, embed, {
-        adminAlertChannelIds: config.adminAlertChannelIds,
-        fallbackChannelId: config.adminChannelId,
-      }),
-      new Promise<void>((resolve) => setTimeout(resolve, 5000)),
-    ]);
-  } catch (err: unknown) {
-    console.error('[BOT] Failed to post offline notification:', errMsg(err));
-  }
-
-  rcon.disconnect();
-  shutdownLogger();
-  void ctx.client.destroy();
-  process.exit(0);
-}
 
 process.on('SIGINT', () => {
-  void shutdown('SIGINT received');
+  void shutdown(ctx, 'SIGINT received');
 });
 process.on('SIGTERM', () => {
-  void shutdown('SIGTERM received');
+  void shutdown(ctx, 'SIGTERM received');
 });
 process.on('uncaughtException', (err: Error & { code?: number }) => {
   console.error('[BOT] Uncaught exception:', err);
@@ -1310,91 +1218,17 @@ process.on('uncaughtException', (err: Error & { code?: number }) => {
   }
 
   // Post to admin channel before shutting down
-  void _postErrorEmbed('Uncaught Exception', err).finally(() => {
-    shutdown(`Uncaught exception: ${err.message}`).catch(() => process.exit(1));
+  void _postErrorEmbed(ctx, 'Uncaught Exception', err).finally(() => {
+    shutdown(ctx, `Uncaught exception: ${err.message}`).catch(() => process.exit(1));
   });
 });
 process.on('unhandledRejection', (reason) => {
   console.error('[BOT] Unhandled rejection:', reason);
-  void _postErrorEmbed('Unhandled Rejection', reason);
+  void _postErrorEmbed(ctx, 'Unhandled Rejection', reason);
   // Log but don't crash — unhandled rejections are often recoverable
 });
 
-/**
- * Post a hard-error embed to admin alert channels for visibility.
- * Silently ignores failures (client may not be ready yet).
- */
-async function _postErrorEmbed(title: string, err: unknown): Promise<void> {
-  if (!ctx.client.isReady()) return;
-  try {
-    const raw = err instanceof Error ? (err.stack?.slice(0, 1000) ?? err.message) : String(err).slice(0, 1000);
-    const embed = new EmbedBuilder()
-      .setTitle(`\uD83D\uDD25 ${title}`)
-      .setDescription(`\`\`\`\n${raw}\n\`\`\``)
-      .setColor(0xff0000)
-      .setTimestamp();
-    await postAdminAlert(ctx.client, embed, {
-      adminAlertChannelIds: config.adminAlertChannelIds,
-      fallbackChannelId: config.adminChannelId,
-    });
-  } catch (embedErr: unknown) {
-    console.warn('[BOT] Failed to post error embed:', errMsg(embedErr));
-  }
-}
-
 // ── Login ───────────────────────────────────────────────────
-
-/**
- * Delete all bot-authored threads and messages from a channel.
- * Used by NUKE_BOT to factory-reset Discord state before modules start.
- */
-async function _nukeChannel(discordClient: Client, channelId: string, botId: string | undefined): Promise<void> {
-  try {
-    const ch = await discordClient.channels.fetch(channelId).catch(() => null);
-    if (!ch) return;
-
-    // Handle bot-authored threads (active + archived)
-    // Delete ALL bot threads for a clean slate during nuke.
-    if ('threads' in ch) {
-      const textCh = ch as import('discord.js').TextChannel;
-      const active = await textCh.threads.fetchActive().catch(() => ({ threads: new Map<string, ThreadChannel>() }));
-      const archived = await textCh.threads
-        .fetchArchived({ limit: 100 })
-        .catch(() => ({ threads: new Map<string, ThreadChannel>() }));
-      const allThreads: ThreadChannel[] = [...active.threads.values(), ...archived.threads.values()];
-      for (const thread of allThreads) {
-        if (thread.ownerId !== botId) continue;
-        await thread.delete('NUKE_BOT factory reset').catch(() => {});
-        const chName = 'name' in ch ? String((ch as { name: unknown }).name) : channelId;
-        console.log(`[NUKE] Deleted thread "${thread.name}" from #${chName}`);
-      }
-    }
-
-    // Delete bot-authored messages (scan up to 1000)
-    if (!('messages' in ch)) return;
-    const textCh = ch;
-    let lastId: string | undefined;
-    let deleted = 0;
-    for (let page = 0; page < 10; page++) {
-      const opts: { limit: number; before?: string } = { limit: 100 };
-      if (lastId) opts.before = lastId;
-      const batch = await textCh.messages.fetch(opts).catch(() => null);
-      if (!batch || batch.size === 0) break;
-      const lastMsg = batch.last();
-      if (lastMsg) lastId = lastMsg.id;
-      for (const [, msg] of batch) {
-        if (msg.author.id !== botId) continue;
-        await msg.delete().catch(() => {});
-        deleted++;
-      }
-      if (batch.size < 100) break;
-    }
-    const chName = 'name' in ch ? String((ch as { name: unknown }).name) : channelId;
-    if (deleted > 0) console.log(`[NUKE] Deleted ${deleted} message(s) from #${chName}`);
-  } catch (err: unknown) {
-    console.warn(`[NUKE] Could not clean channel ${channelId}:`, errMsg(err));
-  }
-}
 
 void (async () => {
   // Load optional modules and slash commands (async import() requires async context)
