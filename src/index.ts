@@ -1,6 +1,5 @@
-import { Client, GatewayIntentBits, Collection, Events, REST, Routes, EmbedBuilder, MessageFlags } from 'discord.js';
-import type { ChatInputCommandInteraction, GuildMember, ThreadChannel } from 'discord.js';
-import type { BotStatusManager } from './utils/status.js';
+import { Client, GatewayIntentBits, Events, REST, Routes, EmbedBuilder, MessageFlags } from 'discord.js';
+import type { GuildMember, ThreadChannel } from 'discord.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getDirname } from './utils/paths.js';
@@ -18,6 +17,8 @@ initLogger();
 import config from './config/index.js';
 import { setConfigValue } from './config/index.js';
 import { isAdminView, hasSftp, coerceRuntimeBoolean, _formatUptime } from './runtime/helpers.js';
+import { createAppContext } from './runtime/app-context.js';
+import type { SlashCommand, HowyagarnPlayer, ServerDef, SaveSyncResult } from './runtime/app-types.js';
 import rcon from './rcon/rcon.js';
 import { getServerInfo, getPlayerList, sendAdminMessage } from './rcon/server-info.js';
 import ChatRelay from './modules/chat-relay.js';
@@ -50,7 +51,6 @@ import { createBotStatusManager } from './utils/status.js';
 import { needsSync, syncEnv, getVersion, getExampleVersion } from './env-sync.js';
 import ConfigRepository from './db/config-repository.js';
 import { migrateEnvToDb, migrateServersJsonToDb, migrateDisplaySettings } from './db/config-migration.js';
-import RuntimeConfigApplier from './config/runtime-config-applier.js';
 import { registerSaveServiceRuntimeHandlers } from './config/save-service-runtime.js';
 import { registerCoreConnectionRuntimeHandlers } from './config/core-connection-runtime.js';
 import { registerDisplayRuntimeHandlers } from './config/display-runtime.js';
@@ -61,7 +61,6 @@ import {
 import {
   createHzmodIpc,
   reconfigureHzmodRuntimeState,
-  type HzmodIpcClientConstructor,
   type HzmodIpcClientInstance,
 } from './config/hzmod-source-runtime.js';
 import { loadServers, createServerConfig } from './server/multi-server.js';
@@ -75,106 +74,15 @@ import {
 } from './db/bot-state-backup.js';
 import { attachBotStateListeners } from './state/bot-state-listeners.js';
 
-// ── Interfaces for dynamically loaded commands ────────────
-interface SlashCommand {
-  data: { name: string; toJSON: () => unknown };
-  execute: (interaction: ChatInputCommandInteraction) => Promise<void>;
-}
-
-// ── Interfaces for optional modules ───────────────────────
-interface AnticheatInstance {
-  start: () => Promise<void>;
-  stop: () => Promise<void> | void;
-  available: boolean;
-  onSaveSync: (result: SaveSyncResult) => Promise<void>;
-  reconfigure: (options: { anticheatAnalyzeInterval?: unknown; anticheatBaselineInterval?: unknown }) => void;
-}
-
-interface HowyagarnManagerInstance {
-  init: () => void;
-  shutdown: () => void;
-  onSaveSync: (data: { players: HowyagarnPlayer[]; structures: unknown[] }) => void;
-  onLogEvent: (type: string, data: unknown) => void;
-  onPlayerConnect: (steamId: string, playerName: string) => void;
-  setIpc?: (ipc: HzmodIpcClientInstance | null) => void;
-  reconfigure?: (options: { ipc?: HzmodIpcClientInstance | null }) => void;
-}
-
-interface HowyagarnPlayer {
-  steamId: string;
-  name: string;
-  x: number;
-  y: number;
-  deltaZeeksKilled: number;
-  deltaNpcKills: number;
-  deltaAnimalKills: number;
-  deltaFishCaught: number;
-  deltaDaysSurvived: number;
-}
-
-interface HzmodWebPluginModule {
-  register: (
-    server: WebMapServer,
-    cfg: typeof config,
-    opts: { ipc: HzmodIpcClientInstance | null },
-  ) => { ipcClient?: { destroy: () => void } };
-  setManager: (manager: HowyagarnManagerInstance) => void;
-}
-
-// ── Server definition (from loadServers() / multi-server.ts) ──
-interface ServerDef {
-  id: string;
-  name?: string;
-  channels?: Record<string, string | undefined>;
-  enabled?: boolean;
-  [key: string]: unknown;
-}
-
-// ── Save sync result (emitted by SaveService 'sync' event) ──
-interface SaveSyncResult {
-  playerCount: number;
-  structureCount: number;
-  vehicleCount: number;
-  companionCount: number;
-  clanCount: number;
-  horseCount: number;
-  containerCount: number;
-  activityEvents: number;
-  itemTracking: Record<string, unknown>;
-  worldState: unknown;
-  elapsed: number;
-  steamIds: string[];
-  mode: string;
-  diffEvents: unknown[];
-  syncTime: Date;
-  parsed: Record<string, unknown> & {
-    players: Map<string, Record<string, unknown>> | Record<string, Record<string, unknown>>;
-    structures: unknown[];
-    vehicles: unknown[];
-    companions: unknown[];
-    horses: unknown[];
-    containers: unknown[];
-  };
-}
-
 // ── Optional modules (may not be installed) ────────────────
 // Loaded asynchronously in loadOptionalModules() before client.login()
 
-let AnticheatIntegration:
-  | (new (opts: {
-      db: HumanitZDB;
-      config: typeof config;
-      logWatcher: InstanceType<typeof LogWatcher> | undefined;
-    }) => AnticheatInstance)
-  | undefined;
-let hzmodWebPlugin: HzmodWebPluginModule | undefined;
-let HowyagarnManager: (new (opts: Record<string, unknown>) => HowyagarnManagerInstance) | undefined;
-let HzmodIpcClient: HzmodIpcClientConstructor | undefined;
-
 async function loadOptionalModules(): Promise<void> {
   try {
-    AnticheatIntegration = (
-      (await import('./modules/anticheat-integration.js')) as unknown as { default: typeof AnticheatIntegration }
+    ctx.optional.AnticheatIntegration = (
+      (await import('./modules/anticheat-integration.js')) as unknown as {
+        default: typeof ctx.optional.AnticheatIntegration;
+      }
     ).default; // SAFETY: optional private module dynamic import
   } catch {
     /* optional module */
@@ -184,19 +92,23 @@ async function loadOptionalModules(): Promise<void> {
   const _managerPath = './modules/howyagarn/howyagarn-manager.js';
   const _ipcClientPath = './modules/howyagarn/ipc-client.js';
   try {
-    hzmodWebPlugin = ((await import(/* @vite-ignore */ _webPluginPath)) as { default: HzmodWebPluginModule }).default;
+    ctx.optional.hzmodWebPlugin = (
+      (await import(/* @vite-ignore */ _webPluginPath)) as { default: typeof ctx.optional.hzmodWebPlugin }
+    ).default;
   } catch {
     /* optional module */
   }
   try {
-    ({ HowyagarnManager } = (await import(/* @vite-ignore */ _managerPath)) as {
-      HowyagarnManager: typeof HowyagarnManager;
+    ({ HowyagarnManager: ctx.optional.HowyagarnManager } = (await import(/* @vite-ignore */ _managerPath)) as {
+      HowyagarnManager: typeof ctx.optional.HowyagarnManager;
     });
   } catch {
     /* optional module */
   }
   try {
-    HzmodIpcClient = ((await import(/* @vite-ignore */ _ipcClientPath)) as { default: typeof HzmodIpcClient }).default;
+    ctx.optional.HzmodIpcClient = (
+      (await import(/* @vite-ignore */ _ipcClientPath)) as { default: typeof ctx.optional.HzmodIpcClient }
+    ).default;
   } catch {
     /* optional module */
   }
@@ -220,8 +132,13 @@ if (config.adminRoleIds.length > 0) {
 }
 const client = new Client({ intents });
 
+// AppContext — the single mutable, by-reference state object threaded through
+// every extracted entry-point unit (see runtime/app-context.ts). Built right
+// after the client so the privileged-intent handshake stays a top-level side
+// effect that runs before any state is touched.
+const ctx = createAppContext(client);
+
 // ── Load slash commands ─────────────────────────────────────
-const slashCommands = new Collection<string, SlashCommand>();
 
 async function loadCommands(): Promise<void> {
   const commandsPath = path.join(__dirname, 'commands');
@@ -233,7 +150,7 @@ async function loadCommands(): Promise<void> {
     };
     const cmd = command.default ?? command;
     if (cmd.data && cmd.execute) {
-      slashCommands.set(cmd.data.name, cmd as SlashCommand);
+      ctx.slashCommands.set(cmd.data.name, cmd as SlashCommand);
       console.log(`[BOT] Loaded command: /${cmd.data.name}`);
     }
   }
@@ -249,7 +166,7 @@ async function loadCommands(): Promise<void> {
       };
       const cmd = command.default ?? command;
       if (cmd.data && cmd.execute) {
-        slashCommands.set(cmd.data.name, cmd as SlashCommand);
+        ctx.slashCommands.set(cmd.data.name, cmd as SlashCommand);
         console.log(`[BOT] Loaded command: /${cmd.data.name} (${entry.name})`);
       }
     }
@@ -270,7 +187,7 @@ client.on(Events.InteractionCreate, (interaction) => {
       }
 
       const serverId = interaction.customId.split(':')[1] ?? '';
-      const psc = serverId ? _findMultiServerPlayerStatsChannelById(serverId) : playerStatsChannel;
+      const psc = serverId ? _findMultiServerPlayerStatsChannelById(serverId) : ctx.playerStatsChannel;
       if (!psc) {
         await interaction.editReply({ content: 'Player stats module is currently disabled.' });
         return;
@@ -298,7 +215,7 @@ client.on(Events.InteractionCreate, (interaction) => {
       }
 
       const serverId = interaction.customId.split(':')[1] ?? '';
-      const psc = serverId ? _findMultiServerPlayerStatsChannelById(serverId) : playerStatsChannel;
+      const psc = serverId ? _findMultiServerPlayerStatsChannelById(serverId) : ctx.playerStatsChannel;
       if (!psc) {
         await interaction.editReply({ content: 'Player stats module is currently disabled.' });
         return;
@@ -318,7 +235,7 @@ client.on(Events.InteractionCreate, (interaction) => {
     // ── Slash commands ──
     if (!interaction.isChatInputCommand()) return;
 
-    const command = slashCommands.get(interaction.commandName);
+    const command = ctx.slashCommands.get(interaction.commandName);
     if (!command) return;
 
     try {
@@ -338,94 +255,45 @@ client.on(Events.InteractionCreate, (interaction) => {
   })();
 });
 
-// ── Bot ready ───────────────────────────────────────────────
-let chatRelay: InstanceType<typeof ChatRelay> | undefined;
-let statusChannels: InstanceType<typeof StatusChannels> | undefined;
-let serverStatus: InstanceType<typeof ServerStatus> | undefined;
-let autoMessages: InstanceType<typeof AutoMessages> | undefined;
-let presenceTracker: InstanceType<typeof PlayerPresenceTracker> | undefined;
-let logWatcher: InstanceType<typeof LogWatcher> | undefined;
-let playerStatsChannel: InstanceType<typeof PlayerStatsChannel> | undefined;
-let pvpScheduler: InstanceType<typeof PvpScheduler> | undefined;
-let serverScheduler: InstanceType<typeof ServerScheduler> | undefined;
-
-let multiServerManager: InstanceType<typeof MultiServerManager> | undefined;
-let webMapServer: InstanceType<typeof WebMapServer> | undefined;
-const runtimeConfigApplier = new RuntimeConfigApplier();
-
-let hzmodPlugin: { ipcClient?: { destroy: () => void } } | undefined; // Howyagarn web plugin result
-let db: InstanceType<typeof HumanitZDB> | undefined;
-let configRepo: InstanceType<typeof ConfigRepository> | undefined;
-let saveService: InstanceType<typeof SaveService> | undefined;
-let unregisterCoreConnectionRuntimeHandlers: (() => void) | undefined;
-let unregisterSaveServiceRuntimeHandlers: (() => void) | undefined;
-let unregisterExternalSourceRuntimeHandlers: (() => void) | undefined;
-let unregisterDisplayRuntimeHandlers: (() => void) | undefined;
-let displayRefreshTimer: ReturnType<typeof setTimeout> | undefined;
-let playtimeFlushTimer: ReturnType<typeof setInterval> | undefined; // periodic playtime → DB flush
-let snapshotService: InstanceType<typeof SnapshotService> | undefined;
-let activityLog: InstanceType<typeof ActivityLog> | undefined;
-let milestoneTracker: InstanceType<typeof MilestoneTracker> | undefined;
-let recapService: InstanceType<typeof RecapService> | undefined;
-
-let anticheatIntegration: AnticheatInstance | undefined;
-
-let botStatusManager: BotStatusManager | undefined;
-
-let howyagarnManager: HowyagarnManagerInstance | undefined;
-
-let hzmodIpc: HzmodIpcClientInstance | undefined;
-// Bot lifecycle embeds (online/offline) go to panel channel — game server status goes to activity thread
-let stdinConsole: InstanceType<typeof StdinConsole> | undefined;
-const startedAt = new Date();
-
-const moduleStatus: Record<string, string> = {};
-
 function setStatus(name: string, status: string): void {
-  moduleStatus[name] = status;
-  if (botStatusManager) botStatusManager.refreshNow().catch(() => {});
+  ctx.moduleStatus[name] = status;
+  if (ctx.botStatusManager) ctx.botStatusManager.refreshNow().catch(() => {});
 }
 
 const STATUS_CHANNELS_RUNTIME_OWNER = 'module:status-channels';
 const SERVER_STATUS_RUNTIME_OWNER = 'module:server-status';
 const PLAYER_STATS_RUNTIME_OWNER = 'module:player-stats';
-let statusChannelsStartPromise: Promise<void> | null = null;
-let serverStatusStartPromise: Promise<void> | null = null;
-let playerStatsStartPromise: Promise<void> | null = null;
-let statusChannelsRestartQueue: Promise<void> = Promise.resolve();
-let serverStatusRestartQueue: Promise<void> = Promise.resolve();
-let playerStatsRestartQueue: Promise<void> = Promise.resolve();
 
 function enqueueStatusChannelsRestart(operation: () => Promise<void>): Promise<void> {
-  const next = statusChannelsRestartQueue.catch(() => undefined).then(operation);
-  statusChannelsRestartQueue = next.catch(() => undefined);
+  const next = ctx.statusChannelsRestartQueue.catch(() => undefined).then(operation);
+  ctx.statusChannelsRestartQueue = next.catch(() => undefined);
   return next;
 }
 
 function enqueueServerStatusRestart(operation: () => Promise<void>): Promise<void> {
-  const next = serverStatusRestartQueue.catch(() => undefined).then(operation);
-  serverStatusRestartQueue = next.catch(() => undefined);
+  const next = ctx.serverStatusRestartQueue.catch(() => undefined).then(operation);
+  ctx.serverStatusRestartQueue = next.catch(() => undefined);
   return next;
 }
 
 function enqueuePlayerStatsRestart(operation: () => Promise<void>): Promise<void> {
-  const next = playerStatsRestartQueue.catch(() => undefined).then(operation);
-  playerStatsRestartQueue = next.catch(() => undefined);
+  const next = ctx.playerStatsRestartQueue.catch(() => undefined).then(operation);
+  ctx.playerStatsRestartQueue = next.catch(() => undefined);
   return next;
 }
 
 function scheduleDiscordDisplayRefresh(): void {
-  if (displayRefreshTimer) return;
+  if (ctx.displayRefreshTimer) return;
 
-  displayRefreshTimer = setTimeout(() => {
-    displayRefreshTimer = undefined;
-    if (serverStatus) {
-      void serverStatus._update().catch((err: unknown) => {
+  ctx.displayRefreshTimer = setTimeout(() => {
+    ctx.displayRefreshTimer = undefined;
+    if (ctx.serverStatus) {
+      void ctx.serverStatus._update().catch((err: unknown) => {
         console.warn('[BOT] Failed to refresh server status after display config change:', errMsg(err));
       });
     }
-    if (playerStatsChannel) {
-      void playerStatsChannel._updateEmbed().catch((err: unknown) => {
+    if (ctx.playerStatsChannel) {
+      void ctx.playerStatsChannel._updateEmbed().catch((err: unknown) => {
         console.warn('[BOT] Failed to refresh player stats after display config change:', errMsg(err));
       });
     }
@@ -433,23 +301,23 @@ function scheduleDiscordDisplayRefresh(): void {
 }
 
 async function startStatusChannelsModule(readyClient: Client): Promise<void> {
-  if (statusChannelsStartPromise) return statusChannelsStartPromise;
-  if (statusChannels) return;
+  if (ctx.statusChannelsStartPromise) return ctx.statusChannelsStartPromise;
+  if (ctx.statusChannels) return;
 
-  statusChannelsStartPromise = (async () => {
+  ctx.statusChannelsStartPromise = (async () => {
     const categoryHint = config.serverName;
     const nextStatusChannels = new StatusChannels(readyClient, { categoryName: categoryHint });
-    statusChannels = nextStatusChannels;
+    ctx.statusChannels = nextStatusChannels;
     try {
       await nextStatusChannels.start();
     } catch (err) {
-      if (statusChannels === nextStatusChannels) statusChannels = undefined;
+      if (ctx.statusChannels === nextStatusChannels) ctx.statusChannels = undefined;
       throw err;
     }
-    runtimeConfigApplier.registerModuleReconfigure(
+    ctx.runtimeConfigApplier.registerModuleReconfigure(
       'STATUS_CHANNEL_INTERVAL',
       ({ value }) => {
-        statusChannels?.reconfigure({ statusChannelInterval: value });
+        ctx.statusChannels?.reconfigure({ statusChannelInterval: value });
       },
       { ownerId: STATUS_CHANNELS_RUNTIME_OWNER },
     );
@@ -457,45 +325,45 @@ async function startStatusChannelsModule(readyClient: Client): Promise<void> {
   })();
 
   try {
-    await statusChannelsStartPromise;
+    await ctx.statusChannelsStartPromise;
   } finally {
-    statusChannelsStartPromise = null;
+    ctx.statusChannelsStartPromise = null;
   }
 }
 
 async function stopStatusChannelsModule(): Promise<void> {
-  if (statusChannelsStartPromise) await statusChannelsStartPromise.catch(() => undefined);
-  await runtimeConfigApplier.cleanupOwner(STATUS_CHANNELS_RUNTIME_OWNER);
-  if (statusChannels) {
-    statusChannels.stop();
-    statusChannels = undefined;
+  if (ctx.statusChannelsStartPromise) await ctx.statusChannelsStartPromise.catch(() => undefined);
+  await ctx.runtimeConfigApplier.cleanupOwner(STATUS_CHANNELS_RUNTIME_OWNER);
+  if (ctx.statusChannels) {
+    ctx.statusChannels.stop();
+    ctx.statusChannels = undefined;
   }
   setStatus('Status Channels', '⚫ Disabled');
 }
 
 async function startServerStatusModule(readyClient: Client): Promise<void> {
-  if (serverStatus) return;
-  if (serverStatusStartPromise) return serverStatusStartPromise;
+  if (ctx.serverStatus) return;
+  if (ctx.serverStatusStartPromise) return ctx.serverStatusStartPromise;
 
-  serverStatusStartPromise = (async () => {
+  ctx.serverStatusStartPromise = (async () => {
     if (!config.serverStatusChannelId) {
       setStatus('Server Status', '🟡 Skipped (SERVER_STATUS_CHANNEL_ID not set)');
       console.log('[BOT] Server status skipped — SERVER_STATUS_CHANNEL_ID not configured');
       return;
     }
 
-    const nextServerStatus = new ServerStatus(readyClient, { db });
-    serverStatus = nextServerStatus;
+    const nextServerStatus = new ServerStatus(readyClient, { db: ctx.db });
+    ctx.serverStatus = nextServerStatus;
     try {
       await nextServerStatus.start();
     } catch (err) {
-      if (serverStatus === nextServerStatus) serverStatus = undefined;
+      if (ctx.serverStatus === nextServerStatus) ctx.serverStatus = undefined;
       throw err;
     }
-    runtimeConfigApplier.registerModuleReconfigure(
+    ctx.runtimeConfigApplier.registerModuleReconfigure(
       'SERVER_STATUS_INTERVAL',
       ({ value }) => {
-        serverStatus?.reconfigure({ serverStatusInterval: value });
+        ctx.serverStatus?.reconfigure({ serverStatusInterval: value });
       },
       { ownerId: SERVER_STATUS_RUNTIME_OWNER },
     );
@@ -503,27 +371,27 @@ async function startServerStatusModule(readyClient: Client): Promise<void> {
   })();
 
   try {
-    await serverStatusStartPromise;
+    await ctx.serverStatusStartPromise;
   } finally {
-    serverStatusStartPromise = null;
+    ctx.serverStatusStartPromise = null;
   }
 }
 
 async function stopServerStatusModule(): Promise<void> {
-  if (serverStatusStartPromise) await serverStatusStartPromise.catch(() => undefined);
-  await runtimeConfigApplier.cleanupOwner(SERVER_STATUS_RUNTIME_OWNER);
-  if (serverStatus) {
-    serverStatus.stop();
-    serverStatus = undefined;
+  if (ctx.serverStatusStartPromise) await ctx.serverStatusStartPromise.catch(() => undefined);
+  await ctx.runtimeConfigApplier.cleanupOwner(SERVER_STATUS_RUNTIME_OWNER);
+  if (ctx.serverStatus) {
+    ctx.serverStatus.stop();
+    ctx.serverStatus = undefined;
   }
   setStatus('Server Status', '⚫ Disabled');
 }
 
 async function startPlayerStatsModule(readyClient: Client): Promise<void> {
-  if (playerStatsChannel) return;
-  if (playerStatsStartPromise) return playerStatsStartPromise;
+  if (ctx.playerStatsChannel) return;
+  if (ctx.playerStatsStartPromise) return ctx.playerStatsStartPromise;
 
-  playerStatsStartPromise = (async () => {
+  ctx.playerStatsStartPromise = (async () => {
     if (!hasSftp() && !panelApi.available) {
       setStatus('Player Stats', '🟡 Skipped (no SFTP, Panel API, or database)');
       console.log('[BOT] Player stats skipped — no SFTP, Panel API, or database available');
@@ -536,43 +404,43 @@ async function startPlayerStatsModule(readyClient: Client): Promise<void> {
       return;
     }
 
-    const nextPlayerStatsChannel = new PlayerStatsChannel(readyClient, logWatcher, {
-      db,
+    const nextPlayerStatsChannel = new PlayerStatsChannel(readyClient, ctx.logWatcher, {
+      db: ctx.db,
       panelApi: panelApi.available ? panelApi : null,
     });
-    playerStatsChannel = nextPlayerStatsChannel;
+    ctx.playerStatsChannel = nextPlayerStatsChannel;
     try {
       await nextPlayerStatsChannel.start();
     } catch (err) {
-      if (playerStatsChannel === nextPlayerStatsChannel) playerStatsChannel = undefined;
+      if (ctx.playerStatsChannel === nextPlayerStatsChannel) ctx.playerStatsChannel = undefined;
       throw err;
     }
     const mode = 'DB-first';
     setStatus('Player Stats', `🟢 Active (${mode})`);
-    if (!logWatcher) {
+    if (!ctx.logWatcher) {
       setStatus('Player Stats', `🟢 Active (${mode}, kill/survival feed unavailable — Log Watcher off)`);
     }
   })();
 
   try {
-    await playerStatsStartPromise;
+    await ctx.playerStatsStartPromise;
   } finally {
-    playerStatsStartPromise = null;
+    ctx.playerStatsStartPromise = null;
   }
 }
 
 async function stopPlayerStatsModule(): Promise<void> {
-  if (playerStatsStartPromise) await playerStatsStartPromise.catch(() => undefined);
-  await runtimeConfigApplier.cleanupOwner(PLAYER_STATS_RUNTIME_OWNER);
-  if (playerStatsChannel) {
-    playerStatsChannel.stop();
-    playerStatsChannel = undefined;
+  if (ctx.playerStatsStartPromise) await ctx.playerStatsStartPromise.catch(() => undefined);
+  await ctx.runtimeConfigApplier.cleanupOwner(PLAYER_STATS_RUNTIME_OWNER);
+  if (ctx.playerStatsChannel) {
+    ctx.playerStatsChannel.stop();
+    ctx.playerStatsChannel = undefined;
   }
   setStatus('Player Stats', '⚫ Disabled');
 }
 
 function registerFeatureToggleRestartHandlers(readyClient: Client): void {
-  runtimeConfigApplier.registerModuleRestart('ENABLE_STATUS_CHANNELS', async ({ cfgKey, value }) => {
+  ctx.runtimeConfigApplier.registerModuleRestart('ENABLE_STATUS_CHANNELS', async ({ cfgKey, value }) => {
     const enabled = coerceRuntimeBoolean(value);
     await enqueueStatusChannelsRestart(async () => {
       if (enabled) {
@@ -584,7 +452,7 @@ function registerFeatureToggleRestartHandlers(readyClient: Client): void {
     });
   });
 
-  runtimeConfigApplier.registerModuleRestart('ENABLE_SERVER_STATUS', async ({ cfgKey, value }) => {
+  ctx.runtimeConfigApplier.registerModuleRestart('ENABLE_SERVER_STATUS', async ({ cfgKey, value }) => {
     const enabled = coerceRuntimeBoolean(value);
     await enqueueServerStatusRestart(async () => {
       if (enabled) {
@@ -596,7 +464,7 @@ function registerFeatureToggleRestartHandlers(readyClient: Client): void {
     });
   });
 
-  runtimeConfigApplier.registerModuleRestart('ENABLE_PLAYER_STATS', async ({ cfgKey, value }) => {
+  ctx.runtimeConfigApplier.registerModuleRestart('ENABLE_PLAYER_STATS', async ({ cfgKey, value }) => {
     const enabled = coerceRuntimeBoolean(value);
     await enqueuePlayerStatsRestart(async () => {
       if (enabled) {
@@ -613,7 +481,7 @@ function rebindHowyagarnManagerIpc(
   nextIpc: HzmodIpcClientInstance | null,
   previousIpc: HzmodIpcClientInstance | null,
 ): (() => void) | null {
-  const manager = howyagarnManager;
+  const manager = ctx.howyagarnManager;
   if (!manager) return null;
 
   if (typeof manager.setIpc === 'function') {
@@ -637,17 +505,17 @@ function reconfigureHzmodRuntime(next: HzmodSourceRuntimeSnapshot, previous: Hzm
   reconfigureHzmodRuntimeState(
     {
       get ipc() {
-        return hzmodIpc;
+        return ctx.hzmodIpc;
       },
       set ipc(nextIpc) {
-        hzmodIpc = nextIpc;
+        ctx.hzmodIpc = nextIpc;
       },
     },
     next,
     previous,
     {
-      getIpcClientConstructor: () => HzmodIpcClient,
-      getWebMapServer: () => webMapServer,
+      getIpcClientConstructor: () => ctx.optional.HzmodIpcClient,
+      getWebMapServer: () => ctx.webMapServer,
       rebindManager: rebindHowyagarnManagerIpc,
     },
   );
@@ -655,8 +523,8 @@ function reconfigureHzmodRuntime(next: HzmodSourceRuntimeSnapshot, previous: Hzm
 
 /** Find a multi-server PlayerStatsChannel by server ID (used for select menu routing). */
 function _findMultiServerPlayerStatsChannelById(serverId: string): InstanceType<typeof PlayerStatsChannel> | null {
-  if (!multiServerManager) return null;
-  const instance = multiServerManager.getInstance(serverId);
+  if (!ctx.multiServerManager) return null;
+  const instance = ctx.multiServerManager.getInstance(serverId);
   if (!instance) return null;
   return instance.getPlayerStatsChannel();
 }
@@ -687,7 +555,7 @@ client.once(Events.ClientReady, (readyClient) => {
     // Auto-deploy slash commands on startup
     try {
       const rest = new REST({ version: '10' }).setToken(config.discordToken ?? '');
-      const commandData = [...slashCommands.values()].map((c) => c.data.toJSON());
+      const commandData = [...ctx.slashCommands.values()].map((c) => c.data.toJSON());
       await rest.put(Routes.applicationGuildCommands(config.clientId ?? '', config.guildId ?? ''), {
         body: commandData,
       });
@@ -699,25 +567,25 @@ client.once(Events.ClientReady, (readyClient) => {
     console.log('[BOT] Ready!');
 
     // Initialize SQLite database + seed game reference data
-    db = new HumanitZDB();
-    db.init();
-    // db.init() guarantees db.db is non-null, but the type includes null
-    seedGameReference(db);
+    ctx.db = new HumanitZDB();
+    ctx.db.init();
+    // ctx.db.init() guarantees ctx.db.db is non-null, but the type includes null
+    seedGameReference(ctx.db);
 
     // Stage 6: attach bot_state event listeners (before any bot_state reads)
-    attachBotStateListeners(createLogger('bot-state'), db);
+    attachBotStateListeners(createLogger('bot-state'), ctx.db);
 
     // Stage 4: TTL cleanup — remove backup rows older than 7 days
-    cleanupBackupKeys(db);
+    cleanupBackupKeys(ctx.db);
 
     // ── One-time config migration (.env + servers.json → config_documents) ──
-    configRepo = new ConfigRepository(db);
+    ctx.configRepo = new ConfigRepository(ctx.db);
 
-    if (!db.botState.getState('config_migration_done')) {
+    if (!ctx.db.botState.getState('config_migration_done')) {
       try {
         // 1. Migrate .env values → DB (read from process.env, NOT the file —
         //    env-sync may have already commented out non-bootstrap keys)
-        const envResult = migrateEnvToDb(process.env, configRepo);
+        const envResult = migrateEnvToDb(process.env, ctx.configRepo);
 
         // 2. Migrate servers.json → DB (if exists)
         let serverCount = 0;
@@ -726,7 +594,7 @@ client.once(Events.ClientReady, (readyClient) => {
           try {
             const serverDefs: unknown = JSON.parse(fs.readFileSync(serversPath, 'utf8'));
             if (Array.isArray(serverDefs)) {
-              serverCount = migrateServersJsonToDb(serverDefs as Array<Record<string, unknown>>, configRepo);
+              serverCount = migrateServersJsonToDb(serverDefs as Array<Record<string, unknown>>, ctx.configRepo);
             }
           } catch (parseErr: unknown) {
             console.error('[BOT] CRITICAL: servers.json migration failed:', errMsg(parseErr));
@@ -735,10 +603,10 @@ client.once(Events.ClientReady, (readyClient) => {
         }
 
         // 3. Migrate display_settings → DB
-        const displayCount = migrateDisplaySettings(db, configRepo);
+        const displayCount = migrateDisplaySettings(ctx.db, ctx.configRepo);
 
         // Mark migration as done
-        db.botState.setState('config_migration_done', 'true');
+        ctx.db.botState.setState('config_migration_done', 'true');
         console.log(
           `[BOT] Config migrated to DB: ${envResult.appKeys} app, ${envResult.serverKeys} server, ${serverCount} managed servers, ${displayCount} display settings`,
         );
@@ -749,20 +617,20 @@ client.once(Events.ClientReady, (readyClient) => {
     }
 
     // Stage 2b: canary backup — one-shot idempotent, before any schema validation
-    backupCriticalBotStateKeys(db);
+    backupCriticalBotStateKeys(ctx.db);
 
-    config.hydrate(configRepo);
-    config.loadDisplayOverrides(db); // Legacy no-op — kept for backward compat
+    config.hydrate(ctx.configRepo);
+    config.loadDisplayOverrides(ctx.db); // Legacy no-op — kept for backward compat
     panelApi.invalidateConfig();
-    runtimeConfigApplier.registerConnectionReconnect('PANEL_SERVER_URL', ({ cfgKey, value }) => {
+    ctx.runtimeConfigApplier.registerConnectionReconnect('PANEL_SERVER_URL', ({ cfgKey, value }) => {
       setConfigValue(config, cfgKey, value);
       panelApi.invalidateConfig();
     });
-    runtimeConfigApplier.registerConnectionReconnect('PANEL_API_KEY', ({ cfgKey, value }) => {
+    ctx.runtimeConfigApplier.registerConnectionReconnect('PANEL_API_KEY', ({ cfgKey, value }) => {
       setConfigValue(config, cfgKey, value);
       panelApi.invalidateConfig();
     });
-    runtimeConfigApplier.registerModuleReconfigure('STATUS_CACHE_TTL', ({ cfgKey, value }) => {
+    ctx.runtimeConfigApplier.registerModuleReconfigure('STATUS_CACHE_TTL', ({ cfgKey, value }) => {
       const parsed = typeof value === 'number' ? value : typeof value === 'string' ? parseInt(value, 10) : Number.NaN;
       setConfigValue(
         config,
@@ -770,26 +638,26 @@ client.once(Events.ClientReady, (readyClient) => {
         Math.max(Number.isFinite(parsed) ? Math.trunc(parsed) : config.statusCacheTtl, 10_000),
       );
     });
-    runtimeConfigApplier.registerModuleReconfigure('RESOURCE_CACHE_TTL', ({ cfgKey, value }) => {
+    ctx.runtimeConfigApplier.registerModuleReconfigure('RESOURCE_CACHE_TTL', ({ cfgKey, value }) => {
       const nextTtl = serverResources.reconfigure({ resourceCacheTtl: value });
       if (nextTtl !== null) setConfigValue(config, cfgKey, nextTtl);
     });
-    unregisterCoreConnectionRuntimeHandlers = registerCoreConnectionRuntimeHandlers({
-      runtimeConfigApplier,
+    ctx.unregisterCoreConnectionRuntimeHandlers = registerCoreConnectionRuntimeHandlers({
+      runtimeConfigApplier: ctx.runtimeConfigApplier,
       config,
       rcon,
-      getSaveService: () => saveService,
-      getLogWatcher: () => logWatcher,
+      getSaveService: () => ctx.saveService,
+      getLogWatcher: () => ctx.logWatcher,
     });
-    unregisterDisplayRuntimeHandlers = registerDisplayRuntimeHandlers({
-      runtimeConfigApplier,
+    ctx.unregisterDisplayRuntimeHandlers = registerDisplayRuntimeHandlers({
+      runtimeConfigApplier: ctx.runtimeConfigApplier,
       config,
       onApplied: scheduleDiscordDisplayRefresh,
     });
-    unregisterExternalSourceRuntimeHandlers = registerExternalSourceRuntimeHandlers({
-      runtimeConfigApplier,
+    ctx.unregisterExternalSourceRuntimeHandlers = registerExternalSourceRuntimeHandlers({
+      runtimeConfigApplier: ctx.runtimeConfigApplier,
       config,
-      getSaveService: () => saveService,
+      getSaveService: () => ctx.saveService,
       reconfigureHzmod: reconfigureHzmodRuntime,
     });
     registerFeatureToggleRestartHandlers(readyClient);
@@ -805,11 +673,11 @@ client.once(Events.ClientReady, (readyClient) => {
     playerStats.init();
 
     // Wire DB into singletons for unified identity + stats syncing
-    playerStats.setDb(db);
-    playtime.setDb(db);
+    playerStats.setDb(ctx.db);
+    playtime.setDb(ctx.db);
 
     // Periodic flush of active playtime sessions to DB (crash protection)
-    playtimeFlushTimer = setInterval(() => {
+    ctx.playtimeFlushTimer = setInterval(() => {
       try {
         playtime.flushActiveSessions();
       } catch {
@@ -831,37 +699,37 @@ client.once(Events.ClientReady, (readyClient) => {
     // ── RCON lifecycle events — log game server restarts ──
     rcon.on('disconnect', ({ reason }: { reason: string }) => {
       console.log(`[BOT] Game server disconnected: ${reason}`);
-      if (botStatusManager) botStatusManager.refreshNow().catch(() => {});
-      if (logWatcher) {
+      if (ctx.botStatusManager) ctx.botStatusManager.refreshNow().catch(() => {});
+      if (ctx.logWatcher) {
         const embed = new EmbedBuilder()
           .setDescription('🟡 Game server disconnected — RCON connection lost')
           .setColor(0xf39c12)
           .setTimestamp();
-        logWatcher.sendToThread(embed).catch(() => {});
+        ctx.logWatcher.sendToThread(embed).catch(() => {});
       }
     });
     rcon.on('reconnect', ({ downtime }: { downtime?: number }) => {
       const downtimeStr = downtime ? _formatUptime(downtime) : 'unknown';
       console.log(`[BOT] Game server reconnected (downtime: ${downtimeStr})`);
-      if (botStatusManager) botStatusManager.refreshNow().catch(() => {});
-      if (logWatcher) {
+      if (ctx.botStatusManager) ctx.botStatusManager.refreshNow().catch(() => {});
+      if (ctx.logWatcher) {
         const embed = new EmbedBuilder()
           .setDescription(`🟢 Game server reconnected (downtime: ${downtimeStr})`)
           .setColor(0x2ecc71)
           .setTimestamp();
-        logWatcher.sendToThread(embed).catch(() => {});
+        ctx.logWatcher.sendToThread(embed).catch(() => {});
       }
     });
 
     // Bot profile status (presence/activity) — rotates live players + feature highlights
-    botStatusManager = createBotStatusManager(readyClient, {
+    ctx.botStatusManager = createBotStatusManager(readyClient, {
       refreshMs: parseInt(process.env['BOT_PROFILE_STATUS_INTERVAL'] ?? '', 10) || 30000,
       getHasSftp: () => hasSftp(),
       getPanelAvailable: () => panelApi.available,
       getWebMapEnabled: () => !!parseInt(process.env['WEB_MAP_PORT'] ?? '', 10),
-      getModuleStatus: () => moduleStatus,
+      getModuleStatus: () => ctx.moduleStatus,
     });
-    botStatusManager.start();
+    ctx.botStatusManager.start();
 
     // Generate/update the standalone agent script so it's always fresh
     try {
@@ -884,9 +752,13 @@ client.once(Events.ClientReady, (readyClient) => {
         }
         // Assign the module-level variable only after start() succeeds, so a failed
         // start doesn't leave a half-initialised server reachable to shutdown handlers.
-        const server = new WebMapServer(readyClient, { db, configRepo, runtimeConfigApplier });
+        const server = new WebMapServer(readyClient, {
+          db: ctx.db,
+          configRepo: ctx.configRepo,
+          runtimeConfigApplier: ctx.runtimeConfigApplier,
+        });
         await server.start();
-        webMapServer = server;
+        ctx.webMapServer = server;
         const suffix = mode === 'oauth' ? '' : ' (no auth)';
         setStatus('WebMap', `🟢 Running on http://localhost:${port}${suffix}`);
         console.log(`[BOT] Web panel started: http://localhost:${port}`);
@@ -900,17 +772,17 @@ client.once(Events.ClientReady, (readyClient) => {
     //    Forces each module to re-create its embed from scratch.
     if (config.firstRun) {
       const dataDir = path.join(__dirname, '..', 'data');
-      // Clear bot_state keys that hold transient/session data (db is guaranteed set above)
+      // Clear bot_state keys that hold transient/session data (ctx.db is guaranteed set above)
       {
         // PR2: central contract lives in bot-state-backup.ts so tests can assert
         // that FIRST_RUN clears kill_tracker / weekly_baseline / recap_service
         // but does not clear backfilled milestones.
         const transientKeys = FIRST_RUN_TRANSIENT_KEYS;
         // Stage 4: backup transient keys before deletion (idempotent)
-        backupFirstRunKeys(db, transientKeys);
+        backupFirstRunKeys(ctx.db, transientKeys);
         for (const key of transientKeys) {
           try {
-            db.botState.deleteState(key);
+            ctx.db.botState.deleteState(key);
           } catch {
             // ignore
           }
@@ -989,16 +861,16 @@ client.once(Events.ClientReady, (readyClient) => {
       for (const sd of servers) {
         // Keys must match ServerDef.channels (server/multi-server.ts) and the
         // dashboard's ENV_TO_SERVERDEF mapping (web-map/server.ts):
-        // serverStatus / playerStats / chat / log / admin / activityLog.
+        // ctx.serverStatus / playerStats / chat / log / admin / ctx.activityLog.
         // The previous status/stats/panel keys never exist in servers.json, so a
         // managed server's status-embed and player-stats channels were silently
         // skipped on factory reset.
         if (sd.channels?.['log']) channelsToClean.add(sd.channels['log']);
         if (sd.channels?.['chat']) channelsToClean.add(sd.channels['chat']);
         if (sd.channels?.['admin']) channelsToClean.add(sd.channels['admin']);
-        if (sd.channels?.['serverStatus']) channelsToClean.add(sd.channels['serverStatus']);
+        if (sd.channels?.['ctx.serverStatus']) channelsToClean.add(sd.channels['ctx.serverStatus']);
         if (sd.channels?.['playerStats']) channelsToClean.add(sd.channels['playerStats']);
-        if (sd.channels?.['activityLog']) channelsToClean.add(sd.channels['activityLog']);
+        if (sd.channels?.['ctx.activityLog']) channelsToClean.add(sd.channels['ctx.activityLog']);
       }
 
       const botId = readyClient.user.id;
@@ -1036,31 +908,31 @@ client.once(Events.ClientReady, (readyClient) => {
         // Start even without LOG_CHANNEL_ID — the module self-selects headless
         // mode (DB writes only, no Discord posting) so log_*/death_causes data is
         // still collected for the web panel. Mirrors the multi-server path.
-        logWatcher = new LogWatcher(readyClient, {
-          db,
+        ctx.logWatcher = new LogWatcher(readyClient, {
+          db: ctx.db,
           dataDir: path.resolve(__dirname, '..'),
           panelApi: panelApi.available ? panelApi : null,
         });
-        await logWatcher.start();
-        const _logWatcher = logWatcher;
-        if (logWatcher.interval) {
-          runtimeConfigApplier.registerModuleReconfigure('LOG_POLL_INTERVAL', ({ value }) => {
+        await ctx.logWatcher.start();
+        const _logWatcher = ctx.logWatcher;
+        if (ctx.logWatcher.interval) {
+          ctx.runtimeConfigApplier.registerModuleReconfigure('LOG_POLL_INTERVAL', ({ value }) => {
             _logWatcher.reconfigure({ logPollInterval: value });
           });
         }
-        runtimeConfigApplier.registerModuleReconfigure('ENABLE_PVP_KILL_FEED', ({ value }) => {
+        ctx.runtimeConfigApplier.registerModuleReconfigure('ENABLE_PVP_KILL_FEED', ({ value }) => {
           _logWatcher.reconfigure({ enablePvpKillFeed: value });
         });
-        runtimeConfigApplier.registerModuleReconfigure('PVP_KILL_WINDOW', ({ value }) => {
+        ctx.runtimeConfigApplier.registerModuleReconfigure('PVP_KILL_WINDOW', ({ value }) => {
           _logWatcher.reconfigure({ pvpKillWindow: value });
         });
-        runtimeConfigApplier.registerModuleReconfigure('ENABLE_DEATH_LOOP_DETECTION', ({ value }) => {
+        ctx.runtimeConfigApplier.registerModuleReconfigure('ENABLE_DEATH_LOOP_DETECTION', ({ value }) => {
           _logWatcher.reconfigure({ enableDeathLoopDetection: value });
         });
-        runtimeConfigApplier.registerModuleReconfigure('DEATH_LOOP_THRESHOLD', ({ value }) => {
+        ctx.runtimeConfigApplier.registerModuleReconfigure('DEATH_LOOP_THRESHOLD', ({ value }) => {
           _logWatcher.reconfigure({ deathLoopThreshold: value });
         });
-        runtimeConfigApplier.registerModuleReconfigure('DEATH_LOOP_WINDOW', ({ value }) => {
+        ctx.runtimeConfigApplier.registerModuleReconfigure('DEATH_LOOP_WINDOW', ({ value }) => {
           _logWatcher.reconfigure({ deathLoopWindow: value });
         });
         // interval is only set once start() got past validation/connection, so
@@ -1068,8 +940,8 @@ client.once(Events.ClientReady, (readyClient) => {
         // channel not found, …) and the collector isn't actually running.
         setStatus(
           'Log Watcher',
-          logWatcher.interval
-            ? logWatcher.isHeadless
+          ctx.logWatcher.interval
+            ? ctx.logWatcher.isHeadless
               ? '🟢 Active (headless, DB-only)'
               : '🟢 Active'
             : '⚠️ Failed to start',
@@ -1087,17 +959,17 @@ client.once(Events.ClientReady, (readyClient) => {
       // until RCON is configured, so RCON set up later via the dashboard starts
       // working without a restart. The module self-selects headless when no
       // CHAT_CHANNEL_ID/ADMIN_CHANNEL_ID is set.
-      chatRelay = new ChatRelay(readyClient, { db });
-      const _chatRelay = chatRelay;
+      ctx.chatRelay = new ChatRelay(readyClient, { db: ctx.db });
+      const _chatRelay = ctx.chatRelay;
       if (config.nukeBot) _chatRelay.setNukeActive(true);
       // Coordinate day-rollover ordering only with a LogWatcher that actually
       // posts a daily thread (started + non-headless). A headless OR bailed-start
       // watcher never creates a daily thread or fires the rollover callback, so
       // making ChatRelay await it would strand its own daily-thread rollover
       // (it would post to the parent channel after midnight instead).
-      if (logWatcher?.postsDailyThread) {
+      if (ctx.logWatcher?.postsDailyThread) {
         _chatRelay.setAwaitActivityThread(true);
-        logWatcher.setDayRolloverCallback(async () => {
+        ctx.logWatcher.setDayRolloverCallback(async () => {
           try {
             await _chatRelay.createDailyThread();
           } catch (e: unknown) {
@@ -1105,9 +977,9 @@ client.once(Events.ClientReady, (readyClient) => {
           }
         });
       }
-      await chatRelay.start();
+      await ctx.chatRelay.start();
       if (_chatRelay.healthy) {
-        runtimeConfigApplier.registerModuleReconfigure('CHAT_POLL_INTERVAL', ({ value }) => {
+        ctx.runtimeConfigApplier.registerModuleReconfigure('CHAT_POLL_INTERVAL', ({ value }) => {
           _chatRelay.reconfigure({ chatPollInterval: value });
         });
       }
@@ -1127,17 +999,17 @@ client.once(Events.ClientReady, (readyClient) => {
     }
 
     // Player Presence Tracker — infrastructure (always-on: peak/unique stats, join/leave events)
-    presenceTracker = new PlayerPresenceTracker({
+    ctx.presenceTracker = new PlayerPresenceTracker({
       config,
-      db,
+      db: ctx.db,
       playtime,
       getPlayerList,
       label: 'PRESENCE',
     });
     try {
-      await presenceTracker.start();
-      runtimeConfigApplier.registerModuleReconfigure('AUTO_MSG_JOIN_CHECK', ({ value }) => {
-        presenceTracker?.reconfigure({ autoMsgJoinCheckInterval: value });
+      await ctx.presenceTracker.start();
+      ctx.runtimeConfigApplier.registerModuleReconfigure('AUTO_MSG_JOIN_CHECK', ({ value }) => {
+        ctx.presenceTracker?.reconfigure({ autoMsgJoinCheckInterval: value });
       });
     } catch (err: unknown) {
       console.error('[PRESENCE] Failed to start player presence tracker:', errMsg(err));
@@ -1146,41 +1018,41 @@ client.once(Events.ClientReady, (readyClient) => {
     // Auto-Messages — periodic broadcasts + join welcome
     const hasAnyAutoMsg = config.enableAutoMsgLink || config.enableAutoMsgPromo || config.enableWelcomeMsg;
     if (hasAnyAutoMsg) {
-      autoMessages = new AutoMessages({
+      ctx.autoMessages = new AutoMessages({
         config,
-        presenceTracker,
+        presenceTracker: ctx.presenceTracker,
         playtime,
         playerStats,
         getServerInfo,
         sendAdminMessage,
-        db,
+        db: ctx.db,
         label: 'AUTO MSG',
       });
       // Note: start() is synchronous; if it ever returns Promise, callers must await
-      autoMessages.start();
-      const _autoMessages = autoMessages;
-      runtimeConfigApplier.registerModuleReconfigure('DISCORD_INVITE_LINK', ({ value }) => {
+      ctx.autoMessages.start();
+      const _autoMessages = ctx.autoMessages;
+      ctx.runtimeConfigApplier.registerModuleReconfigure('DISCORD_INVITE_LINK', ({ value }) => {
         _autoMessages.reconfigure({ discordInviteLink: value });
       });
-      runtimeConfigApplier.registerModuleReconfigure('AUTO_MSG_LINK_TEXT', ({ value }) => {
+      ctx.runtimeConfigApplier.registerModuleReconfigure('AUTO_MSG_LINK_TEXT', ({ value }) => {
         _autoMessages.reconfigure({ autoMsgLinkText: value });
       });
-      runtimeConfigApplier.registerModuleReconfigure('AUTO_MSG_PROMO_TEXT', ({ value }) => {
+      ctx.runtimeConfigApplier.registerModuleReconfigure('AUTO_MSG_PROMO_TEXT', ({ value }) => {
         _autoMessages.reconfigure({ autoMsgPromoText: value });
       });
-      runtimeConfigApplier.registerModuleReconfigure('ENABLE_AUTO_MSG_LINK', ({ value }) => {
+      ctx.runtimeConfigApplier.registerModuleReconfigure('ENABLE_AUTO_MSG_LINK', ({ value }) => {
         _autoMessages.reconfigure({ enableAutoMsgLink: value });
       });
-      runtimeConfigApplier.registerModuleReconfigure('ENABLE_AUTO_MSG_PROMO', ({ value }) => {
+      ctx.runtimeConfigApplier.registerModuleReconfigure('ENABLE_AUTO_MSG_PROMO', ({ value }) => {
         _autoMessages.reconfigure({ enableAutoMsgPromo: value });
       });
-      runtimeConfigApplier.registerModuleReconfigure('ENABLE_WELCOME_MSG', ({ value }) => {
+      ctx.runtimeConfigApplier.registerModuleReconfigure('ENABLE_WELCOME_MSG', ({ value }) => {
         _autoMessages.reconfigure({ enableWelcomeMsg: value });
       });
-      runtimeConfigApplier.registerModuleReconfigure('AUTO_MSG_LINK_INTERVAL', ({ value }) => {
+      ctx.runtimeConfigApplier.registerModuleReconfigure('AUTO_MSG_LINK_INTERVAL', ({ value }) => {
         _autoMessages.reconfigure({ autoMsgLinkInterval: value });
       });
-      runtimeConfigApplier.registerModuleReconfigure('AUTO_MSG_PROMO_INTERVAL', ({ value }) => {
+      ctx.runtimeConfigApplier.registerModuleReconfigure('AUTO_MSG_PROMO_INTERVAL', ({ value }) => {
         _autoMessages.reconfigure({ autoMsgPromoInterval: value });
       });
       setStatus('Auto-Messages', '🟢 Active');
@@ -1191,7 +1063,7 @@ client.once(Events.ClientReady, (readyClient) => {
 
     // Kill Feed — sub-feature of Log Watcher
     if (config.enableKillFeed) {
-      if (!logWatcher) {
+      if (!ctx.logWatcher) {
         setStatus('Kill Feed', '🟡 Skipped (requires Log Watcher)');
       } else {
         setStatus('Kill Feed', '🟢 Active');
@@ -1202,7 +1074,7 @@ client.once(Events.ClientReady, (readyClient) => {
 
     // PvP Kill Feed — sub-feature of Log Watcher
     if (config.enablePvpKillFeed) {
-      if (!logWatcher) {
+      if (!ctx.logWatcher) {
         setStatus('PvP Kill Feed', '🟡 Skipped (requires Log Watcher)');
       } else {
         setStatus('PvP Kill Feed', '🟢 Active');
@@ -1213,7 +1085,7 @@ client.once(Events.ClientReady, (readyClient) => {
 
     // Save Service — save-file polling → SQLite sync (SFTP, Panel API, or agent)
     if (hasSftp() || panelApi.available) {
-      saveService = new SaveService(db, {
+      ctx.saveService = new SaveService(ctx.db, {
         sftpConfig: hasSftp() ? config.sftpConnectConfig() : undefined,
         savePath: config.sftpSavePath,
         clanSavePath: config.sftpSavePath.replace(/SaveList\/.*$/, 'Save_ClanData.sav'),
@@ -1230,34 +1102,34 @@ client.once(Events.ClientReady, (readyClient) => {
 
         panelApi: panelApi.available ? panelApi : undefined,
       });
-      saveService.on('sync', (result: SaveSyncResult) => {
+      ctx.saveService.on('sync', (result: SaveSyncResult) => {
         console.log(
           `[BOT] Save sync: ${result.playerCount} players, ${result.structureCount} structures (${result.mode}, ${result.elapsed}ms)`,
         );
         // save-cache.json is now written inside SaveService._syncParsedData()
       });
-      saveService.on('error', (err: unknown) => {
+      ctx.saveService.on('error', (err: unknown) => {
         console.error('[BOT] Save service error:', errMsg(err));
       });
-      await saveService.start();
-      unregisterSaveServiceRuntimeHandlers = registerSaveServiceRuntimeHandlers({
-        runtimeConfigApplier,
-        saveService,
+      await ctx.saveService.start();
+      ctx.unregisterSaveServiceRuntimeHandlers = registerSaveServiceRuntimeHandlers({
+        runtimeConfigApplier: ctx.runtimeConfigApplier,
+        saveService: ctx.saveService,
         getConfig: () => config,
       });
-      if (webMapServer) webMapServer.setSaveService(saveService);
+      if (ctx.webMapServer) ctx.webMapServer.setSaveService(ctx.saveService);
       const saveSource = hasSftp() ? '' : ' via Panel API';
 
-      setStatus('Save Service', `🟢 Active (${saveService.getSyncMode()} mode${saveSource})`);
+      setStatus('Save Service', `🟢 Active (${ctx.saveService.getSyncMode()} mode${saveSource})`);
 
       // ── Snapshot Service — timeline recording on every save sync ──
-      snapshotService = new SnapshotService(db, {
+      ctx.snapshotService = new SnapshotService(ctx.db, {
         retentionDays: parseInt(process.env['TIMELINE_RETENTION_DAYS'] ?? '', 10) || 14,
         trackStructures: process.env['TIMELINE_TRACK_STRUCTURES'] !== 'false',
         trackHouses: process.env['TIMELINE_TRACK_HOUSES'] !== 'false',
         trackBackpacks: process.env['TIMELINE_TRACK_BACKPACKS'] !== 'false',
       });
-      saveService.on('sync', (result: SaveSyncResult) => {
+      ctx.saveService.on('sync', (result: SaveSyncResult) => {
         void (async () => {
           if (!(result.parsed as unknown)) return;
           try {
@@ -1280,7 +1152,7 @@ client.once(Events.ClientReady, (readyClient) => {
               /* RCON unavailable — online player set will be empty for this snapshot */
             }
 
-            const _snapshot = snapshotService;
+            const _snapshot = ctx.snapshotService;
             if (_snapshot) {
               _snapshot.recordSnapshot(
                 {
@@ -1308,15 +1180,19 @@ client.once(Events.ClientReady, (readyClient) => {
 
     // Activity Log — save-file change tracking feed
     if (config.enableActivityLog) {
-      if (!saveService) {
+      if (!ctx.saveService) {
         setStatus('Activity Log', '🟡 Skipped (requires Save Service)');
       } else {
         // Always hand ActivityLog the LogWatcher so it can attribute container
         // access (getRecentContainerAccess) even when the watcher is headless.
         // ActivityLog decides its own posting target: the daily thread when the
         // watcher is non-headless, otherwise its ACTIVITY_LOG_CHANNEL_ID/ADMIN.
-        activityLog = new ActivityLog(readyClient, { db, saveService, logWatcher });
-        await activityLog.start();
+        ctx.activityLog = new ActivityLog(readyClient, {
+          db: ctx.db,
+          saveService: ctx.saveService,
+          logWatcher: ctx.logWatcher,
+        });
+        await ctx.activityLog.start();
         setStatus('Activity Log', '🟢 Active');
       }
     } else {
@@ -1325,19 +1201,19 @@ client.once(Events.ClientReady, (readyClient) => {
 
     // Milestone Tracker — player achievement announcements
     if (config.enableMilestones) {
-      milestoneTracker = new MilestoneTracker(readyClient, { db, logWatcher, config });
-      const _milestone = milestoneTracker;
+      ctx.milestoneTracker = new MilestoneTracker(readyClient, { db: ctx.db, logWatcher: ctx.logWatcher, config });
+      const _milestone = ctx.milestoneTracker;
       // Check milestones on every save sync
-      if (saveService) {
-        saveService.on('sync', (result: SaveSyncResult) => {
+      if (ctx.saveService) {
+        ctx.saveService.on('sync', (result: SaveSyncResult) => {
           _milestone.check(result).catch((checkErr: unknown) => {
             console.error('[BOT] Milestone check error:', errMsg(checkErr));
           });
         });
       }
       // Wire death events from LogWatcher to reset survival streaks
-      if (logWatcher) {
-        logWatcher.wrapOnDeath((orig) => (playerName, timestamp) => {
+      if (ctx.logWatcher) {
+        ctx.logWatcher.wrapOnDeath((orig) => (playerName, timestamp) => {
           orig(playerName, timestamp);
           const steamId = playerStats.getSteamId(playerName);
           if (steamId) _milestone.onPlayerDeath(steamId);
@@ -1351,14 +1227,14 @@ client.once(Events.ClientReady, (readyClient) => {
 
     // Recap Service — daily/weekly summary embeds
     if (config.enableRecaps) {
-      recapService = new RecapService(readyClient, { db, logWatcher, config, playtime });
-      const _recap = recapService;
+      ctx.recapService = new RecapService(readyClient, { db: ctx.db, logWatcher: ctx.logWatcher, config, playtime });
+      const _recap = ctx.recapService;
       // Chain into the LogWatcher day-rollover callback — only meaningful for a
       // watcher that posts a daily thread (started + non-headless); a headless
       // or bailed-start watcher never fires the rollover.
-      if (logWatcher?.postsDailyThread) {
-        const prevCb = logWatcher.getDayRolloverCallback();
-        logWatcher.setDayRolloverCallback(async () => {
+      if (ctx.logWatcher?.postsDailyThread) {
+        const prevCb = ctx.logWatcher.getDayRolloverCallback();
+        ctx.logWatcher.setDayRolloverCallback(async () => {
           if (typeof prevCb === 'function') await prevCb();
           const yesterday: string = _recap.getYesterday();
           await _recap.onDayRollover(yesterday);
@@ -1371,23 +1247,27 @@ client.once(Events.ClientReady, (readyClient) => {
     }
 
     // Anticheat — observation-only anomaly detection (optional private package)
-    if (config.enableAnticheat && AnticheatIntegration) {
-      anticheatIntegration = new AnticheatIntegration({ db, config, logWatcher });
-      await anticheatIntegration.start();
-      const _anticheat = anticheatIntegration;
+    if (config.enableAnticheat && ctx.optional.AnticheatIntegration) {
+      ctx.anticheatIntegration = new ctx.optional.AnticheatIntegration({
+        db: ctx.db,
+        config,
+        logWatcher: ctx.logWatcher,
+      });
+      await ctx.anticheatIntegration.start();
+      const _anticheat = ctx.anticheatIntegration;
       if (_anticheat.available) {
         // Wire into save sync for real-time analysis
-        if (saveService) {
-          saveService.on('sync', (result: SaveSyncResult) => {
+        if (ctx.saveService) {
+          ctx.saveService.on('sync', (result: SaveSyncResult) => {
             _anticheat.onSaveSync(result).catch((syncErr: unknown) => {
               console.error('[BOT] Anticheat save sync error:', errMsg(syncErr));
             });
           });
         }
-        runtimeConfigApplier.registerModuleReconfigure('ANTICHEAT_ANALYZE_INTERVAL', ({ value }) => {
+        ctx.runtimeConfigApplier.registerModuleReconfigure('ANTICHEAT_ANALYZE_INTERVAL', ({ value }) => {
           _anticheat.reconfigure({ anticheatAnalyzeInterval: value });
         });
-        runtimeConfigApplier.registerModuleReconfigure('ANTICHEAT_BASELINE_INTERVAL', ({ value }) => {
+        ctx.runtimeConfigApplier.registerModuleReconfigure('ANTICHEAT_BASELINE_INTERVAL', ({ value }) => {
           _anticheat.reconfigure({ anticheatBaselineInterval: value });
         });
         setStatus('Anticheat', '🟢 Active');
@@ -1400,27 +1280,27 @@ client.once(Events.ClientReady, (readyClient) => {
 
     // HOWYAGARN MMO — faction PvP / territory control system
     if (config.enableHowyagarn) {
-      if (!HowyagarnManager) {
+      if (!ctx.optional.HowyagarnManager) {
         setStatus('HOWYAGARN', '🟡 Skipped (module not installed)');
       } else {
         try {
           // Create shared IPC client for engine communication
-          hzmodIpc = createHzmodIpc(config.hzmodSocketPath, HzmodIpcClient) ?? undefined;
+          ctx.hzmodIpc = createHzmodIpc(config.hzmodSocketPath, ctx.optional.HzmodIpcClient) ?? undefined;
 
-          howyagarnManager = new HowyagarnManager({
-            db,
+          ctx.howyagarnManager = new ctx.optional.HowyagarnManager({
+            db: ctx.db,
             client: readyClient,
             rcon,
-            chatRelay,
+            chatRelay: ctx.chatRelay,
             config,
-            ipc: hzmodIpc ?? null,
+            ipc: ctx.hzmodIpc ?? null,
           });
-          howyagarnManager.init();
-          const _howyagarn = howyagarnManager;
+          ctx.howyagarnManager.init();
+          const _howyagarn = ctx.howyagarnManager;
 
           // Wire save-sync events
-          if (saveService) {
-            saveService.on('sync', (result: SaveSyncResult) => {
+          if (ctx.saveService) {
+            ctx.saveService.on('sync', (result: SaveSyncResult) => {
               try {
                 if (!(result.parsed as unknown)) return;
                 const players: HowyagarnPlayer[] = [];
@@ -1449,13 +1329,13 @@ client.once(Events.ClientReady, (readyClient) => {
           }
 
           // Wire log events (PvP deaths, builds, looting)
-          if (logWatcher) {
-            logWatcher.wrapLogEvent((orig) => (entry: LogEventEntry) => {
+          if (ctx.logWatcher) {
+            ctx.logWatcher.wrapLogEvent((orig) => (entry: LogEventEntry) => {
               orig(entry);
               try {
                 _howyagarn.onLogEvent(entry.type, entry);
               } catch (err: unknown) {
-                console.error('[BOT] howyagarnManager.onLogEvent error:', errMsg(err));
+                console.error('[BOT] ctx.howyagarnManager.onLogEvent error:', errMsg(err));
               }
               if (
                 entry.type === 'player_connect' &&
@@ -1465,7 +1345,7 @@ client.once(Events.ClientReady, (readyClient) => {
                 try {
                   _howyagarn.onPlayerConnect(entry.steamId, entry.actorName);
                 } catch (err: unknown) {
-                  console.error('[BOT] howyagarnManager.onPlayerConnect error:', errMsg(err));
+                  console.error('[BOT] ctx.howyagarnManager.onPlayerConnect error:', errMsg(err));
                 }
               }
             });
@@ -1499,10 +1379,10 @@ client.once(Events.ClientReady, (readyClient) => {
         setStatus('PvP Scheduler', '🟡 Skipped (PVP_START_TIME/PVP_END_TIME not set)');
         console.log('[BOT] PvP scheduler skipped — PVP_START_TIME/PVP_END_TIME not configured');
       } else {
-        pvpScheduler = new PvpScheduler(readyClient, logWatcher ?? null);
-        await pvpScheduler.start();
+        ctx.pvpScheduler = new PvpScheduler(readyClient, ctx.logWatcher ?? null);
+        await ctx.pvpScheduler.start();
         setStatus('PvP Scheduler', '🟢 Active');
-        if (!logWatcher) {
+        if (!ctx.logWatcher) {
           setStatus('PvP Scheduler', '🟢 Active (activity log announcements unavailable — Log Watcher off)');
         }
       }
@@ -1517,10 +1397,10 @@ client.once(Events.ClientReady, (readyClient) => {
         setStatus('Server Scheduler', '🟡 Skipped (SFTP credentials not set)');
         console.log('[BOT] Server scheduler skipped — SFTP_HOST/SFTP_USER/SFTP_PASSWORD not configured');
       } else {
-        serverScheduler = new ServerScheduler(readyClient, logWatcher ?? null);
-        await serverScheduler.start();
-        if (webMapServer) webMapServer.setScheduler(serverScheduler);
-        const status = serverScheduler.getStatus();
+        ctx.serverScheduler = new ServerScheduler(readyClient, ctx.logWatcher ?? null);
+        await ctx.serverScheduler.start();
+        if (ctx.webMapServer) ctx.webMapServer.setScheduler(ctx.serverScheduler);
+        const status = ctx.serverScheduler.getStatus();
         const profileInfo = status.profiles.length > 1 ? ` (${status.profiles.join(' → ')})` : '';
         setStatus('Server Scheduler', `🟢 Active — ${status.restartTimes.join(', ')}${profileInfo}`);
       }
@@ -1530,16 +1410,18 @@ client.once(Events.ClientReady, (readyClient) => {
     }
 
     // ── Multi-server manager (independent of Panel) ──────────
-    multiServerManager = new MultiServerManager(readyClient, { configRepo });
-    await multiServerManager.startAll();
-    if (webMapServer) {
-      webMapServer.setMultiServerManager(multiServerManager);
-      // Register hzmod web plugin now that multiServerManager is available
-      if (hzmodWebPlugin) {
+    ctx.multiServerManager = new MultiServerManager(readyClient, { configRepo: ctx.configRepo });
+    await ctx.multiServerManager.startAll();
+    if (ctx.webMapServer) {
+      ctx.webMapServer.setMultiServerManager(ctx.multiServerManager);
+      // Register hzmod web plugin now that ctx.multiServerManager is available
+      if (ctx.optional.hzmodWebPlugin) {
         try {
-          hzmodPlugin = hzmodWebPlugin.register(webMapServer, config, { ipc: hzmodIpc ?? null });
-          // Pass HowyagarnManager to web plugin for MMO API endpoints
-          if (howyagarnManager) hzmodWebPlugin.setManager(howyagarnManager);
+          ctx.hzmodPlugin = ctx.optional.hzmodWebPlugin.register(ctx.webMapServer, config, {
+            ipc: ctx.hzmodIpc ?? null,
+          });
+          // Pass ctx.optional.HowyagarnManager to web plugin for MMO API endpoints
+          if (ctx.howyagarnManager) ctx.optional.hzmodWebPlugin.setManager(ctx.howyagarnManager);
         } catch (err: unknown) {
           console.error('[BOT] hzmod plugin registration failed:', errMsg(err));
         }
@@ -1548,8 +1430,8 @@ client.once(Events.ClientReady, (readyClient) => {
 
     // ── BotControlService (used by both Panel and Web) ───────
     const botControl = new BotControlService({ exit: (code: number) => process.exit(code) });
-    if (webMapServer) webMapServer.setBotControl(botControl);
-    if (webMapServer) webMapServer.setModuleStatus(moduleStatus);
+    if (ctx.webMapServer) ctx.webMapServer.setBotControl(botControl);
+    if (ctx.webMapServer) ctx.webMapServer.setModuleStatus(ctx.moduleStatus);
 
     // ── Panel API status (/qspanel command) ─────────────────────
     if (panelApi.available) {
@@ -1561,8 +1443,8 @@ client.once(Events.ClientReady, (readyClient) => {
 
     // ── Stdin console (for headless hosts like Bisect) ──────────
     if (config.enableStdinConsole) {
-      stdinConsole = new StdinConsole({ db, writable: config.stdinConsoleWritable });
-      stdinConsole.start();
+      ctx.stdinConsole = new StdinConsole({ db: ctx.db, writable: config.stdinConsoleWritable });
+      ctx.stdinConsole.start();
       setStatus('Console', '🟢 Active (stdin)');
       console.log(`[BOT] Stdin console active${config.stdinConsoleWritable ? ' (writable)' : ' (read-only)'}`);
     }
@@ -1570,7 +1452,7 @@ client.once(Events.ClientReady, (readyClient) => {
     // ── Write running flag + clean old lifecycle embeds + post online notification ──
     try {
       try {
-        db.botState.setStateJSON('bot_running', { startedAt: startedAt.toISOString() });
+        ctx.db.botState.setStateJSON('bot_running', { startedAt: ctx.startedAt.toISOString() });
       } catch {
         // ignore
       }
@@ -1614,7 +1496,7 @@ client.once(Events.ClientReady, (readyClient) => {
 
       const onlineEmbed = new EmbedBuilder()
         .setTitle('🟢 Bot Online')
-        .setDescription(`Started at ${startedAt.toISOString()}`)
+        .setDescription(`Started at ${ctx.startedAt.toISOString()}`)
         .setColor(0x2ecc71)
         .setTimestamp();
       await postAdminAlert(readyClient, onlineEmbed, {
@@ -1670,11 +1552,11 @@ client.once(Events.ClientReady, (readyClient) => {
 
       // Reset thread caches so modules pick up the newly rebuilt threads
       // Clear nuke suppression first so thread creation works normally again
-      if (logWatcher) {
-        logWatcher.setNukeActive(false);
-        logWatcher.resetThreadCache();
+      if (ctx.logWatcher) {
+        ctx.logWatcher.setNukeActive(false);
+        ctx.logWatcher.resetThreadCache();
         // Send the startup notification that was deferred during nuke
-        const thread = await logWatcher.getOrCreateDailyThread();
+        const thread = await ctx.logWatcher.getOrCreateDailyThread();
         const startEmbed = new EmbedBuilder()
           .setDescription('Log watcher connected. Monitoring game server activity.')
           .setColor(0x3498db)
@@ -1682,16 +1564,16 @@ client.once(Events.ClientReady, (readyClient) => {
         await thread?.send({ embeds: [startEmbed] }).catch(() => {});
         console.log('[NUKE] LogWatcher thread cache reset');
       }
-      if (chatRelay) {
-        chatRelay.setNukeActive(false);
-        chatRelay.resetThreadCache();
+      if (ctx.chatRelay) {
+        ctx.chatRelay.setNukeActive(false);
+        ctx.chatRelay.resetThreadCache();
         // Re-create chat thread so it appears after rebuilt activity threads
-        await chatRelay.getOrCreateChatThread().catch((e: unknown) => {
+        await ctx.chatRelay.getOrCreateChatThread().catch((e: unknown) => {
           console.warn('[NUKE] Could not re-create chat thread:', errMsg(e));
         });
         console.log('[NUKE] ChatRelay thread cache reset + recreated');
       }
-      for (const [, instance] of multiServerManager.getInstances()) {
+      for (const [, instance] of ctx.multiServerManager.getInstances()) {
         const lw = instance.getLogWatcher();
         if (lw) {
           lw.setNukeActive(false);
@@ -1731,73 +1613,72 @@ client.once(Events.ClientReady, (readyClient) => {
 // ── Lifecycle embed cleanup ─────────────────────────────────
 
 // ── Graceful shutdown ───────────────────────────────────────
-let shuttingDown = false;
 async function shutdown(reason = 'Manual shutdown'): Promise<void> {
-  if (shuttingDown) return; // prevent double-shutdown
-  shuttingDown = true;
+  if (ctx.shuttingDown) return; // prevent double-shutdown
+  ctx.shuttingDown = true;
   console.log('\n[BOT] Shutting down...');
 
   // Stop all modules FIRST (some need DB for final persist)
-  if (chatRelay) chatRelay.stop();
-  if (statusChannels) statusChannels.stop();
-  if (serverStatus) serverStatus.stop();
-  if (autoMessages) autoMessages.stop();
-  if (presenceTracker) presenceTracker.stop();
-  if (pvpScheduler) pvpScheduler.stop();
-  if (serverScheduler) serverScheduler.stop();
-  if (webMapServer) webMapServer.stop();
-  if (hzmodPlugin?.ipcClient) hzmodPlugin.ipcClient.destroy();
-  if (hzmodIpc) hzmodIpc.destroy();
-  if (logWatcher) logWatcher.stop();
-  if (playerStatsChannel) playerStatsChannel.stop();
-  if (activityLog) activityLog.stop();
-  if (anticheatIntegration) await anticheatIntegration.stop();
-  if (howyagarnManager) howyagarnManager.shutdown();
-  if (displayRefreshTimer) {
-    clearTimeout(displayRefreshTimer);
-    displayRefreshTimer = undefined;
+  if (ctx.chatRelay) ctx.chatRelay.stop();
+  if (ctx.statusChannels) ctx.statusChannels.stop();
+  if (ctx.serverStatus) ctx.serverStatus.stop();
+  if (ctx.autoMessages) ctx.autoMessages.stop();
+  if (ctx.presenceTracker) ctx.presenceTracker.stop();
+  if (ctx.pvpScheduler) ctx.pvpScheduler.stop();
+  if (ctx.serverScheduler) ctx.serverScheduler.stop();
+  if (ctx.webMapServer) ctx.webMapServer.stop();
+  if (ctx.hzmodPlugin?.ipcClient) ctx.hzmodPlugin.ipcClient.destroy();
+  if (ctx.hzmodIpc) ctx.hzmodIpc.destroy();
+  if (ctx.logWatcher) ctx.logWatcher.stop();
+  if (ctx.playerStatsChannel) ctx.playerStatsChannel.stop();
+  if (ctx.activityLog) ctx.activityLog.stop();
+  if (ctx.anticheatIntegration) await ctx.anticheatIntegration.stop();
+  if (ctx.howyagarnManager) ctx.howyagarnManager.shutdown();
+  if (ctx.displayRefreshTimer) {
+    clearTimeout(ctx.displayRefreshTimer);
+    ctx.displayRefreshTimer = undefined;
   }
-  if (unregisterCoreConnectionRuntimeHandlers) {
-    unregisterCoreConnectionRuntimeHandlers();
-    unregisterCoreConnectionRuntimeHandlers = undefined;
+  if (ctx.unregisterCoreConnectionRuntimeHandlers) {
+    ctx.unregisterCoreConnectionRuntimeHandlers();
+    ctx.unregisterCoreConnectionRuntimeHandlers = undefined;
   }
-  if (unregisterSaveServiceRuntimeHandlers) {
-    unregisterSaveServiceRuntimeHandlers();
-    unregisterSaveServiceRuntimeHandlers = undefined;
+  if (ctx.unregisterSaveServiceRuntimeHandlers) {
+    ctx.unregisterSaveServiceRuntimeHandlers();
+    ctx.unregisterSaveServiceRuntimeHandlers = undefined;
   }
-  if (unregisterExternalSourceRuntimeHandlers) {
-    unregisterExternalSourceRuntimeHandlers();
-    unregisterExternalSourceRuntimeHandlers = undefined;
+  if (ctx.unregisterExternalSourceRuntimeHandlers) {
+    ctx.unregisterExternalSourceRuntimeHandlers();
+    ctx.unregisterExternalSourceRuntimeHandlers = undefined;
   }
-  if (unregisterDisplayRuntimeHandlers) {
-    unregisterDisplayRuntimeHandlers();
-    unregisterDisplayRuntimeHandlers = undefined;
+  if (ctx.unregisterDisplayRuntimeHandlers) {
+    ctx.unregisterDisplayRuntimeHandlers();
+    ctx.unregisterDisplayRuntimeHandlers = undefined;
   }
-  if (saveService) saveService.stop();
-  if (multiServerManager) await multiServerManager.stopAll();
-  if (stdinConsole) stdinConsole.stop();
-  if (botStatusManager) botStatusManager.stop();
+  if (ctx.saveService) ctx.saveService.stop();
+  if (ctx.multiServerManager) await ctx.multiServerManager.stopAll();
+  if (ctx.stdinConsole) ctx.stdinConsole.stop();
+  if (ctx.botStatusManager) ctx.botStatusManager.stop();
   playerStats.stop();
-  if (playtimeFlushTimer) clearInterval(playtimeFlushTimer);
+  if (ctx.playtimeFlushTimer) clearInterval(ctx.playtimeFlushTimer);
   playtime.stop();
 
   // Close DB immediately after modules stop — before any async work.
   // node --watch sends SIGTERM and may spawn a new process quickly;
   // closing DB here ensures WAL is checkpointed before the new process opens it.
-  if (db) {
+  if (ctx.db) {
     try {
-      db.botState.deleteState('bot_running');
+      ctx.db.botState.deleteState('bot_running');
     } catch (err: unknown) {
       console.warn('[BOT] Could not clear bot_running flag:', errMsg(err));
     }
-    db.close();
+    ctx.db.close();
   }
 
   // Post offline notification to admin alert channels (best-effort; DB is already closed above)
   try {
-    const uptime = _formatUptime(Date.now() - startedAt.getTime());
-    const activeCount = Object.values(moduleStatus).filter((s) => s.startsWith('🟢')).length;
-    const totalCount = Object.keys(moduleStatus).length;
+    const uptime = _formatUptime(Date.now() - ctx.startedAt.getTime());
+    const activeCount = Object.values(ctx.moduleStatus).filter((s) => s.startsWith('🟢')).length;
+    const totalCount = Object.keys(ctx.moduleStatus).length;
 
     const embed = new EmbedBuilder()
       .setTitle('🔴 Bot Offline')
@@ -1810,7 +1691,7 @@ async function shutdown(reason = 'Manual shutdown'): Promise<void> {
       .setTimestamp();
 
     await Promise.race([
-      postAdminAlert(client, embed, {
+      postAdminAlert(ctx.client, embed, {
         adminAlertChannelIds: config.adminAlertChannelIds,
         fallbackChannelId: config.adminChannelId,
       }),
@@ -1822,7 +1703,7 @@ async function shutdown(reason = 'Manual shutdown'): Promise<void> {
 
   rcon.disconnect();
   shutdownLogger();
-  void client.destroy();
+  void ctx.client.destroy();
   process.exit(0);
 }
 
@@ -1862,7 +1743,7 @@ process.on('unhandledRejection', (reason) => {
  * Silently ignores failures (client may not be ready yet).
  */
 async function _postErrorEmbed(title: string, err: unknown): Promise<void> {
-  if (!client.isReady()) return;
+  if (!ctx.client.isReady()) return;
   try {
     const raw = err instanceof Error ? (err.stack?.slice(0, 1000) ?? err.message) : String(err).slice(0, 1000);
     const embed = new EmbedBuilder()
@@ -1870,7 +1751,7 @@ async function _postErrorEmbed(title: string, err: unknown): Promise<void> {
       .setDescription(`\`\`\`\n${raw}\n\`\`\``)
       .setColor(0xff0000)
       .setTimestamp();
-    await postAdminAlert(client, embed, {
+    await postAdminAlert(ctx.client, embed, {
       adminAlertChannelIds: config.adminAlertChannelIds,
       fallbackChannelId: config.adminChannelId,
     });
@@ -2007,7 +1888,7 @@ void (async () => {
       console.error('[BOT] Continuing with existing/empty data files...');
     }
   }
-  client.login(config.discordToken).catch((rawErr: unknown) => {
+  ctx.client.login(config.discordToken).catch((rawErr: unknown) => {
     const err = rawErr as Error & { code?: number };
     if (/disallowed intents/i.test(err.message) || err.code === 4014) {
       const requested: string[] = [];
