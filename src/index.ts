@@ -16,7 +16,8 @@ import { errMsg } from './utils/error.js';
 initLogger();
 
 import config from './config/index.js';
-import { isAdminView as _isAdminViewRaw, setConfigValue } from './config/index.js';
+import { setConfigValue } from './config/index.js';
+import { isAdminView, hasSftp, coerceRuntimeBoolean, _formatUptime } from './runtime/helpers.js';
 import rcon from './rcon/rcon.js';
 import { getServerInfo, getPlayerList, sendAdminMessage } from './rcon/server-info.js';
 import ChatRelay from './modules/chat-relay.js';
@@ -73,11 +74,6 @@ import {
   FIRST_RUN_TRANSIENT_KEYS,
 } from './db/bot-state-backup.js';
 import { attachBotStateListeners } from './state/bot-state-listeners.js';
-
-// Convenience wrapper: isAdminView has 2-arg signature (permissions[], member).
-function isAdminView(member: GuildMember | null): boolean {
-  return _isAdminViewRaw(config.adminViewPermissions, member);
-}
 
 // ── Interfaces for dynamically loaded commands ────────────
 interface SlashCommand {
@@ -390,15 +386,6 @@ function setStatus(name: string, status: string): void {
   if (botStatusManager) botStatusManager.refreshNow().catch(() => {});
 }
 
-function hasSftp(): boolean {
-  const host = config.sftpHost || '';
-  // Reject the documented setup placeholders (.env.example `your.game.server.ip`
-  // / `PASTE_…`) so a setup-mode bot doesn't treat them as configured and start
-  // a headless LogWatcher that polls a sample host every interval.
-  if (!host || host.startsWith('PASTE_') || /^your[._]/i.test(host)) return false;
-  return !!(config.sftpUser && (config.sftpPassword || config.sftpPrivateKeyPath));
-}
-
 const STATUS_CHANNELS_RUNTIME_OWNER = 'module:status-channels';
 const SERVER_STATUS_RUNTIME_OWNER = 'module:server-status';
 const PLAYER_STATS_RUNTIME_OWNER = 'module:player-stats';
@@ -408,11 +395,6 @@ let playerStatsStartPromise: Promise<void> | null = null;
 let statusChannelsRestartQueue: Promise<void> = Promise.resolve();
 let serverStatusRestartQueue: Promise<void> = Promise.resolve();
 let playerStatsRestartQueue: Promise<void> = Promise.resolve();
-
-function coerceRuntimeBoolean(value: unknown): boolean {
-  if (typeof value === 'boolean') return value;
-  return String(value).trim().toLowerCase() === 'true';
-}
 
 function enqueueStatusChannelsRestart(operation: () => Promise<void>): Promise<void> {
   const next = statusChannelsRestartQueue.catch(() => undefined).then(operation);
@@ -1842,18 +1824,6 @@ async function shutdown(reason = 'Manual shutdown'): Promise<void> {
   shutdownLogger();
   void client.destroy();
   process.exit(0);
-}
-
-function _formatUptime(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  const days = Math.floor(s / 86400);
-  const hours = Math.floor((s % 86400) / 3600);
-  const mins = Math.floor((s % 3600) / 60);
-  const parts: string[] = [];
-  if (days > 0) parts.push(`${days}d`);
-  if (hours > 0) parts.push(`${hours}h`);
-  parts.push(`${mins}m`);
-  return parts.join(' ');
 }
 
 process.on('SIGINT', () => {
