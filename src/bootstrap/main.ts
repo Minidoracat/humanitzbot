@@ -8,6 +8,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { getDirname } from '../utils/paths.js';
 import { createLogger } from '../utils/log.js';
 import { errMsg } from '../utils/error.js';
@@ -84,7 +85,7 @@ export async function main(ctx: AppContext): Promise<void> {
       console.error('[BOT] Continuing with existing data files...');
     }
     try {
-      const { main: runSetup } = (await import(setupPath)) as { main: () => Promise<void> };
+      const { main: runSetup } = (await import(pathToFileURL(setupPath).href)) as { main: () => Promise<void> };
       await runSetup();
       console.log('[BOT] Data import complete.');
     } catch (err: unknown) {
