@@ -27,7 +27,7 @@ export async function handleInteraction(ctx: AppContext, interaction: Interactio
     try {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     } catch (err) {
-      const code = (err as { code?: number }).code;
+      const code = typeof err === 'object' && err !== null ? (err as { code?: number }).code : undefined;
       if (code === 10062 || code === 40060) {
         console.log('[BOT] Player select interaction expired, ignoring');
         return;
@@ -58,7 +58,7 @@ export async function handleInteraction(ctx: AppContext, interaction: Interactio
     try {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     } catch (err) {
-      const code = (err as { code?: number }).code;
+      const code = typeof err === 'object' && err !== null ? (err as { code?: number }).code : undefined;
       if (code === 10062 || code === 40060) {
         console.log('[BOT] Clan select interaction expired, ignoring');
         return;
