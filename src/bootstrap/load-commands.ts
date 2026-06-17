@@ -10,6 +10,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { getDirname } from '../utils/paths.js';
 import type { AppContext } from '../runtime/app-context.js';
 import type { SlashCommand } from '../runtime/app-types.js';
@@ -21,7 +22,7 @@ export async function loadCommands(ctx: AppContext): Promise<void> {
   const commandFiles = fs.readdirSync(commandsPath).filter((f) => f.endsWith('.js'));
 
   for (const file of commandFiles) {
-    const command = (await import(path.join(commandsPath, file))) as Partial<SlashCommand> & {
+    const command = (await import(pathToFileURL(path.join(commandsPath, file)).href)) as Partial<SlashCommand> & {
       default?: Partial<SlashCommand>;
     };
     const cmd = command.default ?? command;
@@ -37,7 +38,7 @@ export async function loadCommands(ctx: AppContext): Promise<void> {
     const subDir = path.join(commandsPath, entry.name);
     const subFiles = fs.readdirSync(subDir).filter((f) => f.endsWith('.js'));
     for (const file of subFiles) {
-      const command = (await import(path.join(subDir, file))) as Partial<SlashCommand> & {
+      const command = (await import(pathToFileURL(path.join(subDir, file)).href)) as Partial<SlashCommand> & {
         default?: Partial<SlashCommand>;
       };
       const cmd = command.default ?? command;
