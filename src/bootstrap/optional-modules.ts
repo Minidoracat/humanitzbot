@@ -14,10 +14,14 @@ import type { AppContext } from '../runtime/app-context.js';
  * ERR_MODULE_NOT_FOUND, so we disambiguate on the unresolved URL: a genuinely
  * absent optional module reports its own path, whereas a broken dependency
  * reports the nested specifier. Unknown error shapes fail toward logging.
+ *
+ * Exported for unit testing. Matches a full path segment (`'/' + moduleFile`,
+ * URL separators are always '/') so a different file whose name merely ends
+ * with moduleFile (e.g. `x-anticheat-integration.js`) isn't misclassified.
  */
-function isAbsentOptionalModule(err: unknown, moduleFile: string): boolean {
+export function isAbsentOptionalModule(err: unknown, moduleFile: string): boolean {
   const e = err as (NodeJS.ErrnoException & { url?: string }) | null | undefined;
-  return e?.code === 'ERR_MODULE_NOT_FOUND' && (e.url?.endsWith(moduleFile) ?? false);
+  return e?.code === 'ERR_MODULE_NOT_FOUND' && (e.url?.endsWith('/' + moduleFile) ?? false);
 }
 
 export async function loadOptionalModules(ctx: AppContext): Promise<void> {
