@@ -19,7 +19,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 const SRC_DIR = join(process.cwd(), 'src');
-const CAST = 'as unknown as';
+// Matches `as unknown as` even when wrapped across lines — a single-line check
+// would let a multi-line cast slip the gate entirely (count + comment check).
+const CAST_RE = /\bas\s+unknown\s+as\b/g;
 const WINDOW = 3;
 // Ceiling, not a ratchet: keep headroom so routine refactors don't churn this
 // test, while bulk creep still trips it. Lower it whenever the count drops.
@@ -35,25 +37,34 @@ function tsFiles(dir: string): string[] {
   return out;
 }
 
-// A line "uses" the cast only as code — not when `as unknown as` appears inside
-// a comment (a `//` before it on the line, or a JSDoc `*` continuation line).
-function isCodeCast(line: string): boolean {
-  const castAt = line.indexOf(CAST);
-  if (castAt === -1) return false;
-  const commentAt = line.indexOf('//');
-  if (commentAt !== -1 && commentAt < castAt) return false;
-  if (/^\s*\*/.test(line)) return false;
-  return true;
+// 0-based line index of every real (non-comment) `as unknown as`, anchored at the
+// match start. Scans the whole file text so a cast wrapped across lines still
+// counts; skips matches sitting after a `//` or on a JSDoc `*` continuation line.
+function castLineIndexes(text: string, lines: string[]): number[] {
+  const out: number[] = [];
+  let m: RegExpExecArray | null;
+  CAST_RE.lastIndex = 0;
+  while ((m = CAST_RE.exec(text)) !== null) {
+    const before = text.slice(0, m.index);
+    const lineIdx = before.split('\n').length - 1;
+    const col = m.index - (before.lastIndexOf('\n') + 1);
+    const line = lines[lineIdx] ?? '';
+    const commentAt = line.indexOf('//');
+    if (commentAt !== -1 && commentAt < col) continue; // line comment before the cast
+    if (/^\s*\*/.test(line)) continue; // JSDoc continuation line
+    out.push(lineIdx);
+  }
+  return out;
 }
 
 type Cast = { loc: string; justified: boolean };
 
 const casts: Cast[] = [];
 for (const file of tsFiles(SRC_DIR)) {
-  const lines = readFileSync(file, 'utf8').split('\n');
+  const text = readFileSync(file, 'utf8');
+  const lines = text.split('\n');
   const rel = file.slice(SRC_DIR.length - 'src'.length);
-  for (let i = 0; i < lines.length; i++) {
-    if (!isCodeCast(lines[i] ?? '')) continue;
+  for (const i of castLineIndexes(text, lines)) {
     const from = Math.max(0, i - WINDOW);
     const to = Math.min(lines.length - 1, i + WINDOW);
     const justified = lines.slice(from, to + 1).some((l) => l.includes('// SAFETY:'));
