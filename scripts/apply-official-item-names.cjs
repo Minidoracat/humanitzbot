@@ -134,8 +134,8 @@ for (const c of apply) {
   changes.push(c);
 }
 
+JSON.parse(text); // sanity first: fail fast before writing to disk
 fs.writeFileSync('locales/zh-CN/items.json', text);
-JSON.parse(text); // sanity: still valid JSON
 console.log(
   'applied ' + changes.length + ' official replacements (dropped ' + droppedCollide + ' collisions) to locales/zh-CN/items.json',
 );
