@@ -1898,7 +1898,6 @@ function parseSave(buf) {
           z: transform ? _round2(transform.z) : null,
           locked,
           doesSpawnLoot,
-          buildIndex: idx,
         });
       }
     } else {
@@ -1913,7 +1912,6 @@ function parseSave(buf) {
         locked,
         doesSpawnLoot,
         craftingContent,
-        buildIndex: idx,
       });
     }
   }
@@ -2319,7 +2317,6 @@ function parseClanData(buf) {
 
 const CACHE_FILENAME = 'humanitz-cache.json';
 const SAVE_FILENAME = 'Save_DedicatedSaveMP.sav';
-const CLAN_FILENAME = 'Save_ClanData.sav';
 const ID_MAP_FILENAME = 'PlayerIDMapped.txt';
 const AGENT_VERSION_VALUE = 5;
 const PARSER_SIGNATURE = 'agent-v' + AGENT_VERSION_VALUE;
@@ -2835,18 +2832,6 @@ function parseAndWrite(savePath, outputPath, pretty, idMapPath, playerDirPath) {
   const playerCache = buildPlayersFromPlayerFiles(savePath, outputPath, playerDirPath, playersObj);
   const mergedPlayers = playerCache.players;
 
-  // Parse clan data if Save_ClanData.sav exists alongside the main save
-  let clans = [];
-  const clanPath = _path.join(_path.dirname(savePath), CLAN_FILENAME);
-  try {
-    if (_fs.existsSync(clanPath)) {
-      const clanBuf = _fs.readFileSync(clanPath);
-      clans = parseClanData(clanBuf);
-    }
-  } catch (err) {
-    console.error('[Agent] Clan parse warning:', err.message);
-  }
-
   const cache = {
     v: 5,
     ts: new Date().toISOString(),
@@ -2867,7 +2852,6 @@ function parseAndWrite(savePath, outputPath, pretty, idMapPath, playerDirPath) {
     lootActors: result.lootActors,
     quests: result.quests,
     horses: result.horses,
-    clans: clans,
   };
 
   const json = pretty ? JSON.stringify(cache, null, 2) : JSON.stringify(cache);
@@ -2881,7 +2865,6 @@ function parseAndWrite(savePath, outputPath, pretty, idMapPath, playerDirPath) {
   const elapsed = Date.now() - startTime;
   const sizeMB = (json.length / 1024 / 1024).toFixed(2);
   const playerCount = Object.keys(mergedPlayers).length;
-  const clanInfo = clans.length ? ', ' + clans.length + ' clans' : '';
   const idMapInfoText = idMapInfo.count ? ', ' + idMapInfo.count + ' names' : '';
   const playerCacheInfo = playerCache.playerCacheStats
     ? ', discovered ' +
@@ -2905,7 +2888,6 @@ function parseAndWrite(savePath, outputPath, pretty, idMapPath, playerDirPath) {
       ' vehicles' +
       idMapInfoText +
       playerCacheInfo +
-      clanInfo +
       ' → ' +
       sizeMB +
       'MB cache (' +

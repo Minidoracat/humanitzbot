@@ -1675,7 +1675,6 @@ function parseSave(buf: Buffer): ParseResult {
           z: transform ? _round2(transform.z) : null,
           locked,
           doesSpawnLoot,
-          buildIndex: idx,
         });
       }
     } else {
@@ -1690,7 +1689,6 @@ function parseSave(buf: Buffer): ParseResult {
         locked,
         doesSpawnLoot,
         craftingContent,
-        buildIndex: idx,
       });
     }
   }
