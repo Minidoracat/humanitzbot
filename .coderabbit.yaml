@@ -1,0 +1,7 @@
+# https://docs.coderabbit.ai/getting-started/configure-coderabbit
+# schema enum 沒有 zh-TW（只有 zh / zh-CN，皆標示 "Chinese"）→ zh-TW 會被視為無效值。
+# 用 zh（泛中文，不像 zh-CN 偏向簡體），再用 tone_instructions 強制繁體輸出。
+language: zh
+tone_instructions: "Write all review comments, summaries, and walkthroughs in Traditional Chinese (繁體中文 / zh-TW), not Simplified. Keep code identifiers, file paths, API names, and commit/PR conventions in English."
+reviews:
+  sequence_diagrams: true # 預設就是 true，這裡顯式宣告；仍只在 diff 有跨元件流程時才畫
