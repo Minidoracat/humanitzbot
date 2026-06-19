@@ -62,3 +62,6 @@ CLAUDE.md
 .mcp.json
 .codex/
 .gitnexus
+
+# Local game client (P2-4 locres extraction; ~24GB, never commit)
+client/
