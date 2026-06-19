@@ -406,8 +406,8 @@ export class ActivityLogRepository extends BaseRepository {
    * Insert multiple activity entries in a single transaction.
    * @param {Array<object>} entries
    */
-  insertActivities(entries: Array<Record<string, unknown>>): void {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- defensive: untyped callers may pass null
+  insertActivities(entries: Array<Record<string, unknown>> | null | undefined): void {
+    // Nullable param: untyped (JS) callers may pass null/undefined despite the signature.
     if (!entries || entries.length === 0) return;
     const tx = this._handle.transaction((list: Array<Record<string, unknown>>) => {
       for (const entry of list) {
@@ -438,8 +438,8 @@ export class ActivityLogRepository extends BaseRepository {
    * Each entry must have a `createdAt` ISO string.
    * @param {Array<object>} entries
    */
-  insertActivitiesAt(entries: Array<Record<string, unknown>>): void {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- defensive: untyped callers may pass null
+  insertActivitiesAt(entries: Array<Record<string, unknown>> | null | undefined): void {
+    // Nullable param: untyped (JS) callers may pass null/undefined despite the signature.
     if (!entries || entries.length === 0) return;
     const tx = this._handle.transaction((list: Array<Record<string, unknown>>) => {
       for (const entry of list) {
