@@ -10,6 +10,7 @@ import { errMsg } from '../utils/error.js';
 import { logRejection } from '../utils/log-rejection.js';
 import type { HumanitZDB } from '../db/database.js';
 import type { PanelApi } from '../server/panel-api.js';
+import { makeDayCountsDefault, normalizeDayCounts } from '../state/bot-state-schemas.js';
 import * as logWatcherThreads from './log-watcher-threads.js';
 import * as logWatcherEvents from './log-watcher-events.js';
 
@@ -336,8 +337,15 @@ class LogWatcher {
   _loadDayCounts() {
     try {
       if (!this._db) return;
-      const raw = this._db.botState.getStateJSON('day_counts', null) as { date?: string; counts?: DayCounts } | null;
-      if (raw?.date === this._config.getToday()) {
+      // Re-normalize: getStateJSONValidated returns the raw value in dry-run mode,
+      // so the second pass makes the shape safe in every mode (repo convention).
+      const validated: unknown = this._db.botState.getStateJSONValidated(
+        'day_counts',
+        normalizeDayCounts,
+        makeDayCountsDefault(),
+      );
+      const raw = normalizeDayCounts(validated).shape;
+      if (raw.date === this._config.getToday()) {
         this._dayCounts = { ...this._dayCounts, ...raw.counts };
         this._log.info(`Restored day counts for ${raw.date} (DB)`);
       }

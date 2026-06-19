@@ -6,9 +6,13 @@
  * of the target type (invalid fields are substituted with safe defaults).
  * `issues` lists per-field diagnostic strings for every substitution made.
  *
- * Only kill_tracker is a canary key for PR2. The other keys
- * (milestones, weekly_baseline, recap_service …) will get normalizers in
- * later follow-up work.
+ * kill_tracker is the fail-loud write-side canary. Read-side normalizers also
+ * cover weekly_baseline, server_status_cache, milestones, recap_service and
+ * day_counts — every bot_state key that carries data whose loss isn't trivially
+ * self-healing. Ephemeral keys (msg_id_*, log_offsets, bot_running,
+ * config_migration_done) and resettable config (display_settings,
+ * server_settings) intentionally stay on raw getStateJSON: a bad value there
+ * just re-defaults or re-derives on the next cycle.
  *
  * Decision: Option E selected after Stage 0 spike — see temp/pr2-schema-spike.md.
  */
@@ -590,4 +594,74 @@ export function normalizeRecapService(raw: unknown): { shape: RecapServiceShape;
   if (lastWeekly !== undefined) shape.lastWeekly = lastWeekly;
 
   return { shape, issues };
+}
+
+// ─── day_counts (read-side) ──────────────────────────────────────────────────
+// Daily event counters accumulated by the log watcher. `counts` is an open
+// Record<string, number> (known event keys + any custom ones). Both readers do
+// arithmetic on the values — `(counts[k] ?? 0) + 1` and `reduce((s, v) => s + v)`
+// — so a non-number value would corrupt the day's totals via string concat.
+// Read-side normalization coerces every value to a finite number.
+
+export interface DayCountsShape {
+  date: string | null;
+  counts: Record<string, number>;
+}
+
+const DAY_COUNTS_KEYS = [
+  'connects',
+  'disconnects',
+  'deaths',
+  'builds',
+  'damage',
+  'loots',
+  'raidHits',
+  'destroyed',
+  'admin',
+  'cheat',
+  'pvpKills',
+] as const;
+
+function emptyDayCounts(): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const k of DAY_COUNTS_KEYS) out[k] = 0;
+  return out;
+}
+
+export function makeDayCountsDefault(): DayCountsShape {
+  return { date: null, counts: emptyDayCounts() };
+}
+
+export function normalizeDayCounts(raw: unknown): { shape: DayCountsShape; issues: string[] } {
+  const issues: string[] = [];
+  if (!isObj(raw)) {
+    issues.push('root: expected object');
+    return { shape: makeDayCountsDefault(), issues };
+  }
+
+  let date: string | null = null;
+  if (raw.date === null || raw.date === undefined) {
+    date = null;
+  } else if (typeof raw.date === 'string') {
+    date = raw.date;
+  } else {
+    issues.push('root.date: expected string | null (substituted null)');
+  }
+
+  const counts = emptyDayCounts();
+  if (raw.counts === undefined) {
+    // fresh state — defaults are fine
+  } else if (!isObj(raw.counts)) {
+    issues.push('root.counts: expected object (substituted defaults)');
+  } else {
+    for (const [key, value] of Object.entries(raw.counts)) {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        counts[key] = value;
+      } else {
+        issues.push(`root.counts[${key}]: expected finite number (dropped)`);
+      }
+    }
+  }
+
+  return { shape: { date, counts }, issues };
 }
