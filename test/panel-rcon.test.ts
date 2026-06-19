@@ -8,8 +8,8 @@ import { EventEmitter } from 'events';
 
 import * as _panel_rcon from '../src/rcon/panel-rcon.js';
 import { ReconnectBackoff } from '../src/rcon/reconnect-backoff.js';
-// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- Tests use private PanelRcon internals and a mock WebSocket class.
-const { PanelRcon } = _panel_rcon as any;
+// Loose `any` binding: tests use private PanelRcon internals + a mock WebSocket class.
+const { PanelRcon }: any = _panel_rcon;
 
 // ── Mock WebSocket ──────────────────────────────────────
 

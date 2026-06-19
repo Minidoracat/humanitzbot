@@ -1222,8 +1222,7 @@ describe('game-reference seed', () => {
   });
 
   it('seeds all reference data without errors', () => {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- Test imports seed from a dynamic module shape.
-    const { seed } = _game_reference as any;
+    const { seed }: any = _game_reference; // loose binding: dynamic module shape
     assert.doesNotThrow(() => {
       seed(db);
     });
@@ -1269,8 +1268,7 @@ describe('game-reference seed', () => {
   });
 
   it('re-seeds an existing DB when game_ref_version is behind', () => {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- dynamic module shape
-    const { seed } = _game_reference as any;
+    const { seed }: any = _game_reference; // loose binding: dynamic module shape
     const stale = new HumanitZDB({ memory: true, label: 'StaleRefTest' });
     stale.init();
     seed(stale);

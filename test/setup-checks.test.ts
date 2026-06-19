@@ -6,8 +6,8 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import * as _setup_checks from '../src/utils/setup-checks.js';
-// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- Tests mock setup-check dependencies through loose module exports.
-const { checkPrerequisites, testRconReachability } = _setup_checks as any;
+// Loose `any` binding: tests mock setup-check dependencies via loose module exports.
+const { checkPrerequisites, testRconReachability }: any = _setup_checks;
 
 describe('setup-checks', () => {
   describe('checkPrerequisites', () => {
