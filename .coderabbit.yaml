@@ -1,0 +1,4 @@
+# https://docs.coderabbit.ai/getting-started/configure-coderabbit
+language: zh-TW # review 敘述用繁體中文（非依 commit 判斷；預設 en-US）
+reviews:
+  sequence_diagrams: true # 預設就是 true，這裡顯式宣告；仍只在 diff 有跨元件流程時才畫
