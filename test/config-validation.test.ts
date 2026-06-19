@@ -2,8 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import * as _config_validation from '../src/db/config-validation.js';
-// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- Test intentionally exercises validator internals with loose indexing.
-const { validateField, FIELD_VALIDATORS, ENV_KEY_VALIDATORS } = _config_validation as any;
+// Loose `any` binding so the test can exercise validator internals with invalid shapes.
+const { validateField, FIELD_VALIDATORS, ENV_KEY_VALIDATORS }: any = _config_validation;
 
 // ── Port validator ───────────────────────────────────────────
 

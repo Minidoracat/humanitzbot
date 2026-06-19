@@ -21,8 +21,8 @@ import { execFileSync } from 'child_process';
 
 import * as _agent_builder from '../src/parsers/agent-builder.js';
 import * as _save_parser from '../src/parsers/save-parser.js';
-// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- Test intentionally keeps private module export access loosely typed.
-const { buildAgentScript, writeAgent, AGENT_VERSION } = _agent_builder as any;
+// Loose `any` binding: test accesses private module exports loosely.
+const { buildAgentScript, writeAgent, AGENT_VERSION }: any = _agent_builder;
 
 // ─── Test data ──────────────────────────────────────────────────────────────
 const DATA_DIR = path.join(__dirname, '..', 'data');

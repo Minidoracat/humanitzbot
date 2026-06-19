@@ -2,8 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import * as _item_fingerprint from '../src/db/item-fingerprint.js';
-// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- Test intentionally calls item helpers with invalid shapes.
-const { generateFingerprint, normalizeSlot, normalizeInventory, buildFingerprintMap } = _item_fingerprint as any;
+// Loose `any` binding so the test can call helpers with invalid shapes.
+const { generateFingerprint, normalizeSlot, normalizeInventory, buildFingerprintMap }: any = _item_fingerprint;
 
 describe('generateFingerprint', () => {
   it('returns empty string for null/invalid input', () => {
