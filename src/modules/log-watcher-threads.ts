@@ -10,6 +10,7 @@
 import { EmbedBuilder, type Message, type Guild } from 'discord.js';
 import { cleanName } from '../parsers/ue4-names.js';
 import { errMsg } from '../utils/error.js';
+import { makeDayCountsDefault, normalizeDayCounts } from '../state/bot-state-schemas.js';
 
 // ── LogWatcher context type for mixin methods ───────────────────────────────
 
@@ -70,6 +71,11 @@ interface LogWatcherThis {
   _db: {
     botState: {
       getStateJSON(key: string, defaultVal: unknown): unknown;
+      getStateJSONValidated<T>(
+        key: string,
+        normalize: (raw: unknown) => { shape: T; issues: string[] },
+        defaultVal: T,
+      ): T;
       setStateJSON(key: string, value: unknown): void;
     };
     activityLog: {
@@ -180,12 +186,14 @@ async function _getOrCreateDailyThread(this: LogWatcherThis): Promise<ThreadLike
   // First startup — check for stale day-counts from a previous session on a different day
   if (!this._dailyDate) {
     try {
-      let raw: { date?: string; counts?: DayCounts } | null = null;
-      if (this._db) {
-        raw = this._db.botState.getStateJSON('day_counts', null) as { date?: string; counts?: DayCounts } | null;
-      }
-      if (raw?.date && raw.date !== today && raw.counts) {
-        const total = Object.values(raw.counts).reduce((s, v) => s + (v || 0), 0);
+      // Re-normalize: getStateJSONValidated returns the raw value in dry-run mode,
+      // so the second pass makes the shape safe in every mode (repo convention).
+      const validated: unknown = this._db
+        ? this._db.botState.getStateJSONValidated('day_counts', normalizeDayCounts, makeDayCountsDefault())
+        : null;
+      const raw = validated == null ? null : normalizeDayCounts(validated).shape;
+      if (raw?.date && raw.date !== today) {
+        const total = Object.values(raw.counts).reduce((s, v) => s + v, 0);
         if (total > 0) {
           // Post the old day's summary before creating today's thread
           this._dailyDate = raw.date;

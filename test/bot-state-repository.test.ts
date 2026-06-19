@@ -23,6 +23,8 @@ import {
   normalizeMilestoneState,
   normalizeRecapService,
   normalizeServerStatusCache,
+  makeDayCountsDefault,
+  normalizeDayCounts,
   type KillTrackerShape,
 } from '../src/state/bot-state-schemas.js';
 
@@ -588,5 +590,54 @@ describe('T2 mode lifecycle (startup-frozen cache)', () => {
     // NODE_ENV is 'test' (set by .env.test + test/setup.ts)
     reloadSchemaMode();
     assert.equal(getSchemaMode(), 'enforce');
+  });
+});
+
+// ─── day_counts re-normalize contract (P2-5) ─────────────────────────────────
+// The log-watcher consumers read day_counts via getStateJSONValidated and then
+// re-normalize the result, because off (production default) bypasses validation
+// and dry-run (staging) returns the raw parsed value. These guard that the
+// re-normalize step is what actually makes the shape safe in every mode — drop
+// it and a corrupt count silently reaches the readers' arithmetic again.
+describe('day_counts read-side normalizer wiring', () => {
+  const CORRUPT = JSON.stringify({ date: 'old-day', counts: { deaths: '5', builds: null } });
+
+  it('off mode returns the raw value verbatim; re-normalize coerces counts to numbers', () => {
+    process.env.BOT_STATE_SCHEMA_MODE = 'off';
+    reloadSchemaMode();
+    setRaw('day_counts', CORRUPT);
+    const validated: unknown = repo.getStateJSONValidated('day_counts', normalizeDayCounts, makeDayCountsDefault());
+    assert.deepEqual(validated, JSON.parse(CORRUPT)); // off bypasses validation entirely
+    const safe = normalizeDayCounts(validated).shape; // what the consumers do next
+    assert.equal(typeof safe.counts.deaths, 'number');
+    assert.equal(safe.counts.deaths, 0);
+  });
+
+  it('dry-run mode returns the raw value; re-normalize makes a non-object counts safe', () => {
+    process.env.BOT_STATE_SCHEMA_MODE = 'dry-run';
+    reloadSchemaMode();
+    setRaw('day_counts', JSON.stringify({ date: 'old-day', counts: null }));
+    const validated: unknown = repo.getStateJSONValidated('day_counts', normalizeDayCounts, makeDayCountsDefault());
+    const safe = normalizeDayCounts(validated).shape;
+    // counts is a real object now, so the stale-day reduce() never throws
+    assert.equal(
+      Object.values(safe.counts).reduce((s, v) => s + v, 0),
+      0,
+    );
+  });
+
+  it('enforce mode returns the partial-recovery shape directly', () => {
+    process.env.BOT_STATE_SCHEMA_MODE = 'enforce';
+    reloadSchemaMode();
+    setRaw('day_counts', CORRUPT);
+    const result = repo.getStateJSONValidated('day_counts', normalizeDayCounts, makeDayCountsDefault());
+    assert.equal(result.counts.deaths, 0);
+  });
+
+  it('missing key returns the default (date=null) without crashing', () => {
+    process.env.BOT_STATE_SCHEMA_MODE = 'enforce';
+    reloadSchemaMode();
+    const result = repo.getStateJSONValidated('day_counts', normalizeDayCounts, makeDayCountsDefault());
+    assert.equal(result.date, null);
   });
 });
