@@ -43,6 +43,7 @@ globalThis.__agentInternals = {
   discoverPlayerSaveDir,
   listPlayerSaveFiles,
   buildPlayersFromPlayerFiles,
+  parseAndWrite,
   _buildWatchSignature,
 };
 `,
@@ -87,6 +88,13 @@ globalThis.__agentInternals = {
         scanComplete?: boolean;
       };
     };
+    parseAndWrite(
+      savePath: string,
+      outputPath: string,
+      pretty: boolean,
+      idMapPath?: string,
+      playerDirPath?: string,
+    ): Record<string, unknown>;
     _buildWatchSignature(savePath: string, playerDir: string, explicitIdMapPath?: string): string;
   };
 }
@@ -169,6 +177,43 @@ describe('agent-builder', () => {
     fs.writeFileSync(TEMP_AGENT, script);
     new vm.Script(script.replace(/^#!.*\n/, ''), { filename: TEMP_AGENT });
     assert.ok(true, 'Syntax check passed');
+  });
+
+  it('parseAndWrite() runs end-to-end and writes a cache without the removed fields', () => {
+    // Executes the full parseAndWrite body (parseSave is stubbed), including the
+    // summary-log line that used to reference the now-removed `clans` variable —
+    // a compile-only check (above) cannot catch that ReferenceError because the
+    // body lives in a template string. This is the regression guard for the
+    // dead-field cleanup.
+    fs.rmSync(TEMP_PLAYER_ROOT, { recursive: true, force: true });
+    const savePath = path.join(TEMP_PLAYER_ROOT, 'Save_DedicatedSaveMP.sav');
+    const cachePath = path.join(TEMP_PLAYER_ROOT, 'humanitz-cache.json');
+    const playerDir = path.join(TEMP_PLAYER_ROOT, 'DedicatedSaveMP');
+    fs.mkdirSync(playerDir, { recursive: true });
+    fs.writeFileSync(savePath, 'stub-save'); // content irrelevant — parseSave is stubbed
+
+    const stubResult = {
+      players: new Map<string, Record<string, unknown>>([['76561198000000001', { name: 'Alice', health: 90 }]]),
+      worldState: { day: 3 },
+      structures: [],
+      vehicles: [],
+      companions: [],
+      deadBodies: [],
+      containers: [{ actorName: 'C1', items: [] }],
+      lootActors: [],
+      quests: [],
+      horses: [],
+    };
+    const internals = loadAgentInternals(script, () => stubResult);
+
+    const cache = internals.parseAndWrite(savePath, cachePath, false, undefined, playerDir);
+
+    assert.ok(cache, 'parseAndWrite returned a cache object');
+    assert.equal('clans' in cache, false, 'clans snapshot field stays removed');
+    assert.ok(fs.existsSync(cachePath), 'cache file was written');
+    const onDisk = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+    assert.equal('clans' in onDisk, false, 'written cache has no clans field');
+    assert.deepEqual(onDisk.worldState, { day: 3 });
   });
 
   it('writeAgent() creates a file', () => {
