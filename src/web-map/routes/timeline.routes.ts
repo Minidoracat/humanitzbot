@@ -14,7 +14,7 @@ import { safeError } from '../route-helpers.js';
 import type { DeathCauseRow } from '../types/db-rows.js';
 
 export function registerTimelineRoutes(app: Express, ctx: WebMapRouteContext): void {
-  app.get('/api/timeline/bounds', requireTier('survivor'), rateLimit(10000, 10), (req, res) => {
+  app.get('/api/timeline/bounds', requireTier('mod'), rateLimit(10000, 10), (req, res) => {
     if (!req.srv.db) return res.json({ earliest: null, latest: null, count: 0 });
     try {
       const bounds = req.srv.db.timeline.getTimelineBounds();
@@ -25,7 +25,7 @@ export function registerTimelineRoutes(app: Express, ctx: WebMapRouteContext): v
   });
 
   /** GET /api/timeline/snapshots?from=&to=&limit= — snapshot list (metadata only) */
-  app.get('/api/timeline/snapshots', requireTier('survivor'), rateLimit(10000, 10), (req, res) => {
+  app.get('/api/timeline/snapshots', requireTier('mod'), rateLimit(10000, 10), (req, res) => {
     if (!req.srv.db) return res.json([]);
     try {
       const { from, to, limit } = req.query;
@@ -42,7 +42,7 @@ export function registerTimelineRoutes(app: Express, ctx: WebMapRouteContext): v
   });
 
   /** GET /api/timeline/snapshot/:id — full snapshot data (all entities with map coords) */
-  app.get('/api/timeline/snapshot/:id', requireTier('survivor'), rateLimit(10000, 15), (req, res) => {
+  app.get('/api/timeline/snapshot/:id', requireTier('mod'), rateLimit(10000, 15), (req, res) => {
     if (!req.srv.db) {
       sendError(res, API_ERRORS.DATABASE_NOT_AVAILABLE, 404);
       return;
@@ -93,7 +93,7 @@ export function registerTimelineRoutes(app: Express, ctx: WebMapRouteContext): v
   });
 
   /** GET /api/timeline/player/:steamId/trail?from=&to= — player position history */
-  app.get('/api/timeline/player/:steamId/trail', requireTier('survivor'), rateLimit(10000, 10), (req, res) => {
+  app.get('/api/timeline/player/:steamId/trail', requireTier('mod'), rateLimit(10000, 10), (req, res) => {
     if (!req.srv.db) return res.json([]);
     try {
       const { steamId } = req.params;
@@ -122,7 +122,7 @@ export function registerTimelineRoutes(app: Express, ctx: WebMapRouteContext): v
   });
 
   /** GET /api/timeline/ai/population?from=&to= — AI population over time */
-  app.get('/api/timeline/ai/population', requireTier('survivor'), rateLimit(10000, 10), (req, res) => {
+  app.get('/api/timeline/ai/population', requireTier('mod'), rateLimit(10000, 10), (req, res) => {
     if (!req.srv.db) return res.json([]);
     try {
       const { from, to } = req.query;
@@ -138,7 +138,7 @@ export function registerTimelineRoutes(app: Express, ctx: WebMapRouteContext): v
   });
 
   /** GET /api/timeline/deaths?limit=&player= — recent death causes */
-  app.get('/api/timeline/deaths', requireTier('survivor'), rateLimit(10000, 15), (req, res) => {
+  app.get('/api/timeline/deaths', requireTier('mod'), rateLimit(10000, 15), (req, res) => {
     if (!req.srv.db) return res.json([]);
     try {
       const { limit, player } = req.query;
@@ -163,7 +163,7 @@ export function registerTimelineRoutes(app: Express, ctx: WebMapRouteContext): v
   });
 
   /** GET /api/timeline/deaths/stats — death cause breakdown */
-  app.get('/api/timeline/deaths/stats', requireTier('survivor'), rateLimit(10000, 10), (req, res) => {
+  app.get('/api/timeline/deaths/stats', requireTier('mod'), rateLimit(10000, 10), (req, res) => {
     if (!req.srv.db) return res.json([]);
     try {
       const stats = req.srv.db.deathCause.getDeathCauseStats();

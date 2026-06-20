@@ -2371,3 +2371,86 @@ describe('Web Map Admin — POST endpoints', () => {
     });
   });
 });
+
+// ── Map/Timeline data tier gates (griefing-intel security boundary) ───────────
+describe('Map & Timeline data tier gates', () => {
+  // Returns { passed, status }: passed = next() called (allowed); status = blocked HTTP code.
+  function gate(method: string, routePath: string, tier: string, tierLevel: number) {
+    const mw = getTierMiddleware(method, routePath);
+    const req = mockReq({ tier, tierLevel, path: routePath });
+    const res = mockRes();
+    let passed = false;
+    mw(req, res, () => {
+      passed = true;
+    });
+    return { passed, status: res._status };
+  }
+
+  // Every endpoint the tier-2 Map/Timeline UI consumes that exposes structure owner SteamIDs,
+  // base/container locations or entity coordinates must reject tier-1 survivors. Table-driven
+  // so a newly-added route — or a reverted gate — can't silently slip past coverage.
+  const MOD_ROUTES: Array<[string, string]> = [
+    ['GET', '/api/panel/mapdata'],
+    ['GET', '/api/timeline/bounds'],
+    ['GET', '/api/timeline/snapshots'],
+    ['GET', '/api/timeline/snapshot/:id'],
+    ['GET', '/api/timeline/player/:steamId/trail'],
+    ['GET', '/api/timeline/ai/population'],
+    ['GET', '/api/timeline/deaths'],
+    ['GET', '/api/timeline/deaths/stats'],
+  ];
+  for (const [method, route] of MOD_ROUTES) {
+    it(`${method} ${route} blocks survivor (403) and allows mod`, () => {
+      const blocked = gate(method, route, 'survivor', 1);
+      assert.equal(blocked.passed, false);
+      assert.equal(blocked.status, 403);
+      assert.equal(gate(method, route, 'mod', 2).passed, true);
+    });
+  }
+
+  // Regression guard: /api/players stays tier-1 (shared with the players/clans tabs);
+  // it must NOT have been over-raised while locking down the map endpoints.
+  it('GET /api/players stays accessible to survivor', () => {
+    assert.equal(gate('GET', '/api/players', 'survivor', 1).passed, true);
+  });
+});
+
+// ── /api/panel/lookup world-object branch is mod-gated in-handler ─────────────
+// The route stays survivor-accessible for game reference data, but the live structure /
+// container fallbacks (which carry coords + owner) must only resolve for mod+.
+describe('GET /api/panel/lookup world-object tier gating', () => {
+  const handler = getHandler('GET', '/api/panel/lookup/:type/:name');
+  function lookupReq(tier: string, tierLevel: number, type: string, name: string) {
+    return mockReq({
+      tier,
+      tierLevel,
+      params: { type, name },
+      srv: {
+        db: {
+          gameData: { findByName: () => null },
+          worldObject: {
+            findStructureByName: () => ({ id: 1, pos_x: 100, pos_y: 200, owner_steam_id: 'STEAM_X' }),
+            findContainerByName: () => ({ actor_name: 'c', pos_x: 1, pos_y: 2, items: '[]' }),
+          },
+          activityLog: { countByTextSearch: () => 0 },
+        },
+      },
+    });
+  }
+
+  it('hides live structure coords/owner from a tier-1 survivor', async () => {
+    const res = mockRes();
+    await handler(lookupReq('survivor', 1, 'structure', 'base'), res);
+    assert.notEqual((res._json as Record<string, unknown>).refTable, 'structures');
+  });
+  it('lets a mod resolve a live structure world-object', async () => {
+    const res = mockRes();
+    await handler(lookupReq('mod', 2, 'structure', 'base'), res);
+    assert.equal((res._json as Record<string, unknown>).refTable, 'structures');
+  });
+  it('hides live container data from a tier-1 survivor', async () => {
+    const res = mockRes();
+    await handler(lookupReq('survivor', 1, 'container', 'box'), res);
+    assert.equal((res._json as Record<string, unknown>).found, false);
+  });
+});

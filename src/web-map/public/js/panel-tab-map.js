@@ -38,6 +38,71 @@ Panel.tabs = Panel.tabs || {};
     if (_inited) return;
     _inited = true;
     initMap();
+    const sel = $('#map-basemap');
+    if (sel) {
+      applyBasemapLabels(sel);
+      sel.value = S.mapBasemap || 'color';
+      sel.addEventListener('change', function () {
+        setBasemap(this.value);
+      });
+      if (window.i18next && typeof i18next.on === 'function') {
+        i18next.on('languageChanged', function () {
+          applyBasemapLabels(sel);
+        });
+      }
+    }
+    // Keep the whole map reachable when the window / viewport is resized.
+    let resizeTimer;
+    window.addEventListener('resize', function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () {
+        fitMapView(false);
+      }, 150);
+    });
+
+    // Fullscreen toggle (button at the map's top-right). Fullscreens the whole map tab
+    // so the filter bar + player list stay usable; re-fits the map on enter/exit.
+    const fsBtn = $('#map-fullscreen');
+    if (fsBtn) {
+      fsBtn.addEventListener('click', function () {
+        const target = $('#tab-map');
+        if (document.fullscreenElement) {
+          if (document.exitFullscreen) document.exitFullscreen();
+        } else if (target && target.requestFullscreen) {
+          target.requestFullscreen().catch(function () {});
+        }
+      });
+      document.addEventListener('fullscreenchange', function () {
+        const inFs = !!document.fullscreenElement;
+        fsBtn.innerHTML = '<i data-lucide="' + (inFs ? 'minimize' : 'maximize') + '" class="w-4 h-4"></i>';
+        if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+        setTimeout(function () {
+          fitMapView(false);
+        }, 120);
+      });
+    }
+
+    // Legend: collapse toggle + rebuild on language change.
+    const legendToggle = $('#map-legend-toggle');
+    if (legendToggle) {
+      legendToggle.addEventListener('click', function () {
+        const lg = $('#map-legend');
+        if (!lg) return;
+        const collapsed = lg.classList.toggle('collapsed');
+        legendToggle.setAttribute('aria-expanded', String(!collapsed));
+      });
+    }
+    buildMapLegend();
+    if (window.i18next && typeof i18next.on === 'function') i18next.on('languageChanged', buildMapLegend);
+
+    // Mobile player-list drawer toggle (#map-sidebar becomes an off-canvas drawer on phones).
+    const drawerBtn = $('#map-drawer-toggle');
+    if (drawerBtn) {
+      drawerBtn.addEventListener('click', function () {
+        const sb = $('#map-sidebar');
+        if (sb) sb.classList.toggle('open');
+      });
+    }
   }
 
   // ── Map Initialization ──────────────────────────────────────────
@@ -58,18 +123,121 @@ Panel.tabs = Panel.tabs || {};
     }
     S.map = L.map(container, {
       crs: L.CRS.Simple,
-      minZoom: -2,
+      minZoom: -5, // safe floor only; fitMapView() sets the real min so the whole map fits any screen
       maxZoom: 3,
+      zoomSnap: 0, // smooth zoom so the dynamic fit-to-screen zoom isn't snapped into clipping the map
+      zoomDelta: 0.6,
+      wheelPxPerZoomLevel: 90,
       zoomControl: true,
       attributionControl: false,
     });
-    const bounds = [
-      [0, 0],
-      [4096, 4096],
-    ];
-    L.imageOverlay('/terrain.png', bounds, { className: 'map-terrain' }).addTo(S.map);
-    S.map.fitBounds(bounds);
+    const bounds = MAP_BOUNDS;
+    // Two base layers share the SAME calibration (worldBounds): the colored render
+    // (rendered from the live game pak) and the legacy line-art map. Player markers
+    // align on both because the colored map is framed to the same world rectangle.
+    S.mapBasemaps = {
+      color: L.imageOverlay(MAP_COLOR_ASSET, bounds, { className: 'map-color' }),
+      lineart: L.imageOverlay('/terrain.png', bounds, { className: 'map-lineart' }),
+    };
+    if (!S.mapBasemap) {
+      let storedBase = null;
+      try {
+        storedBase = localStorage.getItem('hz_basemap');
+      } catch (_e) {
+        /* storage unavailable */
+      }
+      S.mapBasemap = storedBase === 'lineart' ? 'lineart' : 'color';
+    }
+    S.mapBasemaps[S.mapBasemap].addTo(S.map);
     S.mapReady = true;
+    S._mapFitted = false;
+    fitMapView(true); // best-effort initial fit; re-run once the container is sized (loadMapData)
+  }
+
+  // Content-hashed colored basemap (immutable, cached forever). Bump on re-render.
+  const MAP_COLOR_ASSET = '/map_color.ef54d6d6.webp';
+
+  // Whole-map bounds in Leaflet CRS.Simple pixel space (matches the 4096² basemap).
+  const MAP_BOUNDS = [
+    [0, 0],
+    [4096, 4096],
+  ];
+
+  /**
+   * Fit the entire map to any viewport. Sets the minimum zoom to the zoom that
+   * shows the whole map in the current container, so even small / low-resolution
+   * screens can zoom all the way out and still see the whole island. Pass
+   * refit=true to also recenter on the full map.
+   */
+  function fitMapView(refit) {
+    if (!S.map) return;
+    S.map.invalidateSize();
+    const size = S.map.getSize();
+    if (!size.x || !size.y) return;
+    // CRS.Simple: the 4096-unit square map renders at 4096px at zoom 0. Fit the whole
+    // map into the smaller container dimension with a 2% margin, so any screen — even
+    // small / low-resolution ones — can zoom all the way out and still see the whole island.
+    const fitZoom = Math.log2((Math.min(size.x, size.y) * 0.98) / 4096);
+    if (!isFinite(fitZoom)) return;
+    S.map.setMinZoom(fitZoom);
+    if (refit) S.map.setView(L.latLngBounds(MAP_BOUNDS).getCenter(), fitZoom, { animate: false });
+  }
+
+  // Legend palette/shapes — MUST mirror the marker styles in updateMapWorldLayers / updateMapMarkers.
+  const LEGEND = [
+    { key: 'players', color: '#6dba82', shape: 'circle' },
+    { key: 'structures', color: '#3b82f6', shape: 'square' },
+    { key: 'vehicles', color: '#d4a843', shape: 'square' },
+    { key: 'containers', color: '#a855f7', shape: 'circle' },
+    { key: 'companions', color: '#ec4899', shape: 'circle' },
+    { key: 'zombies', color: '#9b59b6', shape: 'circle' },
+    { key: 'animals', color: '#e67e22', shape: 'diamond' },
+    { key: 'bandits', color: '#e74c3c', shape: 'square' },
+    { key: 'quests', color: '#22d3ee', shape: 'circle' },
+  ];
+
+  /** Rebuild the on-map legend, showing only currently-enabled layers. */
+  function buildMapLegend() {
+    const body = $('#map-legend-body');
+    if (!body) return;
+    body.innerHTML = '';
+    for (let i = 0; i < LEGEND.length; i++) {
+      const item = LEGEND[i];
+      const cb = $('#map-layer-' + item.key);
+      if (cb && !cb.checked) continue;
+      const row = el('div', 'map-legend-row');
+      row.innerHTML =
+        '<span class="map-legend-sw ' +
+        item.shape +
+        '" style="background:' +
+        item.color +
+        '"></span>' +
+        esc(i18next.t('web:map.' + item.key));
+      body.appendChild(row);
+    }
+  }
+
+  /** Switch the active base layer, preserving player/world overlays. */
+  function setBasemap(name) {
+    if (!S.map || !S.mapBasemaps || !S.mapBasemaps[name]) return;
+    const cur = S.mapBasemap;
+    if (cur && cur !== name && S.mapBasemaps[cur]) S.map.removeLayer(S.mapBasemaps[cur]);
+    S.mapBasemaps[name].addTo(S.map);
+    if (S.mapBasemaps[name].bringToBack) S.mapBasemaps[name].bringToBack();
+    S.mapBasemap = name;
+    try {
+      localStorage.setItem('hz_basemap', name); // remember the choice (like the sidebar collapse)
+    } catch (_e) {
+      /* storage unavailable */
+    }
+  }
+
+  /** Localize the basemap <select> option labels. */
+  function applyBasemapLabels(sel) {
+    for (const o of sel.options) {
+      if (o.value === 'color') o.textContent = i18next.t('web:map.layers.color', { defaultValue: 'Color' });
+      else if (o.value === 'lineart') o.textContent = i18next.t('web:map.layers.lineart', { defaultValue: 'Line art' });
+    }
   }
 
   // ── Map Data Loading ────────────────────────────────────────────
@@ -79,7 +247,9 @@ Panel.tabs = Panel.tabs || {};
     if (S.currentServer === 'all') return;
     if (S.map) {
       setTimeout(function () {
-        S.map.invalidateSize();
+        // Container is now laid out — fit the whole map (first time) and recompute min zoom.
+        fitMapView(!S._mapFitted);
+        S._mapFitted = true;
       }, 100);
     }
     try {
@@ -117,6 +287,38 @@ Panel.tabs = Panel.tabs || {};
 
   // ── World Layers ────────────────────────────────────────────────
 
+  // Per-layer colored cluster bubbles for world entities. Falls back to a plain layer
+  // group if the markercluster plugin failed to load, so the map degrades gracefully.
+  const CLUSTER_COLORS = {
+    structures: '#3b82f6',
+    vehicles: '#d4a843',
+    containers: '#a855f7',
+    companions: '#ec4899',
+    zombies: '#9b59b6',
+    animals: '#e67e22',
+    bandits: '#e74c3c',
+    quests: '#22d3ee',
+  };
+  function clusterGroup(type) {
+    if (!L.markerClusterGroup) return L.layerGroup();
+    const color = CLUSTER_COLORS[type] || '#8a8a8a';
+    return L.markerClusterGroup({
+      maxClusterRadius: 45,
+      showCoverageOnHover: false,
+      spiderfyOnMaxZoom: true,
+      chunkedLoading: true,
+      iconCreateFunction: function (cluster) {
+        const n = cluster.getChildCount();
+        const size = n < 10 ? 28 : n < 100 ? 34 : 40;
+        return L.divIcon({
+          html: '<div class="hz-cluster-inner" style="background:' + color + '">' + n + '</div>',
+          className: 'hz-cluster',
+          iconSize: [size, size],
+        });
+      },
+    });
+  }
+
   function clearMapWorldLayers() {
     for (const k in mapWorldLayers) {
       if (mapWorldLayers[k] && S.map) S.map.removeLayer(mapWorldLayers[k]);
@@ -141,7 +343,7 @@ Panel.tabs = Panel.tabs || {};
     };
 
     if (layers.indexOf('structures') !== -1 && data.structures) {
-      mapWorldLayers.structures = L.layerGroup();
+      mapWorldLayers.structures = clusterGroup('structures');
       data.structures.forEach(function (s) {
         if (s.lat == null) return;
         const icon = L.divIcon({
@@ -180,7 +382,7 @@ Panel.tabs = Panel.tabs || {};
     }
 
     if (layers.indexOf('vehicles') !== -1 && data.vehicles) {
-      mapWorldLayers.vehicles = L.layerGroup();
+      mapWorldLayers.vehicles = clusterGroup('vehicles');
       data.vehicles.forEach(function (v) {
         if (v.lat == null) return;
         const icon = L.divIcon({
@@ -224,7 +426,7 @@ Panel.tabs = Panel.tabs || {};
     }
 
     if (layers.indexOf('containers') !== -1 && data.containers) {
-      mapWorldLayers.containers = L.layerGroup();
+      mapWorldLayers.containers = clusterGroup('containers');
       data.containers.forEach(function (c) {
         if (c.lat == null) return;
         const icon = L.divIcon({
@@ -261,7 +463,7 @@ Panel.tabs = Panel.tabs || {};
     }
 
     if (layers.indexOf('companions') !== -1 && data.companions) {
-      mapWorldLayers.companions = L.layerGroup();
+      mapWorldLayers.companions = clusterGroup('companions');
       data.companions.forEach(function (c) {
         if (c.lat == null) return;
         const icon = L.divIcon({
@@ -294,7 +496,7 @@ Panel.tabs = Panel.tabs || {};
     }
 
     if (layers.indexOf('zombies') !== -1 && data.zombies) {
-      mapWorldLayers.zombies = L.layerGroup();
+      mapWorldLayers.zombies = clusterGroup('zombies');
       data.zombies.forEach(function (z) {
         if (z.lat == null) return;
         const icon = L.divIcon({
@@ -316,7 +518,7 @@ Panel.tabs = Panel.tabs || {};
     }
 
     if (layers.indexOf('animals') !== -1 && data.animals) {
-      mapWorldLayers.animals = L.layerGroup();
+      mapWorldLayers.animals = clusterGroup('animals');
       data.animals.forEach(function (a) {
         if (a.lat == null) return;
         const icon = L.divIcon({
@@ -338,7 +540,7 @@ Panel.tabs = Panel.tabs || {};
     }
 
     if (layers.indexOf('bandits') !== -1 && data.bandits) {
-      mapWorldLayers.bandits = L.layerGroup();
+      mapWorldLayers.bandits = clusterGroup('bandits');
       data.bandits.forEach(function (b) {
         if (b.lat == null) return;
         const icon = L.divIcon({
@@ -360,7 +562,7 @@ Panel.tabs = Panel.tabs || {};
     }
 
     if (layers.indexOf('quests') !== -1 && data.quests) {
-      mapWorldLayers.quests = L.layerGroup();
+      mapWorldLayers.quests = clusterGroup('quests');
       data.quests.forEach(function (q) {
         if (q.lat == null) return;
         const icon = L.divIcon({
@@ -405,6 +607,21 @@ Panel.tabs = Panel.tabs || {};
 
   // ── Player Markers ──────────────────────────────────────────────
 
+  function makePlayerIcon(isOnline, colorCalm, colorMuted, colorBorder) {
+    const color = isOnline ? colorCalm : colorMuted;
+    return L.divIcon({
+      className: '',
+      html:
+        '<div style="width:10px;height:10px;border-radius:50%;background:' +
+        color +
+        ';border:2px solid ' +
+        colorBorder +
+        '"></div>',
+      iconSize: [10, 10],
+      iconAnchor: [5, 5],
+    });
+  }
+
   function updateMapMarkers() {
     if (!S.map) return;
     let showOffline = true;
@@ -416,38 +633,54 @@ Panel.tabs = Panel.tabs || {};
     var colorMuted = getCssColor('muted', '#7a746c');
     var colorBorder = getCssColor('surface-300', '#12100e');
 
-    for (const id in S.mapMarkers) {
-      S.map.removeLayer(S.mapMarkers[id]);
-      delete S.mapMarkers[id];
+    // Players layer toggle (#map-layer-players). Default-on when the checkbox is absent.
+    const playersChk = $('#map-layer-players');
+    const showPlayers = !playersChk || playersChk.checked;
+
+    // Diff in place: move existing markers, add new ones, drop the gone — instead of
+    // tearing down and rebuilding all markers every 15s poll (DOM thrash).
+    const seen = {};
+    if (showPlayers) {
+      for (let i = 0; i < S.players.length; i++) {
+        const p = S.players[i];
+        if (!p.hasPosition) continue;
+        if (!showOffline && !p.isOnline) continue;
+        if (p.lat == null || p.lng == null) continue;
+        const id = p.steamId;
+        seen[id] = true;
+        let marker = S.mapMarkers[id];
+        if (marker) {
+          marker.setLatLng([p.lat, p.lng]);
+          if (marker._hzOnline !== p.isOnline) {
+            marker.setIcon(makePlayerIcon(p.isOnline, colorCalm, colorMuted, colorBorder));
+            marker._hzOnline = p.isOnline;
+          }
+          if (marker._hzName !== p.name) {
+            marker.setTooltipContent(esc(p.name)); // keep tooltip current if the player renamed
+            marker._hzName = p.name;
+          }
+          marker._hzPlayer = p; // keep the click handler's reference current
+        } else {
+          marker = L.marker([p.lat, p.lng], {
+            icon: makePlayerIcon(p.isOnline, colorCalm, colorMuted, colorBorder),
+          }).addTo(S.map);
+          marker._hzOnline = p.isOnline;
+          marker._hzName = p.name;
+          marker._hzPlayer = p;
+          marker.bindTooltip(esc(p.name), { className: 'leaflet-tooltip-dark', offset: [8, 0] });
+          marker.on('click', function () {
+            showMapPlayerDetail(marker._hzPlayer);
+          });
+          S.mapMarkers[id] = marker;
+        }
+      }
     }
-
-    for (let i = 0; i < S.players.length; i++) {
-      const p = S.players[i];
-      if (!p.hasPosition) continue;
-      if (!showOffline && !p.isOnline) continue;
-      if (p.lat == null || p.lng == null) continue;
-
-      const color = p.isOnline ? colorCalm : colorMuted;
-      const icon = L.divIcon({
-        className: '',
-        html:
-          '<div style="width:10px;height:10px;border-radius:50%;background:' +
-          color +
-          ';border:2px solid ' +
-          colorBorder +
-          '"></div>',
-        iconSize: [10, 10],
-        iconAnchor: [5, 5],
-      });
-
-      const marker = L.marker([p.lat, p.lng], { icon: icon }).addTo(S.map);
-      marker.bindTooltip(p.name, { className: 'leaflet-tooltip-dark', offset: [8, 0] });
-      (function (player) {
-        marker.on('click', function () {
-          showMapPlayerDetail(player);
-        });
-      })(p);
-      S.mapMarkers[p.steamId] = marker;
+    // Remove markers for players that are gone or now hidden.
+    for (const id in S.mapMarkers) {
+      if (!seen[id]) {
+        S.map.removeLayer(S.mapMarkers[id]);
+        delete S.mapMarkers[id];
+      }
     }
 
     const count = S.players.filter(function (p) {
@@ -455,6 +688,7 @@ Panel.tabs = Panel.tabs || {};
     }).length;
     const cEl = $('#map-player-count');
     if (cEl) cEl.textContent = count + ' ' + i18next.t('web:map.online');
+    buildMapLegend();
   }
 
   // ── Sidebar ─────────────────────────────────────────────────────
@@ -473,7 +707,7 @@ Panel.tabs = Panel.tabs || {};
       entry.innerHTML =
         '<span class="status-dot ' +
         (p.isOnline ? 'online' : 'offline') +
-        '"></span><span class="mp-name player-link ' +
+        '"></span><span class="mp-name ' +
         (p.isOnline ? 'online' : '') +
         '" data-steam-id="' +
         esc(p.steamId || '') +
@@ -484,10 +718,15 @@ Panel.tabs = Panel.tabs || {};
         entry.addEventListener('click', function () {
           if (player.hasPosition && player.lat != null && S.map) S.map.setView([player.lat, player.lng], 1);
           showMapPlayerDetail(player);
+          // Close the mobile drawer after picking a player.
+          const sb = $('#map-sidebar');
+          if (sb) sb.classList.remove('open');
         });
       })(p);
       list.appendChild(entry);
     }
+    // Re-apply the active search filter so the 15s poll / refresh rebuild doesn't wipe it.
+    filterMapPlayers();
   }
 
   function filterMapPlayers() {

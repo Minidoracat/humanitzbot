@@ -795,7 +795,19 @@ class WebMapServer {
     app.use('/locales', express.static(path.join(__dirname, '../../locales')));
 
     // Serve static files (HTML, JS, CSS, map images)
-    app.use(express.static(PUBLIC_DIR, { dotfiles: 'deny' }));
+    app.use(
+      express.static(PUBLIC_DIR, {
+        dotfiles: 'deny',
+        setHeaders: (res, filePath) => {
+          // Content-hashed assets (e.g. map_color.<hash>.webp) never change for a
+          // given name — cache them forever so the basemap costs zero bandwidth on
+          // repeat visits. The hash in the filename busts the cache on re-render.
+          if (/\.[0-9a-f]{8}\.\w+$/.test(filePath)) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          }
+        },
+      }),
+    );
     app.use(express.json());
 
     // ── Multi-server context middleware ──

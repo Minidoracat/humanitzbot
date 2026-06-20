@@ -32,6 +32,27 @@ Panel.tabs = Panel.tabs || {};
   }
 
   // ── Timeline State (self-contained) ──
+  // Responsive fit: set min zoom so the whole 4096² map fits any viewport (matches the live map).
+  function fitTimelineMap(refit) {
+    if (!TL.map) return;
+    TL.map.invalidateSize();
+    const size = TL.map.getSize();
+    if (!size.x || !size.y) return;
+    const fitZoom = Math.log2((Math.min(size.x, size.y) * 0.98) / 4096);
+    if (!isFinite(fitZoom)) return;
+    TL.map.setMinZoom(fitZoom);
+    if (refit) {
+      TL.map.setView(
+        L.latLngBounds([
+          [0, 0],
+          [4096, 4096],
+        ]).getCenter(),
+        fitZoom,
+        { animate: false },
+      );
+    }
+  }
+
   const TL = {
     map: null,
     ready: false,
@@ -86,26 +107,41 @@ Panel.tabs = Panel.tabs || {};
     if (S.currentServer === 'all') return;
     if (TL.map) {
       setTimeout(function () {
-        TL.map.invalidateSize();
+        fitTimelineMap(false);
       }, 100);
     }
     // Init map
     if (!TL.ready) {
       const c = $('#tl-map');
       if (!c || !window.L) return;
-      TL.map = L.map(c, { crs: L.CRS.Simple, minZoom: -2, maxZoom: 4, zoomControl: true, attributionControl: false });
+      TL.map = L.map(c, {
+        crs: L.CRS.Simple,
+        minZoom: -5,
+        maxZoom: 4,
+        zoomSnap: 0,
+        zoomDelta: 0.6,
+        wheelPxPerZoomLevel: 90,
+        zoomControl: true,
+        attributionControl: false,
+      });
+      // Colored render basemap (same asset + calibration as the live map). Keep the hash in
+      // sync with panel-tab-map.js MAP_COLOR_ASSET — bump it when the map is re-rendered.
       L.imageOverlay(
-        '/terrain.png',
+        '/map_color.ef54d6d6.webp',
         [
           [0, 0],
           [4096, 4096],
         ],
-        { className: 'map-terrain' },
+        { className: 'map-color' },
       ).addTo(TL.map);
-      TL.map.fitBounds([
-        [0, 0],
-        [4096, 4096],
-      ]);
+      fitTimelineMap(true);
+      let tlResizeTimer;
+      window.addEventListener('resize', function () {
+        clearTimeout(tlResizeTimer);
+        tlResizeTimer = setTimeout(function () {
+          fitTimelineMap(false);
+        }, 150);
+      });
 
       // Create layer groups
       [
