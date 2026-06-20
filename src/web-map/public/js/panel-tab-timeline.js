@@ -124,10 +124,10 @@ Panel.tabs = Panel.tabs || {};
         zoomControl: true,
         attributionControl: false,
       });
-      // Colored render basemap (same asset + calibration as the live map). Keep the hash in
-      // sync with panel-tab-map.js MAP_COLOR_ASSET — bump it when the map is re-rendered.
+      // Colored render basemap (same asset + calibration as the live map).
+      // Single source of truth: Panel.core.MAP_COLOR_BASEMAP.
       L.imageOverlay(
-        '/map_color.ef54d6d6.webp',
+        Panel.core.MAP_COLOR_BASEMAP,
         [
           [0, 0],
           [4096, 4096],

@@ -136,7 +136,9 @@ Panel.tabs = Panel.tabs || {};
     // (rendered from the live game pak) and the legacy line-art map. Player markers
     // align on both because the colored map is framed to the same world rectangle.
     S.mapBasemaps = {
-      color: L.imageOverlay(MAP_COLOR_ASSET, bounds, { className: 'map-color' }),
+      // Colored render basemap — single source of truth in panel-core.js. Read lazily
+      // (here, at init time) rather than at module load, so it can't depend on script order.
+      color: L.imageOverlay(Panel.core.MAP_COLOR_BASEMAP, bounds, { className: 'map-color' }),
       lineart: L.imageOverlay('/terrain.png', bounds, { className: 'map-lineart' }),
     };
     if (!S.mapBasemap) {
@@ -153,9 +155,6 @@ Panel.tabs = Panel.tabs || {};
     S._mapFitted = false;
     fitMapView(true); // best-effort initial fit; re-run once the container is sized (loadMapData)
   }
-
-  // Content-hashed colored basemap (immutable, cached forever). Bump on re-render.
-  const MAP_COLOR_ASSET = '/map_color.ef54d6d6.webp';
 
   // Whole-map bounds in Leaflet CRS.Simple pixel space (matches the 4096² basemap).
   const MAP_BOUNDS = [

@@ -45,6 +45,8 @@ qs-anticheat/
 
 # Development / extraction utility scripts & cached data
 # tools/ — tracked in howyagarn (private), gitignored in staging/public repos
+# Local-only map-render pipeline (pak -> basemap). Contains the pak AES key; never commit.
+tools/map-render/
 GameServerSettings.ini
 .tmp-*
 

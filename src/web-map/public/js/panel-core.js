@@ -361,10 +361,19 @@ window.Panel = window.Panel || {};
     return val || fallback || '';
   }
 
+  // ── Data Constants ────────────────────────────────
+
+  // Content-hashed colored basemap rendered from the live game pak (immutable, cached
+  // forever). SINGLE source of truth: both the live map (panel-tab-map.js) and the
+  // timeline map (panel-tab-timeline.js) read this. Re-rendering bumps this one string
+  // (tools/map-render/render.sh --install does it automatically).
+  var MAP_COLOR_BASEMAP = '/map_color.ef54d6d6.webp';
+
   // ── Expose API ────────────────────────────────────
 
   Panel.core = {
     S: S,
+    MAP_COLOR_BASEMAP: MAP_COLOR_BASEMAP,
     $: $,
     $$: $$,
     el: el,
