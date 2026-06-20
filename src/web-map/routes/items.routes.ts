@@ -8,7 +8,7 @@
  */
 import type { Express } from 'express';
 import type { WebMapRouteContext } from '../types/route-context.js';
-import { requireTier } from '../auth.js';
+import { requireTier, TIER } from '../auth.js';
 import { rateLimit } from '../rate-limit.js';
 import { API_ERRORS, sendError } from '../api-errors.js';
 import {
@@ -342,6 +342,13 @@ export function registerItemsRoutes(app: Express, ctx: WebMapRouteContext): void
 
     const result: Record<string, unknown> = { found: false, type, name, data: {} };
 
+    // World-object lookups (live structures/containers) expose base/container coordinates,
+    // owner SteamIDs and inventory. Restrict those branches to mod+ to match the Map/Timeline
+    // data tier — otherwise a tier-1 survivor could LIKE-match a name and pull griefing intel,
+    // re-opening the leak the mapdata/timeline tier raise closed. Game reference tables
+    // (items/recipes/buildings/animals/…) carry no live coords and stay available to survivors.
+    const isMod = ((req as { tierLevel?: number }).tierLevel ?? 0) >= (TIER.mod ?? 2);
+
     try {
       // Route by type to appropriate reference/world table
       if (type === 'item') {
@@ -358,7 +365,7 @@ export function registerItemsRoutes(app: Express, ctx: WebMapRouteContext): void
           result.data = row;
           result.refTable = 'game_buildings';
         }
-        if (!result.found) {
+        if (!result.found && isMod) {
           const wRow = srv.db.worldObject.findStructureByName(name);
           if (wRow) {
             result.found = true;
@@ -409,11 +416,13 @@ export function registerItemsRoutes(app: Express, ctx: WebMapRouteContext): void
           result.refTable = 'game_skills';
         }
       } else if (type === 'container') {
-        const row = srv.db.worldObject.findContainerByName(name);
-        if (row) {
-          result.found = true;
-          result.data = row;
-          result.refTable = 'containers';
+        if (isMod) {
+          const row = srv.db.worldObject.findContainerByName(name);
+          if (row) {
+            result.found = true;
+            result.data = row;
+            result.refTable = 'containers';
+          }
         }
       }
 

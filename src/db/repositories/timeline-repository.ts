@@ -88,8 +88,17 @@ export class TimelineRepository extends BaseRepository {
       // ── Timeline queries (for time-scroll API) ──
       getTimelinePlayers: this._handle.prepare('SELECT * FROM timeline_players WHERE snapshot_id = ?'),
       getTimelineAI: this._handle.prepare('SELECT * FROM timeline_ai WHERE snapshot_id = ?'),
+      // Cap AI markers PER CATEGORY so a flood of zombies can't starve animals/bandits off
+      // the map. A plain LIMIT applied before the client-side category split would let the
+      // first 2000 (mostly zombies) hide whole layers; ~700 each keeps every layer present.
+      // The category whitelist bounds the payload at the DB layer (only the 3 layers the map
+      // renders) so an unexpected category can't balloon the result.
       getTimelineAIForMap: this._handle.prepare(
-        'SELECT ai_type, category, display_name, pos_x, pos_y FROM timeline_ai WHERE snapshot_id = ? AND pos_x IS NOT NULL',
+        'SELECT ai_type, category, display_name, pos_x, pos_y FROM (' +
+          'SELECT ai_type, category, display_name, pos_x, pos_y, ' +
+          'ROW_NUMBER() OVER (PARTITION BY category ORDER BY id) AS rn ' +
+          "FROM timeline_ai WHERE snapshot_id = ? AND pos_x IS NOT NULL AND category IN ('zombie', 'animal', 'bandit')" +
+          ') WHERE rn <= 700',
       ),
       getTimelineVehicles: this._handle.prepare('SELECT * FROM timeline_vehicles WHERE snapshot_id = ?'),
       getTimelineStructures: this._handle.prepare('SELECT * FROM timeline_structures WHERE snapshot_id = ?'),

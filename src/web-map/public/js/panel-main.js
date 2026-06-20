@@ -997,6 +997,13 @@ window.Panel = window.Panel || {};
       },
     );
 
+    // Players layer toggle only needs a marker refresh (no server round-trip).
+    const mlpCb = $('#map-layer-players');
+    if (mlpCb)
+      mlpCb.addEventListener('change', function () {
+        if (Panel.tabs.map) Panel.tabs.map.updateMarkers();
+      });
+
     // Activity category pills
     const pills = $$('.activity-pill');
     pills.forEach(function (pill) {

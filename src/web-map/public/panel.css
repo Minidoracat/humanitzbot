@@ -62,6 +62,63 @@ body { background: var(--color-surface-300); color: var(--color-text); }
   .sidebar-nav .sidebar-header { text-align: center; padding: 0.5rem; }
 }
 
+/* Manual sidebar collapse (toggle button) — mirrors the responsive collapse above */
+.sidebar-nav { transition: width 0.18s ease; }
+.sidebar-nav.collapsed { width: 3.5rem; }
+.sidebar-nav.collapsed .nav-txt, .sidebar-nav.collapsed .sidebar-full { display: none !important; }
+.sidebar-nav.collapsed .sidebar-mini { display: inline-block !important; }
+.sidebar-nav.collapsed .sidebar-user { justify-content: center; }
+.sidebar-nav.collapsed .sidebar-header { padding: 0.6rem 0; }
+.sidebar-toggle { padding: 3px; border-radius: 4px; line-height: 0; cursor: pointer; }
+.sidebar-toggle:hover { background: var(--color-surface-50); }
+.sidebar-nav.collapsed .sidebar-toggle svg { transform: rotate(180deg); }
+
+/* Map fullscreen toggle button (top-right of the map) */
+.map-fullscreen-btn {
+  position: absolute; top: 10px; right: 10px; z-index: 1000;
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--color-surface-200); color: var(--color-text-bright);
+  border: 1px solid var(--color-border); border-radius: 7px;
+  cursor: pointer; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.map-fullscreen-btn:hover { background: var(--color-surface-50); color: #fff; }
+#tab-map:fullscreen { background: var(--color-surface-300); height: 100%; display: flex; }
+#tab-map:fullscreen .map-fullscreen-btn { top: 12px; right: 12px; }
+
+/* Map legend (collapsible, bottom-right) — swatches mirror the marker palette/shapes */
+.map-legend {
+  position: absolute; bottom: 12px; right: 12px; z-index: 1000;
+  background: rgba(22, 30, 36, 0.92); border: 1px solid var(--color-border);
+  border-radius: 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  font-size: 11px; max-width: 165px; overflow: hidden;
+}
+.map-legend-head {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 6px 9px; color: var(--color-text-bright); cursor: pointer; font-weight: 500;
+}
+.map-legend-head > span { margin-right: auto; }
+.map-legend-chev { transition: transform 0.15s ease; }
+.map-legend.collapsed .map-legend-chev { transform: rotate(-90deg); }
+.map-legend.collapsed .map-legend-body { display: none; }
+.map-legend-body { padding: 0 9px 8px; display: flex; flex-direction: column; gap: 4px; }
+.map-legend-row { display: flex; align-items: center; gap: 7px; color: var(--color-muted); }
+.map-legend-sw { width: 11px; height: 11px; flex-shrink: 0; border: 1px solid rgba(255, 255, 255, 0.25); box-sizing: border-box; }
+.map-legend-sw.circle { border-radius: 50%; }
+.map-legend-sw.square { border-radius: 2px; }
+.map-legend-sw.diamond { border-radius: 2px; width: 9px; height: 9px; transform: rotate(45deg); }
+@media (max-width: 768px) { .map-legend { font-size: 10px; max-width: 132px; bottom: 8px; right: 8px; } }
+
+/* Marker cluster bubbles — colored per layer via iconCreateFunction */
+.hz-cluster { background: transparent; border: none; }
+.hz-cluster-inner {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 100%; border-radius: 50%; color: #fff;
+  font-size: 11px; font-weight: 700; border: 2px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45); box-sizing: border-box;
+}
+
 .nav-link {
   display: flex; align-items: center; gap: 0.6rem;
   padding: 0.5rem 0.85rem;
@@ -788,8 +845,11 @@ textarea.setting-input.bot-config-control { width: min(420px, 100%); min-height:
 .tl-marker { background: transparent !important; border: none !important; }
 
 /* ── Leaflet ── */
-#map-container, #tl-map,
-#map-container .leaflet-container, #tl-map .leaflet-container { background: #b8b5b0 !important; }
+#tl-map, #tl-map .leaflet-container { background: #b8b5b0 !important; }
+#map-container, #map-container .leaflet-container { background: #0e1b22 !important; }
+/* Colored render is shown in true color; the line-art layers get a subtle clean-up. */
+.map-color { filter: none; }
+.map-lineart { filter: brightness(0.96) contrast(1.06) saturate(0.1); }
 .map-terrain { filter: brightness(0.95) contrast(1.1) saturate(0) sepia(0.05); }
 /* Blur right edge to hide map artifact */
 .map-edge-mask {
@@ -974,11 +1034,28 @@ textarea.setting-input.bot-config-control { width: min(420px, 100%); min-height:
 .switcher-dot-offline { background: var(--color-horde); }
 .switcher-dot-starting { background: var(--color-surge); }
 
+/* Map player-list drawer toggle — desktop hides it (the list is always visible there) */
+.map-drawer-btn { display: none; }
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .stat-card { padding: 0.625rem; }
   .stat-value { font-size: 0.9375rem; }
-  #map-sidebar { display: none; }
+  /* On phones the player list becomes an off-canvas drawer instead of vanishing */
+  #map-content-row { position: relative; }
+  #map-sidebar {
+    display: none;
+    position: absolute; left: 0; top: 0; bottom: 0; width: 75vw; max-width: 270px;
+    z-index: 1200; box-shadow: 2px 0 14px rgba(0, 0, 0, 0.45);
+  }
+  #map-sidebar.open { display: flex; }
+  .map-drawer-btn {
+    display: flex; align-items: center; justify-content: center;
+    position: absolute; top: 76px; left: 10px; z-index: 1000;
+    width: 34px; height: 34px; background: var(--color-surface-200);
+    color: var(--color-text-bright); border: 1px solid var(--color-border);
+    border-radius: 7px; cursor: pointer; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  }
   .server-carousel { padding: 0.35rem 0.5rem; }
 }
 

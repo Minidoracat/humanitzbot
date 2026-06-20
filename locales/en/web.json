@@ -86,6 +86,7 @@
     }
   },
   "sidebar": {
+    "toggle": "Collapse / expand menu",
     "survivor_view": "SURVIVOR VIEW",
     "language": "Language",
     "languages": {
@@ -227,6 +228,9 @@
     "server_card_starting": "Starting"
   },
   "map": {
+    "legend": "Legend",
+    "fullscreen": "Fullscreen",
+    "layers": { "color": "Color", "lineart": "Line art", "tooltip": "Base map style" },
     "search_placeholder": "Search...",
     "online": "Online",
     "offline": "Offline",

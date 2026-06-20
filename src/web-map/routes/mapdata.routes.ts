@@ -29,7 +29,10 @@ export function registerMapdataRoutes(app: Express, ctx: WebMapRouteContext): vo
   });
 
   // ── Panel: Map world data (structures, vehicles, containers, companions, dead bodies) ──
-  app.get('/api/panel/mapdata', requireTier('survivor'), rateLimit(10000, 10), (req, res) => {
+  // Gated at 'mod' to match the Live Map UI tier (data-min-tier="2"). This payload exposes
+  // griefing-sensitive intel — structure owner SteamIDs, base/container locations and item
+  // counts — so it must NOT be reachable by tier-1 survivors via a direct API call.
+  app.get('/api/panel/mapdata', requireTier('mod'), rateLimit(10000, 10), (req, res) => {
     const srv = req.srv;
     if (!srv.db) return res.json({ structures: [], vehicles: [], containers: [], companions: [], deadBodies: [] });
 

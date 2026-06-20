@@ -727,3 +727,35 @@ describe('SnapshotService throttling', () => {
     assert.equal(svc._lastSnapshotAt, lastAt);
   });
 });
+
+// Guards the round-1 fix: a zombie flood must not starve animals/bandits off the map, and
+// the result is bounded per category + whitelisted. A revert to a plain LIMIT fails here.
+describe('Timeline AI map cap (per-category, whitelist, NULL filter)', () => {
+  let aiSnap: number;
+  before(() => {
+    db.db.prepare('INSERT INTO timeline_snapshots (game_day) VALUES (999)').run();
+    aiSnap = (db.db.prepare('SELECT last_insert_rowid() AS id').get() as { id: number }).id;
+    const ins = db.db.prepare(
+      'INSERT INTO timeline_ai (snapshot_id, ai_type, category, pos_x, pos_y) VALUES (?, ?, ?, ?, ?)',
+    );
+    for (let i = 0; i < 1000; i++) ins.run(aiSnap, 'Zombie', 'zombie', 10 + i, 20);
+    for (let i = 0; i < 5; i++) ins.run(aiSnap, 'Deer', 'animal', 100 + i, 200);
+    for (let i = 0; i < 3; i++) ins.run(aiSnap, 'Bandit', 'bandit', 300 + i, 400);
+    ins.run(aiSnap, 'Zombie', 'zombie', null, 20); // NULL pos_x — must be filtered out
+    ins.run(aiSnap, 'Boss', 'boss', 500, 600); // unknown category — excluded by the whitelist
+  });
+
+  it('caps zombies at 700, keeps animals/bandits, drops NULL-pos and unknown category', () => {
+    const rows = db.timeline.getTimelineAIForMap(aiSnap) as Array<{ category: string; pos_x: number | null }>;
+    const counts: Record<string, number> = {};
+    for (const r of rows) counts[r.category] = (counts[r.category] || 0) + 1;
+    assert.equal(counts.zombie, 700); // per-category cap — not the full 1000, not starved to 0
+    assert.equal(counts.animal, 5); // small layers fully preserved
+    assert.equal(counts.bandit, 3);
+    assert.equal(counts.boss, undefined); // whitelist excludes categories the map doesn't render
+    assert.ok(
+      rows.every((r) => r.pos_x !== null),
+      'NULL pos_x rows must be excluded before ranking',
+    );
+  });
+});

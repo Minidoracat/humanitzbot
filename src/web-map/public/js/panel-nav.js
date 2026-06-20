@@ -315,6 +315,33 @@ window.Panel = window.Panel || {};
     }
   });
 
+  // ── Sidebar collapse toggle ───────────────────────
+  (function initSidebarToggle() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    const KEY = 'hz_sidebar_collapsed';
+    let stored = null;
+    try {
+      stored = localStorage.getItem(KEY);
+    } catch (_e) {
+      /* storage unavailable */
+    }
+    if (stored === '1') sidebar.classList.add('collapsed');
+    const btn = document.getElementById('sidebar-toggle');
+    if (btn) {
+      btn.addEventListener('click', function () {
+        const collapsed = sidebar.classList.toggle('collapsed');
+        try {
+          localStorage.setItem(KEY, collapsed ? '1' : '0');
+        } catch (_e) {
+          /* storage unavailable */
+        }
+        // The content area (and any active Leaflet map) just resized — let it re-fit.
+        window.dispatchEvent(new Event('resize'));
+      });
+    }
+  })();
+
   // ── Expose API ────────────────────────────────────
 
   Panel.nav = {
