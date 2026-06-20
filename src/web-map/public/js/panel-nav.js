@@ -329,8 +329,10 @@ window.Panel = window.Panel || {};
     if (stored === '1') sidebar.classList.add('collapsed');
     const btn = document.getElementById('sidebar-toggle');
     if (btn) {
+      btn.setAttribute('aria-expanded', String(!sidebar.classList.contains('collapsed')));
       btn.addEventListener('click', function () {
         const collapsed = sidebar.classList.toggle('collapsed');
+        btn.setAttribute('aria-expanded', String(!collapsed)); // keep screen readers in sync
         try {
           localStorage.setItem(KEY, collapsed ? '1' : '0');
         } catch (_e) {

@@ -97,7 +97,7 @@ export class TimelineRepository extends BaseRepository {
         'SELECT ai_type, category, display_name, pos_x, pos_y FROM (' +
           'SELECT ai_type, category, display_name, pos_x, pos_y, ' +
           'ROW_NUMBER() OVER (PARTITION BY category ORDER BY id) AS rn ' +
-          "FROM timeline_ai WHERE snapshot_id = ? AND pos_x IS NOT NULL AND category IN ('zombie', 'animal', 'bandit')" +
+          "FROM timeline_ai WHERE snapshot_id = ? AND pos_x IS NOT NULL AND pos_y IS NOT NULL AND category IN ('zombie', 'animal', 'bandit')" +
           ') WHERE rn <= 700',
       ),
       getTimelineVehicles: this._handle.prepare('SELECT * FROM timeline_vehicles WHERE snapshot_id = ?'),

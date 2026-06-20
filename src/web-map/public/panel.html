@@ -280,7 +280,7 @@
         <div class="px-4 py-4 border-b border-border sidebar-header flex items-center justify-between gap-2">
           <h2 class="text-base font-heading font-bold text-text-bright sidebar-full tracking-wide truncate">HumanitZ</h2>
           <span class="text-base sidebar-mini hidden font-heading font-bold text-text-bright">H</span>
-          <button id="sidebar-toggle" type="button" class="sidebar-toggle text-muted hover:text-text-bright transition-colors shrink-0" data-tippy-content="Collapse menu" data-i18n-attr='{"data-tippy-content":"web:sidebar.toggle"}' aria-label="Toggle sidebar"><i data-lucide="chevrons-left" class="w-4 h-4"></i></button>
+          <button id="sidebar-toggle" type="button" class="sidebar-toggle text-muted hover:text-text-bright transition-colors shrink-0" data-tippy-content="Collapse menu" data-i18n-attr='{"data-tippy-content":"web:sidebar.toggle","aria-label":"web:sidebar.toggle"}' aria-label="Collapse / expand menu"><i data-lucide="chevrons-left" class="w-4 h-4"></i></button>
         </div>
         <ul class="flex-1 py-2 overflow-y-auto space-y-0.5">
           <li><a href="#" class="nav-link active" data-tab="dashboard"><i data-lucide="layout-dashboard" class="nav-ico"></i><span class="nav-txt" data-i18n="web:tabs.dashboard">Dashboard</span></a></li>
@@ -403,8 +403,8 @@
             </div>
             <div class="flex-1 relative min-h-0">
               <div id="map-container" class="absolute inset-0"></div>
-              <button id="map-drawer-toggle" type="button" class="map-drawer-btn" data-tippy-content="Player list" data-i18n-attr='{"data-tippy-content":"web:map.players"}' aria-label="Toggle player list"><i data-lucide="users" class="w-4 h-4"></i></button>
-              <button id="map-fullscreen" type="button" class="map-fullscreen-btn" data-tippy-content="Fullscreen" data-i18n-attr='{"data-tippy-content":"web:map.fullscreen"}' aria-label="Toggle fullscreen"><i data-lucide="maximize" class="w-4 h-4"></i></button>
+              <button id="map-drawer-toggle" type="button" class="map-drawer-btn" data-tippy-content="Player list" data-i18n-attr='{"data-tippy-content":"web:map.players","aria-label":"web:map.players"}' aria-label="Player list"><i data-lucide="users" class="w-4 h-4"></i></button>
+              <button id="map-fullscreen" type="button" class="map-fullscreen-btn" data-tippy-content="Fullscreen" data-i18n-attr='{"data-tippy-content":"web:map.fullscreen","aria-label":"web:map.fullscreen"}' aria-label="Fullscreen"><i data-lucide="maximize" class="w-4 h-4"></i></button>
               <div id="map-legend" class="map-legend">
                 <button type="button" id="map-legend-toggle" class="map-legend-head" aria-expanded="true"><i data-lucide="list" class="w-3.5 h-3.5"></i><span data-i18n="web:map.legend">Legend</span><i data-lucide="chevron-down" class="w-3 h-3 map-legend-chev"></i></button>
                 <div id="map-legend-body" class="map-legend-body"></div>
