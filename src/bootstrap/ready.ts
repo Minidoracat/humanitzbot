@@ -682,7 +682,7 @@ export function runReady(ctx: AppContext, readyClient: Client<true>): void {
 
       // ── Snapshot Service — timeline recording on every save sync ──
       ctx.snapshotService = new SnapshotService(ctx.db, {
-        retentionDays: parseInt(process.env['TIMELINE_RETENTION_DAYS'] ?? '', 10) || 14,
+        retentionDays: config.timelineRetentionDays,
         trackStructures: process.env['TIMELINE_TRACK_STRUCTURES'] !== 'false',
         trackHouses: process.env['TIMELINE_TRACK_HOUSES'] !== 'false',
         trackBackpacks: process.env['TIMELINE_TRACK_BACKPACKS'] !== 'false',

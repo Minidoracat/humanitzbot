@@ -37,8 +37,9 @@ export class TimelineRepository extends BaseRepository {
       insertTimelineSnapshot: this._handle.prepare(`
         INSERT INTO timeline_snapshots (game_day, game_time, player_count, online_count,
           ai_count, structure_count, vehicle_count, container_count, world_item_count,
-          weather_type, season, airdrop_active, airdrop_x, airdrop_y, airdrop_ai_alive, summary)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          weather_type, season, airdrop_active, airdrop_x, airdrop_y, airdrop_ai_alive, summary,
+          structures_state_hash, structures_ref_snapshot_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `),
       getTimelineSnapshots: this._handle.prepare('SELECT * FROM timeline_snapshots ORDER BY created_at DESC LIMIT ?'),
       getTimelineSnapshotRange: this._handle.prepare(
@@ -49,7 +50,16 @@ export class TimelineRepository extends BaseRepository {
         'SELECT id FROM timeline_snapshots ORDER BY created_at DESC LIMIT 1',
       ),
       getTimelineSnapshotCount: this._handle.prepare('SELECT COUNT(*) as count FROM timeline_snapshots'),
-      purgeOldTimeline: this._handle.prepare("DELETE FROM timeline_snapshots WHERE created_at < datetime('now', ?)"),
+      // Reference-aware prune: delete snapshots past the retention window EXCEPT any keyframe
+      // still referenced by a snapshot that is itself being retained (structure fan-out dedup,
+      // v25). Without this, a keyframe — always the oldest row in its run — would be pruned
+      // first and leave retained ref snapshots resolving to []. The keyframe is freed on a
+      // later pass once all its referrers have aged out.
+      purgeOldTimeline: this._handle.prepare(
+        "DELETE FROM timeline_snapshots WHERE created_at < datetime('now', ?) " +
+          'AND id NOT IN (SELECT structures_ref_snapshot_id FROM timeline_snapshots ' +
+          "WHERE structures_ref_snapshot_id IS NOT NULL AND created_at >= datetime('now', ?))",
+      ),
       getTimelineSnapshotBounds: this._handle.prepare(
         'SELECT MIN(created_at) as earliest, MAX(created_at) as latest, COUNT(*) as count FROM timeline_snapshots',
       ),
@@ -163,6 +173,8 @@ export class TimelineRepository extends BaseRepository {
         s.airdropY ?? null,
         s.airdropAiAlive || 0,
         JSON.stringify(s.summary || {}),
+        s.structuresStateHash ?? null,
+        s.structuresRefSnapshotId ?? null,
       );
       const snapId = result.lastInsertRowid;
 
@@ -340,12 +352,17 @@ export class TimelineRepository extends BaseRepository {
       } catch {
         /* */
       }
+    // Structure fan-out dedup (v25): if this snapshot's structures were unchanged from a
+    // prior keyframe, structures_ref_snapshot_id points at that keyframe — read structures
+    // from there. Graceful: if the keyframe was already pruned by retention, the query just
+    // returns [] (the snapshot shows no structures rather than erroring).
+    const structuresSnapId = (snap.structures_ref_snapshot_id as number | null) ?? snapshotId;
     return {
       snapshot: snap,
       players: this._stmts.getTimelinePlayers.all(snapshotId),
       ai: this._stmts.getTimelineAI.all(snapshotId),
       vehicles: this._stmts.getTimelineVehicles.all(snapshotId),
-      structures: this._stmts.getTimelineStructures.all(snapshotId),
+      structures: this._stmts.getTimelineStructures.all(structuresSnapId),
       houses: this._stmts.getTimelineHouses.all(snapshotId),
       companions: this._stmts.getTimelineCompanions.all(snapshotId),
 
@@ -385,8 +402,9 @@ export class TimelineRepository extends BaseRepository {
     return this._stmts.getAIPopulationHistory.all(from, to);
   }
 
-  /** Purge old timeline data (default: keep 7 days). */
+  /** Purge old timeline data (default: keep 7 days). Keeps keyframes still referenced by a
+   *  retained snapshot (the `olderThan` window is passed twice: cutoff + referrer cutoff). */
   purgeOldTimeline(olderThan: string = '-7 days') {
-    return this._stmts.purgeOldTimeline.run(olderThan);
+    return this._stmts.purgeOldTimeline.run(olderThan, olderThan);
   }
 }

@@ -6,6 +6,7 @@ import type { HumanitZDB } from '../db/database.js';
 import type { Logger } from '../utils/log.js';
 import { errMsg } from '../utils/error.js';
 import { yieldToEventLoop } from '../utils/async.js';
+import config from '../config/index.js';
 
 const MAINTENANCE_PURGE_INTERVAL_SYNCS = 100;
 
@@ -402,7 +403,7 @@ export class SaveSyncPipeline {
         const purgeResult = this._deps.db.item.purgeOldItemTrackerData({
           lostItemsAge: '-7 days',
           lostGroupsAge: '-7 days',
-          movementsAge: '-30 days',
+          movementsAge: `-${String(config.itemMovementRetentionDays)} days`,
         });
         purgeMs = this._elapsedSince(purgeStart);
         this._deps.log.info(
@@ -435,7 +436,7 @@ export class SaveSyncPipeline {
 
   private _purgeOldActivity(): void {
     try {
-      this._deps.db.activityLog.purgeOldActivity('-30 days');
+      this._deps.db.activityLog.purgeOldActivity(`-${String(config.activityRetentionDays)} days`);
     } catch (err: unknown) {
       this._deps.log.warn('Activity cleanup failed (non-fatal):', errMsg(err));
     }

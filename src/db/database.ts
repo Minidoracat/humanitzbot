@@ -391,8 +391,11 @@ class HumanitZDB {
       this._handle.exec('COMMIT');
       this._log.info(`Schema created (v${SCHEMA_VERSION})`);
     } else if (parseInt(currentVersion, 10) < SCHEMA_VERSION) {
-      this._handle.exec('BEGIN');
       const fromVersion = parseInt(currentVersion, 10);
+      // Safety gate: back up the (possibly large, irreplaceable) DB before mutating schema,
+      // so a botched migration is recoverable. Runs before BEGIN (VACUUM INTO snapshot).
+      this._backupBeforeMigrate(fromVersion);
+      this._handle.exec('BEGIN');
 
       // v1 → v2: Add player_aliases table
       if (fromVersion < 2) {
@@ -1401,6 +1404,25 @@ class HumanitZDB {
         this._log.info('Migration v23→v24: quests time/items/position columns + players.save_last_login');
       }
 
+      // v24 → v25: DB-size optimization. Additive columns for timeline structure-fan-out
+      // dedup (P1, write logic lands separately) + drop the unused owner index that was
+      // pure write amplification on the 17.6M-row timeline_structures table (P2).
+      if (fromVersion < 25) {
+        const v25Columns = [
+          'ALTER TABLE timeline_snapshots ADD COLUMN structures_state_hash TEXT',
+          'ALTER TABLE timeline_snapshots ADD COLUMN structures_ref_snapshot_id INTEGER',
+        ];
+        for (const ddl of v25Columns) {
+          try {
+            this._handle.exec(ddl);
+          } catch (err) {
+            if (!/duplicate column/i.test(errMsg(err))) throw err;
+          }
+        }
+        this._handle.exec('DROP INDEX IF EXISTS idx_tl_structures_owner');
+        this._log.info('Migration v24→v25: timeline structure-dedup columns + dropped idx_tl_structures_owner');
+      }
+
       this._ensureItemMovementsInstanceIdNullable();
       this._setMeta('schema_version', String(SCHEMA_VERSION));
       this._handle.exec('COMMIT');
@@ -1566,6 +1588,93 @@ class HumanitZDB {
 
   _setMeta(key: string, value: string | null) {
     this._handle.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(key, value);
+  }
+
+  /**
+   * Back up the DB before a schema version upgrade so a botched migration on a large,
+   * irreplaceable DB is recoverable. Synchronous (runs at startup, before BEGIN and before
+   * the bot serves anything). Disable with DB_MIGRATE_BACKUP=0.
+   *
+   * Uses `VACUUM INTO` rather than a raw file copy: VACUUM INTO emits a transactionally
+   * consistent, integrity-validated, compacted snapshot of the DB as seen by THIS connection
+   * (so it includes committed WAL frames). A plain copyFileSync after wal_checkpoint(TRUNCATE)
+   * could silently miss committed frames if the checkpoint was busy/partial under a concurrent
+   * reader — making the "recovery" backup itself incomplete. The compaction also means the
+   * backup is usually smaller than the live file (the live DB carries a large freelist).
+   *
+   * Fail-closed: if a required backup does not complete, the migration is ABORTED (we never
+   * mutate the schema without a recovery point). The temp file is written then atomically
+   * renamed, so any *.db left in backups/ is always a complete backup.
+   *
+   * Disk: keep-newest-1 pruning runs AFTER the new backup is written (so a proven backup is
+   * never deleted before its replacement exists), so a prior backup can briefly coexist with
+   * the new one — budget up to ~2x the (compacted) DB size free transiently. VACUUM INTO drops
+   * the freelist, so each backup is usually smaller than the live file.
+   */
+  _backupBeforeMigrate(fromVersion: number): void {
+    if (this._memory) return;
+    if (process.env.DB_MIGRATE_BACKUP === '0') {
+      this._log.warn(
+        'DB_MIGRATE_BACKUP=0 — skipping pre-migration backup (you take responsibility for your own snapshot)',
+      );
+      return;
+    }
+    const backupDir = path.join(path.dirname(this._dbPath), 'backups');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const dest = path.join(backupDir, `humanitz-pre-v${SCHEMA_VERSION}-from-v${String(fromVersion)}-${stamp}.db`);
+    const tmp = `${dest}.partial`;
+    try {
+      fs.mkdirSync(backupDir, { recursive: true });
+      fs.rmSync(tmp, { force: true });
+      // VACUUM INTO validates + compacts; consistent w.r.t. committed WAL. May take minutes
+      // on a multi-GB DB (it reads the whole file) — that's the backup itself, not wasted work.
+      this._handle.exec(`VACUUM INTO '${tmp.replace(/'/g, "''")}'`);
+      fs.renameSync(tmp, dest); // atomic: a complete backup or nothing
+      this._pruneOldMigrationBackups(backupDir, 1, path.basename(dest)); // keep newest 1 (always incl. this one)
+      this._log.info(`Pre-migration backup written: ${dest}`);
+    } catch (err) {
+      try {
+        fs.rmSync(tmp, { force: true });
+      } catch {
+        /* ignore cleanup failure */
+      }
+      throw new Error(
+        `Pre-migration backup failed; aborting migration to protect the DB. Free disk ` +
+          `(needs up to ~2x DB size transiently) and restart, or set DB_MIGRATE_BACKUP=0 to migrate without a backup. ` +
+          `Cause: ${errMsg(err)}`,
+        { cause: err },
+      );
+    }
+  }
+
+  /**
+   * Keep only the newest `keep` pre-migration backups, deleting older ones. `keepName` (the
+   * just-written backup) is ALWAYS retained and counts toward `keep`, so a stale mtime / tie /
+   * clock skew can never let the prune delete the recovery point we just created.
+   */
+  _pruneOldMigrationBackups(dir: string, keep: number, keepName?: string): void {
+    try {
+      const files = fs
+        .readdirSync(dir)
+        .filter((f) => /^humanitz-pre-v\d+-from-v\d+-.*\.db$/.test(f)) // only our auto-generated backups
+        .map((f) => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs }))
+        .sort((a, b) => b.t - a.t);
+      let kept = keepName ? 1 : 0; // the just-written backup is always one of the kept
+      for (const { f } of files) {
+        if (f === keepName) continue; // never delete the backup we just created
+        if (kept < keep) {
+          kept++;
+          continue;
+        }
+        try {
+          fs.unlinkSync(path.join(dir, f));
+        } catch {
+          /* ignore individual delete failures */
+        }
+      }
+    } catch {
+      /* ignore — pruning is best-effort */
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

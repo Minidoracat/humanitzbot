@@ -149,6 +149,10 @@ interface Config {
   resourceCacheTtl: number;
   savePollInterval: number;
   timelineSnapshotMinInterval: number;
+  // DB retention windows (days). Shortened in v25 to control the 12GB+ growth; tunable.
+  timelineRetentionDays: number;
+  activityRetentionDays: number;
+  itemMovementRetentionDays: number;
 
   // Agent
   agentMode: string;
@@ -514,6 +518,14 @@ const config = {
     const v = parseInt(process.env.TIMELINE_SNAPSHOT_MIN_INTERVAL ?? '', 10);
     return Number.isNaN(v) || v < 0 ? 300 : v;
   })(),
+
+  // Retention windows (days). Shortened from the old 14/30/30 to curb the 12GB+ growth.
+  // Env override: a missing / invalid / 0 value falls back to the default (via `|| default`);
+  // a negative value is floored to 1 by Math.max. (0 deliberately maps to the default rather
+  // than purging everything on the first tick.)
+  timelineRetentionDays: Math.max(parseInt(process.env.TIMELINE_RETENTION_DAYS ?? '', 10) || 7, 1),
+  activityRetentionDays: Math.max(parseInt(process.env.ACTIVITY_RETENTION_DAYS ?? '', 10) || 14, 1),
+  itemMovementRetentionDays: Math.max(parseInt(process.env.ITEM_MOVEMENT_RETENTION_DAYS ?? '', 10) || 14, 1),
 
   // Agent mode — offloads save parsing to the game server for faster updates.
   // 'auto' = agent/cache path only; fail loudly if the cache/idMap is unavailable
