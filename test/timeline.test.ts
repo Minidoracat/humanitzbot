@@ -26,8 +26,8 @@ after(() => {
 });
 
 describe('Schema v11 — Timeline tables', () => {
-  it('schema version is 24', () => {
-    assert.equal(SCHEMA_VERSION, 24);
+  it('schema version is 25', () => {
+    assert.equal(SCHEMA_VERSION, 25);
   });
 
   it('ALL_TABLES includes timeline table definitions', () => {
@@ -74,7 +74,9 @@ describe('Schema v11 — Timeline tables', () => {
     assert.ok(names.includes('idx_tl_ai_cat'));
     assert.ok(names.includes('idx_tl_vehicles_snap'));
     assert.ok(names.includes('idx_tl_structures_snap'));
-    assert.ok(names.includes('idx_tl_structures_owner'));
+    // idx_tl_structures_owner intentionally dropped in v25 (pure write amplification on
+    // the multi-million-row timeline_structures table; timeline reads only by snapshot_id).
+    assert.ok(!names.includes('idx_tl_structures_owner'));
   });
 });
 
@@ -436,6 +438,40 @@ describe('DB — purgeOldTimeline', () => {
     // At minimum, it shouldn't crash
     assert.ok(typeof result.changes === 'number');
   });
+
+  it('is reference-aware: keeps an old keyframe still referenced by a retained snapshot', () => {
+    const tl = db.timeline;
+    const struct = {
+      actorClass: 'BP_Wall',
+      ownerSteamId: 'S1',
+      x: 1,
+      y: 1,
+      z: 1,
+      currentHealth: 100,
+      maxHealth: 100,
+      upgradeLevel: 0,
+    };
+    const kf = tl.insertTimelineSnapshot({ snapshot: { gameDay: 1, structuresStateHash: 'rh' }, structures: [struct] });
+    const ref = tl.insertTimelineSnapshot({
+      snapshot: { gameDay: 1, structuresStateHash: 'rh', structuresRefSnapshotId: kf },
+      structures: [],
+    });
+    const orphanOld = tl.insertTimelineSnapshot({ snapshot: { gameDay: 1 }, structures: [] });
+    // Age the keyframe + an unreferenced snapshot past the window; keep the ref snapshot recent.
+    db.db
+      .prepare("UPDATE timeline_snapshots SET created_at = datetime('now','-30 days') WHERE id IN (?, ?)")
+      .run(kf, orphanOld);
+    tl.purgeOldTimeline('-7 days');
+    const exists = (id: number) => !!db.db.prepare('SELECT 1 FROM timeline_snapshots WHERE id = ?').get(id);
+    assert.ok(exists(kf), 'referenced keyframe must survive even though it is past the window');
+    assert.ok(!exists(orphanOld), 'unreferenced old snapshot must be pruned');
+    assert.ok(exists(ref), 'retained ref snapshot must remain and still resolve its structures');
+    assert.equal(tl.getTimelineSnapshotFull(ref).structures.length, 1);
+    // Once the referrer ages out too, the keyframe is freed on a later pass.
+    db.db.prepare("UPDATE timeline_snapshots SET created_at = datetime('now','-30 days') WHERE id = ?").run(ref);
+    tl.purgeOldTimeline('-7 days');
+    assert.ok(!exists(kf) && !exists(ref), 'keyframe freed once no retained snapshot references it');
+  });
 });
 
 describe('SnapshotService', () => {
@@ -762,5 +798,144 @@ describe('Timeline AI map cap (per-category, whitelist, NULL filter)', () => {
       rows.every((r) => r.pos_x !== null && r.pos_y !== null),
       'rows missing either coordinate must be excluded before ranking',
     );
+  });
+});
+
+describe('timeline structure fan-out dedup (v25)', () => {
+  const mkStruct = (over: Record<string, unknown> = {}) => ({
+    actorClass: 'BP_Wall',
+    displayName: 'Wall',
+    ownerSteamId: 'S1',
+    x: 1,
+    y: 2,
+    z: 3,
+    currentHealth: 100,
+    maxHealth: 100,
+    upgradeLevel: 0,
+    ...over,
+  });
+
+  it('a ref snapshot stores no structure rows but resolves them from the keyframe', () => {
+    const tl = db.timeline;
+    const kf = tl.insertTimelineSnapshot({
+      snapshot: { gameDay: 1, structuresStateHash: 'hashA' },
+      structures: [mkStruct(), mkStruct({ actorClass: 'BP_Door', x: 4, upgradeLevel: 1 })],
+    });
+    const ref = tl.insertTimelineSnapshot({
+      snapshot: { gameDay: 1, structuresStateHash: 'hashA', structuresRefSnapshotId: kf },
+      structures: [], // deduped: reference the keyframe instead of re-storing
+    });
+    // The ref snapshot wrote none of its own structure rows.
+    const ownRows = db.db.prepare('SELECT COUNT(*) AS c FROM timeline_structures WHERE snapshot_id = ?').get(ref) as {
+      c: number;
+    };
+    assert.equal(ownRows.c, 0);
+    // But the read path resolves structures from the referenced keyframe.
+    assert.equal(tl.getTimelineSnapshotFull(ref).structures.length, 2);
+    // The keyframe itself still returns its own structures.
+    assert.equal(tl.getTimelineSnapshotFull(kf).structures.length, 2);
+  });
+
+  it('a dangling ref (keyframe structures pruned) degrades to [] instead of erroring', () => {
+    const tl = db.timeline;
+    const kf = tl.insertTimelineSnapshot({
+      snapshot: { gameDay: 2, structuresStateHash: 'hashB' },
+      structures: [mkStruct({ actorClass: 'BP_Floor', ownerSteamId: 'S2' })],
+    });
+    const ref = tl.insertTimelineSnapshot({
+      snapshot: { gameDay: 2, structuresStateHash: 'hashB', structuresRefSnapshotId: kf },
+      structures: [],
+    });
+    // Simulate retention pruning the keyframe's structure rows out from under the ref.
+    db.db.prepare('DELETE FROM timeline_structures WHERE snapshot_id = ?').run(kf);
+    assert.deepEqual(tl.getTimelineSnapshotFull(ref).structures, []);
+  });
+});
+
+// Producer-side coverage: drives SnapshotService.recordSnapshot() so the keyframe/ref
+// decision state machine (hash, unchanged-vs-cadence, restart reset, order-independence)
+// is exercised end-to-end — not just the repository read path with hand-built rows.
+describe('timeline structure dedup — producer (SnapshotService)', () => {
+  let pdb: typeof HumanitZDB;
+  before(() => {
+    pdb = new HumanitZDB({ memory: true, label: 'DedupProducer' });
+    pdb.init();
+  });
+  after(() => {
+    if (pdb) pdb.close();
+  });
+
+  const struct = (over: Record<string, unknown> = {}) => ({
+    actorClass: 'BP_Wall',
+    ownerSteamId: 'S1',
+    x: 1,
+    y: 2,
+    z: 3,
+    currentHealth: 100,
+    maxHealth: 100,
+    upgradeLevel: 0,
+    ...over,
+  });
+  const save = (structures: Array<Record<string, unknown>>) => ({
+    players: new Map(),
+    worldState: { totalDaysElapsed: 1, timeOfDay: { day: 1, time: 8 } },
+    structures,
+  });
+  const ownRows = (id: number) =>
+    (pdb.db.prepare('SELECT COUNT(*) AS c FROM timeline_structures WHERE snapshot_id = ?').get(id) as { c: number }).c;
+  const refOf = (id: number) =>
+    (
+      pdb.db.prepare('SELECT structures_ref_snapshot_id AS r FROM timeline_snapshots WHERE id = ?').get(id) as {
+        r: number | null;
+      }
+    ).r;
+
+  it('first tick writes a full keyframe; an identical next tick references it with zero own rows', () => {
+    const svc = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    const set = [struct(), struct({ actorClass: 'BP_Door', x: 9, upgradeLevel: 1 })];
+    const k = svc.recordSnapshot(save(set)) as number;
+    assert.equal(ownRows(k), 2, 'keyframe stores its own structure rows');
+    assert.equal(refOf(k), null, 'keyframe has no ref');
+    const r = svc.recordSnapshot(save(set.map((s) => ({ ...s })))) as number; // identical content
+    assert.equal(ownRows(r), 0, 'ref tick stores no structure rows');
+    assert.equal(refOf(r), k, 'ref tick points at the keyframe');
+    assert.equal(pdb.timeline.getTimelineSnapshotFull(r).structures.length, 2, 'read resolves via the ref');
+  });
+
+  it('a content change forces a fresh keyframe', () => {
+    const svc = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    svc.recordSnapshot(save([struct()])); // initial keyframe
+    const k2 = svc.recordSnapshot(save([struct({ currentHealth: 50 })])) as number; // health changed
+    assert.equal(refOf(k2), null, 'changed structures must write a new keyframe, not a ref');
+    assert.ok(ownRows(k2) > 0);
+  });
+
+  it('forces a keyframe within KEYFRAME_EVERY even when structures are unchanged', () => {
+    const svc = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    const ids: number[] = [];
+    for (let i = 0; i < 15; i++) ids.push(svc.recordSnapshot(save([struct()])) as number);
+    const keyframes = ids.filter((id) => refOf(id) === null).length;
+    assert.ok(keyframes >= 2, `expected a forced keyframe within the cadence; got ${String(keyframes)} in 15 ticks`);
+  });
+
+  it('is order-independent: the same structure set in a different order does NOT force a keyframe', () => {
+    const svc = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    const a = struct({ actorClass: 'BP_A', x: 1 });
+    const b = struct({ actorClass: 'BP_B', x: 2 });
+    const k = svc.recordSnapshot(save([a, b])) as number;
+    const r = svc.recordSnapshot(save([b, a])) as number; // same set, reversed
+    assert.equal(refOf(r), k, 'reordered identical set should reference the keyframe');
+    assert.equal(ownRows(r), 0);
+  });
+
+  it('writes a fresh keyframe on the first tick after a restart (in-memory state reset)', () => {
+    const set = [struct()];
+    const svc1 = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    svc1.recordSnapshot(save(set));
+    // New service instance == process restart: keyframe state is not persisted in memory.
+    const svc2 = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    const first = svc2.recordSnapshot(save(set.map((s) => ({ ...s })))) as number;
+    assert.equal(refOf(first), null, 'first tick after restart must be a self-contained keyframe');
+    assert.ok(ownRows(first) > 0);
   });
 });

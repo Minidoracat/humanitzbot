@@ -9,7 +9,7 @@
  * Schema is applied via database.js on first run and auto-migrated on updates.
  */
 
-const SCHEMA_VERSION = 24;
+const SCHEMA_VERSION = 25;
 
 // ─── Player data ────────────────────────────────────────────────────────────
 
@@ -1003,6 +1003,11 @@ CREATE TABLE IF NOT EXISTS timeline_snapshots (
   airdrop_y       REAL,
   airdrop_ai_alive INTEGER DEFAULT 0,
   summary         TEXT DEFAULT '{}',           -- JSON: game difficulty, misc world state
+  -- P1 structure fan-out dedup (v25): when this snapshot's structures are unchanged from a
+  -- prior keyframe, structures_ref_snapshot_id points at that keyframe and the ~9k structure
+  -- rows are NOT re-stored. structures_state_hash is the content hash used to detect change.
+  structures_state_hash       TEXT,
+  structures_ref_snapshot_id  INTEGER,
   created_at      TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_tl_snap_created ON timeline_snapshots(created_at);
@@ -1091,7 +1096,9 @@ CREATE TABLE IF NOT EXISTS timeline_structures (
   upgrade_level   INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_tl_structures_snap ON timeline_structures(snapshot_id);
-CREATE INDEX IF NOT EXISTS idx_tl_structures_owner ON timeline_structures(owner_steam_id);
+-- NOTE: idx_tl_structures_owner intentionally removed (v25). Timeline reads only by
+-- snapshot_id; owner index was pure write amplification on a 17.6M-row table. v25
+-- migration drops it on existing DBs.
 `;
 
 // ─── House state over time ──────────────────────────────────────────────────

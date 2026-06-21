@@ -11,6 +11,7 @@
  * @module snapshot-service
  */
 
+import { createHash } from 'node:crypto';
 import { cleanName } from '../parsers/ue4-names.js';
 import { createLogger, type Logger } from '../utils/log.js';
 import { createStructuredLogger } from '../logger/logger.js';
@@ -221,6 +222,18 @@ export class SnapshotService {
   private _lastSnapshotAt: number | null = null;
   private _snapshotCount: number = 0;
   private _pruneCounter: number = 0;
+  // Structure fan-out dedup (v25): when a tick's structures are byte-identical to the last
+  // keyframe, reference it (structures_ref_snapshot_id) instead of re-storing ~9k rows. A
+  // keyframe is forced at least every KEYFRAME_EVERY ticks to cap how long a ref chain points
+  // back to one keyframe. Retention is reference-aware (see TimelineRepository.purgeOldTimeline)
+  // so a referenced keyframe is never pruned out from under a retained ref; if one is ever
+  // missing anyway, the read path degrades to []. NOTE: the cadence is in *ticks*, so the
+  // wall-clock keyframe spacing = KEYFRAME_EVERY × the effective snapshot interval
+  // (TIMELINE_SNAPSHOT_MIN_INTERVAL, default 300s → a keyframe ~hourly).
+  private _lastStructuresHash: string | null = null;
+  private _lastStructuresKeyframeId: number | null = null;
+  private _structuresSinceKeyframe: number = 0;
+  private static readonly KEYFRAME_EVERY = 12;
 
   /**
    * @param db - HumanitZDB instance
@@ -239,7 +252,7 @@ export class SnapshotService {
     // The Logger wrapper has no debug level — throttle skips go straight to the
     // structured logger so they stay hidden at the default 'info' min level.
     this._debugLog = createStructuredLogger(this._log.label);
-    this._retentionDays = options.retentionDays ?? 14;
+    this._retentionDays = options.retentionDays ?? config.timelineRetentionDays;
     this._trackStructures = options.trackStructures !== false;
     this._trackHouses = options.trackHouses !== false;
     this._trackBackpacks = options.trackBackpacks !== false;
@@ -468,17 +481,47 @@ export class SnapshotService {
           })
         : [];
 
+      // Structure fan-out dedup: if structures are unchanged from the last keyframe (and we
+      // haven't hit the forced-keyframe cadence), reference that keyframe and skip writing the
+      // ~9k structure rows for this tick. First tick after restart / a content change / the
+      // cadence boundary writes a fresh full keyframe.
+      let structuresStateHash: string | null = null;
+      let structuresRefSnapshotId: number | null = null;
+      let structuresToWrite = timelineStructures;
+      if (this._trackStructures) {
+        structuresStateHash = this._hashStructures(timelineStructures);
+        const unchanged = this._lastStructuresKeyframeId !== null && structuresStateHash === this._lastStructuresHash;
+        // -1 because the counter only advances on ref ticks: with KEYFRAME_EVERY=12 this forces
+        // a fresh keyframe on the 12th tick after the last one (not the 13th).
+        const forceKeyframe = this._structuresSinceKeyframe >= SnapshotService.KEYFRAME_EVERY - 1;
+        if (unchanged && !forceKeyframe) {
+          structuresRefSnapshotId = this._lastStructuresKeyframeId;
+          structuresToWrite = []; // reference the keyframe instead of re-storing the rows
+        }
+      }
+
       // Write to DB
       const snapId = this._db.timeline.insertTimelineSnapshot({
-        snapshot,
+        snapshot: { ...snapshot, structuresStateHash, structuresRefSnapshotId },
         players: timelinePlayers,
         ai: timelineAI,
         vehicles: timelineVehicles,
-        structures: timelineStructures,
+        structures: structuresToWrite,
         houses: timelineHouses,
         companions: timelineCompanions,
         backpacks: timelineBackpacks,
       });
+
+      // Update keyframe state for the next tick's dedup decision.
+      if (this._trackStructures) {
+        if (structuresRefSnapshotId === null) {
+          this._lastStructuresHash = structuresStateHash;
+          this._lastStructuresKeyframeId = snapId;
+          this._structuresSinceKeyframe = 0;
+        } else {
+          this._structuresSinceKeyframe++;
+        }
+      }
 
       this._lastSnapshotId = snapId;
       this._lastSnapshotAt = Date.now();
@@ -581,6 +624,36 @@ export class SnapshotService {
     const days = (ws['totalDaysElapsed'] as number | undefined) ?? 0;
     const seasonIdx = Math.floor((days % 120) / 30);
     return ['Spring', 'Summer', 'Autumn', 'Winter'][seasonIdx] ?? 'Unknown';
+  }
+
+  /**
+   * Order-independent content hash of the structure set. Each structure is reduced to a
+   * canonical signature (class/displayName/owner/pos/health/upgrade — every persisted,
+   * independently-variable column); signatures are sorted before hashing so a save/DB
+   * row-order change alone does NOT look like a content change.
+   */
+  private _hashStructures(structures: TimelineStructure[]): string {
+    const sigs = structures.map((s) =>
+      // JSON-encode the field tuple so a literal delimiter inside a field (e.g. a '|' in
+      // actorClass / ownerSteamId) can't make two distinct structure sets hash the same.
+      // displayName is included because it is persisted on timeline_structures and could be
+      // supplied independently of actorClass — a display-only change must still bust the dedup.
+      JSON.stringify([
+        s.actorClass,
+        s.displayName,
+        s.ownerSteamId,
+        s.x,
+        s.y,
+        s.z,
+        s.currentHealth,
+        s.maxHealth,
+        s.upgradeLevel,
+      ]),
+    );
+    sigs.sort();
+    return createHash('sha1')
+      .update(`${String(structures.length)}\n${sigs.join('\n')}`)
+      .digest('hex');
   }
 
   /** Prune old timeline data beyond retention period. */

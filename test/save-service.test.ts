@@ -451,7 +451,8 @@ describe('SaveSyncPipeline syncFromCache', () => {
   it('runs activity cleanup only on maintenance sync intervals', async () => {
     const db = makeDb();
     const pipelineHarness = makePipeline(db);
-    const activityPurgeCount = () => db.calls.filter((call: string) => call === 'purgeOldActivity:-30 days').length;
+    // v25: activity retention default shortened 30→14 days (config.activityRetentionDays).
+    const activityPurgeCount = () => db.calls.filter((call: string) => call === 'purgeOldActivity:-14 days').length;
 
     pipelineHarness.setSyncCount(1);
     await pipelineHarness.pipeline.syncParsedData(makeParsedSave(), []);
@@ -470,7 +471,8 @@ describe('SaveSyncPipeline syncFromCache', () => {
     const db = makeDb();
     const pipelineHarness = makePipeline(db);
     const itemPurgeCount = () =>
-      db.calls.filter((call: string) => call === 'purgeOldItemTrackerData:-7 days:-7 days:-30 days').length;
+      // v25: item-movement retention default shortened 30→14 days (config.itemMovementRetentionDays).
+      db.calls.filter((call: string) => call === 'purgeOldItemTrackerData:-7 days:-7 days:-14 days').length;
 
     pipelineHarness.setSyncCount(1);
     await pipelineHarness.pipeline.syncParsedData(makeParsedSave(), []);

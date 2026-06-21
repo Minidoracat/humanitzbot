@@ -233,7 +233,7 @@ describe('save-audit P1 DB integration', () => {
       const version = handle.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as {
         value: string;
       };
-      assert.equal(version.value, '24');
+      assert.equal(version.value, '25');
       legacy.close();
     });
   });
