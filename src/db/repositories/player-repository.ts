@@ -9,7 +9,6 @@ function _parsePlayerRow(row: unknown): DbRow | null {
   if (!row) return null;
   // Parse JSON columns back to objects
   const jsonCols = [
-    'name_history',
     'char_profile',
     'player_states',
     'body_conditions',
@@ -34,7 +33,6 @@ function _parsePlayerRow(row: unknown): DbRow | null {
     'companion_data',
     'horses',
     'extended_stats',
-    'kill_tracker',
     'custom_data',
   ];
   const parsed: DbRow = { ...(row as DbRow) };
@@ -91,16 +89,6 @@ function _parsePlayerRowForDiff(row: unknown): DbRow | null {
 function _normalizeTimestampField(value: unknown): string | null {
   if (value == null || (typeof value === 'string' && !value.trim())) return null;
   return normalizeDbTimestampUtc(value);
-}
-
-function _normalizeNameHistory(value: unknown): unknown[] {
-  if (!Array.isArray(value)) return [];
-  return (value as unknown[]).map((entry: unknown): unknown => {
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
-    const record = entry as Record<string, unknown>;
-    if (!Object.prototype.hasOwnProperty.call(record, 'until')) return record;
-    return { ...record, until: _normalizeTimestampField(record.until) };
-  });
 }
 
 function _normalizeCheatFlags(value: unknown): unknown[] {
@@ -792,28 +780,6 @@ export class PlayerRepository extends BaseRepository {
 
   setAllPlayersOffline() {
     this._stmts.setAllOffline.run();
-  }
-
-  /**
-   * Deprecated: the live kill tracker is stored in bot_state['kill_tracker']
-   * (see tracking/kill-tracker.ts). This writes the dead players.kill_tracker
-   * column and has no callers — kept only for the schema's historical shape.
-   */
-  updateKillTracker(steamId: string, killData: Record<string, unknown>) {
-    this._handle
-      .prepare("UPDATE players SET kill_tracker = ?, updated_at = datetime('now') WHERE steam_id = ?")
-      .run(JSON.stringify(killData), steamId);
-  }
-
-  /**
-   * Deprecated: name history is superseded by the player_aliases table
-   * (upsertPlayer auto-registers aliases). This writes the dead
-   * players.name_history column and has no production callers.
-   */
-  updatePlayerName(steamId: string, name: string, nameHistory: unknown) {
-    this._handle
-      .prepare("UPDATE players SET name = ?, name_history = ?, updated_at = datetime('now') WHERE steam_id = ?")
-      .run(name, JSON.stringify(_normalizeNameHistory(nameHistory)), steamId);
   }
 
   /**

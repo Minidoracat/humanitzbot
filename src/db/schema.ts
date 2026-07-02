@@ -9,7 +9,7 @@
  * Schema is applied via database.js on first run and auto-migrated on updates.
  */
 
-const SCHEMA_VERSION = 25;
+const SCHEMA_VERSION = 26;
 
 // ─── Player data ────────────────────────────────────────────────────────────
 
@@ -17,7 +17,6 @@ const PLAYERS = `
 CREATE TABLE IF NOT EXISTS players (
   steam_id        TEXT PRIMARY KEY,
   name            TEXT NOT NULL DEFAULT '',
-  name_history    TEXT DEFAULT '[]',           -- DEPRECATED: superseded by the player_aliases table; live rows all default '[]'
   first_seen      TEXT,                        -- ISO timestamp
   last_seen       TEXT,                        -- ISO timestamp
   online          INTEGER DEFAULT 0,           -- 1 = currently online
@@ -168,8 +167,8 @@ CREATE TABLE IF NOT EXISTS players (
   -- Custom data (JSON — game's CustomData map)
   custom_data     TEXT DEFAULT '{}',
 
-  -- Kill tracking (for delta/accumulation across deaths)
-  kill_tracker    TEXT DEFAULT '{}',           -- DEPRECATED: the live tracker is bot_state['kill_tracker']; this column stays default '{}'
+  -- NOTE: name_history 與 kill_tracker 欄位已於 v26 移除
+  -- （分別由 player_aliases 表與 bot_state['kill_tracker'] 取代）。
 
   -- Log-based stats (from LogWatcher / PlayerStats)
   log_deaths      INTEGER DEFAULT 0,
@@ -436,7 +435,6 @@ CREATE TABLE IF NOT EXISTS item_groups (
 CREATE INDEX IF NOT EXISTS idx_item_grp_fingerprint ON item_groups(fingerprint);
 CREATE INDEX IF NOT EXISTS idx_item_grp_item ON item_groups(item);
 CREATE INDEX IF NOT EXISTS idx_item_grp_location ON item_groups(location_type, location_id);
-CREATE INDEX IF NOT EXISTS idx_item_grp_active ON item_groups(lost);
 CREATE INDEX IF NOT EXISTS idx_item_grp_active_sort ON item_groups(lost, item, location_type, id);
 CREATE INDEX IF NOT EXISTS idx_item_grp_active_location_sort ON item_groups(lost, location_type, location_id, item, id);
 CREATE INDEX IF NOT EXISTS idx_item_grp_lost_at ON item_groups(lost, lost_at);
@@ -471,11 +469,9 @@ CREATE TABLE IF NOT EXISTS item_instances (
 CREATE INDEX IF NOT EXISTS idx_item_inst_fingerprint ON item_instances(fingerprint);
 CREATE INDEX IF NOT EXISTS idx_item_inst_item ON item_instances(item);
 CREATE INDEX IF NOT EXISTS idx_item_inst_location ON item_instances(location_type, location_id);
-CREATE INDEX IF NOT EXISTS idx_item_inst_active ON item_instances(lost);
 CREATE INDEX IF NOT EXISTS idx_item_inst_active_sort ON item_instances(lost, item, location_type, id);
 CREATE INDEX IF NOT EXISTS idx_item_inst_active_location_sort ON item_instances(lost, location_type, location_id, item, id);
 CREATE INDEX IF NOT EXISTS idx_item_inst_lost_at ON item_instances(lost, lost_at);
-CREATE INDEX IF NOT EXISTS idx_item_inst_group ON item_instances(group_id);
 `;
 
 const ITEM_MOVEMENTS = `
@@ -501,7 +497,6 @@ CREATE TABLE IF NOT EXISTS item_movements (
 );
 CREATE INDEX IF NOT EXISTS idx_item_mov_instance ON item_movements(instance_id);
 CREATE INDEX IF NOT EXISTS idx_item_mov_group ON item_movements(group_id);
-CREATE INDEX IF NOT EXISTS idx_item_mov_item ON item_movements(item);
 CREATE INDEX IF NOT EXISTS idx_item_mov_created ON item_movements(created_at);
 CREATE INDEX IF NOT EXISTS idx_item_mov_attributed ON item_movements(attributed_steam_id);
 `;
@@ -528,8 +523,6 @@ CREATE TABLE IF NOT EXISTS world_drops (
   updated_at      TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_world_drops_type ON world_drops(type);
-CREATE INDEX IF NOT EXISTS idx_world_drops_item ON world_drops(item);
-CREATE INDEX IF NOT EXISTS idx_world_drops_pos ON world_drops(pos_x, pos_y);
 `;
 
 // ─── Quests (world quest state) ─────────────────────────────────────────────
@@ -916,9 +909,7 @@ CREATE INDEX IF NOT EXISTS idx_activity_type ON activity_log(type);
 CREATE INDEX IF NOT EXISTS idx_activity_category ON activity_log(category);
 CREATE INDEX IF NOT EXISTS idx_activity_actor ON activity_log(actor);
 CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log(created_at);
-CREATE INDEX IF NOT EXISTS idx_activity_item ON activity_log(item);
 CREATE INDEX IF NOT EXISTS idx_activity_steam_id ON activity_log(steam_id);
-CREATE INDEX IF NOT EXISTS idx_activity_source ON activity_log(source);
 CREATE INDEX IF NOT EXISTS idx_activity_recent_dedupe ON activity_log(type, steam_id, source, created_at DESC, id DESC);
 `;
 
@@ -973,9 +964,6 @@ CREATE TABLE IF NOT EXISTS chat_log (
   created_at   TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_chat_created ON chat_log(created_at);
-CREATE INDEX IF NOT EXISTS idx_chat_type ON chat_log(type);
-CREATE INDEX IF NOT EXISTS idx_chat_steam ON chat_log(steam_id);
-CREATE INDEX IF NOT EXISTS idx_chat_player ON chat_log(player_name);
 `;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1008,6 +996,16 @@ CREATE TABLE IF NOT EXISTS timeline_snapshots (
   -- rows are NOT re-stored. structures_state_hash is the content hash used to detect change.
   structures_state_hash       TEXT,
   structures_ref_snapshot_id  INTEGER,
+  -- v26：backpacks / houses 套用同一 hash-ref dedup 模式（內容變化緩慢卻每
+  -- snapshot 全量重寫 —— 截至 v26 分析時生產實測 timeline_backpacks 1.39M 列、
+  -- timeline_houses 962k 列）。
+  backpacks_state_hash        TEXT,
+  backpacks_ref_snapshot_id   INTEGER,
+  houses_state_hash           TEXT,
+  houses_ref_snapshot_id      INTEGER,
+  -- v26 players delta：1 = 該 snapshot 寫入了玩家全名冊（keyframe）。重建走
+  -- 「T 以內最新 keyframe + delta overlay」；migration 把歷史全量 snapshot 全標 1。
+  players_keyframe            INTEGER DEFAULT 0,
   created_at      TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_tl_snap_created ON timeline_snapshots(created_at);
@@ -1038,7 +1036,11 @@ CREATE TABLE IF NOT EXISTS timeline_players (
   lifetime_kills  INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_tl_players_snap ON timeline_players(snapshot_id);
-CREATE INDEX IF NOT EXISTS idx_tl_players_steam ON timeline_players(steam_id);
+-- v26：改複合索引 (steam_id, snapshot_id) —— trails 查詢（getPlayerPositionHistory
+-- 的 steam_id = ? 等值查找）走它（EQP 實證）；原單欄 idx_tl_players_steam 是其
+-- prefix、由 v26 migration DROP。delta 重建（keyframe + overlay）本身走
+-- idx_tl_players_snap 的 snapshot_id 範圍掃描，不需要這顆。
+CREATE INDEX IF NOT EXISTS idx_tl_players_steam_snap ON timeline_players(steam_id, snapshot_id);
 `;
 
 // ─── AI spawn positions / state over time ───────────────────────────────────
@@ -1056,8 +1058,6 @@ CREATE TABLE IF NOT EXISTS timeline_ai (
   pos_z           REAL
 );
 CREATE INDEX IF NOT EXISTS idx_tl_ai_snap ON timeline_ai(snapshot_id);
-CREATE INDEX IF NOT EXISTS idx_tl_ai_type ON timeline_ai(ai_type);
-CREATE INDEX IF NOT EXISTS idx_tl_ai_cat ON timeline_ai(category);
 `;
 
 // ─── Vehicle positions / state over time ────────────────────────────────────
@@ -1122,7 +1122,6 @@ CREATE TABLE IF NOT EXISTS timeline_houses (
   pos_y           REAL
 );
 CREATE INDEX IF NOT EXISTS idx_tl_houses_snap ON timeline_houses(snapshot_id);
-CREATE INDEX IF NOT EXISTS idx_tl_houses_uid ON timeline_houses(uid);
 `;
 
 // ─── Companion / horse positions over time ──────────────────────────────────
@@ -1292,229 +1291,9 @@ CREATE INDEX IF NOT EXISTS idx_fpe_type        ON fingerprint_events(event_type)
 CREATE INDEX IF NOT EXISTS idx_fpe_created     ON fingerprint_events(created_at);
 `;
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  HOWYAGARN — Faction PvP / MMOlite tables
-//  All tables prefixed with hmz_ to avoid collision with core bot tables.
-// ═══════════════════════════════════════════════════════════════════════════
-
-// ─── Faction definitions (3 factions, static-ish but admin-editable) ────────
-
-const HMZ_FACTIONS = `
-CREATE TABLE IF NOT EXISTS hmz_factions (
-  id              TEXT PRIMARY KEY,             -- 'reapers', 'wardens', 'drifters'
-  name            TEXT NOT NULL,                -- 'Reapers'
-  theme           TEXT DEFAULT '',              -- 'Aggressive raiders'
-  color           TEXT DEFAULT '#ffffff',       -- hex color for embeds/map
-  icon            TEXT DEFAULT '',              -- emoji or icon key
-  strength_desc   TEXT DEFAULT '',              -- short description of faction bonus
-  weakness_desc   TEXT DEFAULT '',              -- short description of faction penalty
-  member_count    INTEGER DEFAULT 0,            -- denormalized count (updated on join/leave)
-  total_kills     INTEGER DEFAULT 0,            -- aggregate across all members
-  total_deaths    INTEGER DEFAULT 0,
-  total_playtime  INTEGER DEFAULT 0,            -- seconds
-  territories_held INTEGER DEFAULT 0,           -- denormalized count
-  created_at      TEXT DEFAULT (datetime('now'))
-);
-`;
-
-// ─── Player faction membership (1:1, permanent per wipe) ────────────────────
-
-const HMZ_PLAYERS = `
-CREATE TABLE IF NOT EXISTS hmz_players (
-  steam_id        TEXT PRIMARY KEY,             -- FK to players.steam_id
-  faction_id      TEXT NOT NULL,                -- FK to hmz_factions.id
-  faction_rank    INTEGER DEFAULT 1,            -- 1-20
-  faction_xp      INTEGER DEFAULT 0,            -- cumulative XP toward next rank
-  season_tier     INTEGER DEFAULT 0,            -- 0-50 season pass tier
-  season_xp       INTEGER DEFAULT 0,            -- XP toward next season tier
-  credits         INTEGER DEFAULT 0,            -- faction currency
-  lifetime_credits INTEGER DEFAULT 0,           -- total earned (never decreases)
-  quests_completed INTEGER DEFAULT 0,
-  bounties_claimed INTEGER DEFAULT 0,
-  territories_captured INTEGER DEFAULT 0,
-  pvp_kills_faction INTEGER DEFAULT 0,          -- kills against other factions
-  deaths_faction  INTEGER DEFAULT 0,            -- deaths to other faction members
-  titles          TEXT DEFAULT '[]',            -- JSON array of earned title strings
-  active_title    TEXT DEFAULT '',              -- currently displayed title
-  perks_unlocked  TEXT DEFAULT '[]',            -- JSON array of perk IDs
-  joined_at       TEXT DEFAULT (datetime('now')),
-  last_active     TEXT DEFAULT (datetime('now')),
-  wipe_id         TEXT DEFAULT ''               -- tracks which wipe cycle this belongs to
-);
-CREATE INDEX IF NOT EXISTS idx_hmzp_faction ON hmz_players(faction_id);
-CREATE INDEX IF NOT EXISTS idx_hmzp_rank    ON hmz_players(faction_rank DESC);
-CREATE INDEX IF NOT EXISTS idx_hmzp_credits ON hmz_players(credits DESC);
-`;
-
-// ─── Territory zones (admin-defined map regions) ────────────────────────────
-
-const HMZ_TERRITORIES = `
-CREATE TABLE IF NOT EXISTS hmz_territories (
-  id              TEXT PRIMARY KEY,             -- 'airport', 'military_base', 'harbor', etc.
-  name            TEXT NOT NULL,                -- 'The Airport'
-  description     TEXT DEFAULT '',
-  center_x        REAL NOT NULL,                -- UE4 world X
-  center_y        REAL NOT NULL,                -- UE4 world Y
-  radius          REAL DEFAULT 15000,           -- capture radius in UE4 units (~150m)
-  controlling_faction TEXT,                     -- FK to hmz_factions.id (NULL = contested)
-  control_score_reapers  INTEGER DEFAULT 0,     -- scoring points per faction
-  control_score_wardens  INTEGER DEFAULT 0,
-  control_score_drifters INTEGER DEFAULT 0,
-  last_contested  TEXT,                         -- when control last changed
-  bonus_type      TEXT DEFAULT 'xp',            -- 'xp', 'loot', 'defense', 'speed'
-  bonus_value     REAL DEFAULT 0.1,             -- percentage bonus (0.1 = +10%)
-  tier            INTEGER DEFAULT 1,            -- 1=outpost, 2=strategic, 3=stronghold
-  active          INTEGER DEFAULT 1             -- admin can disable zones
-);
-CREATE INDEX IF NOT EXISTS idx_hmzt_faction ON hmz_territories(controlling_faction);
-`;
-
-// ─── Quest definitions (template library) ───────────────────────────────────
-
-const HMZ_QUESTS = `
-CREATE TABLE IF NOT EXISTS hmz_quests (
-  id              TEXT PRIMARY KEY,             -- 'daily_kill_20', 'faction_reapers_raid_3', 'story_ch1_s1'
-  type            TEXT NOT NULL,                -- 'daily', 'faction', 'story'
-  faction_id      TEXT,                         -- NULL for universal, or specific faction
-  title           TEXT NOT NULL,                -- 'Zombie Cleanup Crew'
-  description     TEXT NOT NULL,                -- 'Kill 20 zombies in any territory.'
-  objective_type  TEXT NOT NULL,                -- 'kill_zombies', 'kill_pvp', 'fish', 'build', 'loot',
-                                                -- 'travel', 'craft', 'capture_territory', 'raid', 'custom'
-  objective_target INTEGER DEFAULT 1,           -- how many to complete
-  objective_params TEXT DEFAULT '{}',           -- JSON: extra filters {zone, item, weapon, etc.}
-  reward_xp       INTEGER DEFAULT 0,            -- faction XP
-  reward_credits  INTEGER DEFAULT 0,            -- faction credits
-  reward_title    TEXT,                         -- title string unlocked on completion (NULL = none)
-  reward_items    TEXT DEFAULT '[]',            -- JSON: [{item, qty}] given via RCON spawnitem
-  prerequisite_quest TEXT,                      -- must complete this quest first (story chains)
-  min_rank        INTEGER DEFAULT 0,            -- minimum faction rank required
-  cooldown_hours  INTEGER DEFAULT 24,           -- hours before this quest can be taken again
-  active          INTEGER DEFAULT 1,
-  sort_order      INTEGER DEFAULT 0             -- display ordering
-);
-CREATE INDEX IF NOT EXISTS idx_hmzq_type    ON hmz_quests(type);
-CREATE INDEX IF NOT EXISTS idx_hmzq_faction ON hmz_quests(faction_id);
-`;
-
-// ─── Per-player quest progress (assigned / in-progress / completed) ─────────
-
-const HMZ_QUEST_PROGRESS = `
-CREATE TABLE IF NOT EXISTS hmz_quest_progress (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  steam_id        TEXT NOT NULL,                -- FK to players.steam_id
-  quest_id        TEXT NOT NULL,                -- FK to hmz_quests.id
-  status          TEXT DEFAULT 'active',        -- 'active', 'completed', 'expired', 'abandoned'
-  progress        INTEGER DEFAULT 0,            -- current count toward objective_target
-  assigned_at     TEXT DEFAULT (datetime('now')),
-  completed_at    TEXT,
-  expires_at      TEXT,                         -- NULL = no expiry, or ISO timestamp
-  reward_claimed  INTEGER DEFAULT 0             -- 1 once rewards issued
-);
-CREATE INDEX IF NOT EXISTS idx_hmzqp_steam  ON hmz_quest_progress(steam_id);
-CREATE INDEX IF NOT EXISTS idx_hmzqp_quest  ON hmz_quest_progress(quest_id);
-CREATE INDEX IF NOT EXISTS idx_hmzqp_status ON hmz_quest_progress(status);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_hmzqp_active ON hmz_quest_progress(steam_id, quest_id)
-  WHERE status = 'active';
-`;
-
-// ─── Bounties (PvP target system) ───────────────────────────────────────────
-
-const HMZ_BOUNTIES = `
-CREATE TABLE IF NOT EXISTS hmz_bounties (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  target_steam_id TEXT NOT NULL,                -- player with the bounty on them
-  target_name     TEXT DEFAULT '',
-  placed_by       TEXT,                         -- steam_id of placer (NULL = system/auto)
-  placed_by_name  TEXT DEFAULT '',
-  reward_credits  INTEGER DEFAULT 0,
-  reason          TEXT DEFAULT '',              -- 'kill_streak', 'territory_defense', 'admin', 'player'
-  status          TEXT DEFAULT 'active',        -- 'active', 'claimed', 'expired', 'cancelled'
-  claimed_by      TEXT,                         -- steam_id of killer who claimed it
-  claimed_by_name TEXT DEFAULT '',
-  created_at      TEXT DEFAULT (datetime('now')),
-  claimed_at      TEXT,
-  expires_at      TEXT                          -- NULL = no expiry
-);
-CREATE INDEX IF NOT EXISTS idx_hmzb_target  ON hmz_bounties(target_steam_id);
-CREATE INDEX IF NOT EXISTS idx_hmzb_status  ON hmz_bounties(status);
-CREATE INDEX IF NOT EXISTS idx_hmzb_placed  ON hmz_bounties(placed_by);
-`;
-
-// ─── Economy transaction log ────────────────────────────────────────────────
-
-const HMZ_TRANSACTIONS = `
-CREATE TABLE IF NOT EXISTS hmz_transactions (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  steam_id        TEXT NOT NULL,
-  type            TEXT NOT NULL,                -- 'quest_reward', 'bounty_reward', 'bounty_place',
-                                                -- 'territory_bonus', 'kill_reward', 'war_fund',
-                                                -- 'trade', 'admin_grant', 'admin_deduct', 'season_reward'
-  amount          INTEGER NOT NULL,             -- positive = earned, negative = spent
-  balance_after   INTEGER DEFAULT 0,            -- snapshot of credits after this transaction
-  description     TEXT DEFAULT '',              -- human-readable reason
-  related_id      TEXT,                         -- quest_id, bounty_id, territory_id, etc.
-  created_at      TEXT DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_hmztx_steam  ON hmz_transactions(steam_id);
-CREATE INDEX IF NOT EXISTS idx_hmztx_type   ON hmz_transactions(type);
-CREATE INDEX IF NOT EXISTS idx_hmztx_date   ON hmz_transactions(created_at);
-`;
-
-// ─── Scheduled / completed events ───────────────────────────────────────────
-
-const HMZ_EVENTS = `
-CREATE TABLE IF NOT EXISTS hmz_events (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  type            TEXT NOT NULL,                -- 'territory_war', 'supply_drop', 'assassination',
-                                                -- 'world_boss', 'horde_night', 'custom'
-  name            TEXT NOT NULL,                -- 'Territory War — Round 3'
-  description     TEXT DEFAULT '',
-  status          TEXT DEFAULT 'scheduled',     -- 'scheduled', 'active', 'completed', 'cancelled'
-  territory_id    TEXT,                         -- FK for territory-specific events
-  target_steam_id TEXT,                         -- FK for assassination contracts
-  params          TEXT DEFAULT '{}',            -- JSON: event-specific config
-  rewards         TEXT DEFAULT '{}',            -- JSON: rewards distributed
-  winner_faction  TEXT,                         -- which faction won (after completion)
-  scheduled_at    TEXT,                         -- when the event starts
-  started_at      TEXT,
-  ended_at        TEXT,
-  created_at      TEXT DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_hmze_type    ON hmz_events(type);
-CREATE INDEX IF NOT EXISTS idx_hmze_status  ON hmz_events(status);
-CREATE INDEX IF NOT EXISTS idx_hmze_sched   ON hmz_events(scheduled_at);
-`;
-
-// ─── Territory war participation scores per event ───────────────────────────
-
-const HMZ_EVENT_SCORES = `
-CREATE TABLE IF NOT EXISTS hmz_event_scores (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id        INTEGER NOT NULL,             -- FK to hmz_events.id
-  steam_id        TEXT NOT NULL,
-  faction_id      TEXT NOT NULL,
-  score           INTEGER DEFAULT 0,            -- contribution points
-  kills           INTEGER DEFAULT 0,
-  deaths          INTEGER DEFAULT 0,
-  captures        INTEGER DEFAULT 0,
-  created_at      TEXT DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_hmzes_event   ON hmz_event_scores(event_id);
-CREATE INDEX IF NOT EXISTS idx_hmzes_steam   ON hmz_event_scores(steam_id);
-CREATE INDEX IF NOT EXISTS idx_hmzes_faction ON hmz_event_scores(faction_id);
-`;
-
-// ─── Wipe tracking (seasons / wipe cycles) ──────────────────────────────────
-
-const HMZ_WIPES = `
-CREATE TABLE IF NOT EXISTS hmz_wipes (
-  id              TEXT PRIMARY KEY,             -- 'wipe_2026_03_01' or uuid
-  name            TEXT DEFAULT '',              -- 'Season 1'
-  started_at      TEXT DEFAULT (datetime('now')),
-  ended_at        TEXT,                         -- NULL = current wipe
-  config          TEXT DEFAULT '{}'             -- JSON: wipe-specific config overrides
-);
-`;
+// NOTE: HOWYAGARN（hmz_* faction PvP / MMOlite）十張表已於 v26 移除 —
+// git 全歷史查證零讀寫者，生產 DB 亦從未建立這些表；v26 migration 會對
+// 曾以舊 schema 新裝而建出這些表的 DB 執行 DROP TABLE IF EXISTS。
 
 // ─── Indexes ────────────────────────────────────────────────────────────────
 
@@ -1534,6 +1313,12 @@ CREATE INDEX IF NOT EXISTS idx_quests_pos ON quests(pos_x) WHERE pos_x IS NOT NU
 `;
 
 // ─── All tables in creation order ───────────────────────────────────────────
+//
+// 契約：ALL_TABLES 只能收「CREATE ... IF NOT EXISTS」的冪等 DDL —— 除了首次
+// 建庫，_ensureSchemaCompleteness 每次啟動都會整份重跑做 drift 修復。任何
+// 非冪等語句（ALTER、INSERT、DROP …）放進來會在第二次啟動爆炸或重複執行。
+// 對既有表，CREATE IF NOT EXISTS 是 no-op —— 之後用 migration 加的欄位若被
+// drift 弄丟，靠 database.ts 的 ADDITIVE_COLUMNS 欄位級修復補回。
 
 const ALL_TABLES = [
   META,
@@ -1597,16 +1382,6 @@ const ALL_TABLES = [
   PLAYER_RISK_SCORES,
   ENTITY_FINGERPRINTS,
   FINGERPRINT_EVENTS,
-  HMZ_FACTIONS,
-  HMZ_PLAYERS,
-  HMZ_TERRITORIES,
-  HMZ_QUESTS,
-  HMZ_QUEST_PROGRESS,
-  HMZ_BOUNTIES,
-  HMZ_TRANSACTIONS,
-  HMZ_EVENTS,
-  HMZ_EVENT_SCORES,
-  HMZ_WIPES,
   INDEXES,
   CONFIG_DOCUMENTS,
 ];

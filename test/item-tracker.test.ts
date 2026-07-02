@@ -1227,7 +1227,7 @@ describe('Item Tracker', () => {
   });
 
   describe('maintenance purge', () => {
-    it('preserves old lost item instances while recent movements still reference them', () => {
+    it('preserves old lost item instances while recent movements still reference them', async () => {
       const itemId = Number(
         db.item.createItemInstance({
           fingerprint: 'fp-recent-item',
@@ -1245,7 +1245,7 @@ describe('Item Tracker', () => {
       );
       markInstanceLostAt(itemId);
 
-      const result = db.item.purgeOldItemTrackerData({
+      const result = await db.item.purgeOldItemTrackerData({
         lostItemsAge: '-7 days',
         lostGroupsAge: '-7 days',
         movementsAge: '-30 days',
@@ -1257,7 +1257,7 @@ describe('Item Tracker', () => {
       assert.equal(countRows('item_movements', 'instance_id = ?', [itemId]), 1);
     });
 
-    it('purges old movements before old lost item instances', () => {
+    it('purges old movements before old lost item instances', async () => {
       const itemId = Number(
         db.item.createItemInstance({
           fingerprint: 'fp-old-item',
@@ -1276,7 +1276,7 @@ describe('Item Tracker', () => {
       ageAllMovements('-31 days');
       markInstanceLostAt(itemId);
 
-      const result = db.item.purgeOldItemTrackerData({
+      const result = await db.item.purgeOldItemTrackerData({
         lostItemsAge: '-7 days',
         lostGroupsAge: '-7 days',
         movementsAge: '-30 days',
@@ -1288,7 +1288,7 @@ describe('Item Tracker', () => {
       assert.equal(countRows('item_movements', 'instance_id = ?', [itemId]), 0);
     });
 
-    it('preserves old lost item groups while recent group movements still reference them', () => {
+    it('preserves old lost item groups while recent group movements still reference them', async () => {
       const group = db.item.upsertItemGroup({
         fingerprint: 'fp-recent-group',
         item: 'Nails',
@@ -1308,7 +1308,7 @@ describe('Item Tracker', () => {
       });
       markGroupLostAt(group.id);
 
-      const result = db.item.purgeOldItemTrackerData({
+      const result = await db.item.purgeOldItemTrackerData({
         lostItemsAge: '-7 days',
         lostGroupsAge: '-7 days',
         movementsAge: '-30 days',
@@ -1320,7 +1320,7 @@ describe('Item Tracker', () => {
       assert.equal(countRows('item_movements', 'group_id = ?', [group.id]), 1);
     });
 
-    it('purges old movements before old lost item groups', () => {
+    it('purges old movements before old lost item groups', async () => {
       const group = db.item.upsertItemGroup({
         fingerprint: 'fp-old-group',
         item: 'Nails',
@@ -1341,7 +1341,7 @@ describe('Item Tracker', () => {
       ageAllMovements('-31 days');
       markGroupLostAt(group.id);
 
-      const result = db.item.purgeOldItemTrackerData({
+      const result = await db.item.purgeOldItemTrackerData({
         lostItemsAge: '-7 days',
         lostGroupsAge: '-7 days',
         movementsAge: '-30 days',
@@ -1351,6 +1351,37 @@ describe('Item Tracker', () => {
       assert.equal(result.groupsDeleted, 1);
       assert.equal(countRows('item_groups', 'id = ?', [group.id]), 0);
       assert.equal(countRows('item_movements', 'group_id = ?', [group.id]), 0);
+    });
+
+    // v26：movements 分批刪除 —— batchSize 小於待刪列數時要跨批刪光並回報總數
+    it('purges old movements across multiple batches when batchSize < rows', async () => {
+      const itemId = Number(
+        db.item.createItemInstance({
+          fingerprint: 'fp-batch',
+          item: 'Pistol',
+          locationType: 'player',
+          locationId: 'steam1',
+          locationSlot: 'inventory',
+          amount: 1,
+        }),
+      );
+      for (let i = 0; i < 5; i++) {
+        db.item.moveItemInstance(
+          itemId,
+          { locationType: 'container', locationId: `crate${String(i)}`, locationSlot: 'items', amount: 1 },
+          null,
+        );
+      }
+      ageAllMovements('-31 days');
+
+      const result = await db.item.purgeOldItemTrackerData({
+        lostItemsAge: '-7 days',
+        lostGroupsAge: '-7 days',
+        movementsAge: '-30 days',
+        movementsBatchSize: 2, // 5 列 → 2+2+1 三批
+      });
+      assert.equal(result.movementsDeleted, 5);
+      assert.equal(countRows('item_movements'), 0);
     });
 
     it('creates item tracker indexes on fresh schema and migration', () => {
@@ -1390,7 +1421,7 @@ describe('Item Tracker', () => {
       assert.ok(indexNames('item_groups').includes('idx_item_grp_active_location_sort'));
       assert.ok(indexNames('item_movements').includes('idx_item_mov_instance'));
       assert.ok(indexNames('item_movements').includes('idx_item_mov_group'));
-      assert.equal(db._getMeta('schema_version'), '25');
+      assert.equal(db._getMeta('schema_version'), '26');
     });
 
     it('repairs legacy item_movements instance_id NOT NULL during migration', () => {

@@ -23,6 +23,7 @@ import path from 'path';
 import fs from 'fs';
 import { SCHEMA_VERSION, ALL_TABLES } from './schema.js';
 import { createLogger, type Logger } from '../utils/log.js';
+import { createStructuredLogger } from '../logger/logger.js';
 import { errMsg } from '../utils/error.js';
 import { getDirname } from '../utils/paths.js';
 import { PlayerRepository } from './repositories/player-repository.js';
@@ -48,6 +49,175 @@ const DEFAULT_DB_PATH = path.join(__dirname, '..', '..', 'data', 'humanitz.db');
 // how long any single phase transaction can hold the event loop.
 const SAVE_SYNC_PLAYER_BATCH_SIZE = 100;
 
+/**
+ * 歷代 additive migration 欄位（ALTER TABLE ADD COLUMN）—— _ensureSchemaCompleteness
+ * 的欄位級 drift 修復清單。CREATE TABLE IF NOT EXISTS 對既有表是 no-op，migration
+ * 加的欄位若因 migration 靜默失敗 / 人為 DROP 而缺失，只有這份清單能補回。
+ * 新增 ADD COLUMN migration 時必須同步登記（DDL 含 DEFAULT，與 migration 原句一致）。
+ * 已被後續 migration DROP 的欄位（players.name_history / kill_tracker）不在此列。
+ */
+const ADDITIVE_COLUMNS: ReadonlyArray<{ table: string; column: string; ddl: string }> = [
+  // v2→v3
+  {
+    table: 'players',
+    column: 'day_incremented',
+    ddl: 'ALTER TABLE players ADD COLUMN day_incremented INTEGER DEFAULT 0',
+  },
+  { table: 'players', column: 'infection_timer', ddl: 'ALTER TABLE players ADD COLUMN infection_timer REAL DEFAULT 0' },
+  // v3→v4
+  {
+    table: 'containers',
+    column: 'quick_slots',
+    ddl: "ALTER TABLE containers ADD COLUMN quick_slots TEXT DEFAULT '[]'",
+  },
+  { table: 'containers', column: 'locked', ddl: 'ALTER TABLE containers ADD COLUMN locked INTEGER DEFAULT 0' },
+  {
+    table: 'containers',
+    column: 'does_spawn_loot',
+    ddl: 'ALTER TABLE containers ADD COLUMN does_spawn_loot INTEGER DEFAULT 0',
+  },
+  { table: 'containers', column: 'alarm_off', ddl: 'ALTER TABLE containers ADD COLUMN alarm_off INTEGER DEFAULT 0' },
+  {
+    table: 'containers',
+    column: 'crafting_content',
+    ddl: "ALTER TABLE containers ADD COLUMN crafting_content TEXT DEFAULT '[]'",
+  },
+  { table: 'containers', column: 'extra', ddl: "ALTER TABLE containers ADD COLUMN extra TEXT DEFAULT '{}'" },
+  // v4→v5
+  { table: 'activity_log', column: 'steam_id', ddl: "ALTER TABLE activity_log ADD COLUMN steam_id TEXT DEFAULT ''" },
+  { table: 'activity_log', column: 'source', ddl: "ALTER TABLE activity_log ADD COLUMN source TEXT DEFAULT 'save'" },
+  {
+    table: 'activity_log',
+    column: 'target_name',
+    ddl: "ALTER TABLE activity_log ADD COLUMN target_name TEXT DEFAULT ''",
+  },
+  {
+    table: 'activity_log',
+    column: 'target_steam_id',
+    ddl: "ALTER TABLE activity_log ADD COLUMN target_steam_id TEXT DEFAULT ''",
+  },
+  // v5→v6
+  { table: 'players', column: 'level', ddl: 'ALTER TABLE players ADD COLUMN level INTEGER DEFAULT 0' },
+  { table: 'players', column: 'exp_current', ddl: 'ALTER TABLE players ADD COLUMN exp_current REAL DEFAULT 0' },
+  { table: 'players', column: 'exp_required', ddl: 'ALTER TABLE players ADD COLUMN exp_required REAL DEFAULT 0' },
+  { table: 'players', column: 'skills_point', ddl: 'ALTER TABLE players ADD COLUMN skills_point INTEGER DEFAULT 0' },
+  // v7→v8（item_movements 的 group_id/move_type 另由 _ensureItemMovementsInstanceIdNullable 的重建覆蓋，仍登記以防單欄漂移）
+  {
+    table: 'item_instances',
+    column: 'group_id',
+    ddl: 'ALTER TABLE item_instances ADD COLUMN group_id INTEGER DEFAULT NULL',
+  },
+  {
+    table: 'item_movements',
+    column: 'group_id',
+    ddl: 'ALTER TABLE item_movements ADD COLUMN group_id INTEGER DEFAULT NULL',
+  },
+  {
+    table: 'item_movements',
+    column: 'move_type',
+    ddl: "ALTER TABLE item_movements ADD COLUMN move_type TEXT DEFAULT 'move'",
+  },
+  // v8→v9
+  { table: 'players', column: 'log_connects', ddl: 'ALTER TABLE players ADD COLUMN log_connects INTEGER DEFAULT 0' },
+  {
+    table: 'players',
+    column: 'log_disconnects',
+    ddl: 'ALTER TABLE players ADD COLUMN log_disconnects INTEGER DEFAULT 0',
+  },
+  {
+    table: 'players',
+    column: 'log_admin_access',
+    ddl: 'ALTER TABLE players ADD COLUMN log_admin_access INTEGER DEFAULT 0',
+  },
+  {
+    table: 'players',
+    column: 'log_destroyed_out',
+    ddl: 'ALTER TABLE players ADD COLUMN log_destroyed_out INTEGER DEFAULT 0',
+  },
+  {
+    table: 'players',
+    column: 'log_destroyed_in',
+    ddl: 'ALTER TABLE players ADD COLUMN log_destroyed_in INTEGER DEFAULT 0',
+  },
+  {
+    table: 'players',
+    column: 'log_build_items',
+    ddl: "ALTER TABLE players ADD COLUMN log_build_items TEXT DEFAULT '{}'",
+  },
+  { table: 'players', column: 'log_killed_by', ddl: "ALTER TABLE players ADD COLUMN log_killed_by TEXT DEFAULT '{}'" },
+  {
+    table: 'players',
+    column: 'log_damage_detail',
+    ddl: "ALTER TABLE players ADD COLUMN log_damage_detail TEXT DEFAULT '{}'",
+  },
+  {
+    table: 'players',
+    column: 'log_cheat_flags',
+    ddl: "ALTER TABLE players ADD COLUMN log_cheat_flags TEXT DEFAULT '[]'",
+  },
+  { table: 'players', column: 'playtime_first_seen', ddl: 'ALTER TABLE players ADD COLUMN playtime_first_seen TEXT' },
+  { table: 'players', column: 'playtime_last_login', ddl: 'ALTER TABLE players ADD COLUMN playtime_last_login TEXT' },
+  { table: 'players', column: 'playtime_last_seen', ddl: 'ALTER TABLE players ADD COLUMN playtime_last_seen TEXT' },
+  // v20→v21（_ensureSaveSnapshotSchema 每啟動也會補 —— 登記於此讓清單完整、單一出口可稽核）
+  {
+    table: 'players',
+    column: 'has_save_snapshot',
+    ddl: 'ALTER TABLE players ADD COLUMN has_save_snapshot INTEGER DEFAULT 0',
+  },
+  {
+    table: 'players',
+    column: 'last_save_snapshot_at',
+    ddl: 'ALTER TABLE players ADD COLUMN last_save_snapshot_at TEXT',
+  },
+  // v23→v24
+  { table: 'quests', column: 'time', ddl: "ALTER TABLE quests ADD COLUMN time TEXT DEFAULT '{}'" },
+  { table: 'quests', column: 'items', ddl: "ALTER TABLE quests ADD COLUMN items TEXT DEFAULT '[]'" },
+  { table: 'quests', column: 'pos_x', ddl: 'ALTER TABLE quests ADD COLUMN pos_x REAL' },
+  { table: 'quests', column: 'pos_y', ddl: 'ALTER TABLE quests ADD COLUMN pos_y REAL' },
+  { table: 'quests', column: 'pos_z', ddl: 'ALTER TABLE quests ADD COLUMN pos_z REAL' },
+  { table: 'players', column: 'save_last_login', ddl: 'ALTER TABLE players ADD COLUMN save_last_login TEXT' },
+  // v24→v25
+  {
+    table: 'timeline_snapshots',
+    column: 'structures_state_hash',
+    ddl: 'ALTER TABLE timeline_snapshots ADD COLUMN structures_state_hash TEXT',
+  },
+  {
+    table: 'timeline_snapshots',
+    column: 'structures_ref_snapshot_id',
+    ddl: 'ALTER TABLE timeline_snapshots ADD COLUMN structures_ref_snapshot_id INTEGER',
+  },
+  // v25→v26
+  {
+    table: 'timeline_snapshots',
+    column: 'backpacks_state_hash',
+    ddl: 'ALTER TABLE timeline_snapshots ADD COLUMN backpacks_state_hash TEXT',
+  },
+  {
+    table: 'timeline_snapshots',
+    column: 'backpacks_ref_snapshot_id',
+    ddl: 'ALTER TABLE timeline_snapshots ADD COLUMN backpacks_ref_snapshot_id INTEGER',
+  },
+  {
+    table: 'timeline_snapshots',
+    column: 'houses_state_hash',
+    ddl: 'ALTER TABLE timeline_snapshots ADD COLUMN houses_state_hash TEXT',
+  },
+  {
+    table: 'timeline_snapshots',
+    column: 'houses_ref_snapshot_id',
+    ddl: 'ALTER TABLE timeline_snapshots ADD COLUMN houses_ref_snapshot_id INTEGER',
+  },
+  // 已知限制：drift 修復補回此欄時不重跑 v26 的「既有列回填 keyframe=1」——哪些 snapshot 曾是
+  // keyframe 已不可考，補 0 或補 1 都無法還原真實語意；重建會退化為 fromId=T 的防禦路徑，
+  // 並在下一個新寫入的 keyframe（≤12 tick）自癒。
+  {
+    table: 'timeline_snapshots',
+    column: 'players_keyframe',
+    ddl: 'ALTER TABLE timeline_snapshots ADD COLUMN players_keyframe INTEGER DEFAULT 0',
+  },
+];
+
 const READ_ONLY_RAW_PRAGMAS = new Set([
   'table_info',
   'table_xinfo',
@@ -67,6 +237,7 @@ class HumanitZDB {
   _dbPath: string;
   _memory: boolean;
   _log: Logger;
+  private _debugLog: ReturnType<typeof createStructuredLogger>;
   private _db: Database.Database | null;
 
   // ── Repository references ──
@@ -90,6 +261,7 @@ class HumanitZDB {
     this._dbPath = options.dbPath ?? DEFAULT_DB_PATH;
     this._memory = options.memory ?? false;
     this._log = createLogger(options.label, 'DB');
+    this._debugLog = createStructuredLogger(this._log.label);
     this._db = null;
   }
 
@@ -324,8 +496,27 @@ class HumanitZDB {
     this._handle.pragma('temp_store = MEMORY');
     this._handle.pragma('cache_size = -16000'); // negative = KiB, i.e. 16 MiB page cache
     this._handle.pragma('mmap_size = 268435456'); // 256 MiB
+    // 64 MiB：checkpoint 後把 -wal 截斷回上限（WAL 檔預設永不縮小，截至 v26 分析時生產實測曾膨脹到 1.9GB）
+    this._handle.pragma('journal_size_limit = 67108864');
+    // 限制 PRAGMA optimize / ANALYZE 的掃描列數，讓週期性 optimize 維持毫秒級
+    this._handle.pragma('analysis_limit = 1000');
 
-    this._applySchema();
+    try {
+      this._applySchema();
+    } catch (err) {
+      // Migration 失敗防護：BEGIN…COMMIT 之間丟出例外時交易仍掛著，且 this._db
+      // 已設值會讓下次 init() 早退、留下半初始化狀態。這裡 ROLLBACK 未完成的
+      // 交易、關閉 handle 並歸零狀態後 rethrow，讓重啟／重試走乾淨路徑。
+      // ROLLBACK 自身失敗（例如 I/O error）不得遮蔽原始錯誤、也不得跳過 close()。
+      try {
+        if (this._handle.inTransaction) this._handle.exec('ROLLBACK');
+      } catch (rbErr) {
+        this._log.error('Rollback after failed migration also failed:', errMsg(rbErr));
+      } finally {
+        this.close();
+      }
+      throw err;
+    }
 
     // Instantiate repositories
     this._playerRepo = new PlayerRepository(this._handle, this._log.label);
@@ -348,8 +539,24 @@ class HumanitZDB {
     this._log.info(`Database ready (v${version}, ${this._memory ? 'in-memory' : this._dbPath})`);
   }
 
+  /**
+   * PRAGMA optimize — SQLite 官方建議的常駐維護程序（連線關閉前 + 週期性執行）。
+   * init() 已設 analysis_limit=1000，執行時間為毫秒級。
+   */
+  optimize(): void {
+    if (!this._db) return;
+    this._handle.pragma('optimize');
+  }
+
   close(): void {
     if (this._db) {
+      // close() 也在 init() 失敗回復路徑被呼叫；optimize 失敗不得遮蔽原始錯誤，故吞例外。
+      try {
+        this.optimize();
+      } catch (err) {
+        // Logger 無 debug level —— 走 structured logger，預設 'info' min level 下不吵。
+        this._debugLog.debug(`close(): PRAGMA optimize failed (non-fatal): ${errMsg(err)}`);
+      }
       this._db.close();
       this._db = null;
       this._playerRepo = null;
@@ -1423,6 +1630,109 @@ class HumanitZDB {
         this._log.info('Migration v24→v25: timeline structure-dedup columns + dropped idx_tl_structures_owner');
       }
 
+      // v25 → v26: schema 清理 — 移除查證無用的 14 個索引、從未使用的 HOWYAGARN
+      // hmz_* 十張表、以及 players 兩個 DEPRECATED 欄位。
+      if (fromVersion < 26) {
+        // 順序防護：漂移的生產 DB 可能缺 idx_activity_recent_dedupe（v16→v17
+        // migration 疑似靜默失敗），此時 hasRecentActivity 靠 idx_activity_source
+        // 將就。必須先建 dedupe 索引、再 DROP idx_activity_source，查詢才不會在
+        // migration 中途失去索引支援。
+        this._handle.exec(
+          'CREATE INDEX IF NOT EXISTS idx_activity_recent_dedupe ON activity_log(type, steam_id, source, created_at DESC, id DESC)',
+        );
+
+        // 14 個查證無讀者的索引（純寫入放大）；schema.ts 已同步移除，
+        // 否則啟動時的完整性套用（_ensureSchemaCompleteness）會把它們建回來。
+        this._handle.exec(`
+          DROP INDEX IF EXISTS idx_activity_source;
+          DROP INDEX IF EXISTS idx_activity_item;
+          DROP INDEX IF EXISTS idx_item_inst_active;
+          DROP INDEX IF EXISTS idx_item_grp_active;
+          DROP INDEX IF EXISTS idx_item_inst_group;
+          DROP INDEX IF EXISTS idx_item_mov_item;
+          DROP INDEX IF EXISTS idx_tl_ai_type;
+          DROP INDEX IF EXISTS idx_tl_ai_cat;
+          DROP INDEX IF EXISTS idx_tl_houses_uid;
+          DROP INDEX IF EXISTS idx_chat_type;
+          DROP INDEX IF EXISTS idx_chat_steam;
+          DROP INDEX IF EXISTS idx_chat_player;
+          DROP INDEX IF EXISTS idx_world_drops_item;
+          DROP INDEX IF EXISTS idx_world_drops_pos;
+        `);
+
+        // HOWYAGARN hmz_* 表：git 全歷史零讀寫者；生產 DB 不存在，
+        // 只有舊 schema 新裝的 DB 才會有 —— 一併清除。
+        this._handle.exec(`
+          DROP TABLE IF EXISTS hmz_players;
+          DROP TABLE IF EXISTS hmz_factions;
+          DROP TABLE IF EXISTS hmz_bounties;
+          DROP TABLE IF EXISTS hmz_quests;
+          DROP TABLE IF EXISTS hmz_quest_progress;
+          DROP TABLE IF EXISTS hmz_territories;
+          DROP TABLE IF EXISTS hmz_transactions;
+          DROP TABLE IF EXISTS hmz_wipes;
+          DROP TABLE IF EXISTS hmz_events;
+          DROP TABLE IF EXISTS hmz_event_scores;
+        `);
+
+        // players DEPRECATED 欄位：name_history（由 player_aliases 取代）、
+        // kill_tracker（由 bot_state['kill_tracker'] 取代）。兩欄無索引/trigger/view
+        // 引用（已查證）。重跑安全：先用 PRAGMA 檢查欄位是否存在，不解析錯誤
+        // 訊息 ——「欄位仍被 index/view 引用」的失敗訊息也含 "no such column"，
+        // 用 regex 吞錯會把真失敗誤當重跑而 COMMIT 掉不完整的 migration。
+        const playerColumns = new Set(
+          (this._handle.prepare('PRAGMA table_info(players)').all() as Array<{ name: string }>).map((row) => row.name),
+        );
+        for (const column of ['name_history', 'kill_tracker']) {
+          if (!playerColumns.has(column)) continue; // 重跑：欄位已移除
+          this._handle.exec(`ALTER TABLE players DROP COLUMN ${column}`);
+        }
+
+        // timeline 寫入量削減：backpacks / houses 套用 v25 structures 的 hash-ref
+        // dedup 模式（欄位加在 timeline_snapshots；重跑安全比照 v24/v25 ——
+        // "duplicate column" 訊息無歧義，可 regex 吞錯）。
+        const v26TimelineColumns = [
+          'ALTER TABLE timeline_snapshots ADD COLUMN backpacks_state_hash TEXT',
+          'ALTER TABLE timeline_snapshots ADD COLUMN backpacks_ref_snapshot_id INTEGER',
+          'ALTER TABLE timeline_snapshots ADD COLUMN houses_state_hash TEXT',
+          'ALTER TABLE timeline_snapshots ADD COLUMN houses_ref_snapshot_id INTEGER',
+        ];
+        for (const ddl of v26TimelineColumns) {
+          try {
+            this._handle.exec(ddl);
+          } catch (err) {
+            if (!/duplicate column/i.test(errMsg(err))) throw err;
+          }
+        }
+
+        // timeline_players delta 寫入（keyframe 標記 + overlay 重建）：
+        // players_keyframe 標記「寫入了全名冊」的 snapshot。既有 snapshot 全是
+        // 舊制全量寫入 → 天然是 keyframe，一次性回填 1（只在欄位首次加入時跑，
+        // 重跑 migration 不得把 delta snapshot 誤標成 keyframe）。
+        let addedPlayersKeyframe = false;
+        try {
+          this._handle.exec('ALTER TABLE timeline_snapshots ADD COLUMN players_keyframe INTEGER DEFAULT 0');
+          addedPlayersKeyframe = true;
+        } catch (err) {
+          if (!/duplicate column/i.test(errMsg(err))) throw err;
+        }
+        if (addedPlayersKeyframe) {
+          this._handle.exec('UPDATE timeline_snapshots SET players_keyframe = 1');
+        }
+
+        // trails 查詢（getPlayerPositionHistory 的 steam_id 等值查找）需要複合索引；
+        // 原單欄索引是它的 prefix、直接汰換。順序防護：先建複合、再 DROP 單欄，
+        // trails 查詢全程有索引可用。（overlay 重建本身走既有 idx_tl_players_snap。）
+        this._handle.exec(
+          'CREATE INDEX IF NOT EXISTS idx_tl_players_steam_snap ON timeline_players(steam_id, snapshot_id)',
+        );
+        this._handle.exec('DROP INDEX IF EXISTS idx_tl_players_steam');
+
+        this._log.info(
+          'Migration v25→v26: ensured idx_activity_recent_dedupe, dropped 14 unused indexes, 10 unused hmz_* tables, players.name_history + players.kill_tracker; timeline backpacks/houses dedup columns, players_keyframe backfill + idx_tl_players_steam_snap',
+        );
+      }
+
       this._ensureItemMovementsInstanceIdNullable();
       this._setMeta('schema_version', String(SCHEMA_VERSION));
       this._handle.exec('COMMIT');
@@ -1434,6 +1744,76 @@ class HumanitZDB {
     const repairedSaveSnapshotSchema = this._ensureSaveSnapshotSchema();
     if (repairedSaveSnapshotSchema) {
       this._log.info('Schema repair: ensured player_details and save snapshot marker columns');
+    }
+
+    this._ensureSchemaCompleteness();
+  }
+
+  /**
+   * 冪等 schema 完整性套用（永久性 drift 修復）。
+   *
+   * 背景：生產 DB 曾因 migration 靜默失敗而缺表/缺索引（例如 v17 的
+   * idx_activity_recent_dedupe），版本號卻已寫入 —— 之後的啟動再也不會補建。
+   * 這裡每次啟動把 schema.ts 的全部 DDL 重新 exec 一次：全是
+   * CREATE ... IF NOT EXISTS，物件已存在即 no-op（成本毫秒級）；真的建出
+   * 缺失物件時 log warn，讓 drift 可見。
+   *
+   * 注意：schema.ts 移除的物件（如 v26 拿掉的索引）不會被這裡重建 ——
+   * 這也是為什麼 DROP 掉的索引必須同步從 schema.ts 移除。
+   */
+  _ensureSchemaCompleteness(): void {
+    // view / trigger 目前 schema.ts 尚未使用，但先納入偵測 —— 未來加了才不會漏報 drift。
+    const listObjects = () =>
+      new Set(
+        (
+          this._handle
+            .prepare(
+              "SELECT name FROM sqlite_master WHERE type IN ('table', 'index', 'view', 'trigger') AND name NOT LIKE 'sqlite_%'",
+            )
+            .all() as Array<{ name: string }>
+        ).map((row) => row.name),
+      );
+
+    const before = listObjects();
+    const repairedColumns: string[] = [];
+    const apply = () => {
+      for (const sql of ALL_TABLES) {
+        this._handle.exec(sql);
+      }
+      // 欄位級修復：CREATE IF NOT EXISTS 對既有表是 no-op，migration 加的欄位
+      // 缺失（migration 靜默失敗 / 人為 DROP）只能靠 ADDITIVE_COLUMNS 補回。
+      const tableColumns = new Map<string, Set<string>>();
+      const columnsOf = (table: string): Set<string> => {
+        let cols = tableColumns.get(table);
+        if (!cols) {
+          cols = new Set(
+            (this._handle.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map(
+              (row) => row.name,
+            ),
+          );
+          tableColumns.set(table, cols);
+        }
+        return cols;
+      };
+      for (const { table, column, ddl } of ADDITIVE_COLUMNS) {
+        if (columnsOf(table).has(column)) continue;
+        this._handle.exec(ddl);
+        columnsOf(table).add(column);
+        repairedColumns.push(`${table}.${column}`);
+      }
+    };
+    if (this._handle.inTransaction) {
+      apply();
+    } else {
+      this._handle.transaction(apply)();
+    }
+
+    const created = [...listObjects()].filter((name) => !before.has(name));
+    if (created.length > 0) {
+      this._log.warn(`Schema drift repaired — created missing objects: ${created.join(', ')}`);
+    }
+    if (repairedColumns.length > 0) {
+      this._log.warn(`Schema drift repaired — restored missing columns: ${repairedColumns.join(', ')}`);
     }
   }
 
@@ -1544,7 +1924,6 @@ class HumanitZDB {
 
         CREATE INDEX IF NOT EXISTS idx_item_mov_instance ON item_movements(instance_id);
         CREATE INDEX IF NOT EXISTS idx_item_mov_group ON item_movements(group_id);
-        CREATE INDEX IF NOT EXISTS idx_item_mov_item ON item_movements(item);
         CREATE INDEX IF NOT EXISTS idx_item_mov_created ON item_movements(created_at);
         CREATE INDEX IF NOT EXISTS idx_item_mov_attributed ON item_movements(attributed_steam_id);
       `);
