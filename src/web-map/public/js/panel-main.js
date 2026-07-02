@@ -747,6 +747,25 @@ window.Panel = window.Panel || {};
   //  SHOW PANEL (main UI init)
   // ══════════════════════════════════════════════════
 
+  /** 依 S.user.steamLinked 切換側欄 Steam 綁定列（綁定連結 ↔ 解綁按鈕）。 */
+  function updateSteamLinkRow() {
+    const row = $('#steam-link-row');
+    if (!row) return;
+    row.classList.remove('hidden');
+    const status = $('#steam-link-status');
+    const linkBtn = $('#steam-link-btn');
+    const unlinkBtn = $('#steam-unlink-btn');
+    if (S.user && S.user.steamLinked) {
+      if (status) status.textContent = i18next.t('web:auth.steam_linked_as', { steamId: S.user.steamId || '' });
+      if (linkBtn) linkBtn.classList.add('hidden');
+      if (unlinkBtn) unlinkBtn.classList.remove('hidden');
+    } else {
+      if (status) status.textContent = i18next.t('web:auth.steam_not_linked');
+      if (linkBtn) linkBtn.classList.remove('hidden');
+      if (unlinkBtn) unlinkBtn.classList.add('hidden');
+    }
+  }
+
   function showPanel() {
     if (S._refreshPoll) {
       clearInterval(S._refreshPoll);
@@ -776,6 +795,13 @@ window.Panel = window.Panel || {};
             elem.classList.toggle('tier-hidden', S.tier < min);
           });
         }
+        // /auth/refresh 回應含現查的 steamLinked/steamId —— 每輪都同步，
+        // 否則別分頁解綁後 sidebar 會 stale（不能只在 tier 變更時更新）
+        if (S.user) {
+          S.user.steamLinked = d.steamLinked;
+          S.user.steamId = d.steamId;
+          updateSteamLinkRow();
+        }
       } catch (_e) {
         /* ignore */
       }
@@ -794,6 +820,38 @@ window.Panel = window.Panel || {};
     }
     $('#user-name').textContent = S.user.displayName || S.user.username || '-';
     $('#user-tier').textContent = S.user.tier || '-';
+
+    // Steam 綁定狀態列（狀態來自 /auth/me 的 steamLinked/steamId，伺服器每請求現查）
+    updateSteamLinkRow();
+    const steamUnlinkBtn = $('#steam-unlink-btn');
+    if (steamUnlinkBtn)
+      steamUnlinkBtn.addEventListener('click', async function () {
+        if (!confirm(i18next.t('web:auth.unlink_steam_confirm'))) return;
+        // unlink 與其後的 /auth/me 刷新分開處理 —— 伺服器回 ok:true 就是
+        // 解綁成功；刷新失敗只影響顯示，不得翻成「解綁失敗」
+        try {
+          const r = await Panel.core.apiFetch('/auth/steam/unlink', { method: 'POST' });
+          const d = await r.json();
+          if (!d.ok) throw new Error(d.error || 'unlink failed');
+        } catch (_e) {
+          showToast(i18next.t('web:auth.steam_unlink_failed'));
+          return;
+        }
+        showToast(i18next.t('web:auth.steam_unlinked'));
+        try {
+          // 重新讀 /auth/me（steamLinked 是現查值）並更新顯示
+          const me = await fetch('/auth/me');
+          S.user = await me.json();
+          if (S.user.csrfToken) Panel.core.setCsrfToken(S.user.csrfToken);
+        } catch (_e) {
+          // 刷新失敗：本地已知解綁成功，就地更新狀態
+          if (S.user) {
+            S.user.steamLinked = false;
+            delete S.user.steamId;
+          }
+        }
+        updateSteamLinkRow();
+      });
 
     $$('[data-min-tier]').forEach(function (elem) {
       const min = parseInt(elem.dataset.minTier, 10);

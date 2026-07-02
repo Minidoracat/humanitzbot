@@ -51,7 +51,14 @@
   "auth": {
     "sign_in_with_discord": "使用 Discord 登录",
     "join_discord_for_full_access": "加入我们的 Discord 以获取完全访问权限",
-    "sign_out": "注销"
+    "sign_out": "注销",
+    "steam_not_linked": "Steam 未绑定",
+    "steam_linked_as": "已绑定 Steam: {{steamId}}",
+    "link_steam": "绑定 Steam",
+    "unlink_steam": "解除绑定",
+    "unlink_steam_confirm": "确定要解除 Steam 绑定？",
+    "steam_unlinked": "已解除 Steam 绑定",
+    "steam_unlink_failed": "解除 Steam 绑定失败"
   },
   "common": {
     "cancel": "取消"

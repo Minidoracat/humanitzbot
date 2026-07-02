@@ -9,7 +9,7 @@
  * Schema is applied via database.js on first run and auto-migrated on updates.
  */
 
-const SCHEMA_VERSION = 26;
+const SCHEMA_VERSION = 27;
 
 // ─── Player data ────────────────────────────────────────────────────────────
 
@@ -1291,6 +1291,35 @@ CREATE INDEX IF NOT EXISTS idx_fpe_type        ON fingerprint_events(event_type)
 CREATE INDEX IF NOT EXISTS idx_fpe_created     ON fingerprint_events(created_at);
 `;
 
+// ─── Steam ↔ Discord 帳號綁定（web panel 自助綁定 + 管理員手動綁定）────────────
+
+const USER_LINKS = `
+CREATE TABLE IF NOT EXISTS user_links (
+  discord_user_id TEXT PRIMARY KEY,
+  steam_id        TEXT NOT NULL UNIQUE,        -- UNIQUE 自帶索引，勿另建
+  verified_via    TEXT NOT NULL DEFAULT 'steam_openid', -- 'steam_openid' | 'admin_manual'
+  created_by      TEXT NOT NULL,               -- 建立者 discord id（自綁=本人；admin_manual=管理員）
+  created_at      TEXT DEFAULT (datetime('now'))
+);
+`;
+
+const USER_LINK_AUDIT = `
+CREATE TABLE IF NOT EXISTS user_link_audit (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  action          TEXT NOT NULL,               -- 'bind' | 'unbind' | 'admin_bind' | 'admin_unbind'
+  discord_user_id TEXT DEFAULT '',
+  steam_id        TEXT DEFAULT '',
+  actor_id        TEXT DEFAULT '',             -- 操作者 discord id
+  actor_tier      TEXT DEFAULT '',
+  is_test_session INTEGER DEFAULT 0,           -- 1 = E2E test session（取自 session.isTestSession），稽核查詢可過濾
+  reason          TEXT DEFAULT '',
+  ip              TEXT DEFAULT '',
+  created_at      TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_user_link_audit_discord ON user_link_audit(discord_user_id);
+CREATE INDEX IF NOT EXISTS idx_user_link_audit_steam ON user_link_audit(steam_id);
+`;
+
 // NOTE: HOWYAGARN（hmz_* faction PvP / MMOlite）十張表已於 v26 移除 —
 // git 全歷史查證零讀寫者，生產 DB 亦從未建立這些表；v26 migration 會對
 // 曾以舊 schema 新裝而建出這些表的 DB 執行 DROP TABLE IF EXISTS。
@@ -1382,6 +1411,8 @@ const ALL_TABLES = [
   PLAYER_RISK_SCORES,
   ENTITY_FINGERPRINTS,
   FINGERPRINT_EVENTS,
+  USER_LINKS,
+  USER_LINK_AUDIT,
   INDEXES,
   CONFIG_DOCUMENTS,
 ];
