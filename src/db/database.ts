@@ -41,6 +41,7 @@ import { QuestRepository } from './repositories/quest-repository.js';
 import { MetaRepository } from './repositories/meta-repository.js';
 import { WorldStateRepository } from './repositories/world-state-repository.js';
 import { BotStateRepository } from './repositories/bot-state-repository.js';
+import { UserLinksRepository } from './repositories/user-links-repository.js';
 import { yieldToEventLoop } from '../utils/async.js';
 
 const __dirname = getDirname(import.meta.url);
@@ -256,6 +257,7 @@ class HumanitZDB {
   private _timelineRepo: TimelineRepository | null = null;
   private _gameDataRepo: GameDataRepository | null = null;
   private _questRepo: QuestRepository | null = null;
+  private _userLinksRepo: UserLinksRepository | null = null;
 
   constructor(options: { dbPath?: string; memory?: boolean; label?: string } = {}) {
     this._dbPath = options.dbPath ?? DEFAULT_DB_PATH;
@@ -348,6 +350,12 @@ class HumanitZDB {
   get botState(): BotStateRepository {
     if (!this._botStateRepo) throw new Error('Database not initialized — call init() first');
     return this._botStateRepo;
+  }
+
+  /** UserLinksRepository — Steam↔Discord account links + audit trail. */
+  get userLinks(): UserLinksRepository {
+    if (!this._userLinksRepo) throw new Error('Database not initialized — call init() first');
+    return this._userLinksRepo;
   }
 
   /**
@@ -534,6 +542,7 @@ class HumanitZDB {
     this._metaRepo = new MetaRepository(this._handle, this._log.label);
     this._worldStateRepo = new WorldStateRepository(this._handle, this._log.label);
     this._botStateRepo = new BotStateRepository(this._handle, this._log.label);
+    this._userLinksRepo = new UserLinksRepository(this._handle, this._log.label);
 
     const version = this._getMeta('schema_version');
     this._log.info(`Database ready (v${version}, ${this._memory ? 'in-memory' : this._dbPath})`);
@@ -574,6 +583,7 @@ class HumanitZDB {
       this._metaRepo = null;
       this._worldStateRepo = null;
       this._botStateRepo = null;
+      this._userLinksRepo = null;
     }
   }
 
@@ -1731,6 +1741,36 @@ class HumanitZDB {
         this._log.info(
           'Migration v25→v26: ensured idx_activity_recent_dedupe, dropped 14 unused indexes, 10 unused hmz_* tables, players.name_history + players.kill_tracker; timeline backpacks/houses dedup columns, players_keyframe backfill + idx_tl_players_steam_snap',
         );
+      }
+
+      // v26 → v27: Steam↔Discord 帳號綁定 — user_links（1:1 綁定，steam_id UNIQUE
+      // 自帶索引）+ user_link_audit（綁定操作稽核）。純新表 + 索引，全部
+      // IF NOT EXISTS、重跑安全。（DDL 依慣例內嵌為歷史快照，不引用 schema.ts 常數。）
+      if (fromVersion < 27) {
+        this._handle.exec(`
+          CREATE TABLE IF NOT EXISTS user_links (
+            discord_user_id TEXT PRIMARY KEY,
+            steam_id        TEXT NOT NULL UNIQUE,
+            verified_via    TEXT NOT NULL DEFAULT 'steam_openid',
+            created_by      TEXT NOT NULL,
+            created_at      TEXT DEFAULT (datetime('now'))
+          );
+          CREATE TABLE IF NOT EXISTS user_link_audit (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            action          TEXT NOT NULL,
+            discord_user_id TEXT DEFAULT '',
+            steam_id        TEXT DEFAULT '',
+            actor_id        TEXT DEFAULT '',
+            actor_tier      TEXT DEFAULT '',
+            is_test_session INTEGER DEFAULT 0,
+            reason          TEXT DEFAULT '',
+            ip              TEXT DEFAULT '',
+            created_at      TEXT DEFAULT (datetime('now'))
+          );
+          CREATE INDEX IF NOT EXISTS idx_user_link_audit_discord ON user_link_audit(discord_user_id);
+          CREATE INDEX IF NOT EXISTS idx_user_link_audit_steam ON user_link_audit(steam_id);
+        `);
+        this._log.info('Migration v26→v27: user_links + user_link_audit tables');
       }
 
       this._ensureItemMovementsInstanceIdNullable();
