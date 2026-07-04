@@ -129,7 +129,10 @@ async function verifyAssertion(query: Record<string, unknown>, expectedReturnTo:
     return { ok: false, reason: 'nonce_expired' };
   }
   if (seenNonces.has(nonce)) return { ok: false, reason: 'nonce_replayed' };
-  // 進入網路驗證前就標記為已用，避免並發重放同一 nonce
+  // 進入網路驗證前就標記為已用，避免並發重放同一 nonce。
+  // 這行是本函式的 commit point：之前的步驟（1-7）必須是純輸入驗證（失敗不留
+  // 副作用、合法簽章的 assertion 仍可重試）；之後一律 fail-closed（僅「請求
+  // 未達 Steam」的 fetch throw 例外回收 nonce）。插入新檢查步驟時留意此邊界。
   seenNonces.set(nonce, nonceTs);
 
   // 8. 原樣 POST 全部 openid.* 參數（mode 改 check_authentication）回 Steam 驗簽

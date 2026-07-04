@@ -121,6 +121,23 @@ export class UserLinksRepository extends BaseRepository {
   }
 
   /**
+   * 「清掉同 discord 既有綁定 + 重綁 + audit」原子執行 —— 目前僅 /auth/test-login
+   * 的 e2e 重跑路徑使用。insertLink 若因 steamId 被他人綁走而爆 UNIQUE，整筆
+   * rollback（既有綁定不會被半途刪掉）。一般綁定禁止 replace 語意，勿在
+   * 非 test 路徑使用。
+   */
+  replaceLinkWithAudit(
+    link: { discordUserId: string; steamId: string; verifiedVia?: string; createdBy: string },
+    audit: UserLinkAuditEntry,
+  ): void {
+    this._handle.transaction(() => {
+      this._stmts.deleteByDiscordId.run(link.discordUserId);
+      this.insertLink(link);
+      this.insertAudit(audit);
+    })();
+  }
+
+  /**
    * delete + audit 原子執行。以 delete 的 changes 判斷：0 列（無綁定）時
    * 不寫 audit 並回 null（呼叫端 404 / unlinked:false），否則回被解綁的
    * steamId。row 內的 steam_id 於同一 transaction 讀取，杜絕 get→delete
@@ -130,6 +147,8 @@ export class UserLinksRepository extends BaseRepository {
     return this._handle.transaction((): string | null => {
       const row = this._stmts.getByDiscordId.get(discordUserId) as DbRow | undefined;
       if (!row) return null;
+      // 防禦性檢查（非防競態）：better-sqlite3 同步 + 單進程，SELECT 與 DELETE 間
+      // 不可能有並發寫入，此分支實務上不可達；留著是零成本的 defense-in-depth。
       if (this._stmts.deleteByDiscordId.run(discordUserId).changes === 0) return null;
       this.insertAudit({ ...audit, steamId: row.steam_id as string });
       return row.steam_id as string;
