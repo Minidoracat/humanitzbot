@@ -40,7 +40,7 @@ export function registerAdminActionsRoutes(app: Express, ctx: WebMapRouteContext
       return;
     }
     // Validate steam ID format
-    if (!/^\d{17}$/.test(steamId)) {
+    if (!isValidSteamId64(steamId)) {
       sendError(res, API_ERRORS.INVALID_STEAM_ID_FORMAT, 400);
       return;
     }
@@ -59,7 +59,7 @@ export function registerAdminActionsRoutes(app: Express, ctx: WebMapRouteContext
       sendError(res, API_ERRORS.MISSING_STEAM_ID, 400);
       return;
     }
-    if (!/^\d{17}$/.test(steamId)) {
+    if (!isValidSteamId64(steamId)) {
       sendError(res, API_ERRORS.INVALID_STEAM_ID_FORMAT, 400);
       return;
     }

@@ -479,9 +479,9 @@ function setupAuth(
           return res.status(503).json({ ok: false, error: 'LINKS_UNAVAILABLE' });
         }
         try {
-          // e2e 可重跑：先清掉 e2e-test 既有綁定再插入（link+audit 原子）
-          userLinks.deleteByDiscordId('e2e-test');
-          userLinks.bindWithAudit(
+          // e2e 可重跑：清掉 e2e-test 既有綁定 + 重綁 + audit 同一 transaction ——
+          // steamId 被他人綁走時整筆 rollback，不留「已刪未綁」半套狀態
+          userLinks.replaceLinkWithAudit(
             { discordUserId: 'e2e-test', steamId: requestedSteamId, createdBy: 'e2e-test' },
             {
               action: 'bind',
