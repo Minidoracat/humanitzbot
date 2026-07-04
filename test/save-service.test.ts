@@ -616,7 +616,8 @@ describe('SaveSyncPipeline syncFromCache', () => {
     assert.ok(result.itemTracking);
     assert.equal(result.itemTracking.created, 1);
     assert.equal(
-      logs.some((line) => line.includes('Item tracker purge error (non-fatal):')),
+      // v26 review: item purge 失敗改走統一維護上報（_reportMaintenanceResult）
+      logs.some((line) => line.includes('Item tracker purge failed (non-fatal):')),
       true,
     );
   });

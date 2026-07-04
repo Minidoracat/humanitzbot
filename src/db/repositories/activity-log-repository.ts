@@ -223,7 +223,6 @@ export class ActivityLogRepository extends BaseRepository {
     hasRecentActivity: Database.Statement;
     purgeOldActivity: Database.Statement;
     countActivity: Database.Statement;
-    countActivityBySource: Database.Statement;
     countByType: Database.Statement;
     hourlyDistribution: Database.Statement;
     dailyCount: Database.Statement;
@@ -282,7 +281,6 @@ export class ActivityLogRepository extends BaseRepository {
       `),
       purgeOldActivity: this._handle.prepare("DELETE FROM activity_log WHERE created_at < datetime('now', ?)"),
       countActivity: this._handle.prepare('SELECT COUNT(*) as count FROM activity_log'),
-      countActivityBySource: this._handle.prepare('SELECT source, COUNT(*) as count FROM activity_log GROUP BY source'),
       countByType: this._handle.prepare(
         'SELECT type, COUNT(*) as count FROM activity_log GROUP BY type ORDER BY count DESC',
       ),
@@ -870,10 +868,5 @@ export class ActivityLogRepository extends BaseRepository {
       }
     })();
     return fixed;
-  }
-
-  /** Get activity counts grouped by source. */
-  getActivityCountBySource() {
-    return this._stmts.countActivityBySource.all();
   }
 }

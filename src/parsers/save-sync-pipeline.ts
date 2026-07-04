@@ -437,9 +437,10 @@ export class SaveSyncPipeline {
         this._deps.log.info(
           `Item tracker purge: ${String(purgeResult.movementsDeleted)} movement(s), ${String(purgeResult.itemsDeleted)} item(s), ${String(purgeResult.groupsDeleted)} group(s) removed`,
         );
+        this._reportMaintenanceResult('Item tracker purge', null);
       } catch (err: unknown) {
         purgeMs = this._elapsedSince(purgeStart);
-        this._deps.log.warn('Item tracker purge error (non-fatal):', errMsg(err));
+        this._reportMaintenanceResult('Item tracker purge', err);
       }
     }
 

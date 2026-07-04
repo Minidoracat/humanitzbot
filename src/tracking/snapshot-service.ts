@@ -749,7 +749,10 @@ export class SnapshotService {
    */
   private _hashRows(sigs: string[]): string {
     const sorted = [...sigs].sort();
-    return createHash('sha1')
+    // sha256（非安全用途，sha1 即足夠，但一行成本可同時消除 SAST 告警與理論碰撞）。
+    // hash 只在同一 process 記憶體內比對（重啟後 null 強制全量寫入），不與 DB 既存值
+    // 跨版本比較，換演算法安全。
+    return createHash('sha256')
       .update(`${String(sorted.length)}\n${sorted.join('\n')}`)
       .digest('hex');
   }

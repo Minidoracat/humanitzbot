@@ -431,6 +431,13 @@ export class TimelineRepository extends BaseRepository {
    * 不會再出現，但 K 的名冊仍含他 —— 幽靈窗至多一個 keyframe 週期
    * （KEYFRAME_EVERY=12 tick ≈ 1hr），下一個 keyframe 起消失。
    *
+   * 已知邊界 2（deliberate，同類）：retention 邊界的離線「狀態」回退 —— purge 只
+   * 保護 cutoff 前最新的 keyframe 當重建基準，K 與 cutoff 之間被清掉的 delta
+   * 不保護。若某離線玩家的最後一次狀態變化（如下線）落在被清掉的 delta 裡，
+   * 保留窗最舊約一個 keyframe 週期的 snapshot 會把他重建成 K 當下的舊狀態
+   * （如仍顯示 online）。範圍僅最舊 ≲1hr 檢視窗、隨邊界老化自癒、不會出錯；
+   * 若日後要求精確，改為保護 [K, cutoff) 整段 delta（多留 ≤11 個 snapshot 的列）。
+   *
    * 防禦 fallback：找不到 K（理論上不會 —— migration 把歷史 snapshot 全標
    * keyframe、重啟第一 tick 必寫 keyframe、purge 保護最舊基準）時退回只讀
    * snapshot 自身的列。

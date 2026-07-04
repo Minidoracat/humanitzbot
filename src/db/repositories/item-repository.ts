@@ -80,7 +80,6 @@ export class ItemRepository extends BaseRepository {
     searchItemInstancesPage: Database.Statement;
     searchItemInstancesPageByLocation: Database.Statement;
     purgeOldLostItems: Database.Statement;
-    getItemInstancesByGroup: Database.Statement;
     // Item groups
     insertItemGroup: Database.Statement;
     updateItemGroupQuantity: Database.Statement;
@@ -194,8 +193,6 @@ export class ItemRepository extends BaseRepository {
           WHERE item_movements.instance_id = item_instances.id
         )
     `),
-      getItemInstancesByGroup: this._handle.prepare('SELECT * FROM item_instances WHERE group_id = ? AND lost = 0'),
-
       // Item groups (fungible item tracking)
       insertItemGroup: this._handle.prepare(`
       INSERT INTO item_groups (fingerprint, item, durability, ammo, attachments, cap, max_dur, location_type, location_id, location_slot, pos_x, pos_y, pos_z, quantity, stack_size, first_seen, last_seen, lost)
@@ -543,10 +540,6 @@ export class ItemRepository extends BaseRepository {
 
   purgeOldLostItems(age = '-30 days') {
     return this._stmts.purgeOldLostItems.run(age);
-  }
-
-  getItemInstancesByGroup(groupId: number) {
-    return this._stmts.getItemInstancesByGroup.all(groupId);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
