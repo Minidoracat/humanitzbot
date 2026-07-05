@@ -1746,18 +1746,21 @@ class HumanitZDB {
       // v26 → v27: Steam↔Discord 帳號綁定 — user_links（1:1 綁定，steam_id UNIQUE
       // 自帶索引）+ user_link_audit（綁定操作稽核）。純新表 + 索引，全部
       // IF NOT EXISTS、重跑安全。（DDL 依慣例內嵌為歷史快照，不引用 schema.ts 常數。）
+      // CHECK 只在建表當下生效——對曾跑過無 CHECK 早期 v27 的 dev DB 是 no-op。
       if (fromVersion < 27) {
         this._handle.exec(`
           CREATE TABLE IF NOT EXISTS user_links (
             discord_user_id TEXT PRIMARY KEY,
             steam_id        TEXT NOT NULL UNIQUE,
-            verified_via    TEXT NOT NULL DEFAULT 'steam_openid',
+            verified_via    TEXT NOT NULL DEFAULT 'steam_openid'
+                            CHECK (verified_via IN ('steam_openid', 'admin_manual')),
             created_by      TEXT NOT NULL,
             created_at      TEXT DEFAULT (datetime('now'))
           );
           CREATE TABLE IF NOT EXISTS user_link_audit (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            action          TEXT NOT NULL,
+            action          TEXT NOT NULL
+                            CHECK (action IN ('bind', 'unbind', 'admin_bind', 'admin_unbind')),
             discord_user_id TEXT DEFAULT '',
             steam_id        TEXT DEFAULT '',
             actor_id        TEXT DEFAULT '',

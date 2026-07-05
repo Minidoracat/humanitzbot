@@ -317,7 +317,10 @@ describe('Integration: Steam link/unlink flow', () => {
 
   it('binding again while already linked returns the 409 conflict page', async () => {
     const jar: Jar = new Map();
-    await login(booted.url, jar); // e2e-test 已在上一測綁 STEAM_A
+    await login(booted.url, jar);
+    // 自備前置狀態（e2e-test 已綁 STEAM_A）——不依賴前一測的副作用，單跑 / 重排也成立
+    booted.db.userLinks.deleteByDiscordId('e2e-test');
+    booted.db.userLinks.insertLink({ discordUserId: 'e2e-test', steamId: STEAM_A, createdBy: 'e2e-test' });
     const { state, returnTo } = await initiateLink(booted.url, jar);
     const qp = assertionParams(returnTo, STEAM_B, state);
     const res = await fetch(`${booted.url}/auth/steam/callback?${qp.toString()}`, {
@@ -330,6 +333,9 @@ describe('Integration: Steam link/unlink flow', () => {
   it('POST /auth/steam/unlink removes the link and writes an unbind audit', async () => {
     const jar: Jar = new Map();
     const csrf = await login(booted.url, jar);
+    // 自備前置狀態（e2e-test 已綁 STEAM_A）——不依賴前面測試的綁定副作用
+    booted.db.userLinks.deleteByDiscordId('e2e-test');
+    booted.db.userLinks.insertLink({ discordUserId: 'e2e-test', steamId: STEAM_A, createdBy: 'e2e-test' });
     const res = await fetch(`${booted.url}/auth/steam/unlink`, {
       method: 'POST',
       headers: { cookie: cookieHeader(jar), 'x-csrf-token': csrf },
@@ -362,6 +368,8 @@ describe('Integration: Steam link/unlink flow', () => {
   });
 
   it('binding a Steam ID already held by another Discord account returns 409', async () => {
+    // 自備前置狀態（e2e-test 未綁定）——不依賴前一測的 unlink 副作用
+    booted.db.userLinks.deleteByDiscordId('e2e-test');
     booted.db.userLinks.insertLink({ discordUserId: '111111111111111111', steamId: STEAM_C, createdBy: 'seed' });
     const jar: Jar = new Map();
     await login(booted.url, jar);

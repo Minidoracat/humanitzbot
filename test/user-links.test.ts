@@ -52,6 +52,15 @@ describe('Schema v27 — user_links migration', () => {
       for (const name of indexes) {
         assert.ok(!/user_links/.test(name), `no named index expected on user_links, found ${name}`);
       }
+      // CHECK 值域（migration DDL 路徑）：兩張表的非法 enum 值都必須被 DB 擋下
+      assert.throws(
+        () => db.userLinks.insertAudit({ action: 'bogus', discordUserId: 'd', steamId: 's', actorId: 'a' }),
+        /CHECK constraint failed/,
+      );
+      assert.throws(
+        () => db.userLinks.insertLink({ discordUserId: 'd', steamId: 's', verifiedVia: 'bogus', createdBy: 'd' }),
+        /CHECK constraint failed/,
+      );
     } finally {
       db.close();
     }
@@ -100,6 +109,22 @@ describe('UserLinksRepository', () => {
             createdBy: 'discord-2',
           }),
         /UNIQUE constraint failed: user_links\.steam_id/,
+      );
+
+      // CHECK 值域（schema.ts 路徑）：兩張表的非法 enum 值都必須被 DB 擋下
+      assert.throws(
+        () =>
+          db.userLinks.insertLink({
+            discordUserId: 'discord-3',
+            steamId: '76561198000000003',
+            verifiedVia: 'bogus',
+            createdBy: 'discord-3',
+          }),
+        /CHECK constraint failed/,
+      );
+      assert.throws(
+        () => db.userLinks.insertAudit({ action: 'bogus', discordUserId: 'd', steamId: 's', actorId: 'a' }),
+        /CHECK constraint failed/,
       );
 
       const link = db.userLinks.getByDiscordId('discord-1');
@@ -211,6 +236,42 @@ describe('UserLinksRepository', () => {
       const none = db.userLinks.unbindWithAudit('d1', { action: 'unbind', discordUserId: 'd1', actorId: 'd1' });
       assert.equal(none, null);
       assert.equal(db.userLinks.getAuditFor('d1').total, 2, 'no ghost audit for a no-op unbind');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('replaceLinkWithAudit rolls back when the new steamId is already bound to someone else', () => {
+    const db = new HumanitZDB({ memory: true, label: 'V27Replace' });
+    db.init();
+    try {
+      db.userLinks.insertLink({ discordUserId: 'd1', steamId: '76561198000000001', createdBy: 'd1' });
+      db.userLinks.insertLink({ discordUserId: 'd2', steamId: '76561198000000002', createdBy: 'd2' });
+
+      // d1 改綁 d2 持有的 steamId → insertLink 爆 UNIQUE → 整筆 rollback，
+      // 既有綁定不得被 delete 半途刪掉（docstring 宣稱的行為）
+      assert.throws(
+        () =>
+          db.userLinks.replaceLinkWithAudit(
+            { discordUserId: 'd1', steamId: '76561198000000002', createdBy: 'd1' },
+            { action: 'bind', discordUserId: 'd1', steamId: '76561198000000002', actorId: 'd1' },
+          ),
+        /UNIQUE constraint failed: user_links\.steam_id/,
+      );
+      assert.equal(
+        db.userLinks.getByDiscordId('d1')?.steam_id,
+        '76561198000000001',
+        'original link must survive the failed replace',
+      );
+      assert.equal(db.userLinks.getAuditFor('d1').total, 0, 'no audit row for the failed replace');
+
+      // 正常 replace：舊綁定換新 + audit 落地
+      db.userLinks.replaceLinkWithAudit(
+        { discordUserId: 'd1', steamId: '76561198000000003', createdBy: 'd1' },
+        { action: 'bind', discordUserId: 'd1', steamId: '76561198000000003', actorId: 'd1' },
+      );
+      assert.equal(db.userLinks.getByDiscordId('d1')?.steam_id, '76561198000000003');
+      assert.equal(db.userLinks.getAuditFor('d1').total, 1);
     } finally {
       db.close();
     }

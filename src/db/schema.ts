@@ -1292,12 +1292,17 @@ CREATE INDEX IF NOT EXISTS idx_fpe_created     ON fingerprint_events(created_at)
 `;
 
 // ─── Steam ↔ Discord 帳號綁定（web panel 自助綁定 + 管理員手動綁定）────────────
+// 注意：inline CHECK 不可 ALTER，只在建表當下生效（fresh install 或 v27 首次
+// migration）；對已存在的表 IF NOT EXISTS 是 no-op、drift 修復也不比對 CHECK 內容。
+// 加新 enum 值需 12-step table rebuild，並同步 database.ts 遷移快照與
+// user-links-repository.ts 的 TS union。
 
 const USER_LINKS = `
 CREATE TABLE IF NOT EXISTS user_links (
   discord_user_id TEXT PRIMARY KEY,
   steam_id        TEXT NOT NULL UNIQUE,        -- UNIQUE 自帶索引，勿另建
-  verified_via    TEXT NOT NULL DEFAULT 'steam_openid', -- 'steam_openid' | 'admin_manual'
+  verified_via    TEXT NOT NULL DEFAULT 'steam_openid'  -- 值域由 DB CHECK 把關（defense-in-depth）
+                  CHECK (verified_via IN ('steam_openid', 'admin_manual')),
   created_by      TEXT NOT NULL,               -- 建立者 discord id（自綁=本人；admin_manual=管理員）
   created_at      TEXT DEFAULT (datetime('now'))
 );
@@ -1306,7 +1311,8 @@ CREATE TABLE IF NOT EXISTS user_links (
 const USER_LINK_AUDIT = `
 CREATE TABLE IF NOT EXISTS user_link_audit (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  action          TEXT NOT NULL,               -- 'bind' | 'unbind' | 'admin_bind' | 'admin_unbind'
+  action          TEXT NOT NULL                -- 值域由 DB CHECK 把關（defense-in-depth）
+                  CHECK (action IN ('bind', 'unbind', 'admin_bind', 'admin_unbind')),
   discord_user_id TEXT DEFAULT '',
   steam_id        TEXT DEFAULT '',
   actor_id        TEXT DEFAULT '',             -- 操作者 discord id

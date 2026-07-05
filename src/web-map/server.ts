@@ -897,7 +897,9 @@ class WebMapServer {
         res: import('express').Response,
         _next: import('express').NextFunction,
       ) => {
-        console.error(`[WEB MAP] Unhandled route error: ${req.method} ${req.originalUrl} —`, errMsg(err));
+        // 只記 path（不含 query，避免洩漏 OAuth code/state 等敏感參數）並剝 CR/LF 防 log forging
+        const safePath = req.path.replace(/[\r\n\t]+/g, ' ');
+        console.error(`[WEB MAP] Unhandled route error: ${req.method} ${safePath} —`, errMsg(err));
         if (!res.headersSent) {
           sendError(res, API_ERRORS.INTERNAL_SERVER_ERROR, 500);
         }

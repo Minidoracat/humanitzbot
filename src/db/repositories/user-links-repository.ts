@@ -7,6 +7,9 @@ function _escapeLike(term: string): string {
   return term.replace(/[\\%_]/g, '\\$&');
 }
 
+/** 與 DB CHECK 值域同步（schema.ts / database.ts v27 migration）。 */
+export type VerifiedVia = 'steam_openid' | 'admin_manual';
+
 export interface UserLinkAuditEntry {
   action: 'bind' | 'unbind' | 'admin_bind' | 'admin_unbind';
   discordUserId?: string;
@@ -92,7 +95,7 @@ export class UserLinksRepository extends BaseRepository {
    * Discord user already has a link (PK) or the Steam ID is already bound (UNIQUE).
    * Callers translate that to HTTP 409.
    */
-  insertLink(link: { discordUserId: string; steamId: string; verifiedVia?: string; createdBy: string }) {
+  insertLink(link: { discordUserId: string; steamId: string; verifiedVia?: VerifiedVia; createdBy: string }) {
     return this._stmts.insertLink.run(
       link.discordUserId,
       link.steamId,
@@ -111,7 +114,7 @@ export class UserLinksRepository extends BaseRepository {
    * 稽核」的半套狀態。constraint 錯誤照樣往上拋（呼叫端轉譯 409）。
    */
   bindWithAudit(
-    link: { discordUserId: string; steamId: string; verifiedVia?: string; createdBy: string },
+    link: { discordUserId: string; steamId: string; verifiedVia?: VerifiedVia; createdBy: string },
     audit: UserLinkAuditEntry,
   ): void {
     this._handle.transaction(() => {
@@ -127,7 +130,7 @@ export class UserLinksRepository extends BaseRepository {
    * 非 test 路徑使用。
    */
   replaceLinkWithAudit(
-    link: { discordUserId: string; steamId: string; verifiedVia?: string; createdBy: string },
+    link: { discordUserId: string; steamId: string; verifiedVia?: VerifiedVia; createdBy: string },
     audit: UserLinkAuditEntry,
   ): void {
     this._handle.transaction(() => {

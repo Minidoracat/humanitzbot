@@ -426,7 +426,7 @@ function setupAuth(
   });
   app.use((err: Error & { code?: string }, req: Request, res: Response, next: NextFunction) => {
     if (err.code === 'EBADCSRFTOKEN') {
-      console.warn(`[AUTH] CSRF rejected: ${req.method} ${req.originalUrl}`);
+      console.warn(`[AUTH] CSRF rejected: ${req.method} ${req.path.replace(/[\r\n\t]+/g, ' ')}`);
       return res.status(403).json({ ok: false, error: 'CSRF_REJECTED', message: 'Invalid or missing CSRF token' });
     }
     next(err);
