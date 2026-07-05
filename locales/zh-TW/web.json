@@ -51,7 +51,14 @@
   "auth": {
     "sign_in_with_discord": "使用 Discord 登入",
     "join_discord_for_full_access": "加入我們的 Discord 獲得完整存取權限",
-    "sign_out": "登出"
+    "sign_out": "登出",
+    "steam_not_linked": "Steam 未綁定",
+    "steam_linked_as": "已綁定 Steam: {{steamId}}",
+    "link_steam": "綁定 Steam",
+    "unlink_steam": "解除綁定",
+    "unlink_steam_confirm": "確定要解除 Steam 綁定？",
+    "steam_unlinked": "已解除 Steam 綁定",
+    "steam_unlink_failed": "解除 Steam 綁定失敗"
   },
   "common": {
     "cancel": "取消"

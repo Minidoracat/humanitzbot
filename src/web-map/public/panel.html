@@ -310,6 +310,13 @@
               </div>
             </div>
           </div>
+          <div id="steam-link-row" class="sidebar-full mb-2 hidden">
+            <div class="flex items-center justify-between gap-1.5">
+              <span id="steam-link-status" class="text-[10px] text-muted truncate" data-i18n="web:auth.steam_not_linked">Steam not linked</span>
+              <a id="steam-link-btn" href="/auth/steam/link" class="text-[10px] text-accent hover:underline shrink-0" data-i18n="web:auth.link_steam">Link Steam</a>
+              <button id="steam-unlink-btn" type="button" class="hidden text-[10px] text-red-400/80 hover:text-red-300 shrink-0" data-i18n="web:auth.unlink_steam">Unlink</button>
+            </div>
+          </div>
           <select id="lang-switcher" class="input-field w-full text-xs mb-2" title="Language" data-i18n-attr='{"title":"web:sidebar.language"}'>
             <option value="en" data-i18n="web:sidebar.languages.en">English</option>
             <option value="zh-TW" data-i18n="web:sidebar.languages.zh_tw">繁體中文</option>

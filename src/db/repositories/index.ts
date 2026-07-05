@@ -14,6 +14,7 @@ export { MetaRepository } from './meta-repository.js';
 export { PlayerRepository } from './player-repository.js';
 export { QuestRepository } from './quest-repository.js';
 export { TimelineRepository } from './timeline-repository.js';
+export { UserLinksRepository } from './user-links-repository.js';
 export { WorldObjectRepository } from './world-object-repository.js';
 export { WorldStateRepository } from './world-state-repository.js';
 export { type DbRow, _json } from './db-utils.js';

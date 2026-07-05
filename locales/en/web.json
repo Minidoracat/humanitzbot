@@ -51,7 +51,14 @@
   "auth": {
     "sign_in_with_discord": "Sign in with Discord",
     "join_discord_for_full_access": "Join our Discord for full access",
-    "sign_out": "Sign out"
+    "sign_out": "Sign out",
+    "steam_not_linked": "Steam not linked",
+    "steam_linked_as": "Linked: {{steamId}}",
+    "link_steam": "Link Steam",
+    "unlink_steam": "Unlink",
+    "unlink_steam_confirm": "Unlink your Steam account?",
+    "steam_unlinked": "Steam account unlinked",
+    "steam_unlink_failed": "Failed to unlink Steam account"
   },
   "common": {
     "cancel": "Cancel"

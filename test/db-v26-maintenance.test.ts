@@ -145,7 +145,7 @@ describe('Schema v26 — maintenance migration', () => {
 
       db._applySchema();
 
-      assert.equal(db._getMeta('schema_version'), '26');
+      assert.equal(db._getMeta('schema_version'), '27');
       const indexes = objectNames(db, 'index');
       for (const name of DROPPED_INDEXES) {
         assert.ok(!indexes.has(name), `${name} should be dropped by v26`);
@@ -281,12 +281,12 @@ describe('Schema v26 — maintenance migration', () => {
     try {
       seedV25State(db);
       db._applySchema();
-      assert.equal(db._getMeta('schema_version'), '26');
+      assert.equal(db._getMeta('schema_version'), '27');
 
       // 重跑：欄位/索引/表都已移除，migration 不得丟例外
       db._setMeta('schema_version', '25');
       db._applySchema();
-      assert.equal(db._getMeta('schema_version'), '26');
+      assert.equal(db._getMeta('schema_version'), '27');
       assert.ok(!playerColumns(db).has('name_history'));
     } finally {
       db.close();
@@ -341,7 +341,7 @@ describe('Schema v26 — maintenance migration', () => {
 
       db = new HumanitZDB({ dbPath, label: 'V26RollbackRetry' });
       db.init();
-      assert.equal(db._getMeta('schema_version'), '26');
+      assert.equal(db._getMeta('schema_version'), '27');
       assert.ok(!playerColumns(db).has('kill_tracker'));
     } finally {
       if (db) db.close();

@@ -91,6 +91,7 @@ import { registerDbRoutes } from './routes/db.routes.js';
 import { registerActivityRoutes } from './routes/activity.routes.js';
 import { registerMapdataRoutes } from './routes/mapdata.routes.js';
 import { registerPlayersRoutes } from './routes/players.routes.js';
+import { registerMeRoutes } from './routes/me.routes.js';
 import { registerAdminActionsRoutes } from './routes/admin-actions.routes.js';
 import { registerCalibrationRoutes } from './routes/calibration.routes.js';
 import { registerStatusRoutes } from './routes/status.routes.js';
@@ -752,7 +753,15 @@ class WebMapServer {
 
     // Discord OAuth2 authentication (must be registered before static/API routes)
     // Returns no-op middleware if DISCORD_OAUTH_SECRET / WEB_MAP_CALLBACK_URL are not set
-    const authMiddleware = setupAuth(app, this._client, { db: this._db?.db });
+    // userLinks getter 在 DB 未 init 時會 throw —— 正常啟動流程 DB 先於 web map
+    // init，這裡的 try 只是防禦（不讓 web map 因 DB 掛掉整個 crash）。
+    let userLinksRepo;
+    try {
+      userLinksRepo = this._db?.userLinks;
+    } catch {
+      userLinksRepo = undefined;
+    }
+    const authMiddleware = setupAuth(app, this._client, { db: this._db?.db, userLinks: userLinksRepo });
     app.use(authMiddleware);
 
     // ── Root page → panel.html (must come before static middleware) ──
@@ -831,6 +840,7 @@ class WebMapServer {
     registerPublicRoutes(app, this);
     registerCalibrationRoutes(app, this);
     registerPlayersRoutes(app, this);
+    registerMeRoutes(app, this);
     registerAdminActionsRoutes(app, this);
 
     // Plugin-registered routes — boundary preserved from main: plugins register
@@ -883,11 +893,13 @@ class WebMapServer {
     this._app.use(
       (
         err: unknown,
-        _req: import('express').Request,
+        req: import('express').Request,
         res: import('express').Response,
         _next: import('express').NextFunction,
       ) => {
-        console.error('[WEB MAP] Unhandled route error:', errMsg(err));
+        // 只記 path（不含 query，避免洩漏 OAuth code/state 等敏感參數）並剝 CR/LF 防 log forging
+        const safePath = req.path.replace(/[\r\n\t]+/g, ' ');
+        console.error(`[WEB MAP] Unhandled route error: ${req.method} ${safePath} —`, errMsg(err));
         if (!res.headersSent) {
           sendError(res, API_ERRORS.INTERNAL_SERVER_ERROR, 500);
         }
