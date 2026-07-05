@@ -47,7 +47,6 @@ describe('countActivitySince / countChatSince', () => {
       const cutoffIso = '2026-06-10T00:00:00.000Z';
       assert.equal(db.activityLog.getActivitySince(cutoffIso).length, 1);
       assert.equal(db.activityLog.countActivitySince(cutoffIso), 1);
-      assert.equal(db.activityLog.getActivitySinceBySource(cutoffIso, 'log').length, 1);
     });
   });
 

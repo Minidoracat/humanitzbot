@@ -16,7 +16,10 @@ function _presentArray(value: unknown): unknown[] | undefined {
 
 export type SaveActivityEvent = ReturnType<typeof diffSaveState>[number];
 export type SaveItemStats = Awaited<ReturnType<typeof reconcileItems>>;
-export type SaveSyncPipelineDb = Pick<HumanitZDB, 'syncAllFromSave' | 'activityLog' | 'meta' | 'item'>;
+export type SaveSyncPipelineDb = Pick<
+  HumanitZDB,
+  'syncAllFromSave' | 'activityLog' | 'chatLog' | 'meta' | 'item' | 'optimize'
+>;
 
 interface SyncPhaseTimings {
   prep: number;
@@ -122,9 +125,30 @@ export interface SaveSyncPipelineDeps {
 
 export class SaveSyncPipeline {
   private readonly _deps: SaveSyncPipelineDeps;
+  // 維護動作連續失敗計數：同一動作連續失敗 ≥3 個維護週期時升級 log.error
+  //（單次失敗是暫時性雜訊，連續失敗代表 retention 已實質停擺）。成功歸零。
+  private readonly _maintenanceFailures = new Map<string, number>();
+  private static readonly MAINTENANCE_FAILURE_ESCALATE = 3;
 
   constructor(deps: SaveSyncPipelineDeps) {
     this._deps = deps;
+  }
+
+  private _reportMaintenanceResult(action: string, err: unknown): void {
+    if (err === null) {
+      this._maintenanceFailures.delete(action);
+      return;
+    }
+    const failures = (this._maintenanceFailures.get(action) ?? 0) + 1;
+    this._maintenanceFailures.set(action, failures);
+    if (failures >= SaveSyncPipeline.MAINTENANCE_FAILURE_ESCALATE) {
+      this._deps.log.error(
+        `${action} failed ${String(failures)} maintenance cycles in a row (retention is effectively stalled):`,
+        errMsg(err),
+      );
+    } else {
+      this._deps.log.warn(`${action} failed (non-fatal):`, errMsg(err));
+    }
   }
 
   async syncFromCache(cache: SaveCacheData): Promise<void> {
@@ -234,6 +258,10 @@ export class SaveSyncPipeline {
     this._writeActivityEvents(diffEvents);
     if (this._isMaintenancePurgeDue()) {
       this._purgeOldActivity();
+      this._purgeOldChat();
+      // 所有維護 purge（item purge 在前面的 _reconcileItems 已跑完）之後執行一次
+      // PRAGMA optimize（SQLite 官方常駐維護建議；有 analysis_limit 上限，毫秒級）。
+      this._optimizeDb();
     }
     timings.activity = this._elapsedSince(phaseMark);
 
@@ -400,7 +428,7 @@ export class SaveSyncPipeline {
     if (this._isMaintenancePurgeDue()) {
       const purgeStart = performance.now();
       try {
-        const purgeResult = this._deps.db.item.purgeOldItemTrackerData({
+        const purgeResult = await this._deps.db.item.purgeOldItemTrackerData({
           lostItemsAge: '-7 days',
           lostGroupsAge: '-7 days',
           movementsAge: `-${String(config.itemMovementRetentionDays)} days`,
@@ -409,9 +437,10 @@ export class SaveSyncPipeline {
         this._deps.log.info(
           `Item tracker purge: ${String(purgeResult.movementsDeleted)} movement(s), ${String(purgeResult.itemsDeleted)} item(s), ${String(purgeResult.groupsDeleted)} group(s) removed`,
         );
+        this._reportMaintenanceResult('Item tracker purge', null);
       } catch (err: unknown) {
         purgeMs = this._elapsedSince(purgeStart);
-        this._deps.log.warn('Item tracker purge error (non-fatal):', errMsg(err));
+        this._reportMaintenanceResult('Item tracker purge', err);
       }
     }
 
@@ -437,8 +466,29 @@ export class SaveSyncPipeline {
   private _purgeOldActivity(): void {
     try {
       this._deps.db.activityLog.purgeOldActivity(`-${String(config.activityRetentionDays)} days`);
+      this._reportMaintenanceResult('Activity cleanup', null);
     } catch (err: unknown) {
-      this._deps.log.warn('Activity cleanup failed (non-fatal):', errMsg(err));
+      this._reportMaintenanceResult('Activity cleanup', err);
+    }
+  }
+
+  private _purgeOldChat(): void {
+    try {
+      // chat_log retention 直接沿用 activityRetentionDays：兩者同屬事件流水、
+      // 消費端查詢窗口一致，不值得為此新增一個 env 變數。
+      this._deps.db.chatLog.purgeOldChat(`-${String(config.activityRetentionDays)} days`);
+      this._reportMaintenanceResult('Chat log cleanup', null);
+    } catch (err: unknown) {
+      this._reportMaintenanceResult('Chat log cleanup', err);
+    }
+  }
+
+  private _optimizeDb(): void {
+    try {
+      this._deps.db.optimize();
+      this._reportMaintenanceResult('PRAGMA optimize', null);
+    } catch (err: unknown) {
+      this._reportMaintenanceResult('PRAGMA optimize', err);
     }
   }
 

@@ -71,10 +71,18 @@ function makeDb(overrides: AnyRecord = {}) {
         return 0;
       },
     },
+    chatLog: {
+      purgeOldChat(age: string) {
+        calls.push(`purgeOldChat:${age}`);
+      },
+    },
     meta: {
       setMeta(key: string, value: string) {
         metaWrites.push({ key, value });
       },
+    },
+    optimize() {
+      calls.push('optimize');
     },
     item: {
       getActiveItemInstances() {
@@ -467,6 +475,24 @@ describe('SaveSyncPipeline syncFromCache', () => {
     assert.equal(activityPurgeCount(), 2);
   });
 
+  it('runs chat purge and PRAGMA optimize only on maintenance sync intervals', async () => {
+    const db = makeDb();
+    const pipelineHarness = makePipeline(db);
+    // v26: chat_log retention 沿用 activityRetentionDays（預設 14 天）。
+    const chatPurgeCount = () => db.calls.filter((call: string) => call === 'purgeOldChat:-14 days').length;
+    const optimizeCount = () => db.calls.filter((call: string) => call === 'optimize').length;
+
+    pipelineHarness.setSyncCount(1);
+    await pipelineHarness.pipeline.syncParsedData(makeParsedSave(), []);
+    assert.equal(chatPurgeCount(), 0);
+    assert.equal(optimizeCount(), 0);
+
+    pipelineHarness.setSyncCount(100);
+    await pipelineHarness.pipeline.syncParsedData(makeParsedSave(), []);
+    assert.equal(chatPurgeCount(), 1);
+    assert.equal(optimizeCount(), 1);
+  });
+
   it('uses the consolidated FK-safe item tracker purge only on maintenance sync intervals', async () => {
     const db = makeDb();
     const pipelineHarness = makePipeline(db);
@@ -590,7 +616,8 @@ describe('SaveSyncPipeline syncFromCache', () => {
     assert.ok(result.itemTracking);
     assert.equal(result.itemTracking.created, 1);
     assert.equal(
-      logs.some((line) => line.includes('Item tracker purge error (non-fatal):')),
+      // v26 review: item purge 失敗改走統一維護上報（_reportMaintenanceResult）
+      logs.some((line) => line.includes('Item tracker purge failed (non-fatal):')),
       true,
     );
   });

@@ -26,8 +26,8 @@ after(() => {
 });
 
 describe('Schema v11 — Timeline tables', () => {
-  it('schema version is 25', () => {
-    assert.equal(SCHEMA_VERSION, 25);
+  it('schema version is 26', () => {
+    assert.equal(SCHEMA_VERSION, 26);
   });
 
   it('ALL_TABLES includes timeline table definitions', () => {
@@ -68,15 +68,21 @@ describe('Schema v11 — Timeline tables', () => {
     assert.ok(names.includes('idx_tl_snap_created'));
     assert.ok(names.includes('idx_tl_snap_day'));
     assert.ok(names.includes('idx_tl_players_snap'));
-    assert.ok(names.includes('idx_tl_players_steam'));
+    // v26：單欄 steam_id 索引汰換為複合 (steam_id, snapshot_id) —— delta 重建查詢
+    // 需要 index-only scan，trails 查詢用其 prefix。
+    assert.ok(names.includes('idx_tl_players_steam_snap'));
+    assert.ok(!names.includes('idx_tl_players_steam'));
     assert.ok(names.includes('idx_tl_ai_snap'));
-    assert.ok(names.includes('idx_tl_ai_type'));
-    assert.ok(names.includes('idx_tl_ai_cat'));
     assert.ok(names.includes('idx_tl_vehicles_snap'));
     assert.ok(names.includes('idx_tl_structures_snap'));
     // idx_tl_structures_owner intentionally dropped in v25 (pure write amplification on
     // the multi-million-row timeline_structures table; timeline reads only by snapshot_id).
     assert.ok(!names.includes('idx_tl_structures_owner'));
+    // idx_tl_ai_type / idx_tl_ai_cat / idx_tl_houses_uid intentionally dropped in v26
+    // (verified unused — timeline reads only by snapshot_id).
+    assert.ok(!names.includes('idx_tl_ai_type'));
+    assert.ok(!names.includes('idx_tl_ai_cat'));
+    assert.ok(!names.includes('idx_tl_houses_uid'));
   });
 });
 
@@ -431,15 +437,15 @@ describe('DB — Death causes', () => {
 });
 
 describe('DB — purgeOldTimeline', () => {
-  it('purgeOldTimeline does not delete recent data', () => {
-    const result = db.timeline.purgeOldTimeline('-1 second');
+  it('purgeOldTimeline does not delete recent data', async () => {
+    const result = await db.timeline.purgeOldTimeline('-1 second');
     // Should delete everything (all are older than 1 second ago), but it uses
     // datetime('now', ...) so recent inserts may or may not be affected.
     // At minimum, it shouldn't crash
     assert.ok(typeof result.changes === 'number');
   });
 
-  it('is reference-aware: keeps an old keyframe still referenced by a retained snapshot', () => {
+  it('is reference-aware: keeps an old keyframe still referenced by a retained snapshot', async () => {
     const tl = db.timeline;
     const struct = {
       actorClass: 'BP_Wall',
@@ -461,7 +467,7 @@ describe('DB — purgeOldTimeline', () => {
     db.db
       .prepare("UPDATE timeline_snapshots SET created_at = datetime('now','-30 days') WHERE id IN (?, ?)")
       .run(kf, orphanOld);
-    tl.purgeOldTimeline('-7 days');
+    await tl.purgeOldTimeline('-7 days');
     const exists = (id: number) => !!db.db.prepare('SELECT 1 FROM timeline_snapshots WHERE id = ?').get(id);
     assert.ok(exists(kf), 'referenced keyframe must survive even though it is past the window');
     assert.ok(!exists(orphanOld), 'unreferenced old snapshot must be pruned');
@@ -469,8 +475,144 @@ describe('DB — purgeOldTimeline', () => {
     assert.equal(tl.getTimelineSnapshotFull(ref).structures.length, 1);
     // Once the referrer ages out too, the keyframe is freed on a later pass.
     db.db.prepare("UPDATE timeline_snapshots SET created_at = datetime('now','-30 days') WHERE id = ?").run(ref);
-    tl.purgeOldTimeline('-7 days');
+    await tl.purgeOldTimeline('-7 days');
     assert.ok(!exists(kf) && !exists(ref), 'keyframe freed once no retained snapshot references it');
+  });
+
+  it('is reference-aware for v26 backpacks/houses keyframes too', async () => {
+    const tl = db.timeline;
+    const kf = tl.insertTimelineSnapshot({
+      snapshot: { gameDay: 3, backpacksStateHash: 'bh', housesStateHash: 'hh' },
+      backpacks: [{ class: 'BP_Backpack_C', x: 1, y: 2, z: 3, itemCount: 1, items: [] }],
+      houses: [{ uid: 'h1', name: 'House' }],
+    });
+    const ref = tl.insertTimelineSnapshot({
+      snapshot: {
+        gameDay: 3,
+        backpacksStateHash: 'bh',
+        backpacksRefSnapshotId: kf,
+        housesStateHash: 'hh',
+        housesRefSnapshotId: kf,
+      },
+      backpacks: [],
+      houses: [],
+    });
+    db.db.prepare("UPDATE timeline_snapshots SET created_at = datetime('now','-30 days') WHERE id = ?").run(kf);
+    await tl.purgeOldTimeline('-7 days');
+    const exists = (id: number) => !!db.db.prepare('SELECT 1 FROM timeline_snapshots WHERE id = ?').get(id);
+    assert.ok(exists(kf), 'backpacks/houses-referenced keyframe must survive the window');
+    assert.equal(tl.getTimelineSnapshotFull(ref).backpacks.length, 1);
+    assert.equal(tl.getTimelineSnapshotFull(ref).houses.length, 1);
+    // 清場：讓 referrer 也老化，keyframe 在下一輪被釋放
+    db.db.prepare("UPDATE timeline_snapshots SET created_at = datetime('now','-30 days') WHERE id = ?").run(ref);
+    await tl.purgeOldTimeline('-7 days');
+    assert.ok(!exists(kf) && !exists(ref));
+  });
+
+  it('keeps the newest pre-cutoff players keyframe as the reconstruction base for retained snapshots', async () => {
+    const tl = db.timeline;
+    const player = (name: string, over: Record<string, unknown> = {}) => ({
+      steamId: `sid-${name}`,
+      name,
+      x: 1,
+      y: 1,
+      z: 0,
+      health: 100,
+      ...over,
+    });
+    const kOld0 = tl.insertTimelineSnapshot({
+      snapshot: { gameDay: 60, playersKeyframe: 1 },
+      players: [player('Old')],
+    });
+    const kOld1 = tl.insertTimelineSnapshot({
+      snapshot: { gameDay: 61, playersKeyframe: 1 },
+      players: [player('A'), player('B')],
+    });
+    const dOld = tl.insertTimelineSnapshot({ snapshot: { gameDay: 61 }, players: [] });
+    const dNew = tl.insertTimelineSnapshot({
+      snapshot: { gameDay: 62 },
+      players: [player('A', { x: 42 })],
+    });
+    db.db.prepare("UPDATE timeline_snapshots SET created_at = datetime('now','-40 days') WHERE id = ?").run(kOld0);
+    db.db
+      .prepare("UPDATE timeline_snapshots SET created_at = datetime('now','-20 days') WHERE id IN (?, ?)")
+      .run(kOld1, dOld);
+
+    await tl.purgeOldTimeline('-7 days');
+
+    const exists = (id: number) => !!db.db.prepare('SELECT 1 FROM timeline_snapshots WHERE id = ?').get(id);
+    assert.ok(exists(kOld1), 'newest pre-cutoff players keyframe must survive (reconstruction base)');
+    assert.ok(!exists(kOld0), 'older keyframes are NOT protected — only the newest pre-cutoff one');
+    assert.ok(!exists(dOld), 'old delta snapshots are purged normally');
+    assert.ok(exists(dNew));
+    // codex probe 2 場景：保留中的 snapshot 重建仍完整（基準沒被 purge 掉）
+    const roster = tl.getTimelineSnapshotFull(dNew).players as Array<{ name: string; pos_x: number }>;
+    assert.equal(roster.length, 2, 'retained snapshot must reconstruct the full roster from the protected keyframe');
+    assert.equal(roster.find((p) => p.name === 'A')?.pos_x, 42, 'delta overlay still applies');
+    assert.equal(roster.find((p) => p.name === 'B')?.pos_x, 1, 'keyframe-only player survives the purge');
+
+    // 保護會前移：更新的 keyframe 落到 cutoff 之外後，舊基準下一輪釋放
+    const kNewer = tl.insertTimelineSnapshot({
+      snapshot: { gameDay: 63, playersKeyframe: 1 },
+      players: [player('A', { x: 42 }), player('B')],
+    });
+    db.db.prepare("UPDATE timeline_snapshots SET created_at = datetime('now','-10 days') WHERE id = ?").run(kNewer);
+    await tl.purgeOldTimeline('-7 days');
+    assert.ok(!exists(kOld1), 'once a newer pre-cutoff keyframe exists the old base is freed');
+    assert.ok(exists(kNewer), 'the protection rolls forward to the newest pre-cutoff keyframe');
+    // 清場：讓後續測試不受本測試的保護 keyframe 影響
+    db.db.prepare('DELETE FROM timeline_snapshots WHERE id IN (?, ?)').run(kNewer, dNew);
+  });
+
+  it('normalizes a non-finite/zero batchSize instead of looping forever, and handles 0 pending rows', async () => {
+    const tl = db.timeline;
+    const ids = [
+      tl.insertTimelineSnapshot({ snapshot: { gameDay: 70 } }),
+      tl.insertTimelineSnapshot({ snapshot: { gameDay: 71 } }),
+    ];
+    db.db
+      .prepare(`UPDATE timeline_snapshots SET created_at = datetime('now','-30 days') WHERE id IN (?, ?)`)
+      .run(...ids);
+    // batchSize=0 會讓「changes < batchSize」永不成立 —— 必須正規化成預設值並終止
+    const result = await tl.purgeOldTimeline('-7 days', 0);
+    assert.ok(result.changes >= 2, 'zero batchSize must be normalized and still purge');
+    // 0 待刪列：立即回傳 changes=0
+    const empty = await tl.purgeOldTimeline('-7 days', NaN);
+    assert.equal(empty.changes, 0);
+  });
+
+  it('deletes everything when the row count is an exact multiple of batchSize', async () => {
+    const tl = db.timeline;
+    const ids: number[] = [];
+    for (let i = 0; i < 6; i++) ids.push(tl.insertTimelineSnapshot({ snapshot: { gameDay: 80 + i } }));
+    db.db
+      .prepare(
+        `UPDATE timeline_snapshots SET created_at = datetime('now','-30 days') WHERE id IN (${ids.map(() => '?').join(',')})`,
+      )
+      .run(...ids);
+    const result = await tl.purgeOldTimeline('-7 days', 3); // 6 列 → 3+3+0 三批
+    assert.equal(result.changes, 6);
+    const remaining = db.db
+      .prepare(`SELECT COUNT(*) AS c FROM timeline_snapshots WHERE id IN (${ids.map(() => '?').join(',')})`)
+      .get(...ids) as { c: number };
+    assert.equal(remaining.c, 0);
+  });
+
+  it('deletes in batches until done and returns the total (batchSize < rows to purge)', async () => {
+    const tl = db.timeline;
+    const ids: number[] = [];
+    for (let i = 0; i < 7; i++) ids.push(tl.insertTimelineSnapshot({ snapshot: { gameDay: 50 + i } }));
+    db.db
+      .prepare(
+        `UPDATE timeline_snapshots SET created_at = datetime('now','-30 days') WHERE id IN (${ids.map(() => '?').join(',')})`,
+      )
+      .run(...ids);
+    const result = await tl.purgeOldTimeline('-7 days', 3); // 7 列 → 3+3+1 三批
+    assert.ok(result.changes >= 7, `all aged snapshots purged across batches (got ${String(result.changes)})`);
+    const remaining = db.db
+      .prepare(`SELECT COUNT(*) AS c FROM timeline_snapshots WHERE id IN (${ids.map(() => '?').join(',')})`)
+      .get(...ids) as { c: number };
+    assert.equal(remaining.c, 0, 'batched purge must delete everything past the window');
   });
 });
 
@@ -937,5 +1079,374 @@ describe('timeline structure dedup — producer (SnapshotService)', () => {
     const first = svc2.recordSnapshot(save(set.map((s) => ({ ...s })))) as number;
     assert.equal(refOf(first), null, 'first tick after restart must be a self-contained keyframe');
     assert.ok(ownRows(first) > 0);
+  });
+});
+
+// v26：backpacks / houses 套用與 structures 相同的 hash-ref dedup —— 針對各自的
+// keyframe/ref 決策與讀路徑解析做 producer-side 驗證。
+describe('timeline backpacks/houses dedup — producer (v26)', () => {
+  let pdb: typeof HumanitZDB;
+  before(() => {
+    pdb = new HumanitZDB({ memory: true, label: 'DedupBH' });
+    pdb.init();
+  });
+  after(() => {
+    if (pdb) pdb.close();
+  });
+
+  const save = (backpacks: Array<Record<string, unknown>>, houses: Array<Record<string, unknown>>) => ({
+    players: new Map(),
+    worldState: { totalDaysElapsed: 1, timeOfDay: { day: 1, time: 8 }, droppedBackpacks: backpacks, houses },
+  });
+  const bp = (over: Record<string, unknown> = {}) => ({
+    class: 'BP_Backpack_C',
+    x: 1,
+    y: 2,
+    z: 3,
+    items: [{ item: 'Axe', amount: 1 }],
+    ...over,
+  });
+  const house = (over: Record<string, unknown> = {}) => ({
+    uid: 'h1',
+    name: 'House',
+    windowsOpen: 1,
+    windowsTotal: 3,
+    doorsOpen: 0,
+    doorsTotal: 2,
+    doorsLocked: 1,
+    destroyedFurniture: 0,
+    hasGenerator: false,
+    ...over,
+  });
+  const ownRows = (table: string, id: number) =>
+    (pdb.db.prepare(`SELECT COUNT(*) AS c FROM ${table} WHERE snapshot_id = ?`).get(id) as { c: number }).c;
+  const refsOf = (id: number) =>
+    pdb.db
+      .prepare(
+        'SELECT backpacks_ref_snapshot_id AS b, houses_ref_snapshot_id AS h FROM timeline_snapshots WHERE id = ?',
+      )
+      .get(id) as { b: number | null; h: number | null };
+
+  it('identical backpacks+houses on the next tick reference the keyframe with zero own rows', () => {
+    const svc = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    const k = svc.recordSnapshot(save([bp()], [house()])) as number;
+    assert.equal(ownRows('timeline_backpacks', k), 1);
+    assert.equal(ownRows('timeline_houses', k), 1);
+    assert.deepEqual(refsOf(k), { b: null, h: null });
+
+    const r = svc.recordSnapshot(save([bp()], [house()])) as number;
+    assert.equal(ownRows('timeline_backpacks', r), 0, 'ref tick stores no backpack rows');
+    assert.equal(ownRows('timeline_houses', r), 0, 'ref tick stores no house rows');
+    assert.deepEqual(refsOf(r), { b: k, h: k });
+    // 讀路徑跟著 ref 解析
+    const full = pdb.timeline.getTimelineSnapshotFull(r);
+    assert.equal(full.backpacks.length, 1);
+    assert.equal(full.houses.length, 1);
+    assert.equal(full.houses[0].uid, 'h1');
+  });
+
+  it('a change in one kind busts only that kind (independent keyframe state)', () => {
+    const svc = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    const k = svc.recordSnapshot(save([bp()], [house()])) as number;
+    // 背包內容變（撿走一件），房屋不變 → backpacks 寫新 keyframe、houses 仍 ref
+    const r = svc.recordSnapshot(save([bp({ items: [] })], [house()])) as number;
+    const refs = refsOf(r);
+    assert.equal(refs.b, null, 'changed backpacks must write a fresh keyframe');
+    assert.ok(ownRows('timeline_backpacks', r) === 1);
+    assert.equal(refs.h, k, 'unchanged houses still reference the keyframe');
+    assert.equal(ownRows('timeline_houses', r), 0);
+  });
+
+  // _hashHouses 假覆蓋防護：任一持久化欄位（這裡挑 floatData 派生的 clean）變動都必須 bust dedup。
+  it('a single-field house change (clean) busts the houses dedup', () => {
+    const svc = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    const k = svc.recordSnapshot(save([bp()], [house({ floatData: { Clean: 1 } })])) as number;
+    const r = svc.recordSnapshot(save([bp()], [house({ floatData: { Clean: 0 } })])) as number;
+    const refs = refsOf(r);
+    assert.equal(refs.h, null, 'a one-field house change must write a fresh houses keyframe');
+    assert.equal(ownRows('timeline_houses', r), 1);
+    assert.equal(refs.b, k, 'unchanged backpacks still reference the keyframe');
+  });
+
+  // 比照 structures 既有測試：keyframe 子表列被 prune 掉時 degrade 到 []，不丟例外。
+  it('dangling backpacks/houses refs degrade to [] instead of erroring', () => {
+    const svc = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    const k = svc.recordSnapshot(save([bp()], [house()])) as number;
+    const r = svc.recordSnapshot(save([bp()], [house()])) as number;
+    assert.deepEqual(refsOf(r), { b: k, h: k });
+    pdb.db.prepare('DELETE FROM timeline_backpacks WHERE snapshot_id = ?').run(k);
+    pdb.db.prepare('DELETE FROM timeline_houses WHERE snapshot_id = ?').run(k);
+    const full = pdb.timeline.getTimelineSnapshotFull(r);
+    assert.deepEqual(full.backpacks, []);
+    assert.deepEqual(full.houses, []);
+  });
+});
+
+// v26：timeline_players delta 寫入 —— 只寫 online / 狀態有變的玩家；
+// getTimelineSnapshotFull 用 latest-row-<=snapshot 重建全名冊。
+describe('timeline players delta — producer + reconstruction (v26)', () => {
+  let pdb: typeof HumanitZDB;
+  before(() => {
+    pdb = new HumanitZDB({ memory: true, label: 'PlayersDelta' });
+    pdb.init();
+  });
+  after(() => {
+    if (pdb) pdb.close();
+  });
+
+  const alice = (over: Record<string, unknown> = {}) => ({
+    steamId: 'S1',
+    name: 'Alice',
+    x: 1,
+    y: 2,
+    z: 3,
+    health: 100,
+    ...over,
+  });
+  const bob = (over: Record<string, unknown> = {}) => ({
+    steamId: 'S2',
+    name: 'Bob',
+    x: 10,
+    y: 20,
+    z: 30,
+    health: 80,
+    ...over,
+  });
+  const save = (players: Array<Record<string, unknown>>) => ({
+    players: new Map(players.map((p) => [p.steamId as string, p])),
+    worldState: { totalDaysElapsed: 1, timeOfDay: { day: 1, time: 8 } },
+  });
+  const ownRows = (id: number) =>
+    (pdb.db.prepare('SELECT COUNT(*) AS c FROM timeline_players WHERE snapshot_id = ?').get(id) as { c: number }).c;
+
+  it('first tick writes the full roster; unchanged offline players are skipped on later ticks', () => {
+    const svc = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    const t1 = svc.recordSnapshot(save([alice(), bob()])) as number;
+    assert.equal(ownRows(t1), 2, 'restart keyframe writes every player');
+
+    const t2 = svc.recordSnapshot(save([alice(), bob()])) as number;
+    assert.equal(ownRows(t2), 0, 'nothing changed and nobody online → zero player rows');
+    // 重建：全名冊仍完整，資料來自各玩家最近一列
+    const full = pdb.timeline.getTimelineSnapshotFull(t2);
+    assert.equal(full.players.length, 2);
+    const a = full.players.find((p: { steam_id: string }) => p.steam_id === 'S1');
+    assert.equal(a.pos_x, 1);
+    assert.equal(a.health, 100);
+  });
+
+  it('online players are always written; an offline state change also writes a row', () => {
+    const svc = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    svc.recordSnapshot(save([alice(), bob()]));
+    // Alice online（連兩 tick，狀態不變也要寫 —— online 玩家逐 tick 留軌跡）
+    const t2 = svc.recordSnapshot(save([alice(), bob()]), { onlinePlayers: new Set(['alice']) }) as number;
+    const t3 = svc.recordSnapshot(save([alice(), bob()]), { onlinePlayers: new Set(['alice']) }) as number;
+    assert.equal(ownRows(t2), 1);
+    assert.equal(ownRows(t3), 1, 'online player written every tick even when unchanged');
+    // Bob 離線但位置變了 → 也要寫
+    const t4 = svc.recordSnapshot(save([alice(), bob({ x: 99 })]), { onlinePlayers: new Set(['alice']) }) as number;
+    assert.equal(ownRows(t4), 2, 'offline position change must write a row');
+    const full = pdb.timeline.getTimelineSnapshotFull(t4);
+    const b = full.players.find((p: { steam_id: string }) => p.steam_id === 'S2');
+    assert.equal(b.pos_x, 99);
+    // 歷史 snapshot 的重建不受之後的變動影響（時間旅行正確性）
+    const full3 = pdb.timeline.getTimelineSnapshotFull(t3);
+    const b3 = full3.players.find((p: { steam_id: string }) => p.steam_id === 'S2');
+    assert.equal(b3.pos_x, 10, 'reconstruction at t3 must show the pre-move position');
+  });
+
+  it('forces a full-roster keyframe within KEYFRAME_EVERY ticks', () => {
+    const svc = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    const ids: number[] = [];
+    for (let i = 0; i < 14; i++) ids.push(svc.recordSnapshot(save([alice(), bob()])) as number);
+    const fullWrites = ids.filter((id) => ownRows(id) === 2).length;
+    assert.ok(fullWrites >= 2, `expected a forced player keyframe within the cadence; got ${String(fullWrites)}`);
+  });
+
+  it('a new service instance (restart) writes the full roster again', () => {
+    const svc1 = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    svc1.recordSnapshot(save([alice(), bob()]));
+    const svc2 = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    const first = svc2.recordSnapshot(save([alice(), bob()])) as number;
+    assert.equal(ownRows(first), 2, 'first tick after restart must write every player');
+  });
+
+  it('trails (getPlayerPositionHistory) still work across delta gaps', () => {
+    const svc = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    svc.recordSnapshot(save([alice(), bob()]));
+    svc.recordSnapshot(save([alice(), bob()])); // delta gap：無列
+    svc.recordSnapshot(save([alice({ x: 5 }), bob()]));
+    const trail = pdb.timeline.getPlayerPositionHistory('S2', '2000-01-01', '2100-01-01');
+    assert.ok(trail.length >= 1, 'stationary offline player still has keyframe rows in the trail');
+  });
+
+  // 生產形狀（v26 實測）：save-cache 的 player value 物件沒有頂層 steamId 欄位，
+  // steamId 只存在於 Map 的 key —— 寫入端必須把 key 帶進列，否則 steam_id 全空。
+  it('production shape: Map key becomes steam_id when the value object has no steamId field', () => {
+    const svc = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    const snapId = svc.recordSnapshot({
+      players: new Map([
+        ['76561198000000777', { name: 'Prod', x: 1, y: 2, z: 3, health: 100 }],
+        ['76561198000000778', { name: 'Prod2', x: 4, y: 5, z: 6, health: 90 }],
+      ]),
+      worldState: { totalDaysElapsed: 1, timeOfDay: { day: 1, time: 8 } },
+    }) as number;
+    const rows = pdb.db
+      .prepare('SELECT steam_id, name FROM timeline_players WHERE snapshot_id = ? ORDER BY steam_id')
+      .all(snapId) as Array<{ steam_id: string; name: string }>;
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0]?.steam_id, '76561198000000777');
+    assert.equal(rows[1]?.steam_id, '76561198000000778');
+  });
+
+  // _playerSig 假覆蓋防護：離線玩家任一持久化欄位變動都必須寫新列。
+  it('an offline hunger change and an offline lifetimeKills change each write a delta row', () => {
+    const svc = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    svc.recordSnapshot(save([alice({ hunger: 50, lifetimeKills: 10 }), bob()])); // keyframe
+    const t2 = svc.recordSnapshot(save([alice({ hunger: 40, lifetimeKills: 10 }), bob()])) as number;
+    assert.equal(ownRows(t2), 1, 'offline hunger change must write a row');
+    const t3 = svc.recordSnapshot(save([alice({ hunger: 40, lifetimeKills: 11 }), bob()])) as number;
+    assert.equal(ownRows(t3), 1, 'offline lifetimeKills change must write a row');
+    const row = pdb.db.prepare('SELECT hunger, lifetime_kills FROM timeline_players WHERE snapshot_id = ?').get(t3) as {
+      hunger: number;
+      lifetime_kills: number;
+    };
+    assert.equal(row.hunger, 40);
+    assert.equal(row.lifetime_kills, 11);
+  });
+
+  // wiped 玩家：從存檔移除後，下一個 keyframe 起不再出現 —— 幽靈窗 ≤ 一個 keyframe 週期。
+  it('a wiped player disappears from reconstruction at the next keyframe (bounded ghost window)', () => {
+    const svc = new SnapshotService(pdb, { minIntervalSeconds: 0 });
+    const ids: number[] = [];
+    ids.push(svc.recordSnapshot(save([alice(), bob()])) as number); // t1 keyframe（雙人）
+    // t2 起 bob 被 wipe；持續 tick 直到 cadence 逼出下一個 keyframe（KEYFRAME_EVERY=12）
+    for (let i = 0; i < 13; i++) ids.push(svc.recordSnapshot(save([alice()])) as number);
+    const keyframes = pdb.db
+      .prepare(
+        `SELECT id FROM timeline_snapshots WHERE players_keyframe = 1 AND id IN (${ids.map(() => '?').join(',')}) ORDER BY id`,
+      )
+      .all(...ids) as Array<{ id: number }>;
+    assert.ok(keyframes.length >= 2, 'cadence must force a second keyframe');
+    const secondKf = keyframes[1]?.id as number;
+    // keyframe 之前的 delta snapshot：bob 仍是幽靈（凍結於最後狀態）
+    const ghostSnap = ids[ids.indexOf(secondKf) - 1];
+    const ghostRoster = pdb.timeline.getTimelineSnapshotFull(ghostSnap).players;
+    assert.ok(
+      ghostRoster.some((p: { steam_id: string }) => p.steam_id === 'S2'),
+      'before the next keyframe the wiped player is still visible (known bounded window)',
+    );
+    // keyframe 起：bob 消失
+    const roster = pdb.timeline.getTimelineSnapshotFull(secondKf).players;
+    assert.equal(roster.length, 1, 'wiped player must be gone from the keyframe roster onward');
+    assert.equal(roster[0].steam_id, 'S1');
+    // keyframe 之後的 delta snapshot 也乾淨
+    const after = ids[ids.indexOf(secondKf) + 1];
+    if (after !== undefined) {
+      const rosterAfter = pdb.timeline.getTimelineSnapshotFull(after).players;
+      assert.ok(!rosterAfter.some((p: { steam_id: string }) => p.steam_id === 'S2'));
+    }
+  });
+});
+
+// 生產 legacy 相容（v26）：既有 769k 列 steam_id 全空（寫入端 bug，v26 起修復），
+// migration 把歷史 snapshot 全標 keyframe。重建的識別鍵是 steam_id || name ——
+// legacy 列靠 name overlay、新列靠 steamId，跨 keyframe 混合資料重建必須正確。
+describe('timeline players delta — legacy empty steam_id reconstruction (v26)', () => {
+  let ldb: typeof HumanitZDB;
+  before(() => {
+    ldb = new HumanitZDB({ memory: true, label: 'LegacyPlayers' });
+    ldb.init();
+  });
+  after(() => {
+    if (ldb) ldb.close();
+  });
+
+  it('legacy rows (steam_id="") overlay by name; post-fix rows overlay by steamId', () => {
+    const tl = ldb.timeline;
+    // Legacy 世界：全量 snapshot（migration 回填 → playersKeyframe: 1），steam_id 全空
+    const l1 = tl.insertTimelineSnapshot({
+      snapshot: { gameDay: 1, playersKeyframe: 1 },
+      players: [
+        { steamId: '', name: 'Alice', x: 1, y: 1, z: 0, health: 100 },
+        { steamId: '', name: 'Bob', x: 2, y: 2, z: 0, health: 90 },
+      ],
+    });
+    const l2 = tl.insertTimelineSnapshot({
+      snapshot: { gameDay: 1, playersKeyframe: 1 },
+      players: [
+        { steamId: '', name: 'Alice', x: 5, y: 5, z: 0, health: 80 },
+        { steamId: '', name: 'Bob', x: 2, y: 2, z: 0, health: 90 },
+      ],
+    });
+    // legacy snapshot 重建：K = 自己（都是 keyframe），名冊不塌縮成單一玩家
+    const full1 = tl.getTimelineSnapshotFull(l1);
+    assert.equal(full1.players.length, 2, 'legacy snapshot roster must not collapse despite empty steam_id');
+    const full2 = tl.getTimelineSnapshotFull(l2);
+    assert.equal(full2.players.length, 2);
+    const a2 = full2.players.find((p: { name: string }) => p.name === 'Alice');
+    assert.equal(a2.pos_x, 5, 'latest legacy keyframe wins for the same name');
+
+    // v26 修復後：新 keyframe 帶真實 steamId + 之後的 delta —— 跨 keyframe 重建正確
+    const k = tl.insertTimelineSnapshot({
+      snapshot: { gameDay: 2, playersKeyframe: 1 },
+      players: [
+        { steamId: '76561198000000001', name: 'Alice', x: 7, y: 7, z: 0, health: 70 },
+        { steamId: '76561198000000002', name: 'Bob', x: 8, y: 8, z: 0, health: 60 },
+      ],
+    });
+    const d = tl.insertTimelineSnapshot({
+      snapshot: { gameDay: 2, playersKeyframe: 0 },
+      players: [{ steamId: '76561198000000001', name: 'Alice', x: 9, y: 9, z: 0, health: 65 }],
+    });
+    const fullD = tl.getTimelineSnapshotFull(d);
+    assert.equal(fullD.players.length, 2, 'keyframe roster + delta overlay = full roster');
+    const aD = fullD.players.find((p: { steam_id: string }) => p.steam_id === '76561198000000001');
+    assert.equal(aD.pos_x, 9, 'delta row overlays the keyframe row');
+    const bD = fullD.players.find((p: { steam_id: string }) => p.steam_id === '76561198000000002');
+    assert.equal(bD.pos_x, 8, 'player without a delta row keeps the keyframe state');
+    // 新 keyframe 斷開 legacy 混合資料：不會撈回 l1/l2 的 name-keyed 列
+    assert.ok(
+      fullD.players.every((p: { steam_id: string }) => p.steam_id !== ''),
+      'reconstruction after the fix must not mix in pre-keyframe legacy rows',
+    );
+    void k;
+  });
+});
+
+describe('SnapshotService prune reentrancy (v26)', () => {
+  it('_pruneOldData skips while a previous batched purge is still in flight', async () => {
+    let calls = 0;
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const stubDb = {
+      timeline: {
+        purgeOldTimeline: async () => {
+          calls++;
+          await gate;
+          return { changes: 0 };
+        },
+      },
+    };
+    const svc = new SnapshotService(stubDb, { minIntervalSeconds: 0, retentionDays: 7 });
+    const first = svc._pruneOldData();
+    void svc._pruneOldData(); // 前一輪未完成 → 不重入
+    assert.equal(calls, 1, 'second call must be skipped while the first is in flight');
+    (release as unknown as () => void)();
+    await first;
+    await svc._pruneOldData(); // 完成後可再進入
+    assert.equal(calls, 2);
+  });
+
+  it('_pruneOldData swallows purge errors (fire-and-forget must never reject)', async () => {
+    const stubDb = {
+      timeline: {
+        purgeOldTimeline: () => Promise.reject(new Error('boom')),
+      },
+    };
+    const svc = new SnapshotService(stubDb, { minIntervalSeconds: 0, retentionDays: 7 });
+    await svc._pruneOldData(); // 不得 throw / reject
+    assert.equal(svc._pruneInFlight, false, 'in-flight flag must be reset after a failure');
   });
 });

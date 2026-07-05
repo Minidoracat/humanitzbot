@@ -190,6 +190,12 @@ interface SaveData {
   horses?: Map<string, SaveEntity> | Record<string, SaveEntity> | SaveEntity[];
 }
 
+interface DedupState {
+  lastHash: string | null;
+  keyframeId: number | null;
+  sinceKeyframe: number;
+}
+
 interface RecordSnapshotOptions {
   onlinePlayers?: Set<string>;
   /**
@@ -222,18 +228,32 @@ export class SnapshotService {
   private _lastSnapshotAt: number | null = null;
   private _snapshotCount: number = 0;
   private _pruneCounter: number = 0;
-  // Structure fan-out dedup (v25): when a tick's structures are byte-identical to the last
-  // keyframe, reference it (structures_ref_snapshot_id) instead of re-storing ~9k rows. A
-  // keyframe is forced at least every KEYFRAME_EVERY ticks to cap how long a ref chain points
-  // back to one keyframe. Retention is reference-aware (see TimelineRepository.purgeOldTimeline)
-  // so a referenced keyframe is never pruned out from under a retained ref; if one is ever
-  // missing anyway, the read path degrades to []. NOTE: the cadence is in *ticks*, so the
-  // wall-clock keyframe spacing = KEYFRAME_EVERY × the effective snapshot interval
-  // (TIMELINE_SNAPSHOT_MIN_INTERVAL, default 300s → a keyframe ~hourly).
-  private _lastStructuresHash: string | null = null;
-  private _lastStructuresKeyframeId: number | null = null;
-  private _structuresSinceKeyframe: number = 0;
+  // Entity fan-out dedup (v25 structures, v26 backpacks/houses): when a tick's entity set is
+  // byte-identical to the last keyframe, reference it (*_ref_snapshot_id) instead of
+  // re-storing the rows. A keyframe is forced at least every KEYFRAME_EVERY ticks to cap how
+  // long a ref chain points back to one keyframe. Retention is reference-aware (see
+  // TimelineRepository.purgeOldTimeline) so a referenced keyframe is never pruned out from
+  // under a retained ref; if one is ever missing anyway, the read path degrades to [].
+  // NOTE: the cadence is in *ticks*, so the wall-clock keyframe spacing = KEYFRAME_EVERY ×
+  // the effective snapshot interval (TIMELINE_SNAPSHOT_MIN_INTERVAL, default 300s → ~hourly).
+  private _dedup: Record<'structures' | 'backpacks' | 'houses', DedupState> = {
+    structures: { lastHash: null, keyframeId: null, sinceKeyframe: 0 },
+    backpacks: { lastHash: null, keyframeId: null, sinceKeyframe: 0 },
+    houses: { lastHash: null, keyframeId: null, sinceKeyframe: 0 },
+  };
+  // Players delta（v26）：離線且狀態不變的玩家不重複寫列（截至 v26 分析時，
+  // 生產實測 760k 列中 >99.9% 是離線玩家的不變快照）。每 KEYFRAME_EVERY tick
+  // 寫一次全名冊 keyframe（snapshot 標記 players_keyframe=1），讓重建查詢
+  // （keyframe 全名冊 + 之後 delta overlay）的回看距離有界、被 wipe 的玩家在
+  // 下一個 keyframe 起消失（幽靈窗 ≤ 一個 keyframe 週期 ≈ 1hr）。
+  // null = 重啟後第一 tick，強制全量。
+  private _lastPlayerSigs: Map<string, string> | null = null;
+  private _playersSinceKeyframe: number = 0;
+  // 同一個 cadence 同時驅動兩套機制：structures/backpacks/houses 的 hash-ref
+  // dedup（強制新 keyframe 的上限）與 players 的全名冊 keyframe 週期。
   private static readonly KEYFRAME_EVERY = 12;
+  // Retention prune 改為 async 分批（fire-and-forget）—— 前一輪未完成時不重入。
+  private _pruneInFlight: boolean = false;
 
   /**
    * @param db - HumanitZDB instance
@@ -284,7 +304,7 @@ export class SnapshotService {
 
     try {
       const ws: Record<string, unknown> = saveData.worldState ?? {};
-      const players = this._normalizeToArray(saveData.players);
+      const players = this._normalizePlayers(saveData.players);
       const vehicles = this._normalizeToArray(saveData.vehicles);
       const structures = this._normalizeToArray(saveData.structures);
       const containers = this._normalizeToArray(saveData.containers);
@@ -481,57 +501,87 @@ export class SnapshotService {
           })
         : [];
 
-      // Structure fan-out dedup: if structures are unchanged from the last keyframe (and we
-      // haven't hit the forced-keyframe cadence), reference that keyframe and skip writing the
-      // ~9k structure rows for this tick. First tick after restart / a content change / the
-      // cadence boundary writes a fresh full keyframe.
-      let structuresStateHash: string | null = null;
-      let structuresRefSnapshotId: number | null = null;
-      let structuresToWrite = timelineStructures;
-      if (this._trackStructures) {
-        structuresStateHash = this._hashStructures(timelineStructures);
-        const unchanged = this._lastStructuresKeyframeId !== null && structuresStateHash === this._lastStructuresHash;
-        // -1 because the counter only advances on ref ticks: with KEYFRAME_EVERY=12 this forces
-        // a fresh keyframe on the 12th tick after the last one (not the 13th).
-        const forceKeyframe = this._structuresSinceKeyframe >= SnapshotService.KEYFRAME_EVERY - 1;
-        if (unchanged && !forceKeyframe) {
-          structuresRefSnapshotId = this._lastStructuresKeyframeId;
-          structuresToWrite = []; // reference the keyframe instead of re-storing the rows
-        }
-      }
+      // Entity fan-out dedup: if the set is unchanged from the last keyframe (and we haven't
+      // hit the forced-keyframe cadence), reference that keyframe and skip writing the rows
+      // for this tick. First tick after restart / a content change / the cadence boundary
+      // writes a fresh full keyframe.
+      const structuresPlan = this._planDedup('structures', this._trackStructures, () =>
+        this._hashStructures(timelineStructures),
+      );
+      const backpacksPlan = this._planDedup('backpacks', this._trackBackpacks, () =>
+        this._hashBackpacks(timelineBackpacks),
+      );
+      const housesPlan = this._planDedup('houses', this._trackHouses, () => this._hashHouses(timelineHouses));
+
+      // Players delta：keyframe tick（重啟後第一 tick 或 cadence 到期）寫全名冊
+      // 並把 snapshot 標記 players_keyframe=1，其餘 tick 只寫 online 或狀態簽章
+      // 有變的玩家。識別鍵一律走 _playerKey（steamId || name）。
+      const playerSigs = new Map<string, string>();
+      for (const p of timelinePlayers) playerSigs.set(this._playerKey(p), this._playerSig(p));
+      const playersKeyframe =
+        this._lastPlayerSigs === null || this._playersSinceKeyframe >= SnapshotService.KEYFRAME_EVERY - 1;
+      const playersToWrite = playersKeyframe
+        ? timelinePlayers
+        : timelinePlayers.filter(
+            (p) =>
+              p.online === 1 || this._lastPlayerSigs?.get(this._playerKey(p)) !== playerSigs.get(this._playerKey(p)),
+          );
 
       // Write to DB
       const snapId = this._db.timeline.insertTimelineSnapshot({
-        snapshot: { ...snapshot, structuresStateHash, structuresRefSnapshotId },
-        players: timelinePlayers,
+        snapshot: {
+          ...snapshot,
+          structuresStateHash: structuresPlan.hash,
+          structuresRefSnapshotId: structuresPlan.refId,
+          backpacksStateHash: backpacksPlan.hash,
+          backpacksRefSnapshotId: backpacksPlan.refId,
+          housesStateHash: housesPlan.hash,
+          housesRefSnapshotId: housesPlan.refId,
+          playersKeyframe,
+        },
+        players: playersToWrite,
         ai: timelineAI,
         vehicles: timelineVehicles,
-        structures: structuresToWrite,
-        houses: timelineHouses,
+        structures: structuresPlan.refId === null ? timelineStructures : [],
+        houses: housesPlan.refId === null ? timelineHouses : [],
         companions: timelineCompanions,
-        backpacks: timelineBackpacks,
+        backpacks: backpacksPlan.refId === null ? timelineBackpacks : [],
       });
 
-      // Update keyframe state for the next tick's dedup decision.
-      if (this._trackStructures) {
-        if (structuresRefSnapshotId === null) {
-          this._lastStructuresHash = structuresStateHash;
-          this._lastStructuresKeyframeId = snapId;
-          this._structuresSinceKeyframe = 0;
-        } else {
-          this._structuresSinceKeyframe++;
+      // Update keyframe state for the next tick's dedup decision (only after a successful
+      // insert — a failed tick leaves state untouched so the next tick retries a full write).
+      this._commitDedup('structures', this._trackStructures, structuresPlan, snapId);
+      this._commitDedup('backpacks', this._trackBackpacks, backpacksPlan, snapId);
+      this._commitDedup('houses', this._trackHouses, housesPlan, snapId);
+      if (playersKeyframe) {
+        this._lastPlayerSigs = playerSigs;
+        this._playersSinceKeyframe = 0;
+      } else {
+        // 只更新本 tick 實際寫入的玩家簽章；離開存檔的玩家移除（記憶體有界，
+        // 且其殘留簽章不會讓「重新出現且狀態相同」的玩家被誤判為不變 —— 因為
+        // 這裡同步刪掉了）。
+        const lastSigs = this._lastPlayerSigs as Map<string, string>;
+        for (const p of playersToWrite) {
+          const key = this._playerKey(p);
+          lastSigs.set(key, playerSigs.get(key) as string);
         }
+        for (const key of [...lastSigs.keys()]) {
+          if (!playerSigs.has(key)) lastSigs.delete(key);
+        }
+        this._playersSinceKeyframe++;
       }
 
       this._lastSnapshotId = snapId;
       this._lastSnapshotAt = Date.now();
       this._snapshotCount++;
 
-      // Periodic pruning (every 12 snapshots ≈ 1 hour at 5-min intervals)
+      // Periodic pruning (every 12 snapshots ≈ 1 hour at 5-min intervals).
+      // Fire-and-forget：分批 purge 是 async（批間讓出 event loop），recordSnapshot
+      // 本身維持同步；_pruneOldData 內部有 reentrancy 防護與 try/catch。
       this._pruneCounter++;
       if (this._pruneCounter >= 12) {
         this._pruneCounter = 0;
-        this._pruneOldData();
+        void this._pruneOldData();
       }
 
       const entityCount =
@@ -573,6 +623,32 @@ export class SnapshotService {
     if (Array.isArray(data)) return data;
     if (data instanceof Map) return [...data.values()];
     return Object.values(data);
+  }
+
+  /**
+   * Players 專用 normalize：Map / Record 的 key 就是 steamId，而生產 save-cache
+   * 的 player value 物件「沒有」頂層 steamId 欄位（截至 v26 分析時實測 454/454
+   * 缺欄）—— 只取 values 會讓 timeline_players.steam_id 全空、delta 識別鍵塌縮。
+   * 這裡把 key 帶進 entry；既有非空 steamId/steam_id 欄位優先、不覆蓋。
+   */
+  private _normalizePlayers(
+    data: Map<string, SaveEntity> | Record<string, SaveEntity> | SaveEntity[] | undefined | null,
+  ): SaveEntity[] {
+    if (!data) return [];
+    if (Array.isArray(data)) return data;
+    const entries = data instanceof Map ? [...data.entries()] : Object.entries(data);
+    return entries.map(([sid, p]) =>
+      (p['steamId'] as string | undefined) || (p['steam_id'] as string | undefined) ? p : { ...p, steamId: sid },
+    );
+  }
+
+  /**
+   * Delta 識別鍵：steam_id 非空取 steam_id，否則退回 name（防解析器邊角 / 生產
+   * legacy 空 steam_id 列）。寫入 filter、簽章 Map、重建 overlay
+   * （TimelineRepository._timelinePlayersAsOf）必須用同一把鍵。
+   */
+  private _playerKey(p: TimelinePlayer): string {
+    return p.steamId !== '' ? p.steamId : p.name;
   }
 
   /** Classify AI type into category. */
@@ -627,44 +703,139 @@ export class SnapshotService {
   }
 
   /**
-   * Order-independent content hash of the structure set. Each structure is reduced to a
-   * canonical signature (class/displayName/owner/pos/health/upgrade — every persisted,
-   * independently-variable column); signatures are sorted before hashing so a save/DB
+   * Dedup decision for one entity kind: returns the content hash and — when the set is
+   * unchanged from the last keyframe and the cadence hasn't expired — the keyframe id to
+   * reference instead of re-storing the rows. Disabled tracking → both null (rows are []
+   * anyway; hashing an empty set every tick would just ref an empty keyframe for no gain).
+   */
+  private _planDedup(
+    kind: 'structures' | 'backpacks' | 'houses',
+    enabled: boolean,
+    hashFn: () => string,
+  ): { hash: string | null; refId: number | null } {
+    if (!enabled) return { hash: null, refId: null };
+    const state = this._dedup[kind];
+    const hash = hashFn();
+    const unchanged = state.keyframeId !== null && hash === state.lastHash;
+    // -1 because the counter only advances on ref ticks: with KEYFRAME_EVERY=12 this forces
+    // a fresh keyframe on the 12th tick after the last one (not the 13th).
+    const forceKeyframe = state.sinceKeyframe >= SnapshotService.KEYFRAME_EVERY - 1;
+    return { hash, refId: unchanged && !forceKeyframe ? state.keyframeId : null };
+  }
+
+  /** Update keyframe state after a successful insert. */
+  private _commitDedup(
+    kind: 'structures' | 'backpacks' | 'houses',
+    enabled: boolean,
+    plan: { hash: string | null; refId: number | null },
+    snapId: number,
+  ): void {
+    if (!enabled) return;
+    const state = this._dedup[kind];
+    if (plan.refId === null) {
+      state.lastHash = plan.hash;
+      state.keyframeId = snapId;
+      state.sinceKeyframe = 0;
+    } else {
+      state.sinceKeyframe++;
+    }
+  }
+
+  /**
+   * Order-independent content hash of an entity set. Each row is reduced to a canonical
+   * JSON signature tuple (JSON-encoding prevents a literal delimiter inside a field from
+   * colliding two distinct sets); signatures are sorted before hashing so a save/DB
    * row-order change alone does NOT look like a content change.
    */
-  private _hashStructures(structures: TimelineStructure[]): string {
-    const sigs = structures.map((s) =>
-      // JSON-encode the field tuple so a literal delimiter inside a field (e.g. a '|' in
-      // actorClass / ownerSteamId) can't make two distinct structure sets hash the same.
-      // displayName is included because it is persisted on timeline_structures and could be
-      // supplied independently of actorClass — a display-only change must still bust the dedup.
-      JSON.stringify([
-        s.actorClass,
-        s.displayName,
-        s.ownerSteamId,
-        s.x,
-        s.y,
-        s.z,
-        s.currentHealth,
-        s.maxHealth,
-        s.upgradeLevel,
-      ]),
-    );
-    sigs.sort();
-    return createHash('sha1')
-      .update(`${String(structures.length)}\n${sigs.join('\n')}`)
+  private _hashRows(sigs: string[]): string {
+    const sorted = [...sigs].sort();
+    // sha256（非安全用途，sha1 即足夠，但一行成本可同時消除 SAST 告警與理論碰撞）。
+    // hash 只在同一 process 記憶體內比對（重啟後 null 強制全量寫入），不與 DB 既存值
+    // 跨版本比較，換演算法安全。
+    return createHash('sha256')
+      .update(`${String(sorted.length)}\n${sorted.join('\n')}`)
       .digest('hex');
   }
 
-  /** Prune old timeline data beyond retention period. */
-  private _pruneOldData(): void {
+  // Every persisted, independently-variable column of each timeline table is included in the
+  // signature — a change in any stored field must bust the dedup.
+  private _hashStructures(structures: TimelineStructure[]): string {
+    return this._hashRows(
+      structures.map((s) =>
+        JSON.stringify([
+          s.actorClass,
+          s.displayName,
+          s.ownerSteamId,
+          s.x,
+          s.y,
+          s.z,
+          s.currentHealth,
+          s.maxHealth,
+          s.upgradeLevel,
+        ]),
+      ),
+    );
+  }
+
+  private _hashBackpacks(backpacks: TimelineBackpack[]): string {
+    // items 是我們自己建構的 {item, amount} 陣列，鍵序固定，JSON.stringify 穩定。
+    return this._hashRows(backpacks.map((b) => JSON.stringify([b.class, b.x, b.y, b.z, b.itemCount, b.items])));
+  }
+
+  private _hashHouses(houses: TimelineHouse[]): string {
+    return this._hashRows(
+      houses.map((h) =>
+        JSON.stringify([
+          h.uid,
+          h.name,
+          h.windowsOpen,
+          h.windowsTotal,
+          h.doorsOpen,
+          h.doorsLocked,
+          h.doorsTotal,
+          h.destroyedFurniture,
+          h.hasGenerator,
+          h.sleepers,
+          h.clean,
+        ]),
+      ),
+    );
+  }
+
+  /** Delta signature of one player row（全部持久化欄位 —— 任一欄位變動都必須觸發寫列）. */
+  private _playerSig(p: TimelinePlayer): string {
+    return JSON.stringify([
+      p.name,
+      p.online,
+      p.x,
+      p.y,
+      p.z,
+      p.health,
+      p.maxHealth,
+      p.hunger,
+      p.thirst,
+      p.infection,
+      p.stamina,
+      p.level,
+      p.zeeksKilled,
+      p.daysSurvived,
+      p.lifetimeKills,
+    ]);
+  }
+
+  /** Prune old timeline data beyond retention period (async 分批；不重入). */
+  private async _pruneOldData(): Promise<void> {
+    if (this._pruneInFlight) return; // 前一輪分批 purge 未完成，跳過本輪
+    this._pruneInFlight = true;
     try {
-      const result = this._db.timeline.purgeOldTimeline(`-${String(this._retentionDays)} days`);
+      const result = await this._db.timeline.purgeOldTimeline(`-${String(this._retentionDays)} days`);
       if (result.changes > 0) {
         this._log.info(`Pruned ${String(result.changes)} old timeline snapshots (>${String(this._retentionDays)}d)`);
       }
     } catch (err) {
       this._log.warn('Failed to prune timeline:', errMsg(err));
+    } finally {
+      this._pruneInFlight = false;
     }
   }
 }

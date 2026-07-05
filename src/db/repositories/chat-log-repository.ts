@@ -109,6 +109,8 @@ export class ChatLogRepository extends BaseRepository {
 
   /** Purge old chat entries (e.g. '-30 days'). */
   purgeOldChat(olderThan: string) {
+    // ponytail: 單刀 DELETE 不分批 —— chat_log 目前僅千餘列；若量級成長到會阻塞
+    // event loop，比照 purgeOldMovements 改 id IN (SELECT ... LIMIT ?) 分批。
     return this._stmts.purgeOldChat.run(olderThan);
   }
 

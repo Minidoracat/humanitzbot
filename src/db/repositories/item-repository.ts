@@ -1,11 +1,14 @@
 import type Database from 'better-sqlite3';
 import { BaseRepository } from './base-repository.js';
 import { type DbRow, _json } from './db-utils.js';
+import { yieldToEventLoop } from '../../utils/async.js';
 
 interface ItemTrackerPurgeOptions {
   lostItemsAge?: string;
   lostGroupsAge?: string;
   movementsAge?: string;
+  /** movements 分批刪除的每批列數（v26；預設 500，測試可調小） */
+  movementsBatchSize?: number;
 }
 
 interface ItemTrackerPurgeResult {
@@ -77,7 +80,6 @@ export class ItemRepository extends BaseRepository {
     searchItemInstancesPage: Database.Statement;
     searchItemInstancesPageByLocation: Database.Statement;
     purgeOldLostItems: Database.Statement;
-    getItemInstancesByGroup: Database.Statement;
     // Item groups
     insertItemGroup: Database.Statement;
     updateItemGroupQuantity: Database.Statement;
@@ -191,8 +193,6 @@ export class ItemRepository extends BaseRepository {
           WHERE item_movements.instance_id = item_instances.id
         )
     `),
-      getItemInstancesByGroup: this._handle.prepare('SELECT * FROM item_instances WHERE group_id = ? AND lost = 0'),
-
       // Item groups (fungible item tracking)
       insertItemGroup: this._handle.prepare(`
       INSERT INTO item_groups (fingerprint, item, durability, ammo, attachments, cap, max_dur, location_type, location_id, location_slot, pos_x, pos_y, pos_z, quantity, stack_size, first_seen, last_seen, lost)
@@ -356,7 +356,12 @@ export class ItemRepository extends BaseRepository {
       getItemMovementsByLocation: this._handle.prepare(
         'SELECT * FROM item_movements WHERE (from_type = ? AND from_id = ?) OR (to_type = ? AND to_id = ?) ORDER BY created_at DESC LIMIT ?',
       ),
-      purgeOldMovements: this._handle.prepare("DELETE FROM item_movements WHERE created_at < datetime('now', ?)"),
+      // v26：分批刪（id IN ... LIMIT 子查詢，不依賴 DELETE...LIMIT 編譯旗標）——
+      // 停機補跑時單刀 DELETE 可同步阻塞數十秒。子查詢走 idx_item_mov_created。
+      purgeOldMovements: this._handle.prepare(
+        'DELETE FROM item_movements WHERE id IN (' +
+          "SELECT id FROM item_movements WHERE created_at < datetime('now', ?) LIMIT ?)",
+      ),
     };
   }
 
@@ -535,10 +540,6 @@ export class ItemRepository extends BaseRepository {
 
   purgeOldLostItems(age = '-30 days') {
     return this._stmts.purgeOldLostItems.run(age);
-  }
-
-  getItemInstancesByGroup(groupId: number) {
-    return this._stmts.getItemInstancesByGroup.all(groupId);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -755,8 +756,20 @@ export class ItemRepository extends BaseRepository {
     return this._stmts.getItemMovementsByLocation.all(locationType, locationId, locationType, locationId, limit);
   }
 
-  purgeOldMovements(age = '-30 days') {
-    return this._stmts.purgeOldMovements.run(age);
+  /** v26：分批刪除直到清完（批間讓出 event loop），回傳 { changes: 總刪除數 }。 */
+  async purgeOldMovements(age = '-30 days', batchSize = 500): Promise<{ changes: number }> {
+    // batchSize 防護：0 / 負數 / NaN / Infinity 會讓「changes < batchSize」永不成立 → 無限迴圈
+    const batch = Number.isFinite(batchSize) && Math.trunc(batchSize) > 0 ? Math.trunc(batchSize) : 500;
+    let total = 0;
+    for (;;) {
+      // shutdown 競態：批間讓出 event loop 時 close() 可能已跑完 —— 靜默停止而非丟例外
+      if (!this._handle.open) break;
+      const { changes } = this._stmts.purgeOldMovements.run(age, batch);
+      total += changes;
+      if (changes < batch) break;
+      await yieldToEventLoop();
+    }
+    return { changes: total };
   }
 
   /**
@@ -766,18 +779,18 @@ export class ItemRepository extends BaseRepository {
    * removed only after old movements are purged and only when no remaining
    * movement still references them. This preserves SQLite FK integrity without
    * rebuilding the large item_movements table.
+   *
+   * v26：movements 改分批（async），不再與 items/groups 同包一個大交易 ——
+   * FK 安全靠的是「先刪 movements、且 items/groups 的 NOT EXISTS 條件在刪除
+   * 當下檢查」的順序，不需要跨階段原子性；items/groups 兩刀仍在單一小交易。
    */
-  purgeOldItemTrackerData(options: ItemTrackerPurgeOptions = {}): ItemTrackerPurgeResult {
+  async purgeOldItemTrackerData(options: ItemTrackerPurgeOptions = {}): Promise<ItemTrackerPurgeResult> {
+    const movements = await this.purgeOldMovements(options.movementsAge ?? '-30 days', options.movementsBatchSize);
     const tx = this._handle.transaction(() => {
-      const movements = this.purgeOldMovements(options.movementsAge ?? '-30 days');
       const items = this.purgeOldLostItems(options.lostItemsAge ?? '-7 days');
       const groups = this.purgeOldLostGroups(options.lostGroupsAge ?? '-7 days');
-      return {
-        movementsDeleted: movements.changes,
-        itemsDeleted: items.changes,
-        groupsDeleted: groups.changes,
-      };
+      return { itemsDeleted: items.changes, groupsDeleted: groups.changes };
     });
-    return tx();
+    return { movementsDeleted: movements.changes, ...tx() };
   }
 }
