@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import _database from '../src/db/database.js';
+import { SCHEMA_VERSION } from '../src/db/schema.js';
 const HumanitZDB = _database as any;
 
 import * as _item_tracker from '../src/db/item-tracker.js';
@@ -1421,7 +1422,7 @@ describe('Item Tracker', () => {
       assert.ok(indexNames('item_groups').includes('idx_item_grp_active_location_sort'));
       assert.ok(indexNames('item_movements').includes('idx_item_mov_instance'));
       assert.ok(indexNames('item_movements').includes('idx_item_mov_group'));
-      assert.equal(db._getMeta('schema_version'), '27');
+      assert.equal(db._getMeta('schema_version'), String(SCHEMA_VERSION));
     });
 
     it('repairs legacy item_movements instance_id NOT NULL during migration', () => {

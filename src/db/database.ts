@@ -217,6 +217,14 @@ const ADDITIVE_COLUMNS: ReadonlyArray<{ table: string; column: string; ddl: stri
     column: 'players_keyframe',
     ddl: 'ALTER TABLE timeline_snapshots ADD COLUMN players_keyframe INTEGER DEFAULT 0',
   },
+  // v27→v28
+  { table: 'user_links', column: 'steam_persona', ddl: 'ALTER TABLE user_links ADD COLUMN steam_persona TEXT' },
+  { table: 'user_links', column: 'steam_avatar', ddl: 'ALTER TABLE user_links ADD COLUMN steam_avatar TEXT' },
+  {
+    table: 'user_links',
+    column: 'steam_profile_updated_at',
+    ddl: 'ALTER TABLE user_links ADD COLUMN steam_profile_updated_at TEXT',
+  },
 ];
 
 const READ_ONLY_RAW_PRAGMAS = new Set([
@@ -1774,6 +1782,26 @@ class HumanitZDB {
           CREATE INDEX IF NOT EXISTS idx_user_link_audit_steam ON user_link_audit(steam_id);
         `);
         this._log.info('Migration v26→v27: user_links + user_link_audit tables');
+      }
+
+      // v27 → v28: user_links 加 Steam 個人資料快取欄（persona/avatar/最近抓取時間）。
+      // 純 additive ADD COLUMN，同步登記於 ADDITIVE_COLUMNS 供 drift 修復。
+      // v27 段建的是歷史快照 DDL（無新欄），故 < 28 一律 ADD；欄位已存在
+      //（早期 v28 dev / drift 修復先行）由 duplicate column 檢查吸收。
+      if (fromVersion < 28) {
+        for (const ddl of [
+          'ALTER TABLE user_links ADD COLUMN steam_persona TEXT',
+          'ALTER TABLE user_links ADD COLUMN steam_avatar TEXT',
+          'ALTER TABLE user_links ADD COLUMN steam_profile_updated_at TEXT',
+        ]) {
+          try {
+            this._handle.exec(ddl);
+          } catch (err: unknown) {
+            // 欄位已存在（曾跑過早期 v28 dev / drift 修復先行）→ no-op
+            if (!/duplicate column/i.test(err instanceof Error ? err.message : String(err))) throw err;
+          }
+        }
+        this._log.info('Migration v27→v28: user_links steam profile columns');
       }
 
       this._ensureItemMovementsInstanceIdNullable();

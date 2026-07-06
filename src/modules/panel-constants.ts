@@ -752,6 +752,21 @@ const ENV_CATEGORIES = [
       { env: 'SESSION_TTL', label: 'Session TTL (seconds)', cfg: 'sessionTtl', type: 'int' },
       { env: 'SESSION_REDIS_URL', label: 'Redis URL', cfg: 'sessionRedisUrl' },
       { env: 'WEB_MAP_SESSION_SECRET', label: 'Session Secret', cfg: 'sessionSecret', sensitive: true },
+      // 消費端全部 per-request 讀 config —— live 即時生效
+      {
+        env: 'ENABLE_STEAM_PROFILE_SYNC',
+        label: 'Steam Profile Sync + Require Link (true/false)',
+        cfg: 'enableSteamProfileSync',
+        type: 'bool',
+        reloadStrategy: 'live',
+      },
+      {
+        env: 'STEAM_WEB_API_KEY',
+        label: 'Steam Web API Key',
+        cfg: 'steamWebApiKey',
+        sensitive: true,
+        reloadStrategy: 'live',
+      },
     ],
   },
 ];

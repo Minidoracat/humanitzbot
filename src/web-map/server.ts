@@ -247,7 +247,9 @@ class WebMapServer {
           "default-src 'self'",
           "script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net https://static.cloudflareinsights.com",
           "style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com",
-          "img-src 'self' https://cdn.discordapp.com data: blob:",
+          // Steam 頭像 CDN（steam profile sync）—— 與 steam-profile.ts 的 AVATAR_HOST_RE
+          // 保持同一組 host（Steam 在這些 avatars.* CDN 間輪替）。
+          "img-src 'self' https://cdn.discordapp.com https://avatars.steamstatic.com https://avatars.akamai.steamstatic.com https://avatars.cloudflare.steamstatic.com https://avatars.fastly.steamstatic.com data: blob:",
           "connect-src 'self' https://unpkg.com https://cdn.jsdelivr.net https://static.cloudflareinsights.com",
           "font-src 'self' https://fonts.gstatic.com",
           "frame-ancestors 'none'",

@@ -41,12 +41,15 @@ export class UserLinksRepository extends BaseRepository {
     countLinksSearch: Database.Statement;
     getAuditFor: Database.Statement;
     countAuditFor: Database.Statement;
+    updateSteamProfile: Database.Statement;
+    touchSteamProfile: Database.Statement;
   };
 
   protected _prepareStatements(): void {
     // listLinks 的 LEFT JOIN players 只為顯示遊戲名 —— 綁定不要求 players 已有該 steam_id。
     const listSelect = `
       SELECT ul.discord_user_id, ul.steam_id, ul.verified_via, ul.created_by, ul.created_at,
+             ul.steam_persona, ul.steam_avatar,
              p.name AS player_name
       FROM user_links ul
       LEFT JOIN players p ON p.steam_id = ul.steam_id
@@ -77,6 +80,13 @@ export class UserLinksRepository extends BaseRepository {
         'SELECT * FROM user_link_audit WHERE discord_user_id = ? ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?',
       ),
       countAuditFor: this._handle.prepare('SELECT COUNT(*) AS count FROM user_link_audit WHERE discord_user_id = ?'),
+      updateSteamProfile: this._handle.prepare(`
+        UPDATE user_links SET steam_persona = ?, steam_avatar = ?, steam_profile_updated_at = datetime('now')
+        WHERE discord_user_id = ?
+      `),
+      touchSteamProfile: this._handle.prepare(
+        "UPDATE user_links SET steam_profile_updated_at = datetime('now') WHERE discord_user_id = ?",
+      ),
     };
   }
 
@@ -156,6 +166,16 @@ export class UserLinksRepository extends BaseRepository {
       this.insertAudit({ ...audit, steamId: row.steam_id as string });
       return row.steam_id as string;
     })();
+  }
+
+  /** 寫入 Steam 個人資料快取（抓取成功時）。無綁定列時 no-op。 */
+  updateSteamProfile(discordUserId: string, persona: string | null, avatar: string | null): boolean {
+    return this._stmts.updateSteamProfile.run(persona, avatar, discordUserId).changes > 0;
+  }
+
+  /** 只更新最近抓取時間（抓取失敗時）—— 保留舊 persona/avatar，並避免 retry 風暴。 */
+  touchSteamProfile(discordUserId: string): boolean {
+    return this._stmts.touchSteamProfile.run(discordUserId).changes > 0;
   }
 
   /** Append a bind/unbind audit record. */

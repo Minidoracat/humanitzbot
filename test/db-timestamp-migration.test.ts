@@ -7,6 +7,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import _database from '../src/db/database.js';
+import { SCHEMA_VERSION } from '../src/db/schema.js';
 const HumanitZDB = _database as any;
 
 function plantLegacyValues(db: any, steamId: string, values: Record<string, string | null>) {
@@ -60,7 +61,7 @@ describe('Schema v23 — normalize legacy ISO playtime timestamps', () => {
       assert.equal(untouched.playtime_last_login, null);
       assert.equal(untouched.playtime_last_seen, 'not-a-timestamp');
 
-      assert.equal(db._getMeta('schema_version'), '27');
+      assert.equal(db._getMeta('schema_version'), String(SCHEMA_VERSION));
     } finally {
       db.close();
     }

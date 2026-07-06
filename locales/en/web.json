@@ -58,7 +58,9 @@
     "unlink_steam": "Unlink",
     "unlink_steam_confirm": "Unlink your Steam account?",
     "steam_unlinked": "Steam account unlinked",
-    "steam_unlink_failed": "Failed to unlink Steam account"
+    "steam_unlink_failed": "Failed to unlink Steam account",
+    "steam_gate_title": "Link your Steam account",
+    "steam_gate_desc": "This server requires linking your Steam account to your Discord login before using the panel."
   },
   "common": {
     "cancel": "Cancel"
@@ -331,7 +333,9 @@
       "unique_items_count": "Unique Items ({{count}})",
       "companions_count": "Companions ({{count}})",
       "horses_count": "Horses ({{count}})"
-    }
+    },
+    "link_steam_hint": "Link your Steam account to see yourself on the map",
+    "load_failed": "Failed to load map data"
   },
   "timeline": {
     "previous": "Previous (←)",
@@ -1147,7 +1151,9 @@
     "session_store": "Session storage backend: memory, sqlite, or redis",
     "session_ttl": "Session lifetime in seconds (default: 604800 = 7 days)",
     "session_redis_url": "Redis connection URL (only for redis store)",
-    "web_map_session_secret": "Secret key for signing session cookies (auto-generated if empty)"
+    "web_map_session_secret": "Secret key for signing session cookies (auto-generated if empty)",
+    "enable_steam_profile_sync": "Fetch Steam avatars/nicknames for linked accounts; when on, survivors/mods must link both Discord and Steam to use the panel (admins exempt)",
+    "steam_web_api_key": "Steam Web API key for profile fetching (get one at steamcommunity.com/dev/apikey)"
   },
   "db_tables": {
     "activity_log": "Activity Log",

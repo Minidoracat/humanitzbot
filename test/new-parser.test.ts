@@ -25,6 +25,7 @@ const {
 } = saveParserInternals;
 
 import _database from '../src/db/database.js';
+import { SCHEMA_VERSION } from '../src/db/schema.js';
 const HumanitZDB = _database as any;
 
 // ─── Test data paths ────────────────────────────────────────────────────────
@@ -538,7 +539,7 @@ describe('HumanitZDB', () => {
 
     it('sets schema version', () => {
       const version = db._getMeta('schema_version');
-      assert.equal(version, '27');
+      assert.equal(version, String(SCHEMA_VERSION));
     });
 
     it('creates player_aliases table', () => {

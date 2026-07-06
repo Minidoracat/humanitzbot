@@ -231,6 +231,45 @@ export function safeUnknownString(value: unknown): string {
   return JSON.stringify(value);
 }
 
+// 車鑰匙綁定字串：vehicles.extra JSON 的 Data 陣列內含
+// '<flags>\r\n<flags>\r\nNone\r\n<steamId64>_+_|<32hex guid>'（無主車第 4 段為 None）。
+// parser 未抽 owner 欄位（schema 不動）—— 讀取時解析即可（feature: 玩家地圖自見載具）。
+// ponytail: 格式假設 = 7656 開頭 17 位 + '_+_|' 分隔；若 HumanitZ 改車鑰匙格式，
+// 此處靜默回 null（玩家看不到自己的車，無錯誤）。升級路徑：parser 抽 owner 欄位進 schema。
+const VEHICLE_OWNER_RE = /(7656\d{13})_\+_\|/g;
+
+/** 掃出 vehicles.extra JSON 內所有車主 SteamID64（可能多把鑰匙）；解析失敗 → []。 */
+function _extractVehicleOwnerSteamIds(extraJson: unknown): string[] {
+  if (typeof extraJson !== 'string' || !extraJson) return [];
+  const out: string[] = [];
+  try {
+    const extra = JSON.parse(extraJson) as { Data?: unknown };
+    if (!Array.isArray(extra.Data)) return [];
+    for (const s of extra.Data) {
+      if (typeof s !== 'string') continue;
+      for (const m of s.matchAll(VEHICLE_OWNER_RE)) {
+        if (m[1]) out.push(m[1]);
+      }
+    }
+  } catch {
+    /* malformed extra JSON */
+  }
+  return out;
+}
+
+/** 從 vehicles.extra JSON 解析車主 SteamID64（第一個匹配）；無主 / 解析失敗 → null。 */
+export function extractVehicleOwnerSteamId(extraJson: unknown): string | null {
+  return _extractVehicleOwnerSteamIds(extraJson)[0] ?? null;
+}
+
+/**
+ * 該載具是否屬於 steamId —— 比對 extra 內「任一」車主 token，而非只看第一個。
+ * 多把鑰匙 / 轉手歷史下，只取首個匹配會誤判（漏放自己的車或誤放別人的）。
+ */
+export function vehicleBelongsTo(extraJson: unknown, steamId: string): boolean {
+  return _extractVehicleOwnerSteamIds(extraJson).includes(steamId);
+}
+
 export function sendErrorWithData(
   res: import('express').Response,
   code: string,

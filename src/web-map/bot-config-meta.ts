@@ -24,6 +24,7 @@ export const ENV_SENSITIVE_KEYS = new Set([
   'SFTP_PASSWORD',
   'SFTP_PRIVATE_KEY_PATH',
   'PANEL_API_KEY',
+  'STEAM_WEB_API_KEY',
 ]);
 
 // Keys that are read-only (managed by the bot/bootstrap .env, not user-editable via web)

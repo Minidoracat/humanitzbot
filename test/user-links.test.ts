@@ -11,6 +11,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import _database from '../src/db/database.js';
+import { SCHEMA_VERSION } from '../src/db/schema.js';
 const HumanitZDB = _database as any;
 
 function objectNames(db: any, type: 'table' | 'index'): Set<string> {
@@ -41,7 +42,7 @@ describe('Schema v27 — user_links migration', () => {
 
       db._applySchema();
 
-      assert.equal(db._getMeta('schema_version'), '27');
+      assert.equal(db._getMeta('schema_version'), String(SCHEMA_VERSION));
       const tables = objectNames(db, 'table');
       assert.ok(tables.has('user_links'), 'user_links must be created by v27');
       assert.ok(tables.has('user_link_audit'), 'user_link_audit must be created by v27');
@@ -70,11 +71,11 @@ describe('Schema v27 — user_links migration', () => {
     const db = new HumanitZDB({ memory: true, label: 'V27Rerun' });
     db.init();
     try {
-      assert.equal(db._getMeta('schema_version'), '27');
+      assert.equal(db._getMeta('schema_version'), String(SCHEMA_VERSION));
       db.userLinks.insertLink({ discordUserId: 'd1', steamId: 's1', createdBy: 'd1' });
       db._setMeta('schema_version', '26');
       db._applySchema();
-      assert.equal(db._getMeta('schema_version'), '27');
+      assert.equal(db._getMeta('schema_version'), String(SCHEMA_VERSION));
       // IF NOT EXISTS：既有資料不得被重跑清掉
       assert.equal(db.userLinks.getByDiscordId('d1')?.steam_id, 's1');
     } finally {

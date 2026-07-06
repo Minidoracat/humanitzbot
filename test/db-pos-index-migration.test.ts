@@ -7,6 +7,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import _database from '../src/db/database.js';
+import { SCHEMA_VERSION } from '../src/db/schema.js';
 const HumanitZDB = _database as any;
 
 const POS_INDEXES = [
@@ -59,7 +60,7 @@ describe('Schema v22 — partial pos_x indexes', () => {
       for (const name of POS_INDEXES) {
         assert.ok(migrated.has(name), `${name} should be recreated by the v21→v22 migration`);
       }
-      assert.equal(db._getMeta('schema_version'), '27');
+      assert.equal(db._getMeta('schema_version'), String(SCHEMA_VERSION));
     } finally {
       db.close();
     }
