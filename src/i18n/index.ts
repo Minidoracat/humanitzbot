@@ -41,13 +41,19 @@ const I18N_OPTIONS = {
   defaultNS: 'common',
   resources,
   interpolation: { escapeValue: false },
-  initImmediate: false,
+  initAsync: false,
 } as const;
 
 /**
- * Initialize i18next. Safe to await at startup; initImmediate:false also
- * means the first call completes synchronously, so modules that import and
- * use t() before awaiting this function will still get translations.
+ * Initialize i18next. Safe to await at startup. Synchronous completion is
+ * guaranteed by the inline `resources` above — i18next skips its setTimeout
+ * load path whenever resources are bundled. `initAsync: false` is a
+ * belt-and-braces gate that keeps init synchronous even if resources ever
+ * move to a backend loader. Either way, modules that import and call t()
+ * before awaiting this function still get translations.
+ *
+ * Note: i18next v26 removed the old `initImmediate` option; `initAsync` is
+ * its replacement (renamed in v24).
  */
 export async function initI18n(): Promise<void> {
   await i18next.init(I18N_OPTIONS);
