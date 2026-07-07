@@ -191,6 +191,9 @@ export function registerPlayersRoutes(app: Express, ctx: WebMapRouteContext): vo
       // Resolve profession display name from enum code
       const professionName = PERK_MAP[data.startingPerk as string] || (data.startingPerk as string) || 'Unknown';
 
+      // 注意：survivor 視角靠事後的 _stripPrivatePlayerFields 裁掉私密欄位——
+      // 在這個 literal 新增任何敏感欄位（inventory 類陣列、精確狀態）時，
+      // 必須同步登記到 PRIVATE_ARRAY_FIELDS / 該函式，否則會洩漏給非隊友。
       const entry: Record<string, unknown> = {
         steamId,
         name,

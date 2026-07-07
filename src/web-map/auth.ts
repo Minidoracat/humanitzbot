@@ -308,8 +308,8 @@ function setupAuth(
     if (!_defaultConfig.enableSteamProfileSync || !_defaultConfig.steamWebApiKey || !userLinks) return;
     try {
       const profile = await fetchSteamProfile(steamId, _defaultConfig.steamWebApiKey);
-      if (profile) userLinks.updateSteamProfile(discordUserId, profile.persona, profile.avatar);
-      else userLinks.touchSteamProfile(discordUserId);
+      if (profile) userLinks.updateSteamProfile(discordUserId, steamId, profile.persona, profile.avatar);
+      else userLinks.touchSteamProfile(discordUserId, steamId);
     } catch (err: unknown) {
       console.warn('[AUTH] Steam profile sync failed:', err instanceof Error ? err.message : String(err));
     }
@@ -995,7 +995,9 @@ function setupAuth(
       if (
         _defaultConfig.enableSteamProfileSync &&
         lowerPath.startsWith('/api/') &&
-        lowerPath !== '/api/landing' &&
+        // 剝尾斜線再比對：Express non-strict routing 下 /api/landing/ 命中同一
+        // 公開端點，但 req.path 保留尾斜線，精確比對會誤擋。
+        lowerPath.replace(/\/+$/, '') !== '/api/landing' &&
         (hmzReq.tierLevel ?? 0) >= (TIER['survivor'] as number) &&
         (hmzReq.tierLevel ?? 0) < (TIER['admin'] as number)
       ) {

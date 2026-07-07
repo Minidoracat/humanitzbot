@@ -294,20 +294,55 @@ describe('user_links v28 steam profile columns', () => {
 
   it('fresh DB has the v28 columns and update/touch work', () => {
     db.userLinks.insertLink({ discordUserId: 'u1', steamId: STEAM_SELF, createdBy: 'u1' });
-    assert.equal(db.userLinks.updateSteamProfile('u1', 'Tester', 'https://avatars.steamstatic.com/a.jpg'), true);
+    assert.equal(
+      db.userLinks.updateSteamProfile('u1', STEAM_SELF, 'Tester', 'https://avatars.steamstatic.com/a.jpg'),
+      true,
+    );
     let row = db.userLinks.getByDiscordId('u1');
     assert.equal(row.steam_persona, 'Tester');
     assert.equal(row.steam_avatar, 'https://avatars.steamstatic.com/a.jpg');
     assert.ok(row.steam_profile_updated_at, 'updated_at stamped');
 
     // touch：只動時間戳，persona/avatar 不變
-    assert.equal(db.userLinks.touchSteamProfile('u1'), true);
+    assert.equal(db.userLinks.touchSteamProfile('u1', STEAM_SELF), true);
     row = db.userLinks.getByDiscordId('u1');
     assert.equal(row.steam_persona, 'Tester');
 
     // 無綁定列 → no-op
-    assert.equal(db.userLinks.updateSteamProfile('nobody', 'X', null), false);
-    assert.equal(db.userLinks.touchSteamProfile('nobody'), false);
+    assert.equal(db.userLinks.updateSteamProfile('nobody', STEAM_SELF, 'X', null), false);
+    assert.equal(db.userLinks.touchSteamProfile('nobody', STEAM_SELF), false);
+  });
+
+  it('partial profile keeps cached fields (COALESCE, null is not a clear)', () => {
+    db.userLinks.insertLink({ discordUserId: 'u2', steamId: STEAM_MATE, createdBy: 'u2' });
+    db.userLinks.updateSteamProfile('u2', STEAM_MATE, 'Name1', 'https://avatars.steamstatic.com/one.jpg');
+    // avatar host 不在 allowlist 等情境 → avatar=null，不得清掉舊快取
+    db.userLinks.updateSteamProfile('u2', STEAM_MATE, 'Name2', null);
+    const row = db.userLinks.getByDiscordId('u2');
+    assert.equal(row.steam_persona, 'Name2', 'non-null field updates');
+    assert.equal(row.steam_avatar, 'https://avatars.steamstatic.com/one.jpg', 'null field keeps cache');
+  });
+
+  it('stale fetch after unlink→relink is a no-op (write is keyed by steam_id)', () => {
+    // 用本測試專屬的 steam ids —— user_links.steam_id 有 UNIQUE 約束，
+    // 不能與同一 in-memory DB 中其他測試的綁定衝突。
+    const STEAM_X = '76561198000000201';
+    const STEAM_Y = '76561198000000202';
+    // u3 綁 X → X 的 fetch 在途中 → unlink → relink 成 Y
+    db.userLinks.insertLink({ discordUserId: 'u3', steamId: STEAM_X, createdBy: 'u3' });
+    db.userLinks.deleteByDiscordId('u3');
+    db.userLinks.insertLink({ discordUserId: 'u3', steamId: STEAM_Y, createdBy: 'u3' });
+
+    // X 的回應晚到：update 與 touch 都必須 no-op，不得污染 Y 的 row
+    assert.equal(db.userLinks.updateSteamProfile('u3', STEAM_X, 'StaleX', 'https://x.example/a.jpg'), false);
+    assert.equal(db.userLinks.touchSteamProfile('u3', STEAM_X), false);
+    const row = db.userLinks.getByDiscordId('u3');
+    assert.equal(row.steam_persona, null, 'stale persona must not land');
+    assert.equal(row.steam_profile_updated_at, null, 'stale touch must not suppress first sync');
+
+    // Y 自己的 fetch 正常落地
+    assert.equal(db.userLinks.updateSteamProfile('u3', STEAM_Y, 'FreshY', null), true);
+    assert.equal(db.userLinks.getByDiscordId('u3').steam_persona, 'FreshY');
   });
 });
 
@@ -423,7 +458,7 @@ describe('Integration: steam link gate + profile in /auth/me', () => {
   it('/auth/me returns cached steamPersona/steamAvatar', async () => {
     const jar: Jar = new Map();
     await login(booted.url, jar, 'survivor', STEAM_SELF);
-    booted.db.userLinks.updateSteamProfile('e2e-test', 'PersonaX', 'https://avatars.steamstatic.com/p.jpg');
+    booted.db.userLinks.updateSteamProfile('e2e-test', STEAM_SELF, 'PersonaX', 'https://avatars.steamstatic.com/p.jpg');
     const me = await getJson(booted.url, jar, '/auth/me');
     assert.equal(me.body.steamPersona, 'PersonaX');
     assert.equal(me.body.steamAvatar, 'https://avatars.steamstatic.com/p.jpg');
@@ -451,7 +486,7 @@ describe('Integration: steam link gate + profile in /auth/me', () => {
     config.steamWebApiKey = 'test-key';
     const jar: Jar = new Map();
     await login(booted.url, jar, 'survivor', STEAM_SELF);
-    booted.db.userLinks.updateSteamProfile('e2e-test', 'OldName', null);
+    booted.db.userLinks.updateSteamProfile('e2e-test', STEAM_SELF, 'OldName', null);
     // 讓快取過期：把時間戳倒回 25 小時前
     booted.db.db
       .prepare(
@@ -472,7 +507,7 @@ describe('Integration: steam link gate + profile in /auth/me', () => {
     config.steamWebApiKey = 'test-key';
     const jar: Jar = new Map();
     await login(booted.url, jar, 'survivor', STEAM_SELF);
-    booted.db.userLinks.updateSteamProfile('e2e-test', 'OldName', null);
+    booted.db.userLinks.updateSteamProfile('e2e-test', STEAM_SELF, 'OldName', null);
     booted.db.db
       .prepare(
         "UPDATE user_links SET steam_profile_updated_at = datetime('now', '-25 hours') WHERE discord_user_id = 'e2e-test'",

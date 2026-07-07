@@ -1797,8 +1797,16 @@ class HumanitZDB {
           try {
             this._handle.exec(ddl);
           } catch (err: unknown) {
-            // 欄位已存在（曾跑過早期 v28 dev / drift 修復先行）→ no-op
-            if (!/duplicate column/i.test(err instanceof Error ? err.message : String(err))) throw err;
+            const msg = err instanceof Error ? err.message : String(err);
+            // 欄位已存在（曾跑過早期 v28 dev / drift 修復先行）→ no-op。
+            // 表整個缺失（fromVersion=27 跳過 v27 建表段 + drift）→ 不能炸掉
+            // startup：吞掉交給本次啟動稍後的 _ensureSchemaCompleteness() 依
+            // schema.ts 現行 DDL（已含 v28 欄位）重建。
+            if (/no such table: user_links/i.test(msg)) {
+              this._log.warn('Migration v27→v28: user_links missing (schema drift), deferring to drift repair');
+              break;
+            }
+            if (!/duplicate column/i.test(msg)) throw err;
           }
         }
         this._log.info('Migration v27→v28: user_links steam profile columns');

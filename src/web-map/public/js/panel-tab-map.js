@@ -299,13 +299,30 @@ Panel.tabs = Panel.tabs || {};
             if (mr.ok) {
               if (linkHint) linkHint.classList.add('hidden');
               const md = await mr.json();
+              // 這批資料全是自己的 → owner 一律是 response 自帶的 steamId。
+              // 名字從 S.players 取遊戲內角色名（與 mod 視圖 nameMap 同源，
+              // loadMapData 稍早已載入 /api/players），查不到再 fallback
+              // Discord 顯示名 → steamId；缺 owner/nameMap 時 popup 會顯示 Unknown。
+              const owner = md.steamId;
+              const selfPlayer = (S.players || []).find(function (p) {
+                return p.steamId === owner;
+              });
+              const nameMap = {};
+              if (owner) nameMap[owner] = (selfPlayer && selfPlayer.name) || (S.user && S.user.displayName) || owner;
               // 馬併入 companions 層（tooltip 顯示玩家取的馬名）
-              const companions = (md.companions || []).concat(
-                (md.horses || []).map(function (h) {
-                  return { type: h.name || 'Horse', lat: h.lat, lng: h.lng, health: h.health };
-                }),
+              const companions = (md.companions || [])
+                .map(function (c) {
+                  return Object.assign({ owner: owner }, c);
+                })
+                .concat(
+                  (md.horses || []).map(function (h) {
+                    return { type: h.name || 'Horse', owner: owner, lat: h.lat, lng: h.lng, health: h.health };
+                  }),
+                );
+              updateMapWorldLayers(
+                { vehicles: md.vehicles || [], companions: companions, nameMap: nameMap },
+                wantLayers,
               );
-              updateMapWorldLayers({ vehicles: md.vehicles || [], companions: companions }, wantLayers);
             } else if (mr.status === 409) {
               // 未綁定 Steam（gate 未開時可能發生）→ 顯示綁定提示
               if (linkHint) linkHint.classList.remove('hidden');
