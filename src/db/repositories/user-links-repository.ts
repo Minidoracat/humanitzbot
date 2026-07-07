@@ -41,12 +41,15 @@ export class UserLinksRepository extends BaseRepository {
     countLinksSearch: Database.Statement;
     getAuditFor: Database.Statement;
     countAuditFor: Database.Statement;
+    updateSteamProfile: Database.Statement;
+    touchSteamProfile: Database.Statement;
   };
 
   protected _prepareStatements(): void {
     // listLinks 的 LEFT JOIN players 只為顯示遊戲名 —— 綁定不要求 players 已有該 steam_id。
     const listSelect = `
       SELECT ul.discord_user_id, ul.steam_id, ul.verified_via, ul.created_by, ul.created_at,
+             ul.steam_persona, ul.steam_avatar,
              p.name AS player_name
       FROM user_links ul
       LEFT JOIN players p ON p.steam_id = ul.steam_id
@@ -77,6 +80,21 @@ export class UserLinksRepository extends BaseRepository {
         'SELECT * FROM user_link_audit WHERE discord_user_id = ? ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?',
       ),
       countAuditFor: this._handle.prepare('SELECT COUNT(*) AS count FROM user_link_audit WHERE discord_user_id = ?'),
+      // WHERE 綁 steam_id：fetch 是 fire-and-forget，回應落地時使用者可能已
+      // unlink→relink 成別的 Steam 帳號（DELETE+INSERT，PK 相同）——stale 回應
+      // 必須變 no-op，否則會把舊帳號的 persona/avatar 寫進新綁定並抑制其
+      // 首次 sync 24h。COALESCE：partial profile（如 avatar host 不在 allowlist）
+      // 不得用 null 清掉既有快取。
+      updateSteamProfile: this._handle.prepare(`
+        UPDATE user_links SET
+          steam_persona = COALESCE(?, steam_persona),
+          steam_avatar = COALESCE(?, steam_avatar),
+          steam_profile_updated_at = datetime('now')
+        WHERE discord_user_id = ? AND steam_id = ?
+      `),
+      touchSteamProfile: this._handle.prepare(
+        "UPDATE user_links SET steam_profile_updated_at = datetime('now') WHERE discord_user_id = ? AND steam_id = ?",
+      ),
     };
   }
 
@@ -156,6 +174,20 @@ export class UserLinksRepository extends BaseRepository {
       this.insertAudit({ ...audit, steamId: row.steam_id as string });
       return row.steam_id as string;
     })();
+  }
+
+  /**
+   * 寫入 Steam 個人資料快取（抓取成功時）。steamId 須為該次 fetch 所針對的
+   * Steam ID —— 無綁定列或使用者已改綁其他帳號（stale fetch）時 no-op。
+   * null 欄位保留既有快取（COALESCE），不視為清除。
+   */
+  updateSteamProfile(discordUserId: string, steamId: string, persona: string | null, avatar: string | null): boolean {
+    return this._stmts.updateSteamProfile.run(persona, avatar, discordUserId, steamId).changes > 0;
+  }
+
+  /** 只更新最近抓取時間（抓取失敗時）—— 保留舊 persona/avatar，並避免 retry 風暴。stale fetch 同樣 no-op。 */
+  touchSteamProfile(discordUserId: string, steamId: string): boolean {
+    return this._stmts.touchSteamProfile.run(discordUserId, steamId).changes > 0;
   }
 
   /** Append a bind/unbind audit record. */

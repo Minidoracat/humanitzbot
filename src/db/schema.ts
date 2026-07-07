@@ -9,7 +9,7 @@
  * Schema is applied via database.js on first run and auto-migrated on updates.
  */
 
-const SCHEMA_VERSION = 27;
+const SCHEMA_VERSION = 28;
 
 // ─── Player data ────────────────────────────────────────────────────────────
 
@@ -1304,7 +1304,11 @@ CREATE TABLE IF NOT EXISTS user_links (
   verified_via    TEXT NOT NULL DEFAULT 'steam_openid'  -- 值域由 DB CHECK 把關（defense-in-depth）
                   CHECK (verified_via IN ('steam_openid', 'admin_manual')),
   created_by      TEXT NOT NULL,               -- 建立者 discord id（自綁=本人；admin_manual=管理員）
-  created_at      TEXT DEFAULT (datetime('now'))
+  created_at      TEXT DEFAULT (datetime('now')),
+  -- v28: Steam 個人資料快取（ENABLE_STEAM_PROFILE_SYNC 啟用時由 Steam Web API 抓取）
+  steam_persona   TEXT,                        -- Steam 暱稱（personaname）
+  steam_avatar    TEXT,                        -- Steam 頭像 URL（avatarfull）
+  steam_profile_updated_at TEXT                -- 最近一次抓取嘗試（成敗都記，防 retry 風暴）
 );
 `;
 

@@ -454,8 +454,15 @@ describe('Web Map Read Endpoints', () => {
 
       const handler = GET('/api/players/:steamId');
       const res = mockRes();
+      // tierLevel 2（mod 視角）：本測試驗證資料源 fallback 的完整欄位，
+      // survivor 視角只回公開 allowlist（見 steam-profile-gate.test.ts）
       handler(
-        { srv: makeSrv({ db, playerNameMap: { [steamId]: 'Snapshot Bob' } }), params: { steamId }, query: {} },
+        {
+          srv: makeSrv({ db, playerNameMap: { [steamId]: 'Snapshot Bob' } }),
+          params: { steamId },
+          query: {},
+          tierLevel: 2,
+        },
         res,
       );
 

@@ -7,7 +7,8 @@
  */
 import type { Express } from 'express';
 import type { WebMapRouteContext } from '../types/route-context.js';
-import { requireTier } from '../auth.js';
+import { requireTier, TIER } from '../auth.js';
+import type { HmzRequest } from '../auth.js';
 import { rateLimit } from '../rate-limit.js';
 import { API_ERRORS, sendError } from '../api-errors.js';
 import { safeError, _requestLocale, _isoTimestamp, _cleanInventorySlots } from '../route-helpers.js';
@@ -15,6 +16,91 @@ import { normalizePlayerHorses, PERK_MAP } from '../../parsers/save-parser.js';
 import { AFFLICTION_MAP } from '../../parsers/game-data.js';
 import { cleanItemName } from '../../parsers/ue4-names.js';
 import { resolveItemArray } from '../../i18n/item-names.js';
+
+// ── Survivor 視圖（server 端權限，UI 隱藏不是權限）────────────────────────────
+// mod 以上看全部；survivor 只對「自己 + 同 clan」拿得到座標，其他玩家僅剩
+// 公開概要（榜單統計 / 線上狀態 / clan / 遊玩時間），個人敏感欄位一律裁掉。
+
+// 個人敏感欄位：裁成空陣列（前端對缺項已有 fallback）
+const PRIVATE_ARRAY_FIELDS = [
+  'unlockedProfessions',
+  'playerStates',
+  'bodyConditions',
+  'equipment',
+  'quickSlots',
+  'inventory',
+  'backpackItems',
+  'craftingRecipes',
+  'buildingRecipes',
+  'unlockedSkills',
+  'lore',
+  'uniqueLoots',
+  'craftedUniques',
+  'companionData',
+  'horses',
+] as const;
+
+// vitals：裁成 null（與「save 快照缺 vitals」的既有形狀一致）
+const PRIVATE_VITAL_FIELDS = [
+  'health',
+  'maxHealth',
+  'hunger',
+  'maxHunger',
+  'thirst',
+  'maxThirst',
+  'stamina',
+  'maxStamina',
+  'infection',
+  'maxInfection',
+  'battery',
+  'fatigue',
+  'infectionBuildup',
+] as const;
+
+/** in-place 裁掉個人敏感欄位；keepPosition=false 時連座標一併裁掉。 */
+function _stripPrivatePlayerFields(entry: Record<string, unknown>, keepPosition: boolean): void {
+  for (const f of PRIVATE_ARRAY_FIELDS) entry[f] = [];
+  for (const f of PRIVATE_VITAL_FIELDS) entry[f] = null;
+  if (!keepPosition) {
+    entry.hasPosition = false;
+    entry.lat = null;
+    entry.lng = null;
+    entry.worldX = null;
+    entry.worldY = null;
+    entry.worldZ = null;
+  }
+}
+
+/**
+ * self 與 other 是否同 clan —— 兩個 survivor 端點（list + detail）共用的單一授權
+ * 判定，內部走 clan-repository 的 areClanmates（唯一權威），避免規則漂移。
+ */
+function _isClanmate(db: unknown, selfSteamId: string | null, otherSteamId: string): boolean {
+  if (!selfSteamId || selfSteamId === otherSteamId) return false;
+  const clan = (db as { clan?: { areClanmates?: (a: string, b: string) => boolean } } | undefined)?.clan;
+  try {
+    return !!clan?.areClanmates?.(selfSteamId, otherSteamId);
+  } catch {
+    return false; // clan 資料不可用 → 當陌生人（保守）
+  }
+}
+
+/** 呼叫者的 steamId（user_links 現查；未綁定 / 查詢失敗 → null）。 */
+function _resolveSelfSteamId(req: unknown, ctx: WebMapRouteContext): string | null {
+  // session 可能不存在（單元測試裸 req / OAuth stub 邊界）—— 視為未綁定
+  const user = (req as Partial<HmzRequest>).session?.user;
+  if (!user) return null;
+  try {
+    // 綁定是全域資料 —— 一律查 primary DB 的 user_links（me.routes 同分工；
+    // userLinks getter 在 DB 未 init 時會 throw，由 catch 吸收）
+    return (ctx._db?.userLinks.getByDiscordId(user.userId)?.steam_id as string | undefined) ?? null;
+  } catch (err: unknown) {
+    // 回 null 使 survivor 連自己座標都看不到 —— 但 DB 故障不可無聲，否則
+    // 「我在地圖上消失」的回報無從排查（區分真未綁定 vs 查詢炸掉）。
+    console.warn('[WEB MAP] /api/players self steam lookup failed:', err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
 
 export function registerPlayersRoutes(app: Express, ctx: WebMapRouteContext): void {
   // ── API: Get all player positions ──
@@ -74,6 +160,12 @@ export function registerPlayersRoutes(app: Express, ctx: WebMapRouteContext): vo
       }
     }
 
+    // Survivor 視圖：只對自己 + 同 clan 保留座標，其他玩家裁掉敏感欄位。
+    // 同 clan 判定走 clan-repository 的 areClanmates（與 /api/players/:id detail
+    // 端點同一權威來源，避免兩處授權規則各自實作而漂移）。
+    const isModView = ((req as { tierLevel?: number }).tierLevel ?? 0) >= (TIER['mod'] as number);
+    const selfSteamId = isModView ? null : _resolveSelfSteamId(req, ctx);
+
     const result = [];
 
     for (const [steamId, rawData] of players) {
@@ -99,7 +191,10 @@ export function registerPlayersRoutes(app: Express, ctx: WebMapRouteContext): vo
       // Resolve profession display name from enum code
       const professionName = PERK_MAP[data.startingPerk as string] || (data.startingPerk as string) || 'Unknown';
 
-      result.push({
+      // 注意：survivor 視角靠事後的 _stripPrivatePlayerFields 裁掉私密欄位——
+      // 在這個 literal 新增任何敏感欄位（inventory 類陣列、精確狀態）時，
+      // 必須同步登記到 PRIVATE_ARRAY_FIELDS / 該函式，否則會洩漏給非隊友。
+      const entry: Record<string, unknown> = {
         steamId,
         name,
         hasPosition,
@@ -187,7 +282,7 @@ export function registerPlayersRoutes(app: Express, ctx: WebMapRouteContext): vo
         unlockedSkills: resolveItemArray((data.unlockedSkills as unknown[] | undefined) ?? [], itemLocale),
 
         // Lore
-        lore: (data.lore as unknown[] | undefined) ?? [],
+        lore: data.lore ?? [],
         uniqueLoots: resolveItemArray((data.uniqueLoots as unknown[] | undefined) ?? [], itemLocale),
         craftedUniques: resolveItemArray((data.craftedUniques as unknown[] | undefined) ?? [], itemLocale),
 
@@ -219,7 +314,12 @@ export function registerPlayersRoutes(app: Express, ctx: WebMapRouteContext): vo
         lastSeen: ptData?.lastSeen || null,
         // Save-authoritative last login (game save LastLogin, UTC ISO)
         saveLastLogin: _isoTimestamp(data.lastLogin, saveLoginMap.get(steamId)),
-      });
+      };
+
+      if (!isModView && steamId !== selfSteamId) {
+        _stripPrivatePlayerFields(entry, _isClanmate(srv.db, selfSteamId, steamId));
+      }
+      result.push(entry);
     }
 
     res.json({
@@ -274,6 +374,45 @@ export function registerPlayersRoutes(app: Express, ctx: WebMapRouteContext): vo
     const professionName = PERK_MAP[data.startingPerk as string] || (data.startingPerk as string) || 'Unknown';
     const logStats = srv.playerStats.getStats(steamId) || srv.playerStats.getStatsByName(name);
     const ptData = srv.playtime.getPlaytime(steamId);
+
+    // Survivor 視圖：看別人只回公開概要 allowlist（此 payload 有 ...data 展開，
+    // 事後裁切擋不住未知欄位 —— 必須走 allowlist 重建）；同 clan 加座標。
+    const isModView = ((req as { tierLevel?: number }).tierLevel ?? 0) >= (TIER['mod'] as number);
+    const selfSteamId = isModView ? null : _resolveSelfSteamId(req, ctx);
+    if (!isModView && steamId !== selfSteamId) {
+      const isClanmate = _isClanmate(srv.db, selfSteamId, steamId);
+      res.json({
+        steamId,
+        name,
+        hasPosition: isClanmate ? hasPosition : false,
+        lat: isClanmate ? lat : null,
+        lng: isClanmate ? lng : null,
+        worldX: isClanmate ? pdx : null,
+        worldY: isClanmate ? pdy : null,
+        worldZ: isClanmate ? pdz : null,
+        profession: professionName,
+        startingPerk: professionName,
+        level: data.level || 0,
+        daysSurvived: data.daysSurvived || 0,
+        lifetimeDaysSurvived: data.lifetimeDaysSurvived || 0,
+        zeeksKilled: data.zeeksKilled || 0,
+        headshots: data.headshots || 0,
+        lifetimeKills: data.lifetimeKills || 0,
+        timesBitten: data.timesBitten || 0,
+        fishCaught: data.fishCaught || 0,
+        deaths: logStats?.deaths || 0,
+        pvpKills: logStats?.pvpKills || 0,
+        pvpDeaths: logStats?.pvpDeaths || 0,
+        connects: logStats?.connects || 0,
+        totalPlaytime: ptData ? Math.floor(ptData.totalMs / 60000) : 0,
+        lastSeen: ptData?.lastSeen || null,
+        saveLastLogin: _isoTimestamp(data.lastLogin, storedDetail?.['save_last_login']),
+        hasSaveSnapshot,
+        lastSaveSnapshotAt,
+        toggles: ctx._getToggles(),
+      });
+      return;
+    }
 
     res.json({
       steamId: req.params.steamId,

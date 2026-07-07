@@ -756,14 +756,69 @@ window.Panel = window.Panel || {};
     const linkBtn = $('#steam-link-btn');
     const unlinkBtn = $('#steam-unlink-btn');
     if (S.user && S.user.steamLinked) {
-      if (status) status.textContent = i18next.t('web:auth.steam_linked_as', { steamId: S.user.steamId || '' });
+      // steam profile sync 啟用且已抓到時優先顯示 Steam 暱稱（fallback steamId）
+      if (status) {
+        status.textContent = i18next.t('web:auth.steam_linked_as', {
+          steamId: S.user.steamPersona || S.user.steamId || '',
+        });
+        // Steam 頭像（CSP 已放行 Steam CDN；無資料時不佔位）
+        let av = $('#steam-link-avatar');
+        if (S.user.steamAvatar) {
+          if (!av) {
+            av = document.createElement('img');
+            av.id = 'steam-link-avatar';
+            av.className = 'w-4 h-4 rounded-sm inline-block mr-1 align-text-bottom';
+            av.alt = '';
+            status.parentNode.insertBefore(av, status);
+          }
+          av.src = S.user.steamAvatar;
+          av.classList.remove('hidden');
+        } else if (av) {
+          av.classList.add('hidden');
+        }
+      }
       if (linkBtn) linkBtn.classList.add('hidden');
       if (unlinkBtn) unlinkBtn.classList.remove('hidden');
     } else {
       if (status) status.textContent = i18next.t('web:auth.steam_not_linked');
+      const av = $('#steam-link-avatar');
+      if (av) av.classList.add('hidden');
       if (linkBtn) linkBtn.classList.remove('hidden');
       if (unlinkBtn) unlinkBtn.classList.add('hidden');
     }
+  }
+
+  /**
+   * Steam 雙綁定攔截頁（ENABLE_STEAM_PROFILE_SYNC）：後端已對 /api/* 回 403，
+   * 這裡擋住 panel UI 並每 5 秒 poll —— 綁定完成（或後台關掉開關）自動進入面板。
+   */
+  function showSteamGate() {
+    if (Panel.landing) Panel.landing.stopAuto();
+    $('#landing').classList.add('hidden');
+    $('#panel').classList.add('hidden');
+    $('#steam-gate').classList.remove('hidden');
+    S._steamGatePoll = setInterval(async function () {
+      try {
+        const r = await fetch('/auth/refresh');
+        const d = await r.json();
+        if (d.csrfToken) Panel.core.setCsrfToken(d.csrfToken);
+        if (!d.authenticated) {
+          clearInterval(S._steamGatePoll);
+          location.reload();
+          return;
+        }
+        if (!d.steamLinkRequired) {
+          clearInterval(S._steamGatePoll);
+          S.user = d;
+          S.tier = d.tierLevel || 0;
+          $('#steam-gate').classList.add('hidden');
+          if (S.tier >= 1) showPanel();
+          else location.reload();
+        }
+      } catch (_e) {
+        /* ignore */
+      }
+    }, 5000);
   }
 
   function showPanel() {
@@ -785,6 +840,12 @@ window.Panel = window.Panel || {};
           location.reload();
           return;
         }
+        // gate 重新生效（後台開啟開關 / admin 解綁）→ reload 落到攔截頁
+        if (d.steamLinkRequired) {
+          clearInterval(S._panelRefreshPoll);
+          location.reload();
+          return;
+        }
         if (d.tierLevel !== S.tier) {
           S.user = d;
           S.tier = d.tierLevel;
@@ -800,6 +861,8 @@ window.Panel = window.Panel || {};
         if (S.user) {
           S.user.steamLinked = d.steamLinked;
           S.user.steamId = d.steamId;
+          S.user.steamPersona = d.steamPersona;
+          S.user.steamAvatar = d.steamAvatar;
           updateSteamLinkRow();
         }
       } catch (_e) {
@@ -1382,6 +1445,11 @@ window.Panel = window.Panel || {};
     S.user = await res.json();
     if (S.user.csrfToken) Panel.core.setCsrfToken(S.user.csrfToken);
     S.tier = S.user.tierLevel || 0;
+    // Steam 雙綁定 gate：後端計算好的 per-user 旗標（含 admin 豁免與已綁定判斷）
+    if (S.user.authenticated && S.tier >= 1 && S.user.steamLinkRequired) {
+      showSteamGate();
+      return;
+    }
     if (!S.user.authenticated || S.tier < 1) {
       if (Panel.landing) Panel.landing.show();
       else {

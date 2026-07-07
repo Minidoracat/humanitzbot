@@ -10,6 +10,7 @@ import cookieParser from 'cookie-parser';
 import _defaultConfig from '../config/index.js';
 import { createSessionStore } from './session-store-factory.js';
 import { buildRedirectUrl, verifyAssertion, isValidSteamId64 } from './steam-openid.js';
+import { fetchSteamProfile } from './steam-profile.js';
 import { rateLimit } from './rate-limit.js';
 
 import type { Express, Request, Response, NextFunction } from 'express';
@@ -59,6 +60,8 @@ const COOKIE_NAME = 'hmz_session';
 const ROLE_REFRESH_INTERVAL = 5 * 60 * 1000;
 // Steam 綁定 state 有效期（發起 → Steam 回跳的最長間隔）
 const STEAM_LINK_STATE_TTL = 5 * 60 * 1000;
+// Steam 個人資料快取視為過期的間隔（/auth/refresh 慢路徑補抓）
+const STEAM_PROFILE_REFRESH_INTERVAL = 24 * 60 * 60 * 1000;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -289,6 +292,35 @@ function setupAuth(
   const authCfg = getAuthConfig();
   // Steam↔Discord 綁定 repository（可能未接 DB —— 路由內逐一防呆）
   const userLinks = opts.userLinks;
+
+  /** 此使用者是否被 ENABLE_STEAM_PROFILE_SYNC 的雙綁定 gate 擋下（admin 豁免防鎖死）。 */
+  function steamLinkRequiredFor(tierLevel: number | undefined, linked: boolean): boolean {
+    if (!_defaultConfig.enableSteamProfileSync || linked) return false;
+    const lvl = tierLevel ?? 0;
+    return lvl >= (TIER['survivor'] as number) && lvl < (TIER['admin'] as number);
+  }
+
+  /**
+   * 抓取並快取 Steam 暱稱/頭像（選配；失敗只 touch 時間戳防 retry 風暴）。
+   * 呼叫端可 fire-and-forget —— 內部吞掉所有錯誤，絕不影響主流程。
+   */
+  async function syncSteamProfile(discordUserId: string, steamId: string): Promise<void> {
+    if (!_defaultConfig.enableSteamProfileSync || !_defaultConfig.steamWebApiKey || !userLinks) return;
+    try {
+      const profile = await fetchSteamProfile(steamId, _defaultConfig.steamWebApiKey);
+      if (profile) userLinks.updateSteamProfile(discordUserId, steamId, profile.persona, profile.avatar);
+      else userLinks.touchSteamProfile(discordUserId, steamId);
+    } catch (err: unknown) {
+      console.warn('[AUTH] Steam profile sync failed:', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** steam_profile_updated_at（SQLite UTC datetime）是否已逾期／缺失。 */
+  function steamProfileStale(updatedAt: unknown): boolean {
+    if (typeof updatedAt !== 'string' || !updatedAt) return true;
+    const ts = Date.parse(updatedAt.replace(' ', 'T') + 'Z');
+    return !Number.isFinite(ts) || Date.now() - ts > STEAM_PROFILE_REFRESH_INTERVAL;
+  }
 
   if (!authCfg.clientSecret || !authCfg.callbackUrl) {
     // Per-request stub session so route handlers that call req.session.* don't crash.
@@ -646,12 +678,13 @@ function setupAuth(
     // Steam 綁定狀態每請求現查 DB，絕不寫進 session（評審定案）——
     // 否則解綁後 session 內殘留 steamId 會造成幽靈存取。同步查詢微秒級。
     // 選配功能故障不可拖垮核心登入端點：查詢失敗降級 steamLinked:false。
-    let steamId: string | undefined;
+    let link: Record<string, unknown> | undefined;
     try {
-      steamId = userLinks ? (userLinks.getByDiscordId(user.userId)?.steam_id as string | undefined) : undefined;
+      link = userLinks ? userLinks.getByDiscordId(user.userId) : undefined;
     } catch (err: unknown) {
       console.warn('[AUTH] /auth/me user_links lookup failed:', err instanceof Error ? err.message : String(err));
     }
+    const steamId = link?.steam_id as string | undefined;
     res.json({
       authenticated: true,
       userId: user.userId,
@@ -662,7 +695,14 @@ function setupAuth(
       tierLevel: user.tierLevel,
       inGuild: user.inGuild,
       steamLinked: !!steamId,
-      ...(steamId ? { steamId } : {}),
+      ...(steamId
+        ? {
+            steamId,
+            steamPersona: (link?.steam_persona as string | null) ?? null,
+            steamAvatar: (link?.steam_avatar as string | null) ?? null,
+          }
+        : {}),
+      steamLinkRequired: steamLinkRequiredFor(user.tierLevel, !!steamId),
       csrfToken: hmzReq.csrfToken?.(),
     });
   });
@@ -705,12 +745,23 @@ function setupAuth(
     }
     // 與 /auth/me 一致：steamLinked 每請求現查（前端 refresh poll 會用整包
     // 回應覆蓋 S.user，缺欄位會讓綁定列顯示錯誤狀態）；查詢失敗降級 false。
-    let refreshSteamId: string | undefined;
+    let refreshLink: Record<string, unknown> | undefined;
     try {
-      refreshSteamId = userLinks ? (userLinks.getByDiscordId(user.userId)?.steam_id as string | undefined) : undefined;
+      refreshLink = userLinks ? userLinks.getByDiscordId(user.userId) : undefined;
     } catch (err: unknown) {
       console.warn('[AUTH] /auth/refresh user_links lookup failed:', err instanceof Error ? err.message : String(err));
     }
+    // 個資快取過期補抓（慢路徑：/auth/refresh 本來就做即時 Discord fetch；
+    // 前端 2 分鐘 poll 打這裡，成敗都寫時間戳 → 最多每 24h 一次外部呼叫）
+    if (refreshLink && steamProfileStale(refreshLink.steam_profile_updated_at)) {
+      await syncSteamProfile(user.userId, refreshLink.steam_id as string);
+      try {
+        refreshLink = userLinks ? userLinks.getByDiscordId(user.userId) : refreshLink;
+      } catch {
+        /* keep pre-sync row */
+      }
+    }
+    const refreshSteamId = refreshLink?.steam_id as string | undefined;
     res.json({
       authenticated: true,
       userId: user.userId,
@@ -721,7 +772,14 @@ function setupAuth(
       tierLevel: user.tierLevel,
       inGuild: user.inGuild,
       steamLinked: !!refreshSteamId,
-      ...(refreshSteamId ? { steamId: refreshSteamId } : {}),
+      ...(refreshSteamId
+        ? {
+            steamId: refreshSteamId,
+            steamPersona: (refreshLink?.steam_persona as string | null) ?? null,
+            steamAvatar: (refreshLink?.steam_avatar as string | null) ?? null,
+          }
+        : {}),
+      steamLinkRequired: steamLinkRequiredFor(user.tierLevel, !!refreshSteamId),
       csrfToken: hmzReq.csrfToken?.(),
     });
   });
@@ -848,6 +906,8 @@ function setupAuth(
         throw err;
       }
       console.log(`[AUTH] Steam linked: discord=${maskId(user.userId)} steam=${maskId(result.steamId)}`);
+      // 個資快取 fire-and-forget —— 不阻塞 redirect，失敗只影響顯示（24h 後 refresh 補抓）
+      void syncSteamProfile(user.userId, result.steamId);
       res.redirect('/');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -885,8 +945,11 @@ function setupAuth(
   });
 
   // ── Tier-aware middleware ──
-  return (req: Request, _res: Response, next: NextFunction) => {
-    if (req.path.startsWith('/auth/')) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    // Express 預設 case-insensitive routing（/API/players 會命中 /api/players
+    // handler），故所有 path 前綴判斷都用小寫比對，否則大寫路徑可繞過閘門。
+    const lowerPath = req.path.toLowerCase();
+    if (lowerPath.startsWith('/auth/')) {
       next();
       return;
     }
@@ -921,6 +984,43 @@ function setupAuth(
       }
       hmzReq.tier = user.tier;
       hmzReq.tierLevel = user.tierLevel;
+
+      // ── Steam 雙綁定 gate（ENABLE_STEAM_PROFILE_SYNC）──
+      // survivor/mod 未綁 Steam → /api/* 一律 403（admin 豁免，否則沒人能進
+      // 設定頁關掉這個開關）。頁面請求放行 —— SPA 依 /auth/me 的
+      // steamLinkRequired 顯示綁定攔截頁。/api/landing 是公開端點、豁免。
+      // 這是安全閘門 → fail-CLOSED：無法查證綁定（repo 缺失 / lookup throw）時
+      // 回 503 擋下，不放行未驗證的請求。此路徑只在 DB 真正不可用時觸發（同步
+      // 查詢微秒級），而彼時整個面板本就無法運作；admin 已在上方 tier 條件豁免。
+      if (
+        _defaultConfig.enableSteamProfileSync &&
+        lowerPath.startsWith('/api/') &&
+        // 剝尾斜線再比對：Express non-strict routing 下 /api/landing/ 命中同一
+        // 公開端點，但 req.path 保留尾斜線，精確比對會誤擋。
+        lowerPath.replace(/\/+$/, '') !== '/api/landing' &&
+        (hmzReq.tierLevel ?? 0) >= (TIER['survivor'] as number) &&
+        (hmzReq.tierLevel ?? 0) < (TIER['admin'] as number)
+      ) {
+        if (!userLinks) {
+          res.status(503).json({ error: 'STEAM_LINK_CHECK_UNAVAILABLE' });
+          return;
+        }
+        let linked: boolean;
+        try {
+          linked = !!userLinks.getByDiscordId(user.userId);
+        } catch (err: unknown) {
+          console.warn(
+            '[AUTH] steam gate user_links lookup failed (fail-closed 503):',
+            err instanceof Error ? err.message : String(err),
+          );
+          res.status(503).json({ error: 'STEAM_LINK_CHECK_UNAVAILABLE' });
+          return;
+        }
+        if (!linked) {
+          res.status(403).json({ error: 'STEAM_LINK_REQUIRED', link: '/auth/steam/link' });
+          return;
+        }
+      }
     } else {
       hmzReq.tier = 'public';
       hmzReq.tierLevel = TIER['public'];

@@ -261,23 +261,87 @@ Panel.tabs = Panel.tabs || {};
       updateMapMarkers();
       updateMapSidebar();
 
-      const wantLayers = [];
-      ['structures', 'vehicles', 'containers', 'companions', 'zombies', 'animals', 'bandits', 'quests'].forEach(
-        function (l) {
+      // mod 以上：世界圖層全集（/api/panel/mapdata，mod 級）。
+      // survivor：只有自己的載具/馬/夥伴（/api/me/mapdata，server 端 owner==self 過濾）。
+      // viewMode 預覽跟著 UI 的 effective tier 走，行為與 checkbox 顯隱一致。
+      const effTier = S.viewMode === 'survivor' ? 1 : S.tier || 0;
+      const linkHint = $('#map-link-hint');
+      if (effTier >= 2) {
+        // 進入 mod/世界圖層路徑：清掉 survivor 專用的綁定提示（否則會殘留）
+        if (linkHint) linkHint.classList.add('hidden');
+        const wantLayers = [];
+        ['structures', 'vehicles', 'containers', 'companions', 'zombies', 'animals', 'bandits', 'quests'].forEach(
+          function (l) {
+            const cb = $('#map-layer-' + l);
+            if (cb && cb.checked) wantLayers.push(l);
+          },
+        );
+        if (wantLayers.length > 0) {
+          try {
+            const lr = await apiFetch('/api/panel/mapdata?layers=' + wantLayers.join(','));
+            if (lr.ok) {
+              const ld = await lr.json();
+              updateMapWorldLayers(ld, wantLayers);
+            }
+          } catch (_e) {}
+        } else {
+          clearMapWorldLayers();
+        }
+      } else {
+        const wantLayers = [];
+        ['vehicles', 'companions'].forEach(function (l) {
           const cb = $('#map-layer-' + l);
           if (cb && cb.checked) wantLayers.push(l);
-        },
-      );
-      if (wantLayers.length > 0) {
-        try {
-          const lr = await apiFetch('/api/panel/mapdata?layers=' + wantLayers.join(','));
-          if (lr.ok) {
-            const ld = await lr.json();
-            updateMapWorldLayers(ld, wantLayers);
+        });
+        if (wantLayers.length > 0) {
+          try {
+            const mr = await apiFetch('/api/me/mapdata');
+            if (mr.ok) {
+              if (linkHint) linkHint.classList.add('hidden');
+              const md = await mr.json();
+              // 這批資料全是自己的 → owner 一律是 response 自帶的 steamId。
+              // 名字從 S.players 取遊戲內角色名（與 mod 視圖 nameMap 同源，
+              // loadMapData 稍早已載入 /api/players），查不到再 fallback
+              // Discord 顯示名 → steamId；缺 owner/nameMap 時 popup 會顯示 Unknown。
+              const owner = md.steamId;
+              const selfPlayer = (S.players || []).find(function (p) {
+                return p.steamId === owner;
+              });
+              const nameMap = {};
+              if (owner) nameMap[owner] = (selfPlayer && selfPlayer.name) || (S.user && S.user.displayName) || owner;
+              // 馬併入 companions 層（tooltip 顯示玩家取的馬名）
+              const companions = (md.companions || [])
+                .map(function (c) {
+                  return Object.assign({ owner: owner }, c);
+                })
+                .concat(
+                  (md.horses || []).map(function (h) {
+                    return { type: h.name || 'Horse', owner: owner, lat: h.lat, lng: h.lng, health: h.health };
+                  }),
+                );
+              updateMapWorldLayers(
+                { vehicles: md.vehicles || [], companions: companions, nameMap: nameMap },
+                wantLayers,
+              );
+            } else if (mr.status === 409) {
+              // 未綁定 Steam（gate 未開時可能發生）→ 顯示綁定提示
+              if (linkHint) linkHint.classList.remove('hidden');
+              clearMapWorldLayers();
+            } else {
+              // 500/503 等：清掉舊 marker（不讓 stale 資料冒充最新）並提示載入失敗。
+              // fetch 對 4xx/5xx 不會 throw，故這裡必須顯式處理，catch 接不到。
+              clearMapWorldLayers();
+              if (linkHint) linkHint.classList.add('hidden');
+              var toast = Panel.core.utils && Panel.core.utils.showToast;
+              if (toast) toast(i18next.t('web:map.load_failed'));
+            }
+          } catch (_e) {
+            clearMapWorldLayers();
           }
-        } catch (_e) {}
-      } else {
-        clearMapWorldLayers();
+        } else {
+          if (linkHint) linkHint.classList.add('hidden');
+          clearMapWorldLayers();
+        }
       }
     } catch (e) {
       console.error('Map data error:', e);

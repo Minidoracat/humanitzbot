@@ -17,6 +17,7 @@ export class WorldObjectRepository extends BaseRepository {
     insertVehicle: Database.Statement;
     getAllVehicles: Database.Statement;
     getPositionedVehicles: Database.Statement;
+    getPositionedVehiclesByOwnerKey: Database.Statement;
     // Companions
     clearCompanions: Database.Statement;
     insertCompanion: Database.Statement;
@@ -78,6 +79,12 @@ export class WorldObjectRepository extends BaseRepository {
       getAllVehicles: this._handle.prepare('SELECT * FROM vehicles'),
       getPositionedVehicles: this._handle.prepare(
         'SELECT id, display_name, class, pos_x, pos_y, pos_z, health, max_health, fuel FROM vehicles WHERE pos_x IS NOT NULL',
+      ),
+      // owner 藏在 extra JSON 的車鑰匙字串 '<steamId>_+_|<guid>' 裡（parser 未抽欄位）。
+      // LIKE 先在 SQL 端粗篩（極少數列才出 DB），呼叫端仍以 extractVehicleOwnerSteamId
+      // 精確驗證 —— LIKE 對「更長 id 以相同尾碼結尾」有理論誤匹配。
+      getPositionedVehiclesByOwnerKey: this._handle.prepare(
+        "SELECT id, display_name, class, pos_x, pos_y, pos_z, health, max_health, fuel, extra FROM vehicles WHERE pos_x IS NOT NULL AND extra LIKE '%' || ? || '\\_+\\_|%' ESCAPE '\\'",
       ),
 
       // Companions
@@ -224,6 +231,11 @@ export class WorldObjectRepository extends BaseRepository {
 
   getPositionedVehicles() {
     return this._stmts.getPositionedVehicles.all();
+  }
+
+  /** 車鑰匙綁定含此 steamId 的載具（含 extra，供呼叫端精確驗 owner）。 */
+  getPositionedVehiclesByOwnerKey(steamId: string) {
+    return this._stmts.getPositionedVehiclesByOwnerKey.all(steamId);
   }
 
   // ── Companions ───────────────────────────────────────────────────────────────

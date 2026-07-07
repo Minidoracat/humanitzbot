@@ -143,6 +143,10 @@ interface Config {
   sessionStore: string;
   sessionTtl: number;
   sessionRedisUrl: string;
+  // Steam profile sync：啟用後抓取綁定者的 Steam 頭像/暱稱，且 survivor/mod
+  // 必須完成 Discord+Steam 雙綁定才能使用面板（admin 豁免防鎖死）
+  enableSteamProfileSync: boolean;
+  steamWebApiKey: string;
 
   enableStdinConsole: boolean;
   stdinConsoleWritable: boolean;
@@ -499,6 +503,8 @@ const config = {
   sessionStore: (process.env.SESSION_STORE || 'sqlite').toLowerCase(),
   sessionTtl: parseInt(process.env.SESSION_TTL ?? '', 10) || 604800, // seconds, default 7 days
   sessionRedisUrl: process.env.SESSION_REDIS_URL || 'redis://localhost:6379',
+  enableSteamProfileSync: envBool('ENABLE_STEAM_PROFILE_SYNC', false),
+  steamWebApiKey: process.env.STEAM_WEB_API_KEY || '',
 
   // Interactive stdin console for headless hosts (Bisect, etc.)
   enableStdinConsole: envBool('ENABLE_STDIN_CONSOLE', false),

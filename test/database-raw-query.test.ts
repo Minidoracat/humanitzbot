@@ -2,6 +2,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import HumanitZDB from '../src/db/database.js';
+import { SCHEMA_VERSION } from '../src/db/schema.js';
 
 describe('HumanitZDB.rawQuery', () => {
   let db: HumanitZDB;
@@ -608,7 +609,7 @@ describe('PR3 repository migration helpers', () => {
       ctx: 'test:activity-recent-index-migration',
     }) as Array<{ name: string }>;
     assert.ok(indexes.some((row) => row.name === 'idx_activity_recent_dedupe'));
-    assert.equal(db._getMeta('schema_version'), '27');
+    assert.equal(db._getMeta('schema_version'), String(SCHEMA_VERSION));
   });
 
   it('reads canonical activity categories across legacy category aliases without backfilling old rows', () => {

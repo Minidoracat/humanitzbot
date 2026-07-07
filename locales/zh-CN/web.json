@@ -58,7 +58,9 @@
     "unlink_steam": "解除绑定",
     "unlink_steam_confirm": "确定要解除 Steam 绑定？",
     "steam_unlinked": "已解除 Steam 绑定",
-    "steam_unlink_failed": "解除 Steam 绑定失败"
+    "steam_unlink_failed": "解除 Steam 绑定失败",
+    "steam_gate_title": "绑定你的 Steam 账号",
+    "steam_gate_desc": "本服务器要求先将 Steam 账号与 Discord 登录绑定，才能使用面板。"
   },
   "common": {
     "cancel": "取消"
@@ -331,7 +333,9 @@
       "unique_items_count": "独特物品 ({{count}})",
       "companions_count": "同伴 ({{count}})",
       "horses_count": "马匹 ({{count}})"
-    }
+    },
+    "link_steam_hint": "绑定 Steam 账号后即可在地图上看到自己",
+    "load_failed": "地图数据加载失败"
   },
   "timeline": {
     "previous": "上一个 (←)",
@@ -1147,7 +1151,9 @@
     "session_store": "Session 存储后端：memory、sqlite 或 redis",
     "session_ttl": "Session 存活时间（秒），默认 604800 = 7 天",
     "session_redis_url": "Redis 连接 URL（仅 redis 模式使用）",
-    "web_map_session_secret": "Session cookie 签名密钥（留空自动生成）"
+    "web_map_session_secret": "Session cookie 签名密钥（留空自动生成）",
+    "enable_steam_profile_sync": "抓取已绑定账号的 Steam 头像与昵称；启用后 survivor/mod 必须同时绑定 Discord 与 Steam 才能使用面板（admin 豁免）",
+    "steam_web_api_key": "抓取 Steam 个人资料用的 Web API key（至 steamcommunity.com/dev/apikey 申请）"
   },
   "db_tables": {
     "activity_log": "活动日志",

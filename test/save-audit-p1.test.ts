@@ -2,6 +2,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import HumanitZDB from '../src/db/database.js';
+import { SCHEMA_VERSION } from '../src/db/schema.js';
 import { normalizePlayerHorses } from '../src/parsers/save-parser.js';
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -233,7 +234,7 @@ describe('save-audit P1 DB integration', () => {
       const version = handle.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as {
         value: string;
       };
-      assert.equal(version.value, '27');
+      assert.equal(version.value, String(SCHEMA_VERSION));
       legacy.close();
     });
   });
